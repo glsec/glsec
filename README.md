@@ -85,6 +85,7 @@ glsec --format sarif .gitlab-ci.yml > gl.sarif
 | [GL015](docs/rules/GL015.md) | `warn`  | Docker image tag built from user-controlled variable (`$CI_COMMIT_REF_SLUG` etc.) |
 | [GL016](docs/rules/GL016.md) | varies  | HTTP instead of HTTPS (`include:remote`, scripts, variables) |
 | [GL017](docs/rules/GL017.md) | `warn`  | Deploy/publish job has no `tags:` — can run on any runner including untrusted self-hosted |
+| [GL018](docs/rules/GL018.md) | `warn`  | Secret variable re-exported at pipeline level — available to all jobs including untrusted ones |
 | [GL020](docs/rules/GL020.md) | `warn`  | File downloaded with `curl`/`wget` without checksum verification before execution |
 | [GL021](docs/rules/GL021.md) | `warn`  | Secret variable value printed to job log via `echo`/`printf` |
 
