@@ -86,6 +86,7 @@ glsec --format sarif .gitlab-ci.yml > gl.sarif
 | [GL016](docs/rules/GL016.md) | varies  | HTTP instead of HTTPS (`include:remote`, scripts, variables) |
 | [GL017](docs/rules/GL017.md) | `warn`  | Deploy/publish job has no `tags:` — can run on any runner including untrusted self-hosted |
 | [GL020](docs/rules/GL020.md) | `warn`  | File downloaded with `curl`/`wget` without checksum verification before execution |
+| [GL021](docs/rules/GL021.md) | `warn`  | Secret variable value printed to job log via `echo`/`printf` |
 
 Each rule page contains the full risk description, trigger examples, safe alternatives, and detection notes.
 
