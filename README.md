@@ -90,6 +90,7 @@ glsec --format sarif .gitlab-ci.yml > gl.sarif
 | [GL020](docs/rules/GL020.md) | `warn`  | File downloaded with `curl`/`wget` without checksum verification before execution |
 | [GL021](docs/rules/GL021.md) | `warn`  | Secret variable value printed to job log via `echo`/`printf` |
 | [GL022](docs/rules/GL022.md) | `warn`  | Package manager install without version pin or explicit update-to-latest in CI |
+| [GL023](docs/rules/GL023.md) | `warn`  | Lockfile not enforced (`npm install` instead of `npm ci`, `yarn install` without `--frozen-lockfile`, etc.) |
 
 Each rule page contains the full risk description, trigger examples, safe alternatives, and detection notes.
 
