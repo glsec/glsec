@@ -91,15 +91,42 @@ Each rule page contains the full risk description, trigger examples, safe altern
 
 ## CI integration
 
-### GitLab CI
+### GitLab CI — Docker image (recommended)
+
+The fastest way: use the pre-built image from GHCR. No Go toolchain needed.
 
 ```yaml
 glsec:
   stage: test
-  image: golang:1.24-alpine
+  image: ghcr.io/glsec/glsec:latest
   script:
-    - go install github.com/glsec/glsec@latest
     - glsec .gitlab-ci.yml
+```
+
+Pin to a specific release for reproducible pipelines:
+
+```yaml
+glsec:
+  stage: test
+  image: ghcr.io/glsec/glsec:0.1.0
+  script:
+    - glsec .gitlab-ci.yml
+```
+
+### GitLab CI — binary download
+
+For pipelines that cannot pull from GHCR:
+
+```yaml
+glsec:
+  stage: test
+  image: alpine:3.19
+  script:
+    - |
+      curl -sSLO https://github.com/glsec/glsec/releases/latest/download/glsec_linux_amd64.tar.gz
+      echo "$(curl -sSL https://github.com/glsec/glsec/releases/latest/download/checksums.txt | grep glsec_linux_amd64.tar.gz)" | sha256sum -c
+      tar xzf glsec_linux_amd64.tar.gz
+    - ./glsec .gitlab-ci.yml
 ```
 
 ### GitHub Actions
@@ -107,8 +134,9 @@ glsec:
 ```yaml
 - name: Run glsec
   run: |
-    go install github.com/glsec/glsec@latest
-    glsec .gitlab-ci.yml
+    curl -sSLO https://github.com/glsec/glsec/releases/latest/download/glsec_linux_amd64.tar.gz
+    tar xzf glsec_linux_amd64.tar.gz
+    ./glsec .gitlab-ci.yml
 ```
 
 ### SARIF upload to GitHub Code Scanning
@@ -116,8 +144,9 @@ glsec:
 ```yaml
 - name: Run glsec (SARIF)
   run: |
-    go install github.com/glsec/glsec@latest
-    glsec --format sarif .gitlab-ci.yml > glsec.sarif || true
+    curl -sSLO https://github.com/glsec/glsec/releases/latest/download/glsec_linux_amd64.tar.gz
+    tar xzf glsec_linux_amd64.tar.gz
+    ./glsec --format sarif .gitlab-ci.yml > glsec.sarif || true
 - uses: github/codeql-action/upload-sarif@v3
   with:
     sarif_file: glsec.sarif
