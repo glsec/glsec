@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logo.png" alt="glsec" width="400">
+  <img src="assets/glsec-bg.png" alt="glsec" width="400">
 </p>
 
 # glsec
