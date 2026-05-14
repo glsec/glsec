@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
+	"github.com/glsec/glsec/internal/version"
 	"gopkg.in/yaml.v3"
 )
 
@@ -18,6 +19,9 @@ type Config struct {
 	Rules map[string]string `yaml:"rules"`
 	// MinSeverity filters out findings below this level.
 	MinSeverity string `yaml:"min-severity"`
+	// GitLabVersion is the target GitLab version (e.g. "16.0").
+	// Rules requiring a higher version are skipped.
+	GitLabVersion string `yaml:"gitlab-version"`
 }
 
 // Default returns a Config with no overrides.
@@ -78,8 +82,9 @@ func parse(data []byte, path string) (*Config, error) {
 }
 
 var allowedTopLevelKeys = map[string]bool{
-	"rules":        true,
-	"min-severity": true,
+	"rules":          true,
+	"min-severity":   true,
+	"gitlab-version": true,
 }
 
 func checkUnknownKeys(mapping *yaml.Node, path string) error {
@@ -111,6 +116,11 @@ func (c *Config) validate(path string) error {
 	if c.MinSeverity != "" {
 		if !validSeverities[c.MinSeverity] || c.MinSeverity == "off" {
 			return fmt.Errorf("%s: min-severity: invalid value %q (use error, warn, or info)", path, c.MinSeverity)
+		}
+	}
+	if c.GitLabVersion != "" {
+		if _, err := version.Parse(c.GitLabVersion); err != nil {
+			return fmt.Errorf("%s: gitlab-version: %w", path, err)
 		}
 	}
 	return nil
