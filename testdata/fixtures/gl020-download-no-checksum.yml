@@ -1,0 +1,15 @@
+stages:
+  - install
+  - build
+
+install-tool:
+  stage: install
+  script:
+    - curl -sSLO https://example.com/tool.tar.gz
+    - tar xzf tool.tar.gz
+    - ./tool install
+
+build:
+  stage: build
+  script:
+    - go build ./...
