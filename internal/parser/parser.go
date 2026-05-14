@@ -1,0 +1,99 @@
+package parser
+
+import (
+	"fmt"
+	"os"
+
+	"gopkg.in/yaml.v3"
+)
+
+type Document struct {
+	Root *yaml.Node
+	File string
+}
+
+func ParseFile(path string) (*Document, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", path, err)
+	}
+	return Parse(data, path)
+}
+
+func Parse(data []byte, file string) (*Document, error) {
+	var root yaml.Node
+	if err := yaml.Unmarshal(data, &root); err != nil {
+		return nil, fmt.Errorf("parse %s: %w", file, err)
+	}
+	if root.Kind == 0 {
+		return nil, fmt.Errorf("%s: empty document", file)
+	}
+	return &Document{Root: &root, File: file}, nil
+}
+
+// MappingNode returns the top-level mapping node of the document.
+func (d *Document) MappingNode() *yaml.Node {
+	if d.Root.Kind == yaml.DocumentNode && len(d.Root.Content) > 0 {
+		return d.Root.Content[0]
+	}
+	return d.Root
+}
+
+// FindKey returns the value node for a key in a MappingNode, or nil if not found.
+func FindKey(node *yaml.Node, key string) *yaml.Node {
+	if node.Kind != yaml.MappingNode {
+		return nil
+	}
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		if node.Content[i].Value == key {
+			return node.Content[i+1]
+		}
+	}
+	return nil
+}
+
+// FindKeyNode returns both the key and value nodes for a given key.
+func FindKeyNode(node *yaml.Node, key string) (keyNode, valueNode *yaml.Node) {
+	if node.Kind != yaml.MappingNode {
+		return nil, nil
+	}
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		if node.Content[i].Value == key {
+			return node.Content[i], node.Content[i+1]
+		}
+	}
+	return nil, nil
+}
+
+// reservedKeys are top-level GitLab CI keys that are configuration, not job definitions.
+var reservedKeys = map[string]bool{
+	"stages":        true,
+	"variables":     true,
+	"default":       true,
+	"workflow":      true,
+	"include":       true,
+	"image":         true,
+	"services":      true,
+	"cache":         true,
+	"before_script": true,
+	"after_script":  true,
+}
+
+// EachJob calls fn for each job definition in the document.
+func EachJob(doc *yaml.Node, fn func(name *yaml.Node, job *yaml.Node)) {
+	mapping := doc
+	if doc.Kind == yaml.DocumentNode && len(doc.Content) > 0 {
+		mapping = doc.Content[0]
+	}
+	if mapping.Kind != yaml.MappingNode {
+		return
+	}
+	for i := 0; i+1 < len(mapping.Content); i += 2 {
+		key := mapping.Content[i]
+		val := mapping.Content[i+1]
+		if reservedKeys[key.Value] || val.Kind != yaml.MappingNode {
+			continue
+		}
+		fn(key, val)
+	}
+}
