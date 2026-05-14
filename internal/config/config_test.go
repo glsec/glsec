@@ -66,7 +66,7 @@ rules:
 	}
 }
 
-func TestParse_SeverityOverride(t *testing.T) {
+func TestParse_SeverityOverride_Flat(t *testing.T) {
 	cfg := parseStr(t, `rules:
   GL001: warn
 `)
@@ -74,6 +74,49 @@ func TestParse_SeverityOverride(t *testing.T) {
 	got := cfg.ApplySeverity(f)
 	if got.Severity != finding.Warn {
 		t.Errorf("expected warn, got %s", got.Severity)
+	}
+}
+
+func TestParse_SeverityOverride_Nested(t *testing.T) {
+	cfg := parseStr(t, `
+rules:
+  GL001:
+    severity: warn
+  GL011:
+    severity: error
+`)
+	f1 := finding.Finding{RuleID: "GL001", Severity: finding.Error}
+	if got := cfg.ApplySeverity(f1); got.Severity != finding.Warn {
+		t.Errorf("GL001: expected warn, got %s", got.Severity)
+	}
+	f2 := finding.Finding{RuleID: "GL011", Severity: finding.Warn}
+	if got := cfg.ApplySeverity(f2); got.Severity != finding.Error {
+		t.Errorf("GL011: expected error, got %s", got.Severity)
+	}
+}
+
+func TestParse_SeverityOverride_Nested_Off(t *testing.T) {
+	cfg := parseStr(t, `
+rules:
+  GL001:
+    severity: off
+`)
+	if cfg.RuleEnabled("GL001") {
+		t.Error("GL001 should be disabled via nested severity: off")
+	}
+}
+
+func TestParse_SeverityOverride_Nested_UnknownKey(t *testing.T) {
+	_, err := parse([]byte("rules:\n  GL001:\n    severity: warn\n    unknown: value\n"), "test.yml")
+	if err == nil {
+		t.Error("expected error for unknown key inside rule config mapping")
+	}
+}
+
+func TestParse_SeverityOverride_Nested_InvalidSeverity(t *testing.T) {
+	_, err := parse([]byte("rules:\n  GL001:\n    severity: critical\n"), "test.yml")
+	if err == nil {
+		t.Error("expected error for invalid severity in nested form")
 	}
 }
 

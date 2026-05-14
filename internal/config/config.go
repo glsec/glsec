@@ -13,10 +13,44 @@ import (
 
 const DefaultFile = ".glsec.yml"
 
+// RuleConfig holds per-rule overrides. It can be specified as either a plain
+// severity string or a mapping:
+//
+//	GL001: warn                  # flat form
+//	GL001:                       # nested form
+//	  severity: warn
+type RuleConfig struct {
+	Severity string // "error", "warn", "info", or "off"; empty = use rule default
+}
+
+// UnmarshalYAML allows RuleConfig to accept both a plain scalar ("warn") and a
+// mapping ({ severity: warn }) in the config file.
+func (r *RuleConfig) UnmarshalYAML(value *yaml.Node) error {
+	switch value.Kind {
+	case yaml.ScalarNode:
+		r.Severity = value.Value
+		return nil
+	case yaml.MappingNode:
+		for i := 0; i+1 < len(value.Content); i += 2 {
+			key := value.Content[i].Value
+			val := value.Content[i+1].Value
+			switch key {
+			case "severity":
+				r.Severity = val
+			default:
+				return fmt.Errorf("unknown rule config key %q", key)
+			}
+		}
+		return nil
+	default:
+		return fmt.Errorf("rule config must be a string or mapping")
+	}
+}
+
 // Config holds the parsed contents of a .glsec.yml file.
 type Config struct {
-	// Rules maps rule ID to a severity override or "off".
-	Rules map[string]string `yaml:"rules"`
+	// Rules maps rule ID to a per-rule override.
+	Rules map[string]RuleConfig `yaml:"rules"`
 	// MinSeverity filters out findings below this level.
 	MinSeverity string `yaml:"min-severity"`
 	// GitLabVersion is the target GitLab version (e.g. "16.0").
@@ -29,7 +63,7 @@ type Config struct {
 // Default returns a Config with no overrides.
 func Default() *Config {
 	return &Config{
-		Rules:       map[string]string{},
+		Rules:       map[string]RuleConfig{},
 		MinSeverity: "",
 	}
 }
@@ -74,7 +108,7 @@ func parse(data []byte, path string) (*Config, error) {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	if cfg.Rules == nil {
-		cfg.Rules = map[string]string{}
+		cfg.Rules = map[string]RuleConfig{}
 	}
 
 	if err := cfg.validate(path); err != nil {
@@ -108,12 +142,12 @@ var validSeverities = map[string]bool{
 }
 
 func (c *Config) validate(path string) error {
-	for id, sev := range c.Rules {
+	for id, rc := range c.Rules {
 		if !strings.HasPrefix(id, "GL") {
 			return fmt.Errorf("%s: rules: invalid rule ID %q (must start with GL)", path, id)
 		}
-		if !validSeverities[sev] {
-			return fmt.Errorf("%s: rules.%s: invalid severity %q (use error, warn, info, or off)", path, id, sev)
+		if !validSeverities[rc.Severity] {
+			return fmt.Errorf("%s: rules.%s: invalid severity %q (use error, warn, info, or off)", path, id, rc.Severity)
 		}
 	}
 	if c.MinSeverity != "" {
@@ -131,18 +165,18 @@ func (c *Config) validate(path string) error {
 
 // RuleEnabled returns false if the rule is set to "off" in the config.
 func (c *Config) RuleEnabled(id string) bool {
-	sev, ok := c.Rules[id]
-	return !ok || sev != "off"
+	rc, ok := c.Rules[id]
+	return !ok || rc.Severity != "off"
 }
 
 // ApplySeverity returns the effective severity for a finding, applying any
 // rule-level override from the config.
 func (c *Config) ApplySeverity(f finding.Finding) finding.Finding {
-	sev, ok := c.Rules[f.RuleID]
-	if !ok || sev == "off" {
+	rc, ok := c.Rules[f.RuleID]
+	if !ok || rc.Severity == "" || rc.Severity == "off" {
 		return f
 	}
-	f.Severity = finding.Severity(sev)
+	f.Severity = finding.Severity(rc.Severity)
 	return f
 }
 
