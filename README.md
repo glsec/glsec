@@ -75,6 +75,7 @@ glsec --format sarif .gitlab-ci.yml > gl.sarif
 | [GL005](docs/rules/GL005.md) | `warn`  | Sensitive file patterns in `artifacts:` or missing `expire_in` |
 | [GL006](docs/rules/GL006.md) | `error` | Hardcoded secret in `variables:` block |
 | [GL007](docs/rules/GL007.md) | `error` | CI variable interpolation in `image:` reference |
+| [GL008](docs/rules/GL008.md) | `warn`  | `allow_failure: true` on a GitLab security scan job |
 
 Each rule page contains the full risk description, trigger examples, safe alternatives, and detection notes.
 
