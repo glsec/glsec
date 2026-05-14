@@ -1,0 +1,10 @@
+stages:
+  - build
+
+build:
+  stage: build
+  image: python:3.12
+  script:
+    - pip install ansible
+    - npm install -g @angular/cli
+    - apt-get install -y jq
