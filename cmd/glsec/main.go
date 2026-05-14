@@ -1,22 +1,36 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
+	"github.com/glsec/glsec/internal/output"
 	"github.com/glsec/glsec/internal/parser"
 	"github.com/glsec/glsec/rules"
 )
 
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: glsec <file>")
+	formatFlag := flag.String("format", "text", "output format: text, json, sarif")
+	flag.Usage = func() {
+		fmt.Fprintln(os.Stderr, "usage: glsec [--format text|json|sarif] <file>")
+		flag.PrintDefaults()
+	}
+	flag.Parse()
+
+	if flag.NArg() < 1 {
+		flag.Usage()
 		os.Exit(2)
 	}
 
-	file := os.Args[1]
+	format, ok := output.ParseFormat(*formatFlag)
+	if !ok {
+		fmt.Fprintf(os.Stderr, "unknown format %q — use text, json, or sarif\n", *formatFlag)
+		os.Exit(2)
+	}
+
+	file := flag.Arg(0)
 	doc, err := parser.ParseFile(file)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -28,13 +42,9 @@ func main() {
 		findings = append(findings, rule.Check(doc.Root, file)...)
 	}
 
-	for _, f := range findings {
-		fmt.Printf("%-6s %s:%d  %s  %s\n",
-			strings.ToUpper(string(f.Severity)),
-			f.File, f.Line,
-			f.RuleID,
-			f.Message,
-		)
+	if err := output.Write(os.Stdout, format, findings); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(2)
 	}
 
 	if len(findings) > 0 {
