@@ -1,0 +1,12 @@
+stages:
+  - deploy
+
+deploy-aws:
+  stage: deploy
+  id_tokens:
+    AWS_OIDC_TOKEN:
+      aud: "https://gitlab.example.com"
+  script:
+    - aws sts assume-role-with-web-identity
+        --role-arn arn:aws:iam::123456789:role/my-role
+        --web-identity-token "$AWS_OIDC_TOKEN"
