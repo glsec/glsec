@@ -78,6 +78,7 @@ glsec --format sarif .gitlab-ci.yml > gl.sarif
 | [GL008](docs/rules/GL008.md) | `warn`  | `allow_failure: true` on a GitLab security scan job |
 | [GL009](docs/rules/GL009.md) | `warn`  | Overly broad OIDC `id_tokens` audience (GitLab ≥ 15.7) |
 | [GL010](docs/rules/GL010.md) | `warn`  | `trigger: forward: pipeline_variables: true` leaks secrets to downstream pipeline (GitLab ≥ 14.9) |
+| [GL011](docs/rules/GL011.md) | `error` | Download-and-execute pattern in script (`curl \| bash`, `wget \| sh`) |
 
 Each rule page contains the full risk description, trigger examples, safe alternatives, and detection notes.
 
