@@ -86,6 +86,7 @@ glsec --format sarif .gitlab-ci.yml > gl.sarif
 | [GL016](docs/rules/GL016.md) | varies  | HTTP instead of HTTPS (`include:remote`, scripts, variables) |
 | [GL017](docs/rules/GL017.md) | `warn`  | Deploy/publish job has no `tags:` — can run on any runner including untrusted self-hosted |
 | [GL018](docs/rules/GL018.md) | `warn`  | Secret variable re-exported at pipeline level — available to all jobs including untrusted ones |
+| [GL019](docs/rules/GL019.md) | `warn`  | Deploy/publish job has no `resource_group:` — concurrent runs risk race conditions or partial deploys |
 | [GL020](docs/rules/GL020.md) | `warn`  | File downloaded with `curl`/`wget` without checksum verification before execution |
 | [GL021](docs/rules/GL021.md) | `warn`  | Secret variable value printed to job log via `echo`/`printf` |
 
