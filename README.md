@@ -46,7 +46,7 @@ Homebrew coming soon.
 ## Usage
 
 ```sh
-# scan a file (exits 1 if findings, 0 if clean, 2 on error)
+# scan a file (exits 1 on error findings, 0 if clean, 2 on parse error)
 glsec .gitlab-ci.yml
 
 # JSON output for machine consumption
@@ -54,6 +54,19 @@ glsec --format json .gitlab-ci.yml
 
 # SARIF output for GitHub Code Scanning / GitLab SAST
 glsec --format sarif .gitlab-ci.yml > gl.sarif
+
+# treat warn findings as hard failures (exit 1)
+glsec --strict .gitlab-ci.yml
+
+# advisory mode: always exit 0, even with findings
+glsec --no-exit-codes .gitlab-ci.yml
+
+# exclude a file or directory from scanning
+glsec --exclude vendor/ .gitlab-ci.yml
+
+# baseline existing findings so only new violations are reported
+glsec --generate-ignore .gitlab-ci.yml
+glsec .gitlab-ci.yml  # now exits 0; new violations will be caught
 ```
 
 ### Exit codes
@@ -64,11 +77,16 @@ glsec --format sarif .gitlab-ci.yml > gl.sarif
 | 1 | One or more `error` findings; or any finding when `--strict` is set |
 | 2 | Usage error or file could not be parsed |
 
-Use `--strict` to treat `warn` findings as hard failures (exit 1). Use `--no-exit-codes` to always exit 0 regardless of findings (advisory/informational mode). Both flags can also be set in `.glsec.yml`:
+Use `--strict` to treat `warn` findings as hard failures (exit 1). Use `--no-exit-codes` to always exit 0 regardless of findings (advisory/informational mode). All flags can also be set in `.glsec.yml`:
 
 ```yaml
 strict: true        # warn findings cause exit 1
 no-exit-codes: true # never exit 1 (overrides strict)
+
+exclude_paths:
+  - legacy/.gitlab-ci.yml
+  - infra/old-pipelines/**
+  - vendor/
 ```
 
 ## Rules

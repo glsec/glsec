@@ -63,6 +63,9 @@ type Config struct {
 	// NoExitCodes makes glsec always exit 0 on successful execution,
 	// regardless of findings. Useful for advisory runs.
 	NoExitCodes bool `yaml:"no-exit-codes"`
+	// ExcludePaths is a list of file globs to skip entirely.
+	// Supports filepath.Match patterns and directory suffixes (/ or /**).
+	ExcludePaths []string `yaml:"exclude_paths"`
 }
 
 // Default returns a Config with no overrides.
@@ -129,6 +132,7 @@ var allowedTopLevelKeys = map[string]bool{
 	"trusted-hosts":  true,
 	"strict":         true,
 	"no-exit-codes":  true,
+	"exclude_paths":  true,
 }
 
 func checkUnknownKeys(mapping *yaml.Node, path string) error {
