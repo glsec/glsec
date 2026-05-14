@@ -125,6 +125,27 @@ func TestParse_Empty(t *testing.T) {
 	}
 }
 
+func TestParse_GitLabVersion_Valid(t *testing.T) {
+	cfg := parseStr(t, `gitlab-version: "16.0"`)
+	if cfg.GitLabVersion != "16.0" {
+		t.Errorf("expected 16.0, got %q", cfg.GitLabVersion)
+	}
+}
+
+func TestParse_GitLabVersion_Invalid(t *testing.T) {
+	_, err := parse([]byte("gitlab-version: abc\n"), "test.yml")
+	if err == nil {
+		t.Error("expected error for invalid gitlab-version")
+	}
+}
+
+func TestParse_GitLabVersion_Absent(t *testing.T) {
+	cfg := parseStr(t, `min-severity: warn`)
+	if cfg.GitLabVersion != "" {
+		t.Errorf("expected empty gitlab-version, got %q", cfg.GitLabVersion)
+	}
+}
+
 func TestLoad_FromFile(t *testing.T) {
 	dir := t.TempDir()
 	content := []byte("rules:\n  GL001: off\nmin-severity: warn\n")

@@ -11,6 +11,7 @@ import (
 	"github.com/glsec/glsec/internal/parser"
 	"github.com/glsec/glsec/internal/suppress"
 	"github.com/glsec/glsec/internal/validate"
+	gitlabver "github.com/glsec/glsec/internal/version"
 	"github.com/glsec/glsec/rules"
 )
 
@@ -25,8 +26,9 @@ func main() {
 	formatFlag := flag.String("format", "text", "output format: text, json, sarif")
 	configFlag := flag.String("config", config.DefaultFile, "path to .glsec.yml config file")
 	versionFlag := flag.Bool("version", false, "print version and exit")
+	gitlabVersionFlag := flag.String("gitlab-version", "", "target GitLab version, e.g. 16.0 (skips rules not available in that version)")
 	flag.Usage = func() {
-		fmt.Fprintln(os.Stderr, "usage: glsec [--format text|json|sarif] [--config .glsec.yml] [file]")
+		fmt.Fprintln(os.Stderr, "usage: glsec [--format text|json|sarif] [--config .glsec.yml] [--gitlab-version 16.0] [file]")
 		fmt.Fprintln(os.Stderr, "       If no file is given, glsec looks for .gitlab-ci.yml in the current directory.")
 		flag.PrintDefaults()
 	}
@@ -52,6 +54,20 @@ func main() {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(2)
+	}
+
+	// --gitlab-version flag overrides the config file value.
+	gitlabVersionStr := cfg.GitLabVersion
+	if *gitlabVersionFlag != "" {
+		gitlabVersionStr = *gitlabVersionFlag
+	}
+	gitlabVersion, err := gitlabver.Parse(gitlabVersionStr)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: --gitlab-version: %v\n", err)
+		os.Exit(2)
+	}
+	if !gitlabVersion.IsZero() && !gitlabVersion.AtLeast(gitlabver.Minimum) {
+		fmt.Fprintf(os.Stderr, "warning: gitlab-version %s is below the minimum supported version %s\n", gitlabVersion, gitlabver.Minimum)
 	}
 
 	file := flag.Arg(0)
@@ -84,6 +100,9 @@ func main() {
 	var findings []finding.Finding
 	for _, rule := range rules.All() {
 		if !cfg.RuleEnabled(rule.ID()) {
+			continue
+		}
+		if !rules.EnabledFor(rule.ID(), gitlabVersion) {
 			continue
 		}
 		for _, f := range rule.Check(doc.Root, file) {
