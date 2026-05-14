@@ -102,7 +102,19 @@ func All() []rule.Rule {
 }
 ```
 
-### Step 4 — write tests
+### Step 4 — satisfy the consistency test
+
+`rules/consistency_test.go` runs automatically as part of `go test ./rules/` and enforces three invariants for every rule returned by `All()`:
+
+| Check | Requirement |
+|-------|-------------|
+| ID format | Must match `GL\d{3}` (e.g. `GL006`) |
+| Docs file | `docs/rules/GLNNN.md` must exist and contain at least one `CICD-SEC-N` or `OWASP` reference |
+| Fixture | At least one `testdata/fixtures/glnnn-*.yml` file must exist (lowercase rule ID as prefix) |
+
+All three must be in place before the test suite passes.
+
+### Step 5 — write unit tests
 
 ```go
 // rules/gl006_test.go
@@ -141,13 +153,21 @@ func TestGL006_Clean(t *testing.T) {
 
 Cover the happy path (flagged), the clean path, and any edge cases (empty values, missing keys, nested structures).
 
-### Step 5 — add a fixture
+### Step 6 — add a fixture
 
 Create `testdata/fixtures/glNNN-short-name.yml` with a realistic example that exercises the rule. The fixture must be valid GitLab CI YAML — CI validates all fixtures against the GitLab CI JSON schema via `check-jsonschema`.
 
-### Step 6 — update the README
+### Step 7 — update the README and add a docs file
 
-Add a row to the rules table and a `### GLNNN` section with a flagged/safe example, following the pattern of the existing rules.
+Create `docs/rules/GLNNN.md` with the full rule documentation (see existing files for structure). Required sections:
+
+- Rule ID, severity, OWASP reference (`CICD-SEC-N`), zizmor analogue if applicable
+- Risk explanation
+- Trigger example (flagged YAML)
+- Safe alternative
+- Detection notes
+
+Add a row to the rules summary table in `README.md` linking to the new docs file.
 
 ## Commit and PR conventions
 
