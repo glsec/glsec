@@ -81,6 +81,7 @@ glsec --format sarif .gitlab-ci.yml > gl.sarif
 | [GL011](docs/rules/GL011.md) | `error` | Download-and-execute pattern in script (`curl \| bash`, `wget \| sh`) |
 | [GL012](docs/rules/GL012.md) | `warn`  | `when: always` on a deploy/release job bypasses upstream quality gates |
 | [GL013](docs/rules/GL013.md) | `warn`  | Production deploy job has no `rules:` or `only:` branch restriction |
+| [GL014](docs/rules/GL014.md) | `warn`  | `dotenv` artifact captures all environment variables including secrets (GitLab ≥ 12.9) |
 
 Each rule page contains the full risk description, trigger examples, safe alternatives, and detection notes.
 
