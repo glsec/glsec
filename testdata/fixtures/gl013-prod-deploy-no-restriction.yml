@@ -1,0 +1,17 @@
+stages:
+  - build
+  - deploy
+
+build:
+  stage: build
+  image: node:20.11.0
+  script:
+    - npm ci
+    - npm run build
+
+deploy-production:
+  stage: deploy
+  image: alpine:3.19
+  environment: production
+  script:
+    - ./deploy.sh
