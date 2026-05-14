@@ -1,0 +1,15 @@
+# Binaries
+glsec
+dist/
+
+# Test output
+*.out
+coverage.html
+
+# Go
+*.test
+
+# Editor
+.idea/
+.vscode/
+*.swp
