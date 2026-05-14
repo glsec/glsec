@@ -103,7 +103,7 @@ func LoadIgnoreFile(ignorePath, targetFile string) Map {
 	if err != nil {
 		return m
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
