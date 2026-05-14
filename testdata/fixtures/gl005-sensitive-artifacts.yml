@@ -1,0 +1,14 @@
+stages:
+  - build
+
+build-job:
+  stage: build
+  image: node:20.11.0
+  script:
+    - npm ci
+    - npm run build
+  artifacts:
+    paths:
+      - dist/
+      - .env.production
+      - deploy-key.pem

@@ -1,0 +1,26 @@
+stages:
+  - build
+  - test
+
+build-job:
+  stage: build
+  image: node:latest
+  script:
+    - npm ci
+    - npm run build
+
+test-job:
+  stage: test
+  image: alpine
+  script:
+    - npm test
+
+docker-job:
+  stage: build
+  image: docker:24
+  services:
+    - docker:dind
+  variables:
+    DOCKER_TLS_CERTDIR: /certs
+  script:
+    - docker build -t myapp .
