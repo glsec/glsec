@@ -1,0 +1,15 @@
+stages:
+  - build
+  - deploy
+
+build:
+  stage: build
+  image: $BUILD_IMAGE
+  script:
+    - make
+
+deploy:
+  stage: deploy
+  image: registry.example.com/app:$CI_COMMIT_REF_SLUG
+  script:
+    - ./deploy.sh
