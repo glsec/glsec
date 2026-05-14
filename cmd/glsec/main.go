@@ -8,6 +8,7 @@ import (
 	"github.com/glsec/glsec/internal/finding"
 	"github.com/glsec/glsec/internal/output"
 	"github.com/glsec/glsec/internal/parser"
+	"github.com/glsec/glsec/internal/validate"
 	"github.com/glsec/glsec/rules"
 )
 
@@ -47,6 +48,15 @@ func main() {
 	doc, err := parser.ParseFile(file)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(2)
+	}
+
+	warns, valErr := validate.File(file, doc)
+	for _, w := range warns {
+		fmt.Fprintf(os.Stderr, "warning: %s\n", w)
+	}
+	if valErr != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", valErr)
 		os.Exit(2)
 	}
 
