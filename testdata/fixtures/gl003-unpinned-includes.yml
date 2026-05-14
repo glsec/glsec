@@ -1,0 +1,24 @@
+include:
+  - project: company/ci-templates
+    file: /jobs/security.yml
+  - project: company/ci-templates
+    file: /jobs/deploy.yml
+    ref: main
+  - template: Security/SAST.gitlab-ci.yml
+
+stages:
+  - build
+  - test
+
+build-job:
+  stage: build
+  image: node:20.11.0
+  script:
+    - npm ci
+    - npm run build
+
+test-job:
+  stage: test
+  image: node:20.11.0
+  script:
+    - npm test

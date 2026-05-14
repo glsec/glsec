@@ -1,0 +1,18 @@
+stages:
+  - test
+  - deploy
+
+test-job:
+  stage: test
+  image: node:20.11.0
+  script:
+    - echo $CI_COMMIT_REF_NAME
+    - npm test
+
+deploy-job:
+  stage: deploy
+  image: alpine:3.19
+  before_script:
+    - echo $CI_COMMIT_MESSAGE
+  script:
+    - ./deploy.sh $CI_MERGE_REQUEST_SOURCE_BRANCH_NAME

@@ -1,0 +1,40 @@
+include:
+  - project: company/ci-templates
+    file: /jobs/security.yml
+    ref: v2.1.0
+
+stages:
+  - build
+  - test
+  - deploy
+
+variables:
+  NODE_VERSION: "20.11.0"
+
+build-job:
+  stage: build
+  image: node:20.11.0
+  script:
+    - npm ci
+    - npm run build
+  artifacts:
+    paths:
+      - dist/
+    expire_in: 1 week
+
+test-job:
+  stage: test
+  image: node:20.11.0
+  script:
+    - npm test
+  coverage: '/Coverage: \d+\.\d+/'
+
+deploy-job:
+  stage: deploy
+  image: alpine:3.19
+  script:
+    - ./deploy.sh
+  environment:
+    name: production
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH

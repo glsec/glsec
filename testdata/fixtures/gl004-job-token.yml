@@ -1,0 +1,16 @@
+stages:
+  - build
+  - upload
+
+build-job:
+  stage: build
+  image: node:20.11.0
+  script:
+    - npm ci
+    - npm run build
+
+upload-job:
+  stage: upload
+  image: alpine:3.19
+  script:
+    - curl --header JOB-TOKEN=$CI_JOB_TOKEN https://external-registry.example.com/upload
