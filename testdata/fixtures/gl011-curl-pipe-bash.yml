@@ -1,0 +1,17 @@
+stages:
+  - setup
+  - build
+
+setup:
+  stage: setup
+  image: ubuntu:22.04
+  script:
+    - curl -sSL https://install.example.com/setup.sh | bash
+    - wget -qO- https://raw.example.com/install.sh | sh
+
+build:
+  stage: build
+  image: node:20.11.0
+  script:
+    - npm ci
+    - npm run build
