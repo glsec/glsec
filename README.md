@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.png" alt="glsec" width="400">
+</p>
+
 # glsec
 
 GitLab CI security linter — find misconfigurations and vulnerabilities in `.gitlab-ci.yml` files.
