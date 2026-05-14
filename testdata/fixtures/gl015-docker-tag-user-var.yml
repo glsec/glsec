@@ -1,0 +1,19 @@
+stages:
+  - build
+  - deploy
+
+build:
+  stage: build
+  image: docker:24.0
+  script:
+    - docker build -t $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG .
+    - docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG
+
+deploy:
+  stage: deploy
+  image: alpine:3.19
+  environment: production
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  script:
+    - ./deploy.sh
