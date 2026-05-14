@@ -31,7 +31,17 @@ ERROR  .gitlab-ci.yml:3   GL003  project include "company/templates" missing "re
 go install github.com/glsec/glsec@latest
 ```
 
-Binary downloads and Homebrew coming soon.
+**Binary download:**
+
+Pre-built binaries for Linux, macOS, and Windows (amd64 + arm64) are available on the [Releases page](https://github.com/glsec/glsec/releases).
+
+```sh
+# Example: Linux amd64
+curl -sSL https://github.com/glsec/glsec/releases/latest/download/glsec_linux_amd64.tar.gz | tar xz
+./glsec --version
+```
+
+Homebrew coming soon.
 
 ## Usage
 
