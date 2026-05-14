@@ -76,6 +76,7 @@ glsec --format sarif .gitlab-ci.yml > gl.sarif
 | [GL006](docs/rules/GL006.md) | `error` | Hardcoded secret in `variables:` block |
 | [GL007](docs/rules/GL007.md) | `error` | CI variable interpolation in `image:` reference |
 | [GL008](docs/rules/GL008.md) | `warn`  | `allow_failure: true` on a GitLab security scan job |
+| [GL009](docs/rules/GL009.md) | `warn`  | Overly broad OIDC `id_tokens` audience (GitLab ≥ 15.7) |
 
 Each rule page contains the full risk description, trigger examples, safe alternatives, and detection notes.
 
