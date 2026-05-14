@@ -1,0 +1,168 @@
+# Contributing to glsec
+
+## Dev environment
+
+**Requirements:** Go 1.21+
+
+```sh
+git clone https://github.com/glsec/glsec.git
+cd glsec
+go build ./...
+go test ./...
+```
+
+No code generation, no build scripts — `go build` is all you need.
+
+## Running tests
+
+```sh
+go test ./...                   # all packages
+go test -race ./...             # with race detector (what CI runs)
+go test ./rules/... -v -run GL001  # single rule
+```
+
+## Linting
+
+CI runs [golangci-lint](https://golangci-lint.run/) v2. To run it locally:
+
+```sh
+go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+golangci-lint run
+```
+
+Enabled linters: `errcheck`, `govet`, `staticcheck`, `revive`, `gosec`, `misspell`. The full config is in `.golangci.yml`.
+
+## How to add a rule
+
+Each rule lives in two files under `rules/`:
+
+```
+rules/glNNN.go        # implementation
+rules/glNNN_test.go   # tests
+```
+
+And one fixture under `testdata/fixtures/`:
+
+```
+testdata/fixtures/glNNN-short-name.yml   # must be valid GitLab CI YAML
+```
+
+### Step 1 — assign an ID
+
+Pick the next available `GLNNN` number and open an issue describing what the rule detects and why it matters.
+
+### Step 2 — create the rule file
+
+```go
+// rules/gl006.go
+package rules
+
+import (
+    "github.com/glsec/glsec/internal/finding"
+    "github.com/glsec/glsec/internal/parser"
+    "gopkg.in/yaml.v3"
+)
+
+type gl006 struct{}
+
+var GL006 = &gl006{}
+
+func (r *gl006) ID() string { return "GL006" }
+
+func (r *gl006) Check(doc *yaml.Node, file string) []finding.Finding {
+    var findings []finding.Finding
+    mapping := parser.Unwrap(doc)
+
+    // ... inspect the YAML tree and append findings ...
+
+    return findings
+}
+```
+
+Key helpers in `internal/parser`:
+
+| Helper | What it does |
+|--------|-------------|
+| `parser.Unwrap(doc)` | Returns the top-level mapping node |
+| `parser.FindKey(node, "key")` | Returns the value node for a key, or nil |
+| `parser.FindKeyNode(node, "key")` | Returns both key and value nodes (use when you need the line number of the key itself) |
+| `parser.EachJob(doc, fn)` | Calls fn for each job definition, skipping reserved top-level keys |
+
+Every `finding.Finding` needs `RuleID`, `Severity`, `Message`, `File`, `Line`. Set `Col` when you have it.
+
+Severities: `finding.Error` (must fix), `finding.Warn` (should fix), `finding.Info` (informational).
+
+### Step 3 — register the rule
+
+Add it to `rules/all.go`:
+
+```go
+func All() []rule.Rule {
+    return []rule.Rule{GL001, GL002, GL003, GL004, GL005, GL006}
+}
+```
+
+### Step 4 — write tests
+
+```go
+// rules/gl006_test.go
+package rules
+
+import (
+    "testing"
+    "github.com/glsec/glsec/internal/parser"
+)
+
+func checkGL006(t *testing.T, src []byte) []finding.Finding {
+    t.Helper()
+    doc, err := parser.Parse(src, "test.yml")
+    if err != nil {
+        t.Fatalf("parse error: %v", err)
+    }
+    return GL006.Check(doc.Root, "test.yml")
+}
+
+func TestGL006_Flagged(t *testing.T) {
+    src := []byte(`...`)  // YAML that should trigger the rule
+    findings := checkGL006(t, src)
+    if len(findings) == 0 {
+        t.Fatal("expected at least one finding")
+    }
+}
+
+func TestGL006_Clean(t *testing.T) {
+    src := []byte(`...`)  // YAML that should be clean
+    findings := checkGL006(t, src)
+    if len(findings) != 0 {
+        t.Fatalf("expected no findings, got %v", findings)
+    }
+}
+```
+
+Cover the happy path (flagged), the clean path, and any edge cases (empty values, missing keys, nested structures).
+
+### Step 5 — add a fixture
+
+Create `testdata/fixtures/glNNN-short-name.yml` with a realistic example that exercises the rule. The fixture must be valid GitLab CI YAML — CI validates all fixtures against the GitLab CI JSON schema via `check-jsonschema`.
+
+### Step 6 — update the README
+
+Add a row to the rules table and a `### GLNNN` section with a flagged/safe example, following the pattern of the existing rules.
+
+## Commit and PR conventions
+
+- **Commit messages:** one short line (`feat: add GL006 rule`, `fix: GL002 false positive on quoted vars`). No body, no `Co-Authored-By` trailers.
+- **Branch names:** `<type>/issue-<N>-<slug>` — e.g. `feat/issue-13-gl006-rule`.
+- **PR descriptions:** write the context here — what the rule detects, why it matters, how to test it, any edge cases considered.
+- One branch per issue; one PR per branch.
+
+## Fixture validation
+
+Fixtures are validated in CI with:
+
+```sh
+pip install check-jsonschema
+check-jsonschema --builtin-schema gitlab-ci testdata/fixtures/*.yml
+```
+
+Run this locally before pushing if you add or change a fixture.
