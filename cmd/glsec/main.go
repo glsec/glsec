@@ -27,8 +27,10 @@ func main() {
 	configFlag := flag.String("config", config.DefaultFile, "path to .glsec.yml config file")
 	versionFlag := flag.Bool("version", false, "print version and exit")
 	gitlabVersionFlag := flag.String("gitlab-version", "", "target GitLab version, e.g. 16.0 (skips rules not available in that version)")
+	strictFlag := flag.Bool("strict", false, "treat warn findings as errors for the exit code (output severity is unchanged)")
+	noExitCodesFlag := flag.Bool("no-exit-codes", false, "always exit 0 on successful execution, regardless of findings")
 	flag.Usage = func() {
-		fmt.Fprintln(os.Stderr, "usage: glsec [--format text|json|sarif] [--config .glsec.yml] [--gitlab-version 16.0] [file]")
+		fmt.Fprintln(os.Stderr, "usage: glsec [--format text|json|sarif] [--config .glsec.yml] [--gitlab-version 16.0] [--strict] [--no-exit-codes] [file]")
 		fmt.Fprintln(os.Stderr, "       If no file is given, glsec looks for .gitlab-ci.yml in the current directory.")
 		flag.PrintDefaults()
 	}
@@ -54,6 +56,14 @@ func main() {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(2)
+	}
+
+	// CLI flags take precedence over config file values.
+	if *strictFlag {
+		cfg.Strict = true
+	}
+	if *noExitCodesFlag {
+		cfg.NoExitCodes = true
 	}
 
 	rules.GL016.SetTrustedHosts(cfg.TrustedHosts)
@@ -123,7 +133,15 @@ func main() {
 		os.Exit(2)
 	}
 
-	if len(findings) > 0 {
-		os.Exit(1)
+	if cfg.NoExitCodes {
+		return
+	}
+	for _, f := range findings {
+		if f.Severity == finding.Error {
+			os.Exit(1)
+		}
+		if cfg.Strict && f.Severity == finding.Warn {
+			os.Exit(1)
+		}
 	}
 }

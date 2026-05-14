@@ -60,9 +60,16 @@ glsec --format sarif .gitlab-ci.yml > gl.sarif
 
 | Code | Meaning |
 |------|---------|
-| 0 | No findings |
-| 1 | One or more findings |
+| 0 | No `error`-severity findings (warn-only findings exit 0 by default) |
+| 1 | One or more `error` findings; or any finding when `--strict` is set |
 | 2 | Usage error or file could not be parsed |
+
+Use `--strict` to treat `warn` findings as hard failures (exit 1). Use `--no-exit-codes` to always exit 0 regardless of findings (advisory/informational mode). Both flags can also be set in `.glsec.yml`:
+
+```yaml
+strict: true        # warn findings cause exit 1
+no-exit-codes: true # never exit 1 (overrides strict)
+```
 
 ## Rules
 

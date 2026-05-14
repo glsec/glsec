@@ -58,6 +58,11 @@ type Config struct {
 	GitLabVersion string `yaml:"gitlab-version"`
 	// TrustedHosts is a list of hostnames or CIDRs whose HTTP URLs are never flagged.
 	TrustedHosts []string `yaml:"trusted-hosts"`
+	// Strict makes warn findings count as errors for exit-code purposes.
+	Strict bool `yaml:"strict"`
+	// NoExitCodes makes glsec always exit 0 on successful execution,
+	// regardless of findings. Useful for advisory runs.
+	NoExitCodes bool `yaml:"no-exit-codes"`
 }
 
 // Default returns a Config with no overrides.
@@ -122,6 +127,8 @@ var allowedTopLevelKeys = map[string]bool{
 	"min-severity":   true,
 	"gitlab-version": true,
 	"trusted-hosts":  true,
+	"strict":         true,
+	"no-exit-codes":  true,
 }
 
 func checkUnknownKeys(mapping *yaml.Node, path string) error {

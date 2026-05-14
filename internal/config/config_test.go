@@ -189,6 +189,27 @@ func TestParse_GitLabVersion_Absent(t *testing.T) {
 	}
 }
 
+func TestParse_Strict(t *testing.T) {
+	cfg := parseStr(t, `strict: true`)
+	if !cfg.Strict {
+		t.Error("expected Strict to be true")
+	}
+}
+
+func TestParse_NoExitCodes(t *testing.T) {
+	cfg := parseStr(t, `no-exit-codes: true`)
+	if !cfg.NoExitCodes {
+		t.Error("expected NoExitCodes to be true")
+	}
+}
+
+func TestParse_StrictAndNoExitCodes_UnknownKey(t *testing.T) {
+	_, err := parse([]byte("strictmode: true\n"), "test.yml")
+	if err == nil {
+		t.Error("expected error for unknown top-level key 'strictmode'")
+	}
+}
+
 func TestLoad_FromFile(t *testing.T) {
 	dir := t.TempDir()
 	content := []byte("rules:\n  GL001: off\nmin-severity: warn\n")
