@@ -1,0 +1,15 @@
+stages:
+  - build
+  - test
+
+build:
+  stage: build
+  image: node:20
+  script:
+    - npm install
+
+test:
+  stage: test
+  image: ruby:3.3
+  script:
+    - bundle install
