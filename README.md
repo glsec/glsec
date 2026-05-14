@@ -73,6 +73,8 @@ glsec --format sarif .gitlab-ci.yml > gl.sarif
 | [GL003](docs/rules/GL003.md) | `error` | Remote `include:` with mutable or missing `ref` |
 | [GL004](docs/rules/GL004.md) | `warn`  | `CI_JOB_TOKEN` forwarded to a non-GitLab host |
 | [GL005](docs/rules/GL005.md) | `warn`  | Sensitive file patterns in `artifacts:` or missing `expire_in` |
+| [GL006](docs/rules/GL006.md) | `error` | Hardcoded secret in `variables:` block |
+| [GL007](docs/rules/GL007.md) | `error` | CI variable interpolation in `image:` reference |
 
 Each rule page contains the full risk description, trigger examples, safe alternatives, and detection notes.
 
