@@ -65,9 +65,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: zizmorcore/zizmor-action@v1
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install zizmor
+        run: pip install zizmor
+      - name: Run zizmor
+        run: zizmor --gh-token "${{ secrets.GITHUB_TOKEN }}" .github/workflows/
 
   validate-fixtures:
     name: Validate GitLab CI fixtures

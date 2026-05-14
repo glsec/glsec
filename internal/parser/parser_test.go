@@ -86,7 +86,7 @@ func TestEachJob(t *testing.T) {
 	doc, _ := Parse(sampleCI, "test.yml")
 
 	var jobs []string
-	EachJob(doc.Root, func(name *yaml.Node, job *yaml.Node) {
+	EachJob(doc.Root, func(name *yaml.Node, _ *yaml.Node) {
 		jobs = append(jobs, name.Value)
 	})
 
@@ -111,7 +111,7 @@ func TestEachJob_SkipsReservedKeys(t *testing.T) {
 func TestEachJob_LineNumbers(t *testing.T) {
 	doc, _ := Parse(sampleCI, "test.yml")
 
-	EachJob(doc.Root, func(name *yaml.Node, job *yaml.Node) {
+	EachJob(doc.Root, func(name *yaml.Node, _ *yaml.Node) {
 		if name.Line == 0 {
 			t.Errorf("job %q has zero line number", name.Value)
 		}
