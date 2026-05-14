@@ -22,6 +22,8 @@ type Config struct {
 	// GitLabVersion is the target GitLab version (e.g. "16.0").
 	// Rules requiring a higher version are skipped.
 	GitLabVersion string `yaml:"gitlab-version"`
+	// TrustedHosts is a list of hostnames or CIDRs whose HTTP URLs are never flagged.
+	TrustedHosts []string `yaml:"trusted-hosts"`
 }
 
 // Default returns a Config with no overrides.
@@ -85,6 +87,7 @@ var allowedTopLevelKeys = map[string]bool{
 	"rules":          true,
 	"min-severity":   true,
 	"gitlab-version": true,
+	"trusted-hosts":  true,
 }
 
 func checkUnknownKeys(mapping *yaml.Node, path string) error {
