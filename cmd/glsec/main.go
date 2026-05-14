@@ -56,6 +56,8 @@ func main() {
 		os.Exit(2)
 	}
 
+	rules.GL016.SetTrustedHosts(cfg.TrustedHosts)
+
 	// --gitlab-version flag overrides the config file value.
 	gitlabVersionStr := cfg.GitLabVersion
 	if *gitlabVersionFlag != "" {

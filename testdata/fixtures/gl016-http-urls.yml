@@ -1,0 +1,16 @@
+include:
+  - remote: "https://templates.example.com/ci.yml"
+
+stages:
+  - build
+
+variables:
+  REGISTRY_URL: "http://registry.example.com"
+
+build:
+  stage: build
+  image: node:20.11.0
+  script:
+    - npm ci
+    - curl http://install.example.com/tool.sh -o tool.sh
+    - bash tool.sh

@@ -83,6 +83,7 @@ glsec --format sarif .gitlab-ci.yml > gl.sarif
 | [GL013](docs/rules/GL013.md) | `warn`  | Production deploy job has no `rules:` or `only:` branch restriction |
 | [GL014](docs/rules/GL014.md) | `warn`  | `dotenv` artifact captures all environment variables including secrets (GitLab ≥ 12.9) |
 | [GL015](docs/rules/GL015.md) | `warn`  | Docker image tag built from user-controlled variable (`$CI_COMMIT_REF_SLUG` etc.) |
+| [GL016](docs/rules/GL016.md) | varies  | HTTP instead of HTTPS (`include:remote`, scripts, variables) |
 
 Each rule page contains the full risk description, trigger examples, safe alternatives, and detection notes.
 
