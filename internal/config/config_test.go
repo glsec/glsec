@@ -203,6 +203,20 @@ func TestParse_NoExitCodes(t *testing.T) {
 	}
 }
 
+func TestParse_ExcludePaths(t *testing.T) {
+	cfg := parseStr(t, `
+exclude_paths:
+  - legacy/.gitlab-ci.yml
+  - vendor/
+`)
+	if len(cfg.ExcludePaths) != 2 {
+		t.Fatalf("expected 2 exclude paths, got %d", len(cfg.ExcludePaths))
+	}
+	if cfg.ExcludePaths[0] != "legacy/.gitlab-ci.yml" {
+		t.Errorf("unexpected first path: %q", cfg.ExcludePaths[0])
+	}
+}
+
 func TestParse_StrictAndNoExitCodes_UnknownKey(t *testing.T) {
 	_, err := parse([]byte("strictmode: true\n"), "test.yml")
 	if err == nil {

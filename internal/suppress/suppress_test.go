@@ -1,6 +1,7 @@
 package suppress
 
 import (
+	"os"
 	"testing"
 
 	"gopkg.in/yaml.v3"
@@ -90,5 +91,51 @@ func TestIsSuppressed_MissingLine(t *testing.T) {
 	m := Map{}
 	if m.IsSuppressed(99, "GL001") {
 		t.Error("should not be suppressed on a line not in the map")
+	}
+}
+
+func TestMerge(t *testing.T) {
+	a := Map{1: {"GL001": "reason a"}}
+	b := Map{1: {"GL002": ""}, 2: {"GL003": ""}}
+	a.Merge(b)
+	if !a.IsSuppressed(1, "GL001") {
+		t.Error("GL001 on line 1 should still be suppressed after merge")
+	}
+	if !a.IsSuppressed(1, "GL002") {
+		t.Error("GL002 on line 1 should be suppressed after merge")
+	}
+	if !a.IsSuppressed(2, "GL003") {
+		t.Error("GL003 on line 2 should be suppressed after merge")
+	}
+}
+
+func TestLoadIgnoreFile_Basic(t *testing.T) {
+	content := "# comment\n.gitlab-ci.yml:7 GL001\n.gitlab-ci.yml:14 GL002\nother.yml:3 GL001\n"
+	f, err := os.CreateTemp(t.TempDir(), "glsec-ignore-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString(content); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+
+	m := LoadIgnoreFile(f.Name(), ".gitlab-ci.yml")
+	if !m.IsSuppressed(7, "GL001") {
+		t.Error("GL001 on line 7 should be suppressed")
+	}
+	if !m.IsSuppressed(14, "GL002") {
+		t.Error("GL002 on line 14 should be suppressed")
+	}
+	// Entry for other.yml should not appear for .gitlab-ci.yml
+	if m.IsSuppressed(3, "GL001") {
+		t.Error("GL001 on line 3 from other.yml should not be suppressed for .gitlab-ci.yml")
+	}
+}
+
+func TestLoadIgnoreFile_Missing(t *testing.T) {
+	m := LoadIgnoreFile("/nonexistent/.glsec-ignore", ".gitlab-ci.yml")
+	if len(m) != 0 {
+		t.Error("expected empty map for missing ignore file")
 	}
 }
