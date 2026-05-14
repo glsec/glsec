@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/glsec/glsec/internal/config"
 	"github.com/glsec/glsec/internal/finding"
 	"github.com/glsec/glsec/internal/output"
 	"github.com/glsec/glsec/internal/parser"
@@ -21,9 +22,10 @@ var (
 
 func main() {
 	formatFlag := flag.String("format", "text", "output format: text, json, sarif")
+	configFlag := flag.String("config", config.DefaultFile, "path to .glsec.yml config file")
 	versionFlag := flag.Bool("version", false, "print version and exit")
 	flag.Usage = func() {
-		fmt.Fprintln(os.Stderr, "usage: glsec [--format text|json|sarif] <file>")
+		fmt.Fprintln(os.Stderr, "usage: glsec [--format text|json|sarif] [--config .glsec.yml] <file>")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
@@ -41,6 +43,12 @@ func main() {
 	format, ok := output.ParseFormat(*formatFlag)
 	if !ok {
 		fmt.Fprintf(os.Stderr, "unknown format %q — use text, json, or sarif\n", *formatFlag)
+		os.Exit(2)
+	}
+
+	cfg, err := config.Load(*configFlag)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(2)
 	}
 
@@ -62,7 +70,15 @@ func main() {
 
 	var findings []finding.Finding
 	for _, rule := range rules.All() {
-		findings = append(findings, rule.Check(doc.Root, file)...)
+		if !cfg.RuleEnabled(rule.ID()) {
+			continue
+		}
+		for _, f := range rule.Check(doc.Root, file) {
+			f = cfg.ApplySeverity(f)
+			if cfg.AboveMinSeverity(f) {
+				findings = append(findings, f)
+			}
+		}
 	}
 
 	if err := output.Write(os.Stdout, format, findings); err != nil {
