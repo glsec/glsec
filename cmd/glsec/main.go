@@ -25,7 +25,8 @@ func main() {
 	configFlag := flag.String("config", config.DefaultFile, "path to .glsec.yml config file")
 	versionFlag := flag.Bool("version", false, "print version and exit")
 	flag.Usage = func() {
-		fmt.Fprintln(os.Stderr, "usage: glsec [--format text|json|sarif] [--config .glsec.yml] <file>")
+		fmt.Fprintln(os.Stderr, "usage: glsec [--format text|json|sarif] [--config .glsec.yml] [file]")
+		fmt.Fprintln(os.Stderr, "       If no file is given, glsec looks for .gitlab-ci.yml in the current directory.")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
@@ -35,7 +36,7 @@ func main() {
 		return
 	}
 
-	if flag.NArg() < 1 {
+	if flag.NArg() > 1 {
 		flag.Usage()
 		os.Exit(2)
 	}
@@ -53,6 +54,15 @@ func main() {
 	}
 
 	file := flag.Arg(0)
+	if file == "" {
+		const defaultCI = ".gitlab-ci.yml"
+		if _, statErr := os.Stat(defaultCI); statErr != nil {
+			fmt.Fprintf(os.Stderr, "error: no .gitlab-ci.yml found in current directory — pass a file path explicitly\n")
+			os.Exit(2)
+		}
+		file = defaultCI
+	}
+
 	doc, err := parser.ParseFile(file)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
