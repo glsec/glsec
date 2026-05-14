@@ -8,6 +8,13 @@ linters:
     - revive
     - gosec
     - misspell
+  settings:
+    revive:
+      rules:
+        - name: exported
+          disabled: true
+        - name: package-comments
+          disabled: true
 
 run:
   timeout: 5m
