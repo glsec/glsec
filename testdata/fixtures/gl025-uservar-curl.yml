@@ -1,0 +1,8 @@
+stages:
+  - notify
+
+notify:
+  stage: notify
+  script:
+    - curl https://hooks.example.com/notify?branch=$CI_COMMIT_REF_NAME
+    - curl -d "msg=$CI_MERGE_REQUEST_TITLE" https://api.example.com/comment
