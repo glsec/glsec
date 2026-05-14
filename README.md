@@ -93,6 +93,7 @@ glsec --format sarif .gitlab-ci.yml > gl.sarif
 | [GL023](docs/rules/GL023.md) | `warn`  | Lockfile not enforced (`npm install` instead of `npm ci`, `yarn install` without `--frozen-lockfile`, etc.) |
 | [GL024](docs/rules/GL024.md) | `warn`  | Shell pipe without `set -o pipefail` — failures in all but the last command are silently ignored |
 | [GL025](docs/rules/GL025.md) | `warn`  | `curl`/`wget` uses a user-controlled CI variable — attacker can redirect the request to an arbitrary host |
+| [GL026](docs/rules/GL026.md) | `warn`  | `git clone`/`checkout` uses a mutable ref (branch or tag) instead of a pinned commit SHA |
 
 Each rule page contains the full risk description, trigger examples, safe alternatives, and detection notes.
 

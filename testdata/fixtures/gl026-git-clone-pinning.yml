@@ -1,0 +1,10 @@
+stages:
+  - build
+
+build:
+  stage: build
+  script:
+    - git clone --branch main https://github.com/org/tools.git
+    - git clone --depth 1 --branch v2.3 https://github.com/org/lib.git
+    - git clone https://github.com/org/shared-scripts.git
+    - git checkout develop
