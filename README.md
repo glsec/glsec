@@ -82,6 +82,7 @@ glsec --format sarif .gitlab-ci.yml > gl.sarif
 | [GL012](docs/rules/GL012.md) | `warn`  | `when: always` on a deploy/release job bypasses upstream quality gates |
 | [GL013](docs/rules/GL013.md) | `warn`  | Production deploy job has no `rules:` or `only:` branch restriction |
 | [GL014](docs/rules/GL014.md) | `warn`  | `dotenv` artifact captures all environment variables including secrets (GitLab ≥ 12.9) |
+| [GL015](docs/rules/GL015.md) | `warn`  | Docker image tag built from user-controlled variable (`$CI_COMMIT_REF_SLUG` etc.) |
 
 Each rule page contains the full risk description, trigger examples, safe alternatives, and detection notes.
 
