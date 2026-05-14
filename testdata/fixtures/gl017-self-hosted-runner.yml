@@ -1,0 +1,16 @@
+stages:
+  - build
+  - deploy
+
+build:
+  stage: build
+  image: golang:1.24-alpine
+  script:
+    - go build ./...
+
+deploy-prod:
+  stage: deploy
+  environment: production
+  script:
+    - ./deploy.sh
+  # no tags: — runs on any available runner
