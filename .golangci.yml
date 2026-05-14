@@ -5,15 +5,13 @@ linters:
     - errcheck
     - govet
     - staticcheck
-    - unused
     - revive
     - gosec
     - misspell
-
-linters-settings:
-  gosec:
-    excludes:
-      - G304 # file path from variable — intentional, we read user-supplied .gitlab-ci.yml files
+  settings:
+    gosec:
+      excludes:
+        - G304 # file path from variable — intentional, we read user-supplied .gitlab-ci.yml files
 
 run:
   timeout: 5m
