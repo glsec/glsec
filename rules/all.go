@@ -6,5 +6,6 @@ func All() []rule.Rule {
 	return []rule.Rule{
 		GL001,
 		GL002,
+		GL003,
 	}
 }
