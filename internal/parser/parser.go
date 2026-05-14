@@ -65,6 +65,14 @@ func FindKeyNode(node *yaml.Node, key string) (keyNode, valueNode *yaml.Node) {
 	return nil, nil
 }
 
+// Unwrap returns the first content node of a DocumentNode, or the node itself.
+func Unwrap(node *yaml.Node) *yaml.Node {
+	if node.Kind == yaml.DocumentNode && len(node.Content) > 0 {
+		return node.Content[0]
+	}
+	return node
+}
+
 // reservedKeys are top-level GitLab CI keys that are configuration, not job definitions.
 var reservedKeys = map[string]bool{
 	"stages":        true,
