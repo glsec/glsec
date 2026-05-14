@@ -1,0 +1,17 @@
+stages:
+  - test
+  - deploy
+
+sast:
+  stage: test
+  image: node:20.11.0
+  script:
+    - npm audit
+
+deploy-production:
+  stage: deploy
+  when: always
+  environment: production
+  image: alpine:3.19
+  script:
+    - ./deploy.sh
