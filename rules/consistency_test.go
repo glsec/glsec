@@ -29,7 +29,7 @@ func TestRuleConsistency(t *testing.T) {
 func checkDocFile(t *testing.T, id string) {
 	t.Helper()
 	path := filepath.Join("..", "docs", "rules", id+".md")
-	content, err := os.ReadFile(path)
+	content, err := os.ReadFile(path) //nolint:gosec // G304: test reads known-safe local paths
 	if err != nil {
 		t.Errorf("missing docs/rules/%s.md", id)
 		return
