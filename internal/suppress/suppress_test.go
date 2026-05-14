@@ -118,7 +118,7 @@ func TestLoadIgnoreFile_Basic(t *testing.T) {
 	if _, err := f.WriteString(content); err != nil {
 		t.Fatal(err)
 	}
-	f.Close()
+	_ = f.Close()
 
 	m := LoadIgnoreFile(f.Name(), ".gitlab-ci.yml")
 	if !m.IsSuppressed(7, "GL001") {
