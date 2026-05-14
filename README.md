@@ -84,6 +84,7 @@ glsec --format sarif .gitlab-ci.yml > gl.sarif
 | [GL014](docs/rules/GL014.md) | `warn`  | `dotenv` artifact captures all environment variables including secrets (GitLab ≥ 12.9) |
 | [GL015](docs/rules/GL015.md) | `warn`  | Docker image tag built from user-controlled variable (`$CI_COMMIT_REF_SLUG` etc.) |
 | [GL016](docs/rules/GL016.md) | varies  | HTTP instead of HTTPS (`include:remote`, scripts, variables) |
+| [GL017](docs/rules/GL017.md) | `warn`  | Deploy/publish job has no `tags:` — can run on any runner including untrusted self-hosted |
 
 Each rule page contains the full risk description, trigger examples, safe alternatives, and detection notes.
 
