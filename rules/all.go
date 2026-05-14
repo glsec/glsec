@@ -22,6 +22,7 @@ func All() []rule.Rule {
 		GL016,
 		GL017,
 		GL018,
+		GL019,
 		GL020,
 		GL021,
 	}
