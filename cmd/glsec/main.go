@@ -9,6 +9,7 @@ import (
 	"github.com/glsec/glsec/internal/finding"
 	"github.com/glsec/glsec/internal/output"
 	"github.com/glsec/glsec/internal/parser"
+	"github.com/glsec/glsec/internal/suppress"
 	"github.com/glsec/glsec/internal/validate"
 	"github.com/glsec/glsec/rules"
 )
@@ -78,12 +79,17 @@ func main() {
 		os.Exit(2)
 	}
 
+	suppressMap := suppress.Build(doc.Root)
+
 	var findings []finding.Finding
 	for _, rule := range rules.All() {
 		if !cfg.RuleEnabled(rule.ID()) {
 			continue
 		}
 		for _, f := range rule.Check(doc.Root, file) {
+			if suppressMap.IsSuppressed(f.Line, f.RuleID) {
+				continue
+			}
 			f = cfg.ApplySeverity(f)
 			if cfg.AboveMinSeverity(f) {
 				findings = append(findings, f)
