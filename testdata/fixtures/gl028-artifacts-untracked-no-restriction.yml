@@ -1,0 +1,5 @@
+build:
+  script:
+    - make build
+  artifacts:
+    untracked: true
