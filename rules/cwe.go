@@ -31,6 +31,7 @@ var cweIDs = map[string]string{
 	"GL027": "CWE-532",
 	"GL028": "CWE-538",
 	"GL029": "CWE-214",
+	"GL030": "CWE-295",
 	"GL031": "CWE-319",
 	"GL033": "CWE-532",
 	"GL038": "CWE-798",
@@ -40,6 +41,7 @@ var cweIDs = map[string]string{
 var cweNames = map[string]string{
 	"CWE-78":   "Improper Neutralization of Special Elements used in an OS Command ('OS Command Injection')",
 	"CWE-214":  "Invocation of Process Using Visible Sensitive Information",
+	"CWE-295":  "Improper Certificate Validation",
 	"CWE-284":  "Improper Access Control",
 	"CWE-319":  "Cleartext Transmission of Sensitive Information",
 	"CWE-362":  "Concurrent Execution using Shared Resource with Improper Synchronization ('Race Condition')",

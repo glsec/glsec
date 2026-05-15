@@ -1,0 +1,3 @@
+before_script:
+  - mkdir -p ~/.ssh
+  - ssh-keyscan -H 'deploy.example.com' >> ~/.ssh/known_hosts
