@@ -19,14 +19,14 @@ func TestGL035(t *testing.T) {
     - git push https://ci:${TRANSLATION_TOKEN}@gitlab.com/org/repo.git`,
 			wantHits: 1,
 		},
-		{
+		{ //nolint:gosec // G101: test case for detecting embedded credentials, not real secrets
 			name: "git clone with embedded credentials",
 			yaml: `build:
   script:
     - git clone https://user:password@github.com/org/repo.git`,
 			wantHits: 1,
 		},
-		{
+		{ //nolint:gosec // G101: test case for detecting embedded credentials, not real secrets
 			name: "git fetch with embedded token",
 			yaml: `sync:
   script:
@@ -54,7 +54,7 @@ func TestGL035(t *testing.T) {
     - git clone git@github.com:org/repo.git`,
 			wantHits: 0,
 		},
-		{
+		{ //nolint:gosec // G101: test case for detecting embedded credentials, not real secrets
 			name: "unrelated https URL — safe",
 			yaml: `build:
   script:
