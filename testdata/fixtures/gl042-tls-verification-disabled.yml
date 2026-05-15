@@ -1,0 +1,3 @@
+build:
+  script:
+    - curl -k https://internal.example.com/artifact.tar.gz
