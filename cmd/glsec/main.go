@@ -129,6 +129,9 @@ func main() {
 		if !cfg.RuleEnabled(rule.ID()) {
 			continue
 		}
+		if !cfg.OWASPEnabled(rules.OWASPCategories(rule.ID())) {
+			continue
+		}
 		if !rules.EnabledFor(rule.ID(), gitlabVersion) {
 			continue
 		}
