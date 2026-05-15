@@ -15,6 +15,7 @@ var ruleIDPattern = regexp.MustCompile(`^GL\d{3}$`)
 
 func TestRuleConsistency(t *testing.T) {
 	checkNoDuplicateIDs(t)
+	checkCWENamesComplete(t)
 
 	rulesOverview := loadRulesOverview(t)
 
@@ -110,8 +111,27 @@ func checkOWASPMapping(t *testing.T, id string) {
 
 func checkCWEMapping(t *testing.T, id string) {
 	t.Helper()
-	if CWEID(id) == "" {
+	cweID := CWEID(id)
+	if cweID == "" {
 		t.Errorf("no CWE mapping for %s (add to rules/cwe.go)", id)
+		return
+	}
+	if CWEName(cweID) == "" {
+		t.Errorf("CWE %s for %s has no name entry in cweNames (add to rules/cwe.go)", cweID, id)
+	}
+}
+
+// checkCWENamesComplete verifies every CWE ID referenced in cweIDs has a name in cweNames.
+func checkCWENamesComplete(t *testing.T) {
+	t.Helper()
+	for _, r := range All() {
+		cweID := CWEID(r.ID())
+		if cweID == "" {
+			continue
+		}
+		if CWEName(cweID) == "" {
+			t.Errorf("CWE %s (used by %s) has no name in cweNames map (add to rules/cwe.go)", cweID, r.ID())
+		}
 	}
 }
 
