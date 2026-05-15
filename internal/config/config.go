@@ -66,6 +66,12 @@ type Config struct {
 	// ExcludePaths is a list of file globs to skip entirely.
 	// Supports filepath.Match patterns and directory suffixes (/ or /**).
 	ExcludePaths []string `yaml:"exclude_paths"`
+	// OWASP is an allowlist of OWASP CICD-SEC category IDs. When non-empty,
+	// only rules belonging to one of these categories are run.
+	OWASP []string `yaml:"owasp"`
+	// OWASPExclude is a denylist of OWASP CICD-SEC category IDs. Rules
+	// belonging to any listed category are skipped.
+	OWASPExclude []string `yaml:"owasp_exclude"`
 }
 
 // Default returns a Config with no overrides.
@@ -133,6 +139,8 @@ var allowedTopLevelKeys = map[string]bool{
 	"strict":         true,
 	"no-exit-codes":  true,
 	"exclude_paths":  true,
+	"owasp":          true,
+	"owasp_exclude":  true,
 }
 
 func checkUnknownKeys(mapping *yaml.Node, path string) error {
@@ -171,8 +179,22 @@ func (c *Config) validate(path string) error {
 			return fmt.Errorf("%s: gitlab-version: %w", path, err)
 		}
 	}
+	for _, cat := range append(c.OWASP, c.OWASPExclude...) {
+		if !validOWASPCategory(cat) {
+			return fmt.Errorf("%s: invalid OWASP category %q (expected CICD-SEC-1 through CICD-SEC-10)", path, cat)
+		}
+	}
 	return nil
 }
+
+var validOWASPCategories = map[string]bool{
+	"CICD-SEC-1": true, "CICD-SEC-2": true, "CICD-SEC-3": true,
+	"CICD-SEC-4": true, "CICD-SEC-5": true, "CICD-SEC-6": true,
+	"CICD-SEC-7": true, "CICD-SEC-8": true, "CICD-SEC-9": true,
+	"CICD-SEC-10": true,
+}
+
+func validOWASPCategory(s string) bool { return validOWASPCategories[s] }
 
 // RuleEnabled returns false if the rule is set to "off" in the config.
 func (c *Config) RuleEnabled(id string) bool {
@@ -196,6 +218,31 @@ var severityLevel = map[finding.Severity]int{
 	finding.Error: 3,
 	finding.Warn:  2,
 	finding.Info:  1,
+}
+
+// OWASPEnabled returns false if categories indicates the rule should be
+// skipped based on the owasp / owasp_exclude config fields.
+// categories is the list of OWASP categories for the rule (from rules.OWASPCategories).
+func (c *Config) OWASPEnabled(categories []string) bool {
+	if len(c.OWASP) > 0 {
+		for _, cat := range categories {
+			for _, allowed := range c.OWASP {
+				if cat == allowed {
+					goto allowlistOK
+				}
+			}
+		}
+		return false
+	allowlistOK:
+	}
+	for _, cat := range categories {
+		for _, excluded := range c.OWASPExclude {
+			if cat == excluded {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // AboveMinSeverity returns true if f meets or exceeds the configured

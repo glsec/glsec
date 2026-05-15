@@ -242,3 +242,62 @@ func TestLoad_FromFile(t *testing.T) {
 		t.Errorf("expected min-severity warn, got %q", cfg.MinSeverity)
 	}
 }
+
+func TestOWASPEnabled_Allowlist(t *testing.T) {
+	cfg := parseStr(t, `
+owasp:
+  - CICD-SEC-6
+`)
+	if !cfg.OWASPEnabled([]string{"CICD-SEC-6"}) {
+		t.Error("CICD-SEC-6 should be enabled when in allowlist")
+	}
+	if cfg.OWASPEnabled([]string{"CICD-SEC-3"}) {
+		t.Error("CICD-SEC-3 should be disabled when not in allowlist")
+	}
+	if !cfg.OWASPEnabled([]string{"CICD-SEC-3", "CICD-SEC-6"}) {
+		t.Error("rule with multiple categories should pass if any is in allowlist")
+	}
+}
+
+func TestOWASPEnabled_Denylist(t *testing.T) {
+	cfg := parseStr(t, `
+owasp_exclude:
+  - CICD-SEC-7
+`)
+	if cfg.OWASPEnabled([]string{"CICD-SEC-7"}) {
+		t.Error("CICD-SEC-7 should be disabled when in denylist")
+	}
+	if !cfg.OWASPEnabled([]string{"CICD-SEC-6"}) {
+		t.Error("CICD-SEC-6 should be enabled when not in denylist")
+	}
+}
+
+func TestOWASPEnabled_Empty(t *testing.T) {
+	cfg := Default()
+	if !cfg.OWASPEnabled([]string{"CICD-SEC-6"}) {
+		t.Error("all categories should be enabled with no filter set")
+	}
+	if !cfg.OWASPEnabled(nil) {
+		t.Error("rule with no category should be enabled with no filter set")
+	}
+}
+
+func TestOWASPEnabled_AllowlistWithNoCategory(t *testing.T) {
+	cfg := parseStr(t, `
+owasp:
+  - CICD-SEC-6
+`)
+	if cfg.OWASPEnabled(nil) {
+		t.Error("rule with no category should be excluded when allowlist is set")
+	}
+}
+
+func TestParse_InvalidOWASPCategory(t *testing.T) {
+	_, err := parse([]byte(`
+owasp:
+  - CICD-SEC-99
+`), "test.yml")
+	if err == nil {
+		t.Error("expected error for invalid OWASP category")
+	}
+}
