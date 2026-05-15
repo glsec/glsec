@@ -27,6 +27,7 @@ func (r *gl019) Check(doc *yaml.Node, file string) []finding.Finding {
 		findings = append(findings, finding.Finding{
 			RuleID:   "GL019",
 			Severity: finding.Warn,
+			Job:      name.Value,
 			Message: fmt.Sprintf(
 				"job %q deploys or publishes but has no resource_group: — concurrent pipeline runs can cause race conditions or partial deploys",
 				name.Value,

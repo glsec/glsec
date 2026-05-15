@@ -33,6 +33,7 @@ func (r *gl010) Check(doc *yaml.Node, file string) []finding.Finding {
 		findings = append(findings, finding.Finding{
 			RuleID:   "GL010",
 			Severity: finding.Warn,
+			Job:      name.Value,
 			Message: fmt.Sprintf(
 				"trigger job %q forwards all pipeline variables to the downstream pipeline — masked variables are not re-masked and may be exposed in downstream job logs",
 				name.Value,

@@ -30,7 +30,7 @@ var (
 func (r *gl021) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
 
-	parser.EachJob(doc, func(_ *yaml.Node, job *yaml.Node) {
+	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
 		for _, key := range []string{"before_script", "script", "after_script"} {
 			node := parser.FindKey(job, key)
 			if node == nil || node.Kind != yaml.SequenceNode {
@@ -55,6 +55,7 @@ func (r *gl021) Check(doc *yaml.Node, file string) []finding.Finding {
 				findings = append(findings, finding.Finding{
 					RuleID:   "GL021",
 					Severity: finding.Warn,
+					Job:      name.Value,
 					Message:  fmt.Sprintf("script prints secret variable %s — value may appear in job logs", match),
 					File:     file,
 					Line:     item.Line,

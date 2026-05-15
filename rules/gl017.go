@@ -32,6 +32,7 @@ func (r *gl017) Check(doc *yaml.Node, file string) []finding.Finding {
 		findings = append(findings, finding.Finding{
 			RuleID:   "GL017",
 			Severity: finding.Warn,
+			Job:      name.Value,
 			Message: fmt.Sprintf(
 				"job %q deploys or publishes but has no tags: — it can run on any available runner, including untrusted self-hosted runners",
 				name.Value,

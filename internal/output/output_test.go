@@ -14,6 +14,12 @@ var testFindings = []finding.Finding{
 	{RuleID: "GL002", Severity: finding.Warn, File: "ci.yml", Line: 12, Message: "Unquoted variable $CI_COMMIT_REF_NAME"},
 }
 
+var testFindingsWithJob = []finding.Finding{
+	{RuleID: "GL024", Severity: finding.Warn, Job: "phpmd", File: ".gitlab-ci.yml", Line: 52, Message: "script uses a pipe without set -o pipefail"},
+	{RuleID: "GL024", Severity: finding.Warn, Job: "e2e", File: ".gitlab-ci.yml", Line: 170, Message: "script uses a pipe without set -o pipefail"},
+	{RuleID: "GL001", Severity: finding.Error, File: ".gitlab-ci.yml", Line: 1, Message: `image "node:latest" uses mutable tag`},
+}
+
 func TestWriteText(t *testing.T) {
 	var buf bytes.Buffer
 	if err := Write(&buf, FormatText, testFindings); err != nil {
@@ -101,6 +107,46 @@ func TestWriteSARIF(t *testing.T) {
 	loc := results[0].Locations[0].PhysicalLocation
 	if loc.ArtifactLocation.URI != "ci.yml" || loc.Region.StartLine != 4 {
 		t.Errorf("unexpected location: %+v", loc)
+	}
+}
+
+func TestWriteText_WithJob(t *testing.T) {
+	var buf bytes.Buffer
+	if err := Write(&buf, FormatText, testFindingsWithJob); err != nil {
+		t.Fatal(err)
+	}
+	got := buf.String()
+	if !strings.Contains(got, "[phpmd]") {
+		t.Errorf("expected [phpmd] in output: %q", got)
+	}
+	if !strings.Contains(got, "[e2e]") {
+		t.Errorf("expected [e2e] in output: %q", got)
+	}
+	// Finding without a job should not contain brackets around a job name.
+	lines := strings.Split(strings.TrimRight(got, "\n"), "\n")
+	last := lines[len(lines)-1]
+	if strings.Contains(last, "[") && strings.Contains(last, "]") {
+		t.Errorf("finding without job should not render brackets, got: %q", last)
+	}
+}
+
+func TestWriteJSON_WithJob(t *testing.T) {
+	var buf bytes.Buffer
+	if err := Write(&buf, FormatJSON, testFindingsWithJob); err != nil {
+		t.Fatal(err)
+	}
+	var out jsonOutput
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if out.Findings[0].Job != "phpmd" {
+		t.Errorf("expected job=phpmd, got %q", out.Findings[0].Job)
+	}
+	if out.Findings[1].Job != "e2e" {
+		t.Errorf("expected job=e2e, got %q", out.Findings[1].Job)
+	}
+	if out.Findings[2].Job != "" {
+		t.Errorf("expected empty job for no-job finding, got %q", out.Findings[2].Job)
 	}
 }
 

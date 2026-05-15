@@ -44,8 +44,11 @@ func (r *gl006) Check(doc *yaml.Node, file string) []finding.Finding {
 		findings = append(findings, checkVariablesNode(parser.FindKey(def, "variables"), file)...)
 	}
 
-	parser.EachJob(doc, func(_ *yaml.Node, job *yaml.Node) {
-		findings = append(findings, checkVariablesNode(parser.FindKey(job, "variables"), file)...)
+	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
+		for _, f := range checkVariablesNode(parser.FindKey(job, "variables"), file) {
+			f.Job = name.Value
+			findings = append(findings, f)
+		}
 	})
 
 	return findings

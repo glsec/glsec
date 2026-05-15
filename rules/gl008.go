@@ -47,6 +47,7 @@ func (r *gl008) Check(doc *yaml.Node, file string) []finding.Finding {
 			findings = append(findings, finding.Finding{
 				RuleID:   "GL008",
 				Severity: finding.Warn,
+				Job:      name.Value,
 				Message: fmt.Sprintf(
 					"security scan job %q has allow_failure: true — scan failures are silently ignored and security results may not be ingested by GitLab",
 					name.Value,

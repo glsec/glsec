@@ -38,6 +38,7 @@ func (r *gl013) Check(doc *yaml.Node, file string) []finding.Finding {
 		findings = append(findings, finding.Finding{
 			RuleID:   "GL013",
 			Severity: finding.Warn,
+			Job:      name.Value,
 			Message: fmt.Sprintf(
 				"job %q deploys to %q but has no rules: or only: clause — any branch can trigger this deployment",
 				name.Value, envName,

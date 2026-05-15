@@ -54,6 +54,7 @@ func (r *gl020) Check(doc *yaml.Node, file string) []finding.Finding {
 		findings = append(findings, finding.Finding{
 			RuleID:   "GL020",
 			Severity: finding.Warn,
+			Job:      name.Value,
 			Message:  "job downloads a file with curl/wget but no checksum verification (sha256sum, gpg --verify, etc.) found in script",
 			File:     file,
 			Line:     downloadLine.Line,

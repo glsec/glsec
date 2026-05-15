@@ -61,10 +61,11 @@ var lockfileChecks = []lockfileCheck{
 func (r *gl023) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
 
-	parser.EachJob(doc, func(_ *yaml.Node, job *yaml.Node) {
+	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
 		lines := collectScriptLines(job)
 		for _, l := range lines {
 			if f := checkLockfileLine(l.Value, file, l.Line, l.Column); f != nil {
+				f.Job = name.Value
 				findings = append(findings, *f)
 			}
 		}

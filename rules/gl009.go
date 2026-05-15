@@ -19,7 +19,7 @@ func (r *gl009) ID() string { return "GL009" }
 func (r *gl009) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
 
-	parser.EachJob(doc, func(_ *yaml.Node, job *yaml.Node) {
+	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
 		idTokens := parser.FindKey(job, "id_tokens")
 		if idTokens == nil || idTokens.Kind != yaml.MappingNode {
 			return
@@ -34,7 +34,10 @@ func (r *gl009) Check(doc *yaml.Node, file string) []finding.Finding {
 			if audNode == nil {
 				continue
 			}
-			findings = append(findings, checkAudNode(audNode, file)...)
+			for _, f := range checkAudNode(audNode, file) {
+				f.Job = name.Value
+				findings = append(findings, f)
+			}
 		}
 	})
 

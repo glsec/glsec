@@ -42,6 +42,7 @@ func (r *gl014) Check(doc *yaml.Node, file string) []finding.Finding {
 					findings = append(findings, finding.Finding{
 						RuleID:   "GL014",
 						Severity: finding.Warn,
+						Job:      name.Value,
 						Message: fmt.Sprintf(
 							"job %q dumps all environment variables to a dotenv artifact — CI_JOB_TOKEN and masked secrets are included and downloadable by any pipeline viewer",
 							name.Value,

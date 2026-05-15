@@ -50,6 +50,7 @@ func (r *gl012) Check(doc *yaml.Node, file string) []finding.Finding {
 		findings = append(findings, finding.Finding{
 			RuleID:   "GL012",
 			Severity: finding.Warn,
+			Job:      name.Value,
 			Message: fmt.Sprintf(
 				"deploy job %q has when: always — it will run even if upstream tests or security scans failed, bypassing quality gates",
 				name.Value,

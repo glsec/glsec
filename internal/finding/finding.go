@@ -11,6 +11,7 @@ const (
 type Finding struct {
 	RuleID   string
 	Severity Severity
+	Job      string
 	Message  string
 	File     string
 	Line     int
