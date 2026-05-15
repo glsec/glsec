@@ -1,0 +1,3 @@
+deploy:
+  script:
+    - wget -q --ftp-user="user@example.com" --ftp-password="$FTP_PASSWORD" ftp://ftp.example.com/assets.zip

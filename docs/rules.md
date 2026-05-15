@@ -81,6 +81,7 @@ Misconfigured CI settings that expand the attack surface or leak build context.
 | [GL005](rules/GL005.md) | `warn`  | Sensitive file patterns in `artifacts:` or missing `expire_in` |
 | [GL007](rules/GL007.md) | `error` | CI variable interpolation in `image:` reference |
 | [GL016](rules/GL016.md) | varies  | HTTP instead of HTTPS (`include:remote`, scripts, variables) |
+| [GL040](rules/GL040.md) | `warn`  | Script uses plain `ftp://` — credentials and content transmitted unencrypted |
 | [GL024](rules/GL024.md) | `warn`  | Shell pipe without `set -o pipefail` — failures in all but the last command are silently ignored |
 | [GL028](rules/GL028.md) | `warn`  | `artifacts: untracked: true` without `paths:` or `exclude:` may archive `.env`, keys, and other sensitive files |
 | [GL030](rules/GL030.md) | `warn`  | `ssh-keyscan` at runtime blindly trusts the remote host key — MITM risk on shared runner networks |
