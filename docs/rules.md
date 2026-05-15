@@ -18,6 +18,7 @@ Secrets hardcoded, leaked through logs, or forwarded to unintended consumers.
 | [GL014](rules/GL014.md) | `warn`  | `dotenv` artifact captures all environment variables including secrets (GitLab ≥ 12.9) |
 | [GL018](rules/GL018.md) | `warn`  | Secret variable re-exported at pipeline level — available to all jobs including untrusted ones |
 | [GL021](rules/GL021.md) | `warn`  | Secret variable value printed to job log via `echo`/`printf` |
+| [GL038](rules/GL038.md) | `error` | Hardcoded credential literal passed to CLI tool in script (`sqlcmd -P`, `mysql -p`, `PGPASSWORD=`, etc.) |
 
 ---
 
