@@ -63,6 +63,7 @@ Gates bypassed, runners untrusted, or downstream pipelines outside access contro
 |----|----------|-------------|
 | [GL008](rules/GL008.md) | `warn`  | `allow_failure: true` on a GitLab security scan job |
 | [GL034](rules/GL034.md) | `warn`  | `trigger:` job without `strategy: depend` — child pipeline failures are silently ignored |
+| [GL039](rules/GL039.md) | `warn`  | Security audit tool silenced with `\|\| true` — failures discarded, pipeline always green |
 | [GL009](rules/GL009.md) | `warn`  | Overly broad OIDC `id_tokens` audience (GitLab ≥ 15.7) |
 | [GL012](rules/GL012.md) | `warn`  | `when: always` on a deploy/release job bypasses upstream quality gates |
 | [GL013](rules/GL013.md) | `warn`  | Production deploy job has no `rules:` or `only:` branch restriction |
