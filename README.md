@@ -145,6 +145,23 @@ glsec:
     - ./glsec .gitlab-ci.yml
 ```
 
+### GitLab SAST integration
+
+Publish findings to GitLab's Security Dashboard by emitting SARIF and exposing it as a SAST report artifact:
+
+```yaml
+glsec:
+  stage: test
+  image: ghcr.io/glsec/glsec:latest
+  script:
+    - glsec --format sarif .gitlab-ci.yml > glsec.sarif || true
+  artifacts:
+    reports:
+      sast: glsec.sarif
+```
+
+Findings appear in the pipeline Security tab and the project Security Dashboard. Use `|| true` to prevent the glsec job itself from blocking the pipeline — the SAST report is uploaded regardless.
+
 ### GitHub Actions
 
 ```yaml
@@ -153,19 +170,6 @@ glsec:
     curl -sSLO https://github.com/glsec/glsec/releases/latest/download/glsec_linux_amd64.tar.gz
     tar xzf glsec_linux_amd64.tar.gz
     ./glsec .gitlab-ci.yml
-```
-
-### SARIF upload to GitHub Code Scanning
-
-```yaml
-- name: Run glsec (SARIF)
-  run: |
-    curl -sSLO https://github.com/glsec/glsec/releases/latest/download/glsec_linux_amd64.tar.gz
-    tar xzf glsec_linux_amd64.tar.gz
-    ./glsec --format sarif .gitlab-ci.yml > glsec.sarif || true
-- uses: github/codeql-action/upload-sarif@v3
-  with:
-    sarif_file: glsec.sarif
 ```
 
 ## Contributing
