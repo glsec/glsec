@@ -36,6 +36,7 @@ var owaspCategories = map[string][]string{
 	"GL031": {"CICD-SEC-7"},
 	"GL032": {"CICD-SEC-6"},
 	"GL033": {"CICD-SEC-6"},
+	"GL034": {"CICD-SEC-1"},
 	"GL038": {"CICD-SEC-6"},
 }
 

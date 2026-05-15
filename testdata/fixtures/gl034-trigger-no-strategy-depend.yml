@@ -1,0 +1,5 @@
+run-security-scan:
+  stage: test
+  trigger:
+    include:
+      - local: .gitlab/ci/security.gitlab-ci.yml
