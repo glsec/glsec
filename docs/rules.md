@@ -16,6 +16,7 @@ Secrets hardcoded, leaked through logs, or forwarded to unintended consumers.
 | [GL006](rules/GL006.md) | `error` | Hardcoded secret in `variables:` block |
 | [GL036](rules/GL036.md) | `warn`  | Connection string with embedded credentials (`scheme://user:pass@host`) in `variables:` block |
 | [GL010](rules/GL010.md) | `warn`  | `trigger: forward: pipeline_variables: true` leaks secrets to downstream pipeline (GitLab ≥ 14.9) |
+| [GL037](rules/GL037.md) | `warn`  | `trigger:` job without `inherit: variables: false` — top-level secrets implicitly forwarded to downstream |
 | [GL014](rules/GL014.md) | `warn`  | `dotenv` artifact captures all environment variables including secrets (GitLab ≥ 12.9) |
 | [GL018](rules/GL018.md) | `warn`  | Secret variable re-exported at pipeline level — available to all jobs including untrusted ones |
 | [GL021](rules/GL021.md) | `warn`  | Secret variable value printed to job log via `echo`/`printf` |
