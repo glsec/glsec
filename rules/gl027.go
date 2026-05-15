@@ -25,9 +25,7 @@ func (r *gl027) Check(doc *yaml.Node, file string) []finding.Finding {
 	}
 
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
-		for _, f := range checkMaskedVariables(parser.FindKey(job, "variables"), file, name.Value) {
-			findings = append(findings, f)
-		}
+		findings = append(findings, checkMaskedVariables(parser.FindKey(job, "variables"), file, name.Value)...)
 	})
 
 	return findings

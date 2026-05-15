@@ -37,9 +37,7 @@ func (r *gl029) Check(doc *yaml.Node, file string) []finding.Finding {
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
 		for _, key := range []string{"script", "before_script", "after_script"} {
 			if node := parser.FindKey(job, key); node != nil {
-				for _, f := range checkDockerLoginPassword(node, file, name.Value) {
-					findings = append(findings, f)
-				}
+				findings = append(findings, checkDockerLoginPassword(node, file, name.Value)...)
 			}
 		}
 	})
