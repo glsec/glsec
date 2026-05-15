@@ -91,15 +91,15 @@ exclude_paths:
 
 ## Rules
 
-26 rules across 5 [OWASP CI/CD security categories](https://owasp.org/www-project-top-10-ci-cd-security-risks/):
+40 rules across 5 [OWASP CI/CD security categories](https://owasp.org/www-project-top-10-ci-cd-security-risks/):
 
 | Category | OWASP | Rules |
 |----------|-------|-------|
-| Credential Hygiene | CICD-SEC-6 | GL002, GL004, GL006, GL010, GL014, GL018, GL021 |
+| Credential Hygiene | CICD-SEC-6 | GL002, GL004, GL006, GL010, GL014, GL018, GL021, GL027, GL029, GL032, GL033, GL035, GL036, GL037, GL038, GL040 |
 | Dependency & Image Pinning | CICD-SEC-3 | GL001, GL003, GL015, GL022, GL023, GL026 |
 | Supply Chain Integrity | CICD-SEC-9 | GL011, GL020, GL025 |
-| Pipeline Flow & Access Control | CICD-SEC-1, CICD-SEC-5 | GL008, GL009, GL012, GL013, GL017, GL019 |
-| Insecure Configuration | CICD-SEC-7 | GL005, GL007, GL016, GL024 |
+| Pipeline Flow & Access Control | CICD-SEC-1, CICD-SEC-5 | GL008, GL009, GL012, GL013, GL017, GL019, GL034, GL039 |
+| Insecure Configuration | CICD-SEC-7 | GL005, GL007, GL016, GL024, GL028, GL030, GL031 |
 
 → **[Full rule reference with descriptions and examples](docs/rules.md)**
 
