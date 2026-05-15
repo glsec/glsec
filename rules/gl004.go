@@ -39,10 +39,13 @@ func (r *gl004) Check(doc *yaml.Node, file string) []finding.Finding {
 		}
 	}
 
-	parser.EachJob(doc, func(_ *yaml.Node, job *yaml.Node) {
+	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
 		for _, key := range []string{"script", "before_script", "after_script"} {
 			if node := parser.FindKey(job, key); node != nil {
-				findings = append(findings, scanScriptForToken(node, file)...)
+				for _, f := range scanScriptForToken(node, file) {
+					f.Job = name.Value
+					findings = append(findings, f)
+				}
 			}
 		}
 	})

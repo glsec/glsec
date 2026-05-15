@@ -39,12 +39,23 @@ func Write(w io.Writer, format Format, findings []finding.Finding) error {
 
 func writeText(w io.Writer, findings []finding.Finding) error {
 	for _, f := range findings {
-		_, err := fmt.Fprintf(w, "%-6s %s:%d  %s  %s\n",
-			strings.ToUpper(string(f.Severity)),
-			f.File, f.Line,
-			f.RuleID,
-			f.Message,
-		)
+		var err error
+		if f.Job != "" {
+			_, err = fmt.Fprintf(w, "%-6s %s:%d  %s  [%s]  %s\n",
+				strings.ToUpper(string(f.Severity)),
+				f.File, f.Line,
+				f.RuleID,
+				f.Job,
+				f.Message,
+			)
+		} else {
+			_, err = fmt.Fprintf(w, "%-6s %s:%d  %s  %s\n",
+				strings.ToUpper(string(f.Severity)),
+				f.File, f.Line,
+				f.RuleID,
+				f.Message,
+			)
+		}
 		if err != nil {
 			return err
 		}
@@ -55,6 +66,7 @@ func writeText(w io.Writer, findings []finding.Finding) error {
 type jsonFinding struct {
 	Rule     string `json:"rule"`
 	Severity string `json:"severity"`
+	Job      string `json:"job,omitempty"`
 	File     string `json:"file"`
 	Line     int    `json:"line"`
 	Message  string `json:"message"`
@@ -70,6 +82,7 @@ func writeJSON(w io.Writer, findings []finding.Finding) error {
 		out.Findings = append(out.Findings, jsonFinding{
 			Rule:     f.RuleID,
 			Severity: string(f.Severity),
+			Job:      f.Job,
 			File:     f.File,
 			Line:     f.Line,
 			Message:  f.Message,

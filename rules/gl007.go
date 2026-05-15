@@ -41,9 +41,15 @@ func (r *gl007) Check(doc *yaml.Node, file string) []finding.Finding {
 		findings = append(findings, checkServicesVarInjection(parser.FindKey(def, "services"), file)...)
 	}
 
-	parser.EachJob(doc, func(_ *yaml.Node, job *yaml.Node) {
-		findings = append(findings, checkImageVarInjection(parser.FindKey(job, "image"), file)...)
-		findings = append(findings, checkServicesVarInjection(parser.FindKey(job, "services"), file)...)
+	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
+		for _, f := range checkImageVarInjection(parser.FindKey(job, "image"), file) {
+			f.Job = name.Value
+			findings = append(findings, f)
+		}
+		for _, f := range checkServicesVarInjection(parser.FindKey(job, "services"), file) {
+			f.Job = name.Value
+			findings = append(findings, f)
+		}
 	})
 
 	return findings

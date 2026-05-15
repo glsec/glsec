@@ -49,11 +49,17 @@ func (r *gl016) Check(doc *yaml.Node, file string) []finding.Finding {
 	findings = append(findings, r.checkVariablesHTTP(parser.FindKey(mapping, "variables"), file)...)
 
 	// per-job
-	parser.EachJob(doc, func(_ *yaml.Node, job *yaml.Node) {
-		findings = append(findings, r.checkVariablesHTTP(parser.FindKey(job, "variables"), file)...)
+	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
+		for _, f := range r.checkVariablesHTTP(parser.FindKey(job, "variables"), file) {
+			f.Job = name.Value
+			findings = append(findings, f)
+		}
 		for _, key := range []string{"script", "before_script", "after_script"} {
 			if node := parser.FindKey(job, key); node != nil {
-				findings = append(findings, r.checkScriptHTTP(node, file)...)
+				for _, f := range r.checkScriptHTTP(node, file) {
+					f.Job = name.Value
+					findings = append(findings, f)
+				}
 			}
 		}
 	})

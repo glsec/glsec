@@ -26,7 +26,7 @@ var (
 func (r *gl024) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
 
-	parser.EachJob(doc, func(_ *yaml.Node, job *yaml.Node) {
+	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
 		lines := collectScriptLines(job)
 		if len(lines) == 0 {
 			return
@@ -45,6 +45,7 @@ func (r *gl024) Check(doc *yaml.Node, file string) []finding.Finding {
 				findings = append(findings, finding.Finding{
 					RuleID:   "GL024",
 					Severity: finding.Warn,
+					Job:      name.Value,
 					Message:  "script uses a pipe without set -o pipefail — failures in all but the last command are silently ignored",
 					File:     file,
 					Line:     l.Line,

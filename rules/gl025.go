@@ -26,7 +26,7 @@ var curlWgetRe = regexp.MustCompile(`\b(?:curl|wget)\b`)
 func (r *gl025) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
 
-	parser.EachJob(doc, func(_ *yaml.Node, job *yaml.Node) {
+	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
 		for _, l := range collectScriptLines(job) {
 			if !curlWgetRe.MatchString(l.Value) {
 				continue
@@ -38,6 +38,7 @@ func (r *gl025) Check(doc *yaml.Node, file string) []finding.Finding {
 			findings = append(findings, finding.Finding{
 				RuleID:   "GL025",
 				Severity: finding.Warn,
+				Job:      name.Value,
 				Message:  "curl/wget uses user-controlled variable " + m + " — attacker can redirect the request to an arbitrary host",
 				File:     file,
 				Line:     l.Line,

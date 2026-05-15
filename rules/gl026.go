@@ -34,7 +34,7 @@ var (
 func (r *gl026) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
 
-	parser.EachJob(doc, func(_ *yaml.Node, job *yaml.Node) {
+	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
 		lines := collectScriptLines(job)
 		if len(lines) == 0 {
 			return
@@ -61,6 +61,7 @@ func (r *gl026) Check(doc *yaml.Node, file string) []finding.Finding {
 						findings = append(findings, finding.Finding{
 							RuleID:   "GL026",
 							Severity: finding.Warn,
+							Job:      name.Value,
 							Message:  "git clone uses mutable ref \"" + ref + "\" — pin to a full commit SHA with git checkout after cloning",
 							File:     file,
 							Line:     l.Line,
@@ -71,6 +72,7 @@ func (r *gl026) Check(doc *yaml.Node, file string) []finding.Finding {
 					findings = append(findings, finding.Finding{
 						RuleID:   "GL026",
 						Severity: finding.Warn,
+						Job:      name.Value,
 						Message:  "git clone without --branch clones HEAD of the default branch — follow with git checkout <sha> to pin the revision",
 						File:     file,
 						Line:     l.Line,
@@ -90,6 +92,7 @@ func (r *gl026) Check(doc *yaml.Node, file string) []finding.Finding {
 				findings = append(findings, finding.Finding{
 					RuleID:   "GL026",
 					Severity: finding.Warn,
+					Job:      name.Value,
 					Message:  "git checkout uses a mutable ref — pin to a full 40-character commit SHA",
 					File:     file,
 					Line:     l.Line,
