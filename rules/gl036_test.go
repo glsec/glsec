@@ -12,19 +12,19 @@ func TestGL036(t *testing.T) {
 		yaml     string
 		wantHits int
 	}{
-		{
+		{ //nolint:gosec // G101: test case for detecting embedded credentials, not real secrets
 			name: "postgres connection string with literal password",
 			yaml: `variables:
   DATABASE_URL: "postgres://myapp:s3cr3t@postgres:5432/mydb"`,
 			wantHits: 1,
 		},
-		{
+		{ //nolint:gosec // G101: test case for detecting embedded credentials, not real secrets
 			name: "elastic URL with literal credentials",
 			yaml: `variables:
   ELASTIC_URL: "http://elastic:changeme@elasticsearch:9200"`,
 			wantHits: 1,
 		},
-		{
+		{ //nolint:gosec // G101: test case for detecting embedded credentials, not real secrets
 			name: "redis URL with literal password",
 			yaml: `variables:
   REDIS_URL: "redis://:mypassword@redis:6379/0"`,
@@ -36,13 +36,13 @@ func TestGL036(t *testing.T) {
   DATABASE_URL: "postgres://myapp:${DB_PASSWORD}@postgres:5432/mydb"`,
 			wantHits: 0,
 		},
-		{
+		{ //nolint:gosec // G101: test case for detecting embedded credentials, not real secrets
 			name: "connection string with $VAR password — safe",
 			yaml: `variables:
   DATABASE_URL: "postgres://myapp:$DB_PASSWORD@postgres:5432/mydb"`,
 			wantHits: 0,
 		},
-		{
+		{ //nolint:gosec // G101: test case for detecting embedded credentials, not real secrets
 			name: "job-level variable with embedded credentials",
 			yaml: `test:
   variables:
@@ -51,7 +51,7 @@ func TestGL036(t *testing.T) {
     - ./run-tests.sh`,
 			wantHits: 1,
 		},
-		{
+		{ //nolint:gosec // G101: test case for detecting embedded credentials, not real secrets
 			name: "multiple credential URLs",
 			yaml: `variables:
   DATABASE_URL: "postgres://app:secret@db:5432/prod"
