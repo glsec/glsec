@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 
 	"github.com/glsec/glsec/internal/config"
@@ -45,7 +46,7 @@ func main() {
 	flag.Parse()
 
 	if *versionFlag {
-		fmt.Printf("glsec %s (commit %s, built %s)\n", version, commit, date)
+		fmt.Printf("glsec %s (commit %s, built %s)\n", resolvedVersion(), commit, date)
 		return
 	}
 
@@ -168,6 +169,16 @@ func main() {
 			os.Exit(1)
 		}
 	}
+}
+
+func resolvedVersion() string {
+	if version != "dev" {
+		return version
+	}
+	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
+		return info.Main.Version
+	}
+	return "dev"
 }
 
 // matchesExclude returns true if file matches any of the given patterns.
