@@ -1,0 +1,3 @@
+include:
+  - component: gitlab.com/components/sast@latest
+  - component: gitlab.com/components/dast

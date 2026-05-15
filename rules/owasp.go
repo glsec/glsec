@@ -43,6 +43,7 @@ var owaspCategories = map[string][]string{
 	"GL038": {"CICD-SEC-6"},
 	"GL039": {"CICD-SEC-1"},
 	"GL040": {"CICD-SEC-6"},
+	"GL041": {"CICD-SEC-4", "CICD-SEC-8"},
 }
 
 // OWASPCategories returns the OWASP CI/CD security categories for a rule ID.

@@ -43,6 +43,16 @@ Mutable references that allow silent substitution of images, templates, or packa
 
 ---
 
+## Component & Third-Party Integrity — [CICD-SEC-4](https://owasp.org/www-project-top-10-ci-cd-security-risks/CICD-SEC-04-Poisoned-Pipeline-Execution) / [CICD-SEC-8](https://owasp.org/www-project-top-10-ci-cd-security-risks/CICD-SEC-08-Ungoverned-Usage-of-3rd-Party-Services)
+
+Mutable or unversioned component includes that allow silent substitution of pipeline templates.
+
+| ID | Severity | Description |
+|----|----------|-------------|
+| [GL041](rules/GL041.md) | `warn`  | `include: component:` without a pinned semver tag or commit SHA |
+
+---
+
 ## Supply Chain Integrity — [CICD-SEC-9](https://owasp.org/www-project-top-10-ci-cd-security-risks/CICD-SEC-09-Improper-Artifact-Integrity-Validation)
 
 Downloads and executions that bypass integrity checks, enabling tampering mid-pipeline.
