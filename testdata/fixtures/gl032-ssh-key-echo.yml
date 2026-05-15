@@ -1,0 +1,4 @@
+before_script:
+  - eval $(ssh-agent -s)
+  - echo "$DEPLOY_SERVER_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_rsa
+  - chmod 600 ~/.ssh/id_rsa

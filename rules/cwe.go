@@ -33,6 +33,7 @@ var cweIDs = map[string]string{
 	"GL029": "CWE-214",
 	"GL030": "CWE-295",
 	"GL031": "CWE-319",
+	"GL032": "CWE-532",
 	"GL033": "CWE-532",
 	"GL038": "CWE-798",
 }
