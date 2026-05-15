@@ -1,0 +1,4 @@
+security:
+  script:
+    - inspector check soup.json || true
+    - npm audit --audit-level=high || true
