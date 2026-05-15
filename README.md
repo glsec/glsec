@@ -91,36 +91,17 @@ exclude_paths:
 
 ## Rules
 
-| ID | Severity | Description |
-|----|----------|-------------|
-| [GL001](docs/rules/GL001.md) | `error` | Mutable image tag (`latest`, no tag, non-digest pin) |
-| [GL002](docs/rules/GL002.md) | `warn`  | User-controlled CI variable used unquoted in script |
-| [GL003](docs/rules/GL003.md) | `error` | Remote `include:` with mutable or missing `ref` |
-| [GL004](docs/rules/GL004.md) | `warn`  | `CI_JOB_TOKEN` forwarded to a non-GitLab host |
-| [GL005](docs/rules/GL005.md) | `warn`  | Sensitive file patterns in `artifacts:` or missing `expire_in` |
-| [GL006](docs/rules/GL006.md) | `error` | Hardcoded secret in `variables:` block |
-| [GL007](docs/rules/GL007.md) | `error` | CI variable interpolation in `image:` reference |
-| [GL008](docs/rules/GL008.md) | `warn`  | `allow_failure: true` on a GitLab security scan job |
-| [GL009](docs/rules/GL009.md) | `warn`  | Overly broad OIDC `id_tokens` audience (GitLab ≥ 15.7) |
-| [GL010](docs/rules/GL010.md) | `warn`  | `trigger: forward: pipeline_variables: true` leaks secrets to downstream pipeline (GitLab ≥ 14.9) |
-| [GL011](docs/rules/GL011.md) | `error` | Download-and-execute pattern in script (`curl \| bash`, `wget \| sh`) |
-| [GL012](docs/rules/GL012.md) | `warn`  | `when: always` on a deploy/release job bypasses upstream quality gates |
-| [GL013](docs/rules/GL013.md) | `warn`  | Production deploy job has no `rules:` or `only:` branch restriction |
-| [GL014](docs/rules/GL014.md) | `warn`  | `dotenv` artifact captures all environment variables including secrets (GitLab ≥ 12.9) |
-| [GL015](docs/rules/GL015.md) | `warn`  | Docker image tag built from user-controlled variable (`$CI_COMMIT_REF_SLUG` etc.) |
-| [GL016](docs/rules/GL016.md) | varies  | HTTP instead of HTTPS (`include:remote`, scripts, variables) |
-| [GL017](docs/rules/GL017.md) | `warn`  | Deploy/publish job has no `tags:` — can run on any runner including untrusted self-hosted |
-| [GL018](docs/rules/GL018.md) | `warn`  | Secret variable re-exported at pipeline level — available to all jobs including untrusted ones |
-| [GL019](docs/rules/GL019.md) | `warn`  | Deploy/publish job has no `resource_group:` — concurrent runs risk race conditions or partial deploys |
-| [GL020](docs/rules/GL020.md) | `warn`  | File downloaded with `curl`/`wget` without checksum verification before execution |
-| [GL021](docs/rules/GL021.md) | `warn`  | Secret variable value printed to job log via `echo`/`printf` |
-| [GL022](docs/rules/GL022.md) | `warn`  | Package manager install without version pin or explicit update-to-latest in CI |
-| [GL023](docs/rules/GL023.md) | `warn`  | Lockfile not enforced (`npm install` instead of `npm ci`, `yarn install` without `--frozen-lockfile`, etc.) |
-| [GL024](docs/rules/GL024.md) | `warn`  | Shell pipe without `set -o pipefail` — failures in all but the last command are silently ignored |
-| [GL025](docs/rules/GL025.md) | `warn`  | `curl`/`wget` uses a user-controlled CI variable — attacker can redirect the request to an arbitrary host |
-| [GL026](docs/rules/GL026.md) | `warn`  | `git clone`/`checkout` uses a mutable ref (branch or tag) instead of a pinned commit SHA |
+26 rules across 5 [OWASP CI/CD security categories](https://owasp.org/www-project-top-10-ci-cd-security-risks/):
 
-Each rule page contains the full risk description, trigger examples, safe alternatives, and detection notes.
+| Category | OWASP | Rules |
+|----------|-------|-------|
+| Credential Hygiene | CICD-SEC-6 | GL002, GL004, GL006, GL010, GL014, GL018, GL021 |
+| Dependency & Image Pinning | CICD-SEC-3 | GL001, GL003, GL015, GL022, GL023, GL026 |
+| Supply Chain Integrity | CICD-SEC-9 | GL011, GL020, GL025 |
+| Pipeline Flow & Access Control | CICD-SEC-1, CICD-SEC-5 | GL008, GL009, GL012, GL013, GL017, GL019 |
+| Insecure Configuration | CICD-SEC-7 | GL005, GL007, GL016, GL024 |
+
+→ **[Full rule reference with descriptions and examples](docs/rules.md)**
 
 ---
 
