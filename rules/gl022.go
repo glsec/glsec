@@ -67,6 +67,12 @@ var (
 			pinned:  regexp.MustCompile(`(?:--version|--vers)\s+\d`),
 			skip:    nil,
 		},
+		{
+			manager: "composer require",
+			trigger: regexp.MustCompile(`\bcomposer\s+require\b`),
+			pinned:  regexp.MustCompile(`:\S`),
+			skip:    nil,
+		},
 	}
 
 	pmUpdateChecks = []pmUpdateCheck{

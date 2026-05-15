@@ -291,3 +291,63 @@ build:
 		t.Error("expected non-zero line number")
 	}
 }
+
+// --- composer require ---
+
+func TestGL022_ComposerRequireUnpinned(t *testing.T) {
+	f := findings022(t, `
+api:
+  script:
+    - composer require guzzlehttp/guzzle --no-interaction
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding, got %d", len(f))
+	}
+	if f[0].Severity != finding.Warn {
+		t.Errorf("expected Warn, got %s", f[0].Severity)
+	}
+}
+
+func TestGL022_ComposerRequireUnpinnedWithDevFlag(t *testing.T) {
+	f := findings022(t, `
+api:
+  script:
+    - composer require --dev phpunit/phpunit --no-interaction --no-scripts
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for --dev without version, got %d", len(f))
+	}
+}
+
+func TestGL022_ComposerRequirePinned_NoFinding(t *testing.T) {
+	f := findings022(t, `
+api:
+  script:
+    - composer require guzzlehttp/guzzle:^7.0 --no-interaction
+`)
+	if len(f) != 0 {
+		t.Errorf("expected no finding for pinned version, got %d", len(f))
+	}
+}
+
+func TestGL022_ComposerRequirePinnedQuoted_NoFinding(t *testing.T) {
+	f := findings022(t, `
+api:
+  script:
+    - composer require "guzzlehttp/guzzle:>=7.0" --no-interaction
+`)
+	if len(f) != 0 {
+		t.Errorf("expected no finding for quoted pinned version, got %d", len(f))
+	}
+}
+
+func TestGL022_ComposerInstall_NoFinding(t *testing.T) {
+	f := findings022(t, `
+api:
+  script:
+    - composer install --no-interaction
+`)
+	if len(f) != 0 {
+		t.Errorf("composer install reads lockfile — expected no finding, got %d", len(f))
+	}
+}

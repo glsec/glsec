@@ -8,3 +8,4 @@ build:
     - pip install ansible
     - npm install -g @angular/cli
     - apt-get install -y jq
+    - composer require guzzlehttp/guzzle --no-interaction
