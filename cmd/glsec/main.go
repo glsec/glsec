@@ -156,7 +156,13 @@ func main() {
 		return // exit 0
 	}
 
-	if err := output.Write(os.Stdout, format, findings); err != nil {
+	var writeErr error
+	if format == output.FormatSARIF {
+		writeErr = output.WriteSARIF(os.Stdout, findings, rules.CWEID, rules.CWEName)
+	} else {
+		writeErr = output.Write(os.Stdout, format, findings)
+	}
+	if err := writeErr; err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(2)
 	}

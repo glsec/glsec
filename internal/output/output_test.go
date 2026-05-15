@@ -168,3 +168,64 @@ func TestParseFormat(t *testing.T) {
 		}
 	}
 }
+
+func TestWriteSARIF_WithCWE(t *testing.T) {
+	cweID := func(id string) string {
+		if id == "GL001" {
+			return "CWE-1104"
+		}
+		return ""
+	}
+	cweName := func(id string) string {
+		if id == "CWE-1104" {
+			return "Use of Unmaintained Third-Party Components"
+		}
+		return ""
+	}
+
+	var buf bytes.Buffer
+	if err := WriteSARIF(&buf, testFindings, cweID, cweName); err != nil {
+		t.Fatal(err)
+	}
+	var log sarifLog
+	if err := json.Unmarshal(buf.Bytes(), &log); err != nil {
+		t.Fatalf("invalid SARIF JSON: %v", err)
+	}
+
+	run := log.Runs[0]
+
+	if len(run.Tool.Driver.Rules) != 1 {
+		t.Fatalf("expected 1 rule descriptor (GL001 has CWE, GL002 does not), got %d", len(run.Tool.Driver.Rules))
+	}
+	rule := run.Tool.Driver.Rules[0]
+	if rule.ID != "GL001" {
+		t.Errorf("expected rule GL001, got %q", rule.ID)
+	}
+	if len(rule.Relationships) != 1 || rule.Relationships[0].Target.ID != "CWE-1104" {
+		t.Errorf("unexpected CWE relationship: %+v", rule.Relationships)
+	}
+
+	if len(run.Taxonomies) != 1 || run.Taxonomies[0].Name != "CWE" {
+		t.Fatalf("expected CWE taxonomy, got %+v", run.Taxonomies)
+	}
+	if len(run.Taxonomies[0].Taxa) != 1 || run.Taxonomies[0].Taxa[0].ID != "CWE-1104" {
+		t.Errorf("unexpected taxa: %+v", run.Taxonomies[0].Taxa)
+	}
+}
+
+func TestWriteSARIF_NoCWE(t *testing.T) {
+	var buf bytes.Buffer
+	if err := WriteSARIF(&buf, testFindings, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	var log sarifLog
+	if err := json.Unmarshal(buf.Bytes(), &log); err != nil {
+		t.Fatalf("invalid SARIF JSON: %v", err)
+	}
+	if len(log.Runs[0].Tool.Driver.Rules) != 0 {
+		t.Error("expected no rule descriptors when CWE lookup is nil")
+	}
+	if len(log.Runs[0].Taxonomies) != 0 {
+		t.Error("expected no taxonomies when CWE lookup is nil")
+	}
+}

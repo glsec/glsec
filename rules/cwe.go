@@ -1,0 +1,56 @@
+package rules
+
+// cweIDs maps each rule ID to its CWE identifier.
+var cweIDs = map[string]string{
+	"GL001": "CWE-1104",
+	"GL002": "CWE-78",
+	"GL003": "CWE-829",
+	"GL004": "CWE-522",
+	"GL005": "CWE-538",
+	"GL006": "CWE-798",
+	"GL007": "CWE-829",
+	"GL008": "CWE-390",
+	"GL009": "CWE-284",
+	"GL010": "CWE-522",
+	"GL011": "CWE-494",
+	"GL012": "CWE-691",
+	"GL013": "CWE-284",
+	"GL014": "CWE-522",
+	"GL015": "CWE-829",
+	"GL016": "CWE-319",
+	"GL017": "CWE-284",
+	"GL018": "CWE-522",
+	"GL019": "CWE-362",
+	"GL020": "CWE-494",
+	"GL021": "CWE-532",
+	"GL022": "CWE-1104",
+	"GL023": "CWE-1104",
+	"GL024": "CWE-390",
+	"GL025": "CWE-441",
+	"GL026": "CWE-829",
+}
+
+// cweNames maps CWE IDs to their short names.
+var cweNames = map[string]string{
+	"CWE-78":   "Improper Neutralization of Special Elements used in an OS Command ('OS Command Injection')",
+	"CWE-284":  "Improper Access Control",
+	"CWE-319":  "Cleartext Transmission of Sensitive Information",
+	"CWE-362":  "Concurrent Execution using Shared Resource with Improper Synchronization ('Race Condition')",
+	"CWE-390":  "Detection of Error Condition Without Action",
+	"CWE-441":  "Unintended Proxy or Intermediary ('Confused Deputy')",
+	"CWE-494":  "Download of Code Without Integrity Check",
+	"CWE-522":  "Insufficiently Protected Credentials",
+	"CWE-532":  "Insertion of Sensitive Information into Log File",
+	"CWE-538":  "Insertion of Sensitive Information into Externally-Accessible File or Directory",
+	"CWE-691":  "Insufficient Control Flow Management",
+	"CWE-798":  "Use of Hard-coded Credentials",
+	"CWE-829":  "Inclusion of Functionality from Untrusted Control Sphere",
+	"CWE-1104": "Use of Unmaintained Third-Party Components",
+}
+
+// CWEID returns the CWE identifier for a rule, e.g. "CWE-798".
+// Returns an empty string if the rule has no mapping.
+func CWEID(ruleID string) string { return cweIDs[ruleID] }
+
+// CWEName returns the human-readable name for a CWE identifier.
+func CWEName(cweID string) string { return cweNames[cweID] }
