@@ -31,7 +31,7 @@ func Write(w io.Writer, format Format, findings []finding.Finding) error {
 	case FormatJSON:
 		return writeJSON(w, findings)
 	case FormatSARIF:
-		return writeSARIF(w, findings)
+		return writeSARIF(w, findings, nil, nil)
 	default:
 		return writeText(w, findings)
 	}
@@ -101,8 +101,9 @@ type sarifLog struct {
 }
 
 type sarifRun struct {
-	Tool    sarifTool     `json:"tool"`
-	Results []sarifResult `json:"results"`
+	Tool       sarifTool        `json:"tool"`
+	Taxonomies []sarifTaxonomy  `json:"taxonomies,omitempty"`
+	Results    []sarifResult    `json:"results"`
 }
 
 type sarifTool struct {
@@ -110,8 +111,40 @@ type sarifTool struct {
 }
 
 type sarifDriver struct {
-	Name           string `json:"name"`
-	InformationURI string `json:"informationUri"`
+	Name           string       `json:"name"`
+	InformationURI string       `json:"informationUri"`
+	Rules          []sarifRule  `json:"rules,omitempty"`
+}
+
+type sarifRule struct {
+	ID            string                  `json:"id"`
+	Relationships []sarifRelationship     `json:"relationships,omitempty"`
+}
+
+type sarifRelationship struct {
+	Target sarifRelationshipTarget `json:"target"`
+	Kinds  []string                `json:"kinds"`
+}
+
+type sarifRelationshipTarget struct {
+	ID            string                    `json:"id"`
+	ToolComponent sarifToolComponentRef     `json:"toolComponent"`
+}
+
+type sarifToolComponentRef struct {
+	Name string `json:"name"`
+}
+
+type sarifTaxonomy struct {
+	Name             string      `json:"name"`
+	Version          string      `json:"version"`
+	Organization     string      `json:"organization"`
+	Taxa             []sarifTaxon `json:"taxa"`
+}
+
+type sarifTaxon struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
 type sarifResult struct {
@@ -153,7 +186,15 @@ func severityToSARIFLevel(s finding.Severity) string {
 	}
 }
 
-func writeSARIF(w io.Writer, findings []finding.Finding) error {
+// WriteSARIF writes SARIF output enriched with CWE metadata.
+// cweID maps a rule ID to its CWE identifier (e.g. "CWE-798").
+// cweName maps a CWE identifier to its human-readable name.
+// Pass nil for either to omit CWE data.
+func WriteSARIF(w io.Writer, findings []finding.Finding, cweID func(string) string, cweName func(string) string) error {
+	return writeSARIF(w, findings, cweID, cweName)
+}
+
+func writeSARIF(w io.Writer, findings []finding.Finding, cweID func(string) string, cweName func(string) string) error {
 	results := make([]sarifResult, 0, len(findings))
 	for _, f := range findings {
 		results = append(results, sarifResult{
@@ -168,16 +209,57 @@ func writeSARIF(w io.Writer, findings []finding.Finding) error {
 			}},
 		})
 	}
+
+	run := sarifRun{
+		Tool: sarifTool{Driver: sarifDriver{
+			Name:           "glsec",
+			InformationURI: "https://github.com/glsec/glsec",
+		}},
+		Results: results,
+	}
+
+	if cweID != nil && cweName != nil {
+		seenRules := map[string]bool{}
+		seenCWEs := map[string]bool{}
+		for _, f := range findings {
+			if seenRules[f.RuleID] {
+				continue
+			}
+			seenRules[f.RuleID] = true
+			cwe := cweID(f.RuleID)
+			if cwe == "" {
+				continue
+			}
+			run.Tool.Driver.Rules = append(run.Tool.Driver.Rules, sarifRule{
+				ID: f.RuleID,
+				Relationships: []sarifRelationship{{
+					Target: sarifRelationshipTarget{
+						ID:            cwe,
+						ToolComponent: sarifToolComponentRef{Name: "CWE"},
+					},
+					Kinds: []string{"superset"},
+				}},
+			})
+			seenCWEs[cwe] = true
+		}
+		if len(seenCWEs) > 0 {
+			taxa := make([]sarifTaxon, 0, len(seenCWEs))
+			for cwe := range seenCWEs {
+				taxa = append(taxa, sarifTaxon{ID: cwe, Name: cweName(cwe)})
+			}
+			run.Taxonomies = []sarifTaxonomy{{
+				Name:         "CWE",
+				Version:      "4.14",
+				Organization: "MITRE",
+				Taxa:         taxa,
+			}}
+		}
+	}
+
 	log := sarifLog{
 		Schema:  "https://json.schemastore.org/sarif-2.1.0.json",
 		Version: "2.1.0",
-		Runs: []sarifRun{{
-			Tool: sarifTool{Driver: sarifDriver{
-				Name:           "glsec",
-				InformationURI: "https://github.com/glsec/glsec",
-			}},
-			Results: results,
-		}},
+		Runs:    []sarifRun{run},
 	}
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
