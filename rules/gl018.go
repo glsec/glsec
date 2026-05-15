@@ -19,7 +19,7 @@ func (r *gl018) ID() string { return "GL018" }
 // secretNameSuffixes identifies variable names that suggest secret content.
 var secretNameSuffixes = []string{
 	"_TOKEN", "_SECRET", "_PASSWORD", "_PASSWD", "_PASS", "_PWD",
-	"_KEY", "_CREDENTIAL", "_CERT",
+	"_KEY", "_CREDENTIAL", "_CERT", "_API_KEY",
 }
 
 // varRefRe matches a value that is (or starts with) a CI variable reference.

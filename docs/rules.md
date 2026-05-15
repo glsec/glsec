@@ -11,6 +11,7 @@ Secrets hardcoded, leaked through logs, or forwarded to unintended consumers.
 | ID | Severity | Description |
 |----|----------|-------------|
 | [GL002](rules/GL002.md) | `warn`  | User-controlled CI variable used unquoted in script |
+| [GL027](rules/GL027.md) | `warn`  | Secret-like variable defined without `masked: true` |
 | [GL004](rules/GL004.md) | `warn`  | `CI_JOB_TOKEN` forwarded to a non-GitLab host |
 | [GL006](rules/GL006.md) | `error` | Hardcoded secret in `variables:` block |
 | [GL010](rules/GL010.md) | `warn`  | `trigger: forward: pipeline_variables: true` leaks secrets to downstream pipeline (GitLab ≥ 14.9) |
