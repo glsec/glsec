@@ -1,0 +1,7 @@
+variables:
+  DEPLOY_TOKEN: $DEPLOY_TOKEN
+
+deploy-to-k8s:
+  trigger:
+    project: myorg/k8s-deployer
+    branch: main
