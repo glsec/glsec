@@ -29,9 +29,9 @@ func ParseFormat(s string) (Format, bool) {
 func Write(w io.Writer, format Format, findings []finding.Finding) error {
 	switch format {
 	case FormatJSON:
-		return writeJSON(w, findings)
+		return writeJSON(w, findings, nil)
 	case FormatSARIF:
-		return writeSARIF(w, findings, nil, nil)
+		return writeSARIF(w, findings, nil, nil, nil, nil)
 	default:
 		return writeText(w, findings)
 	}
@@ -64,29 +64,40 @@ func writeText(w io.Writer, findings []finding.Finding) error {
 }
 
 type jsonFinding struct {
-	Rule     string `json:"rule"`
-	Severity string `json:"severity"`
-	Job      string `json:"job,omitempty"`
-	File     string `json:"file"`
-	Line     int    `json:"line"`
-	Message  string `json:"message"`
+	Rule     string   `json:"rule"`
+	Severity string   `json:"severity"`
+	Job      string   `json:"job,omitempty"`
+	File     string   `json:"file"`
+	Line     int      `json:"line"`
+	Message  string   `json:"message"`
+	OWASP    []string `json:"owasp,omitempty"`
 }
 
 type jsonOutput struct {
 	Findings []jsonFinding `json:"findings"`
 }
 
-func writeJSON(w io.Writer, findings []finding.Finding) error {
+// WriteJSON writes findings as JSON. owasp, if non-nil, is called per finding
+// to populate the "owasp" field with category IDs.
+func WriteJSON(w io.Writer, findings []finding.Finding, owasp func(string) []string) error {
+	return writeJSON(w, findings, owasp)
+}
+
+func writeJSON(w io.Writer, findings []finding.Finding, owasp func(string) []string) error {
 	out := jsonOutput{Findings: make([]jsonFinding, 0, len(findings))}
 	for _, f := range findings {
-		out.Findings = append(out.Findings, jsonFinding{
+		jf := jsonFinding{
 			Rule:     f.RuleID,
 			Severity: string(f.Severity),
 			Job:      f.Job,
 			File:     f.File,
 			Line:     f.Line,
 			Message:  f.Message,
-		})
+		}
+		if owasp != nil {
+			jf.OWASP = owasp(f.RuleID)
+		}
+		out.Findings = append(out.Findings, jf)
 	}
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
@@ -186,15 +197,23 @@ func severityToSARIFLevel(s finding.Severity) string {
 	}
 }
 
-// WriteSARIF writes SARIF output enriched with CWE metadata.
+// WriteSARIF writes SARIF output enriched with CWE and OWASP metadata.
 // cweID maps a rule ID to its CWE identifier (e.g. "CWE-798").
 // cweName maps a CWE identifier to its human-readable name.
-// Pass nil for either to omit CWE data.
-func WriteSARIF(w io.Writer, findings []finding.Finding, cweID func(string) string, cweName func(string) string) error {
-	return writeSARIF(w, findings, cweID, cweName)
+// owasp maps a rule ID to its OWASP CI/CD Security Risks categories.
+// owaspName maps an OWASP category ID to its human-readable name.
+// Pass nil for any parameter to omit that taxonomy.
+func WriteSARIF(w io.Writer, findings []finding.Finding,
+	cweID func(string) string, cweName func(string) string,
+	owasp func(string) []string, owaspName func(string) string,
+) error {
+	return writeSARIF(w, findings, cweID, cweName, owasp, owaspName)
 }
 
-func writeSARIF(w io.Writer, findings []finding.Finding, cweID func(string) string, cweName func(string) string) error {
+func writeSARIF(w io.Writer, findings []finding.Finding,
+	cweID func(string) string, cweName func(string) string,
+	owasp func(string) []string, owaspName func(string) string,
+) error {
 	results := make([]sarifResult, 0, len(findings))
 	for _, f := range findings {
 		results = append(results, sarifResult{
@@ -218,42 +237,63 @@ func writeSARIF(w io.Writer, findings []finding.Finding, cweID func(string) stri
 		Results: results,
 	}
 
-	if cweID != nil && cweName != nil {
-		seenRules := map[string]bool{}
-		seenCWEs := map[string]bool{}
-		for _, f := range findings {
-			if seenRules[f.RuleID] {
-				continue
+	seenRules := map[string]bool{}
+	seenCWEs := map[string]bool{}
+	seenOWASP := map[string]bool{}
+
+	for _, f := range findings {
+		if seenRules[f.RuleID] {
+			continue
+		}
+		seenRules[f.RuleID] = true
+
+		var rels []sarifRelationship
+
+		if cweID != nil {
+			if cwe := cweID(f.RuleID); cwe != "" {
+				rels = append(rels, sarifRelationship{
+					Target: sarifRelationshipTarget{ID: cwe, ToolComponent: sarifToolComponentRef{Name: "CWE"}},
+					Kinds:  []string{"superset"},
+				})
+				seenCWEs[cwe] = true
 			}
-			seenRules[f.RuleID] = true
-			cwe := cweID(f.RuleID)
-			if cwe == "" {
-				continue
+		}
+
+		if owasp != nil {
+			for _, cat := range owasp(f.RuleID) {
+				rels = append(rels, sarifRelationship{
+					Target: sarifRelationshipTarget{ID: cat, ToolComponent: sarifToolComponentRef{Name: "OWASP Top 10 CI/CD Security Risks"}},
+					Kinds:  []string{"superset"},
+				})
+				seenOWASP[cat] = true
 			}
+		}
+
+		if len(rels) > 0 {
 			run.Tool.Driver.Rules = append(run.Tool.Driver.Rules, sarifRule{
-				ID: f.RuleID,
-				Relationships: []sarifRelationship{{
-					Target: sarifRelationshipTarget{
-						ID:            cwe,
-						ToolComponent: sarifToolComponentRef{Name: "CWE"},
-					},
-					Kinds: []string{"superset"},
-				}},
+				ID: f.RuleID, Relationships: rels,
 			})
-			seenCWEs[cwe] = true
 		}
-		if len(seenCWEs) > 0 {
-			taxa := make([]sarifTaxon, 0, len(seenCWEs))
-			for cwe := range seenCWEs {
-				taxa = append(taxa, sarifTaxon{ID: cwe, Name: cweName(cwe)})
-			}
-			run.Taxonomies = []sarifTaxonomy{{
-				Name:         "CWE",
-				Version:      "4.14",
-				Organization: "MITRE",
-				Taxa:         taxa,
-			}}
+	}
+
+	if len(seenCWEs) > 0 && cweName != nil {
+		taxa := make([]sarifTaxon, 0, len(seenCWEs))
+		for cwe := range seenCWEs {
+			taxa = append(taxa, sarifTaxon{ID: cwe, Name: cweName(cwe)})
 		}
+		run.Taxonomies = append(run.Taxonomies, sarifTaxonomy{
+			Name: "CWE", Version: "4.14", Organization: "MITRE", Taxa: taxa,
+		})
+	}
+
+	if len(seenOWASP) > 0 && owaspName != nil {
+		taxa := make([]sarifTaxon, 0, len(seenOWASP))
+		for cat := range seenOWASP {
+			taxa = append(taxa, sarifTaxon{ID: cat, Name: owaspName(cat)})
+		}
+		run.Taxonomies = append(run.Taxonomies, sarifTaxonomy{
+			Name: "OWASP Top 10 CI/CD Security Risks", Version: "2022", Organization: "OWASP", Taxa: taxa,
+		})
 	}
 
 	log := sarifLog{

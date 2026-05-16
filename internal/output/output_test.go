@@ -184,7 +184,7 @@ func TestWriteSARIF_WithCWE(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := WriteSARIF(&buf, testFindings, cweID, cweName); err != nil {
+	if err := WriteSARIF(&buf, testFindings, cweID, cweName, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	var log sarifLog
@@ -215,7 +215,7 @@ func TestWriteSARIF_WithCWE(t *testing.T) {
 
 func TestWriteSARIF_NoCWE(t *testing.T) {
 	var buf bytes.Buffer
-	if err := WriteSARIF(&buf, testFindings, nil, nil); err != nil {
+	if err := WriteSARIF(&buf, testFindings, nil, nil, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	var log sarifLog
@@ -227,5 +227,71 @@ func TestWriteSARIF_NoCWE(t *testing.T) {
 	}
 	if len(log.Runs[0].Taxonomies) != 0 {
 		t.Error("expected no taxonomies when CWE lookup is nil")
+	}
+}
+
+func TestWriteJSON_WithOWASP(t *testing.T) {
+	owasp := func(id string) []string {
+		if id == "GL001" {
+			return []string{"CICD-SEC-3"}
+		}
+		return []string{"CICD-SEC-6"}
+	}
+	var buf bytes.Buffer
+	if err := WriteJSON(&buf, testFindings, owasp); err != nil {
+		t.Fatal(err)
+	}
+	var out jsonOutput
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if len(out.Findings[0].OWASP) != 1 || out.Findings[0].OWASP[0] != "CICD-SEC-3" {
+		t.Errorf("unexpected OWASP for GL001: %v", out.Findings[0].OWASP)
+	}
+	if len(out.Findings[1].OWASP) != 1 || out.Findings[1].OWASP[0] != "CICD-SEC-6" {
+		t.Errorf("unexpected OWASP for GL002: %v", out.Findings[1].OWASP)
+	}
+}
+
+func TestWriteSARIF_WithOWASP(t *testing.T) {
+	owasp := func(id string) []string {
+		if id == "GL001" {
+			return []string{"CICD-SEC-3"}
+		}
+		return nil
+	}
+	owaspName := func(id string) string {
+		if id == "CICD-SEC-3" {
+			return "Dependency Chain Abuse"
+		}
+		return ""
+	}
+	var buf bytes.Buffer
+	if err := WriteSARIF(&buf, testFindings, nil, nil, owasp, owaspName); err != nil {
+		t.Fatal(err)
+	}
+	var log sarifLog
+	if err := json.Unmarshal(buf.Bytes(), &log); err != nil {
+		t.Fatalf("invalid SARIF JSON: %v", err)
+	}
+	run := log.Runs[0]
+	if len(run.Tool.Driver.Rules) != 1 {
+		t.Fatalf("expected 1 rule descriptor (GL001 has OWASP, GL002 does not), got %d", len(run.Tool.Driver.Rules))
+	}
+	rule := run.Tool.Driver.Rules[0]
+	if rule.ID != "GL001" {
+		t.Errorf("expected rule GL001, got %q", rule.ID)
+	}
+	if len(rule.Relationships) != 1 || rule.Relationships[0].Target.ID != "CICD-SEC-3" {
+		t.Errorf("unexpected OWASP relationship: %+v", rule.Relationships)
+	}
+	if rule.Relationships[0].Target.ToolComponent.Name != "OWASP Top 10 CI/CD Security Risks" {
+		t.Errorf("unexpected tool component name: %q", rule.Relationships[0].Target.ToolComponent.Name)
+	}
+	if len(run.Taxonomies) != 1 || run.Taxonomies[0].Name != "OWASP Top 10 CI/CD Security Risks" {
+		t.Fatalf("expected OWASP taxonomy, got %+v", run.Taxonomies)
+	}
+	if len(run.Taxonomies[0].Taxa) != 1 || run.Taxonomies[0].Taxa[0].ID != "CICD-SEC-3" {
+		t.Errorf("unexpected taxa: %+v", run.Taxonomies[0].Taxa)
 	}
 }
