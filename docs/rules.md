@@ -10,7 +10,7 @@ Secrets hardcoded, leaked through logs, or forwarded to unintended consumers.
 
 | ID | Severity | Description |
 |----|----------|-------------|
-| [GL002](rules/GL002.md) | `warn`  | User-controlled CI variable used unquoted in script |
+| [GL005](rules/GL005.md) | `warn`  | Sensitive file patterns in `artifacts:` paths |
 | [GL027](rules/GL027.md) | `warn`  | Secret-like variable defined without `masked: true` |
 | [GL004](rules/GL004.md) | `warn`  | `CI_JOB_TOKEN` forwarded to a non-GitLab host |
 | [GL006](rules/GL006.md) | `error` | Hardcoded secret in `variables:` block |
@@ -25,6 +25,7 @@ Secrets hardcoded, leaked through logs, or forwarded to unintended consumers.
 | [GL029](rules/GL029.md) | `warn`  | `docker login -p` exposes password in process table — use `--password-stdin` instead |
 | [GL035](rules/GL035.md) | `warn`  | `git` command uses URL with embedded credentials (`user:token@host`) — token appears in job logs |
 | [GL038](rules/GL038.md) | `error` | Hardcoded credential literal passed to CLI tool in script (`sqlcmd -P`, `mysql -p`, `PGPASSWORD=`, etc.) |
+| [GL040](rules/GL040.md) | `warn`  | Script uses plain `ftp://` — credentials and content transmitted unencrypted |
 
 ---
 
@@ -36,19 +37,24 @@ Mutable references that allow silent substitution of images, templates, or packa
 |----|----------|-------------|
 | [GL001](rules/GL001.md) | `error` | Mutable image tag (`latest`, no tag, non-digest pin) |
 | [GL003](rules/GL003.md) | `error` | Remote `include:` with mutable or missing `ref` |
-| [GL015](rules/GL015.md) | `warn`  | Docker image tag built from user-controlled variable (`$CI_COMMIT_REF_SLUG` etc.) |
+| [GL011](rules/GL011.md) | `error` | Download-and-execute pattern in script (`curl \| bash`, `wget \| sh`) |
+| [GL016](rules/GL016.md) | varies  | HTTP instead of HTTPS (`include:remote`, scripts, variables) |
 | [GL022](rules/GL022.md) | `warn`  | Package manager install without version pin or explicit update-to-latest in CI |
 | [GL023](rules/GL023.md) | `warn`  | Lockfile not enforced (`npm install` instead of `npm ci`, `yarn install` without `--frozen-lockfile`, etc.) |
 | [GL026](rules/GL026.md) | `warn`  | `git clone`/`checkout` uses a mutable ref (branch or tag) instead of a pinned commit SHA |
 
 ---
 
-## Component & Third-Party Integrity — [CICD-SEC-4](https://owasp.org/www-project-top-10-ci-cd-security-risks/CICD-SEC-04-Poisoned-Pipeline-Execution) / [CICD-SEC-8](https://owasp.org/www-project-top-10-ci-cd-security-risks/CICD-SEC-08-Ungoverned-Usage-of-3rd-Party-Services)
+## Poisoned Pipeline Execution — [CICD-SEC-4](https://owasp.org/www-project-top-10-ci-cd-security-risks/CICD-SEC-04-Poisoned-Pipeline-Execution) / [CICD-SEC-8](https://owasp.org/www-project-top-10-ci-cd-security-risks/CICD-SEC-08-Ungoverned-Usage-of-3rd-Party-Services)
 
-Mutable or unversioned component includes that allow silent substitution of pipeline templates.
+User-controlled inputs and unversioned component references that allow malicious code to run inside the pipeline.
 
 | ID | Severity | Description |
 |----|----------|-------------|
+| [GL002](rules/GL002.md) | `warn`  | User-controlled CI variable used unquoted in script |
+| [GL007](rules/GL007.md) | `error` | CI variable interpolation in `image:` reference |
+| [GL015](rules/GL015.md) | `warn`  | Docker image tag built from user-controlled variable (`$CI_COMMIT_REF_SLUG` etc.) |
+| [GL025](rules/GL025.md) | `warn`  | `curl`/`wget` uses a user-controlled CI variable — attacker can redirect the request to an arbitrary host |
 | [GL041](rules/GL041.md) | `warn`  | `include: component:` without a pinned semver tag or commit SHA |
 
 ---
@@ -59,9 +65,7 @@ Downloads and executions that bypass integrity checks, enabling tampering mid-pi
 
 | ID | Severity | Description |
 |----|----------|-------------|
-| [GL011](rules/GL011.md) | `error` | Download-and-execute pattern in script (`curl \| bash`, `wget \| sh`) |
 | [GL020](rules/GL020.md) | `warn`  | File downloaded with `curl`/`wget` without checksum verification before execution |
-| [GL025](rules/GL025.md) | `warn`  | `curl`/`wget` uses a user-controlled CI variable — attacker can redirect the request to an arbitrary host |
 
 ---
 
@@ -72,13 +76,13 @@ Gates bypassed, runners untrusted, or downstream pipelines outside access contro
 | ID | Severity | Description |
 |----|----------|-------------|
 | [GL008](rules/GL008.md) | `warn`  | `allow_failure: true` on a GitLab security scan job |
+| [GL012](rules/GL012.md) | `warn`  | `when: always` on a deploy/release job bypasses upstream quality gates |
+| [GL013](rules/GL013.md) | `warn`  | Production deploy job has no `rules:` or `only:` branch restriction |
+| [GL019](rules/GL019.md) | `warn`  | Deploy/publish job has no `resource_group:` — concurrent runs risk race conditions or partial deploys |
 | [GL034](rules/GL034.md) | `warn`  | `trigger:` job without `strategy: depend` — child pipeline failures are silently ignored |
 | [GL039](rules/GL039.md) | `warn`  | Security audit tool silenced with `\|\| true` — failures discarded, pipeline always green |
 | [GL009](rules/GL009.md) | `warn`  | Overly broad OIDC `id_tokens` audience (GitLab ≥ 15.7) |
-| [GL012](rules/GL012.md) | `warn`  | `when: always` on a deploy/release job bypasses upstream quality gates |
-| [GL013](rules/GL013.md) | `warn`  | Production deploy job has no `rules:` or `only:` branch restriction |
 | [GL017](rules/GL017.md) | `warn`  | Deploy/publish job has no `tags:` — can run on any runner including untrusted self-hosted |
-| [GL019](rules/GL019.md) | `warn`  | Deploy/publish job has no `resource_group:` — concurrent runs risk race conditions or partial deploys |
 
 ---
 
@@ -88,10 +92,6 @@ Misconfigured CI settings that expand the attack surface or leak build context.
 
 | ID | Severity | Description |
 |----|----------|-------------|
-| [GL005](rules/GL005.md) | `warn`  | Sensitive file patterns in `artifacts:` or missing `expire_in` |
-| [GL007](rules/GL007.md) | `error` | CI variable interpolation in `image:` reference |
-| [GL016](rules/GL016.md) | varies  | HTTP instead of HTTPS (`include:remote`, scripts, variables) |
-| [GL040](rules/GL040.md) | `warn`  | Script uses plain `ftp://` — credentials and content transmitted unencrypted |
 | [GL024](rules/GL024.md) | `warn`  | Shell pipe without `set -o pipefail` — failures in all but the last command are silently ignored |
 | [GL028](rules/GL028.md) | `warn`  | `artifacts: untracked: true` without `paths:` or `exclude:` may archive `.env`, keys, and other sensitive files |
 | [GL030](rules/GL030.md) | `warn`  | `ssh-keyscan` at runtime blindly trusts the remote host key — MITM risk on shared runner networks |

@@ -157,9 +157,12 @@ func main() {
 	}
 
 	var writeErr error
-	if format == output.FormatSARIF {
-		writeErr = output.WriteSARIF(os.Stdout, findings, rules.CWEID, rules.CWEName)
-	} else {
+	switch format {
+	case output.FormatSARIF:
+		writeErr = output.WriteSARIF(os.Stdout, findings, rules.CWEID, rules.CWEName, rules.OWASPCategories, rules.OWASPCategoryName)
+	case output.FormatJSON:
+		writeErr = output.WriteJSON(os.Stdout, findings, rules.OWASPCategories)
+	default:
 		writeErr = output.Write(os.Stdout, format, findings)
 	}
 	if err := writeErr; err != nil {

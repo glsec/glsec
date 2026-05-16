@@ -33,6 +33,7 @@ func TestRuleConsistency(t *testing.T) {
 			checkOWASPMapping(t, id)
 			checkCWEMapping(t, id)
 			checkRulesOverviewLink(t, id, rulesOverview)
+			checkRulesOverviewSection(t, id, rulesOverview, OWASPCategories(id))
 		})
 	}
 }
@@ -104,8 +105,76 @@ func checkFixtureFires(t *testing.T, id string) {
 
 func checkOWASPMapping(t *testing.T, id string) {
 	t.Helper()
-	if len(OWASPCategories(id)) == 0 {
+	cats := OWASPCategories(id)
+	if len(cats) == 0 {
 		t.Errorf("no OWASP category mapping for %s (add to rules/owasp.go)", id)
+		return
+	}
+	checkDocOWASPMatchesMap(t, id, cats)
+}
+
+var owaspLineURLPat = regexp.MustCompile(`\]\([^)]*\)`)
+var owaspCatPat = regexp.MustCompile(`CICD-SEC-([1-9][0-9]?)\b`)
+
+func checkDocOWASPMatchesMap(t *testing.T, id string, expected []string) {
+	t.Helper()
+	path := filepath.Join("..", "docs", "rules", id+".md")
+	content, err := os.ReadFile(path) //nolint:gosec
+	if err != nil {
+		return // missing doc is already caught by checkDocFile
+	}
+	owaspLine := ""
+	for _, l := range strings.Split(string(content), "\n") {
+		if strings.Contains(l, "**OWASP:**") {
+			owaspLine = l
+			break
+		}
+	}
+	if owaspLine == "" {
+		t.Errorf("%s: no **OWASP:** line in doc", id)
+		return
+	}
+	// Strip URL portions so CICD-SEC-06 in a URL doesn't count as a category.
+	stripped := owaspLineURLPat.ReplaceAllString(owaspLine, "")
+	var got []string
+	for _, m := range owaspCatPat.FindAllStringSubmatch(stripped, -1) {
+		got = append(got, fmt.Sprintf("CICD-SEC-%s", m[1]))
+	}
+	if fmt.Sprint(got) != fmt.Sprint(expected) {
+		t.Errorf("%s: doc OWASP %v does not match owasp.go map %v", id, got, expected)
+	}
+}
+
+func checkRulesOverviewSection(t *testing.T, id string, overview string, expected []string) {
+	t.Helper()
+	// Find the section header line(s) that this rule's link falls under.
+	// A section starts with "## " and contains a CICD-SEC-N link.
+	sectionCatPat := regexp.MustCompile(`\[CICD-SEC-([1-9][0-9]?)\]`)
+	ruleLink := fmt.Sprintf("[%s](rules/%s.md)", id, id)
+	lines := strings.Split(overview, "\n")
+	var currentCats []string
+	for _, l := range lines {
+		if strings.HasPrefix(l, "## ") {
+			currentCats = nil
+			for _, m := range sectionCatPat.FindAllStringSubmatch(l, -1) {
+				currentCats = append(currentCats, fmt.Sprintf("CICD-SEC-%s", m[1]))
+			}
+		}
+		if strings.Contains(l, ruleLink) {
+			for _, cat := range expected {
+				found := false
+				for _, sc := range currentCats {
+					if sc == cat {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf("%s: in rules.md section %v but owasp.go map says %v", id, currentCats, expected)
+				}
+			}
+			return
+		}
 	}
 }
 
