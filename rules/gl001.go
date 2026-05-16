@@ -43,17 +43,21 @@ func (r *gl001) Check(doc *yaml.Node, file string) []finding.Finding {
 
 // mutableTags is the set of well-known mutable image tags.
 var mutableTags = map[string]bool{
-	"latest":  true,
-	"stable":  true,
-	"edge":    true,
-	"dev":     true,
-	"main":    true,
-	"master":  true,
-	"nightly": true,
-	"rolling": true,
-	"canary":  true,
-	"beta":    true,
-	"alpha":   true,
+	"latest":    true,
+	"stable":    true,
+	"edge":      true,
+	"dev":       true,
+	"main":      true,
+	"master":    true,
+	"nightly":   true,
+	"rolling":   true,
+	"canary":    true,
+	"beta":      true,
+	"alpha":     true,
+	"lts":       true,
+	"current":   true,
+	"testing":   true,
+	"oldstable": true,
 }
 
 func checkImageNode(node *yaml.Node, file string) []finding.Finding {
@@ -97,8 +101,31 @@ func imageRef(node *yaml.Node) (ref string, line, col int) {
 	return "", 0, 0
 }
 
+// isVarRef reports whether ref is entirely a shell variable expression
+// ($MY_IMAGE or ${MY_IMAGE}). Such refs cannot be statically analysed
+// for tag presence and must not be flagged as "no tag".
+func isVarRef(ref string) bool {
+	if len(ref) == 0 || ref[0] != '$' {
+		return false
+	}
+	rest := ref[1:]
+	if len(rest) > 0 && rest[0] == '{' {
+		rest = strings.TrimSuffix(rest, "}")
+		rest = rest[1:]
+	}
+	for _, ch := range rest {
+		if !((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '_') {
+			return false
+		}
+	}
+	return len(rest) > 0
+}
+
 func checkRef(ref string, line, col int, file string) []finding.Finding {
 	if strings.Contains(ref, "@sha256:") {
+		return nil
+	}
+	if isVarRef(ref) {
 		return nil
 	}
 	tag := imageTag(ref)
