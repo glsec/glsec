@@ -226,3 +226,27 @@ build:
 		t.Errorf("expected no findings for suffixed variable name, got %d", len(f))
 	}
 }
+
+func TestGL002_BareAssignment(t *testing.T) {
+	f := findings002(t, `
+build:
+  script:
+    - BRANCH=$CI_COMMIT_REF_NAME
+    - git checkout "$BRANCH"
+`)
+	if len(f) != 0 {
+		t.Errorf("expected no findings for bare assignment RHS, got %d", len(f))
+	}
+}
+
+func TestGL002_BareAssignmentThenUnquotedUse(t *testing.T) {
+	f := findings002(t, `
+build:
+  script:
+    - BRANCH=$CI_COMMIT_REF_NAME
+    - git checkout $CI_COMMIT_REF_NAME
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for unquoted use, got %d", len(f))
+	}
+}
