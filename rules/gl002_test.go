@@ -41,6 +41,50 @@ build:
 	}
 }
 
+func TestGL002_QuotedMidString(t *testing.T) {
+	f := findings002(t, `
+build:
+  script:
+    - echo "Branch: $CI_COMMIT_REF_NAME"
+`)
+	if len(f) != 0 {
+		t.Errorf("expected no findings for variable inside double-quoted string, got %d", len(f))
+	}
+}
+
+func TestGL002_MultipleQuotedVars(t *testing.T) {
+	f := findings002(t, `
+build:
+  script:
+    - echo "$CI_COMMIT_REF_NAME and $CI_COMMIT_MESSAGE"
+`)
+	if len(f) != 0 {
+		t.Errorf("expected no findings for multiple vars inside double-quoted string, got %d", len(f))
+	}
+}
+
+func TestGL002_SingleQuoted(t *testing.T) {
+	f := findings002(t, `
+build:
+  script:
+    - echo '$CI_COMMIT_REF_NAME'
+`)
+	if len(f) != 0 {
+		t.Errorf("expected no findings for single-quoted variable, got %d", len(f))
+	}
+}
+
+func TestGL002_EscapedDollar(t *testing.T) {
+	f := findings002(t, `
+build:
+  script:
+    - echo \$CI_COMMIT_REF_NAME
+`)
+	if len(f) != 0 {
+		t.Errorf("expected no findings for escaped dollar, got %d", len(f))
+	}
+}
+
 func TestGL002_BraceForm(t *testing.T) {
 	f := findings002(t, `
 build:
@@ -61,6 +105,39 @@ build:
 `)
 	if len(f) != 2 {
 		t.Fatalf("expected 2 findings, got %d", len(f))
+	}
+}
+
+func TestGL002_CommitBranch(t *testing.T) {
+	f := findings002(t, `
+build:
+  script:
+    - git checkout $CI_COMMIT_BRANCH
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for CI_COMMIT_BRANCH, got %d", len(f))
+	}
+}
+
+func TestGL002_CommitTag(t *testing.T) {
+	f := findings002(t, `
+build:
+  script:
+    - git tag -a $CI_COMMIT_TAG -m release
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for CI_COMMIT_TAG, got %d", len(f))
+	}
+}
+
+func TestGL002_PipelineName(t *testing.T) {
+	f := findings002(t, `
+build:
+  script:
+    - ./trigger.sh $CI_PIPELINE_NAME
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for CI_PIPELINE_NAME, got %d", len(f))
 	}
 }
 
@@ -125,5 +202,27 @@ build:
 `)
 	if len(f) != 1 {
 		t.Fatalf("expected 1 finding for assignment context, got %d", len(f))
+	}
+}
+
+func TestGL002_DeduplicatePerLine(t *testing.T) {
+	f := findings002(t, `
+build:
+  script:
+    - echo $CI_COMMIT_REF_NAME $CI_COMMIT_REF_NAME
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding (deduplicated), got %d", len(f))
+	}
+}
+
+func TestGL002_NoSuffixMatch(t *testing.T) {
+	f := findings002(t, `
+build:
+  script:
+    - echo $CI_COMMIT_REF_NAME_CUSTOM
+`)
+	if len(f) != 0 {
+		t.Errorf("expected no findings for suffixed variable name, got %d", len(f))
 	}
 }
