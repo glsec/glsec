@@ -121,31 +121,13 @@ func main() {
 		os.Exit(2)
 	}
 
-	suppressMap := suppress.Build(doc.Root)
-	suppressMap.Merge(suppress.LoadIgnoreFile(suppress.IgnoreFile, file))
-
-	var findings []finding.Finding
-	for _, rule := range rules.All() {
-		if !cfg.RuleEnabled(rule.ID()) {
-			continue
-		}
-		if !cfg.OWASPEnabled(rules.OWASPCategories(rule.ID())) {
-			continue
-		}
-		if !rules.EnabledFor(rule.ID(), gitlabVersion) {
-			continue
-		}
-		for _, f := range rule.Check(doc.Root, file) {
-			f = cfg.ApplySeverity(f)
-			if !cfg.AboveMinSeverity(f) {
-				continue
-			}
-			if !*generateIgnoreFlag && suppressMap.IsSuppressed(f.Line, f.RuleID) {
-				continue
-			}
-			findings = append(findings, f)
-		}
+	seen := map[string]bool{}
+	if abs, absErr := filepath.Abs(file); absErr == nil {
+		seen[abs] = true
 	}
+
+	findings := collectFindings(doc, file, cfg, gitlabVersion, *generateIgnoreFlag)
+	findings = append(findings, scanChildPipelines(doc, file, cfg, gitlabVersion, *generateIgnoreFlag, cfg.ExcludePaths, seen, 0)...)
 
 	if *generateIgnoreFlag {
 		if err := writeIgnoreFile(suppress.IgnoreFile, findings); err != nil {
@@ -215,6 +197,68 @@ func matchesExclude(file string, patterns []string) bool {
 		}
 	}
 	return false
+}
+
+// collectFindings runs all applicable rules against doc and returns the findings.
+func collectFindings(doc *parser.Document, path string, cfg *config.Config, gitlabVersion gitlabver.Version, generateIgnore bool) []finding.Finding {
+	sm := suppress.Build(doc.Root)
+	sm.Merge(suppress.LoadIgnoreFile(suppress.IgnoreFile, path))
+
+	var findings []finding.Finding
+	for _, rule := range rules.All() {
+		if !cfg.RuleEnabled(rule.ID()) {
+			continue
+		}
+		if !cfg.OWASPEnabled(rules.OWASPCategories(rule.ID())) {
+			continue
+		}
+		if !rules.EnabledFor(rule.ID(), gitlabVersion) {
+			continue
+		}
+		for _, f := range rule.Check(doc.Root, path) {
+			f = cfg.ApplySeverity(f)
+			if !cfg.AboveMinSeverity(f) {
+				continue
+			}
+			if !generateIgnore && sm.IsSuppressed(f.Line, f.RuleID) {
+				continue
+			}
+			findings = append(findings, f)
+		}
+	}
+	return findings
+}
+
+const maxChildDepth = 5
+
+// scanChildPipelines recursively scans local child pipeline files referenced
+// by trigger: include: in doc. seen prevents re-scanning the same file twice.
+func scanChildPipelines(doc *parser.Document, path string, cfg *config.Config, gitlabVersion gitlabver.Version, generateIgnore bool, excludePaths []string, seen map[string]bool, depth int) []finding.Finding {
+	if depth >= maxChildDepth {
+		return nil
+	}
+	baseDir := filepath.Dir(path)
+	var all []finding.Finding
+	for _, child := range parser.ChildPipelinePaths(doc.Root) {
+		childPath := filepath.Join(baseDir, child)
+		if matchesExclude(childPath, excludePaths) {
+			continue
+		}
+		abs, err := filepath.Abs(childPath)
+		if err != nil || seen[abs] {
+			continue
+		}
+		seen[abs] = true
+
+		childDoc, err := parser.ParseFile(childPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "warning: child pipeline %s: %v\n", childPath, err)
+			continue
+		}
+		all = append(all, collectFindings(childDoc, childPath, cfg, gitlabVersion, generateIgnore)...)
+		all = append(all, scanChildPipelines(childDoc, childPath, cfg, gitlabVersion, generateIgnore, excludePaths, seen, depth+1)...)
+	}
+	return all
 }
 
 // writeIgnoreFile creates or overwrites .glsec-ignore with one entry per finding.
