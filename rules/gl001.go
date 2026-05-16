@@ -114,7 +114,7 @@ func isVarRef(ref string) bool {
 		rest = rest[1:]
 	}
 	for _, ch := range rest {
-		if !((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '_') {
+		if (ch < 'A' || ch > 'Z') && (ch < 'a' || ch > 'z') && (ch < '0' || ch > '9') && ch != '_' {
 			return false
 		}
 	}
