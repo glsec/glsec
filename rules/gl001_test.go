@@ -155,3 +155,71 @@ build:
 		t.Fatalf("expected 1 finding for registry image with latest tag, got %d", len(f))
 	}
 }
+
+func TestGL001_VariableRef(t *testing.T) {
+	f := findings(t, `
+variables:
+  MY_IMAGE: alpine:3.19
+build:
+  image: $MY_IMAGE
+  script: [make]
+`)
+	if len(f) != 0 {
+		t.Errorf("expected no findings for image: $VARIABLE (tag cannot be determined statically), got %d", len(f))
+	}
+}
+
+func TestGL001_VariableRefBrace(t *testing.T) {
+	f := findings(t, `
+build:
+  image: ${MY_IMAGE}
+  script: [make]
+`)
+	if len(f) != 0 {
+		t.Errorf("expected no findings for image: ${VARIABLE}, got %d", len(f))
+	}
+}
+
+func TestGL001_LtsTag(t *testing.T) {
+	f := findings(t, `
+build:
+  image: node:lts
+  script: [make]
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for node:lts, got %d", len(f))
+	}
+}
+
+func TestGL001_CurrentTag(t *testing.T) {
+	f := findings(t, `
+build:
+  image: node:current
+  script: [make]
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for node:current, got %d", len(f))
+	}
+}
+
+func TestGL001_TestingTag(t *testing.T) {
+	f := findings(t, `
+build:
+  image: debian:testing
+  script: [make]
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for debian:testing, got %d", len(f))
+	}
+}
+
+func TestGL001_LtsVariantNotFlagged(t *testing.T) {
+	f := findings(t, `
+build:
+  image: node:20-alpine
+  script: [make]
+`)
+	if len(f) != 0 {
+		t.Errorf("expected no findings for node:20-alpine (pinned version), got %d", len(f))
+	}
+}
