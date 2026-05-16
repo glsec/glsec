@@ -86,15 +86,19 @@ func checkScriptNode(node *yaml.Node, file string) []finding.Finding {
 
 func checkScriptLine(node *yaml.Node, file string) []finding.Finding {
 	masked := maskShellQuotes(node.Value)
-	matches := userVarRe.FindAllStringSubmatch(masked, -1)
+	matches := userVarRe.FindAllStringSubmatchIndex(masked, -1)
 	if len(matches) == 0 {
 		return nil
 	}
 	seen := map[string]bool{}
 	var findings []finding.Finding
-	for _, m := range matches {
-		varName := m[1]
+	for _, loc := range matches {
+		dollarPos := loc[0]
+		varName := masked[loc[2]:loc[3]]
 		if seen[varName] {
+			continue
+		}
+		if isBareAssignment(masked, dollarPos) {
 			continue
 		}
 		seen[varName] = true
@@ -111,6 +115,31 @@ func checkScriptLine(node *yaml.Node, file string) []finding.Finding {
 		})
 	}
 	return findings
+}
+
+// isBareAssignment reports whether the $ at dollarPos in s is the RHS of a
+// simple shell assignment (IDENTIFIER=$VAR). The LHS must consist solely of
+// a valid identifier followed by '=', with nothing else on the line before it.
+// The RHS of such an assignment is not word-split by the shell, so it is not
+// subject to injection via metacharacters.
+func isBareAssignment(s string, dollarPos int) bool {
+	if dollarPos == 0 {
+		return false
+	}
+	if s[dollarPos-1] != '=' {
+		return false
+	}
+	lhs := s[:dollarPos-1]
+	if len(lhs) == 0 {
+		return false
+	}
+	for _, ch := range lhs {
+		if (ch < 'A' || ch > 'Z') && (ch < 'a' || ch > 'z') && (ch < '0' || ch > '9') && ch != '_' {
+			return false
+		}
+	}
+	// first char must not be a digit
+	return lhs[0] < '0' || lhs[0] > '9'
 }
 
 // maskShellQuotes replaces the contents of single- and double-quoted shell
