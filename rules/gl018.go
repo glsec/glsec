@@ -19,7 +19,7 @@ func (r *gl018) ID() string { return "GL018" }
 // secretNameSuffixes identifies variable names that suggest secret content.
 var secretNameSuffixes = []string{
 	"_TOKEN", "_SECRET", "_PASSWORD", "_PASSWD", "_PASS", "_PWD",
-	"_KEY", "_CREDENTIAL", "_CERT", "_API_KEY",
+	"_KEY", "_CREDENTIAL", "_CERT",
 }
 
 // varRefRe matches a value that is (or starts with) a CI variable reference.
@@ -27,11 +27,23 @@ var varRefRe = regexp.MustCompile(`^\$\{?[A-Za-z_][A-Za-z0-9_]*\}?`)
 
 func (r *gl018) Check(doc *yaml.Node, file string) []finding.Finding {
 	mapping := parser.Unwrap(doc)
-	varsNode := parser.FindKey(mapping, "variables")
-	if varsNode == nil || varsNode.Kind != yaml.MappingNode {
-		return nil
+
+	var findings []finding.Finding
+
+	if varsNode := parser.FindKey(mapping, "variables"); varsNode != nil && varsNode.Kind == yaml.MappingNode {
+		findings = append(findings, checkSecretReexport(varsNode, file)...)
 	}
 
+	if def := parser.FindKey(mapping, "default"); def != nil {
+		if varsNode := parser.FindKey(def, "variables"); varsNode != nil && varsNode.Kind == yaml.MappingNode {
+			findings = append(findings, checkSecretReexport(varsNode, file)...)
+		}
+	}
+
+	return findings
+}
+
+func checkSecretReexport(varsNode *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
 	for i := 0; i+1 < len(varsNode.Content); i += 2 {
 		nameNode := varsNode.Content[i]

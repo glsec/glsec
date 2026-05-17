@@ -121,6 +121,37 @@ variables:
 	}
 }
 
+func TestGL018_DefaultVariablesToken(t *testing.T) {
+	f := findings018(t, `
+default:
+  variables:
+    PROD_API_TOKEN: $PROD_API_TOKEN
+
+build:
+  script: go build
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for default: variables: secret, got %d", len(f))
+	}
+	if f[0].Severity != finding.Warn {
+		t.Errorf("expected Warn severity, got %s", f[0].Severity)
+	}
+}
+
+func TestGL018_DefaultVariablesNonSecret_NoFinding(t *testing.T) {
+	f := findings018(t, `
+default:
+  variables:
+    REGISTRY_URL: $CI_REGISTRY
+
+build:
+  script: go build
+`)
+	if len(f) != 0 {
+		t.Errorf("expected no finding for non-secret default variable, got %d", len(f))
+	}
+}
+
 func TestGL018_LineNumber(t *testing.T) {
 	f := findings018(t, `
 variables:
