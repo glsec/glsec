@@ -135,6 +135,43 @@ build:
 	}
 }
 
+func TestGL005_DefaultBlockSensitivePath(t *testing.T) {
+	f := findings005(t, `
+default:
+  artifacts:
+    paths:
+      - .env.production
+    expire_in: 1 week
+
+build:
+  script: [make]
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for sensitive path in default: artifacts:, got %d", len(f))
+	}
+	if f[0].Severity != finding.Error {
+		t.Errorf("expected Error severity")
+	}
+}
+
+func TestGL005_DefaultBlockNoExpiry(t *testing.T) {
+	f := findings005(t, `
+default:
+  artifacts:
+    paths:
+      - dist/
+
+build:
+  script: [make]
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for missing expire_in in default: artifacts:, got %d", len(f))
+	}
+	if f[0].Severity != finding.Warn {
+		t.Errorf("expected Warn severity")
+	}
+}
+
 func TestGL005_NoArtifacts(t *testing.T) {
 	f := findings005(t, `
 build:

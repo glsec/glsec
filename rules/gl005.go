@@ -32,6 +32,13 @@ var sensitivePatterns = []string{
 
 func (r *gl005) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
+	mapping := parser.Unwrap(doc)
+
+	if def := parser.FindKey(mapping, "default"); def != nil {
+		if artifactsNode := parser.FindKey(def, "artifacts"); artifactsNode != nil {
+			findings = append(findings, checkArtifacts(artifactsNode, file)...)
+		}
+	}
 
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
 		artifactsNode := parser.FindKey(job, "artifacts")
