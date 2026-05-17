@@ -126,8 +126,11 @@ func main() {
 		seen[abs] = true
 	}
 
+	jobCount := parser.CountJobs(doc.Root)
 	findings := collectFindings(doc, file, cfg, gitlabVersion, *generateIgnoreFlag)
-	findings = append(findings, scanChildPipelines(doc, file, cfg, gitlabVersion, *generateIgnoreFlag, cfg.ExcludePaths, seen, 0)...)
+	childFindings, childJobs := scanChildPipelines(doc, file, cfg, gitlabVersion, *generateIgnoreFlag, cfg.ExcludePaths, seen, 0)
+	findings = append(findings, childFindings...)
+	jobCount += childJobs
 
 	if *generateIgnoreFlag {
 		if err := writeIgnoreFile(suppress.IgnoreFile, findings); err != nil {
@@ -145,7 +148,7 @@ func main() {
 	case output.FormatJSON:
 		writeErr = output.WriteJSON(os.Stdout, findings, rules.OWASPCategories)
 	default:
-		writeErr = output.Write(os.Stdout, format, findings)
+		writeErr = output.Write(os.Stdout, format, findings, jobCount)
 	}
 	if err := writeErr; err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -233,12 +236,14 @@ const maxChildDepth = 5
 
 // scanChildPipelines recursively scans local child pipeline files referenced
 // by trigger: include: in doc. seen prevents re-scanning the same file twice.
-func scanChildPipelines(doc *parser.Document, path string, cfg *config.Config, gitlabVersion gitlabver.Version, generateIgnore bool, excludePaths []string, seen map[string]bool, depth int) []finding.Finding {
+// Returns findings and the total number of jobs across all child pipelines.
+func scanChildPipelines(doc *parser.Document, path string, cfg *config.Config, gitlabVersion gitlabver.Version, generateIgnore bool, excludePaths []string, seen map[string]bool, depth int) ([]finding.Finding, int) {
 	if depth >= maxChildDepth {
-		return nil
+		return nil, 0
 	}
 	baseDir := filepath.Dir(path)
 	var all []finding.Finding
+	jobCount := 0
 	for _, child := range parser.ChildPipelinePaths(doc.Root) {
 		childPath := filepath.Join(baseDir, child)
 		if matchesExclude(childPath, excludePaths) {
@@ -255,10 +260,13 @@ func scanChildPipelines(doc *parser.Document, path string, cfg *config.Config, g
 			fmt.Fprintf(os.Stderr, "warning: child pipeline %s: %v\n", childPath, err)
 			continue
 		}
+		jobCount += parser.CountJobs(childDoc.Root)
 		all = append(all, collectFindings(childDoc, childPath, cfg, gitlabVersion, generateIgnore)...)
-		all = append(all, scanChildPipelines(childDoc, childPath, cfg, gitlabVersion, generateIgnore, excludePaths, seen, depth+1)...)
+		childFindings, childJobs := scanChildPipelines(childDoc, childPath, cfg, gitlabVersion, generateIgnore, excludePaths, seen, depth+1)
+		all = append(all, childFindings...)
+		jobCount += childJobs
 	}
-	return all
+	return all, jobCount
 }
 
 // writeIgnoreFile creates or overwrites .glsec-ignore with one entry per finding.

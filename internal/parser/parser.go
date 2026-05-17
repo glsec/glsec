@@ -87,6 +87,13 @@ var reservedKeys = map[string]bool{
 	"after_script":  true,
 }
 
+// CountJobs returns the number of job definitions in the document.
+func CountJobs(doc *yaml.Node) int {
+	n := 0
+	EachJob(doc, func(*yaml.Node, *yaml.Node) { n++ })
+	return n
+}
+
 // EachJob calls fn for each job definition in the document.
 func EachJob(doc *yaml.Node, fn func(name *yaml.Node, job *yaml.Node)) {
 	mapping := doc

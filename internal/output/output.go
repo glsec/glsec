@@ -26,18 +26,18 @@ func ParseFormat(s string) (Format, bool) {
 	}
 }
 
-func Write(w io.Writer, format Format, findings []finding.Finding) error {
+func Write(w io.Writer, format Format, findings []finding.Finding, jobCount int) error {
 	switch format {
 	case FormatJSON:
 		return writeJSON(w, findings, nil)
 	case FormatSARIF:
 		return writeSARIF(w, findings, nil, nil, nil, nil)
 	default:
-		return writeText(w, findings)
+		return writeText(w, findings, jobCount)
 	}
 }
 
-func writeText(w io.Writer, findings []finding.Finding) error {
+func writeText(w io.Writer, findings []finding.Finding, jobCount int) error {
 	for _, f := range findings {
 		var err error
 		if f.Job != "" {
@@ -59,6 +59,10 @@ func writeText(w io.Writer, findings []finding.Finding) error {
 		if err != nil {
 			return err
 		}
+	}
+	if len(findings) == 0 {
+		_, err := fmt.Fprintf(w, "Scanned %d jobs, 0 issues found.\n", jobCount)
+		return err
 	}
 	return nil
 }
