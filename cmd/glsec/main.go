@@ -8,6 +8,7 @@ import (
 	"runtime/debug"
 	"strings"
 
+	"github.com/glsec/glsec/internal/cache"
 	"github.com/glsec/glsec/internal/config"
 	"github.com/glsec/glsec/internal/finding"
 	"github.com/glsec/glsec/internal/output"
@@ -33,6 +34,8 @@ func main() {
 	strictFlag := flag.Bool("strict", false, "treat warn findings as errors for the exit code (output severity is unchanged)")
 	noExitCodesFlag := flag.Bool("no-exit-codes", false, "always exit 0 on successful execution, regardless of findings")
 	generateIgnoreFlag := flag.Bool("generate-ignore", false, "write all current findings to .glsec-ignore as a baseline and exit 0")
+	noCacheFlag := flag.Bool("no-cache", false, "disable result cache for this run")
+	clearCacheFlag := flag.Bool("clear-cache", false, "remove all cached results and exit")
 	var excludeArgs []string
 	flag.Func("exclude", "exclude a file or glob pattern from scanning (may be repeated)", func(s string) error {
 		excludeArgs = append(excludeArgs, s)
@@ -47,6 +50,15 @@ func main() {
 
 	if *versionFlag {
 		fmt.Printf("glsec %s (commit %s, built %s)\n", resolvedVersion(), commit, date)
+		return
+	}
+
+	if *clearCacheFlag {
+		if err := cache.Clear(); err != nil {
+			fmt.Fprintf(os.Stderr, "error: --clear-cache: %v\n", err)
+			os.Exit(2)
+		}
+		fmt.Fprintln(os.Stderr, "cache cleared")
 		return
 	}
 
@@ -121,16 +133,40 @@ func main() {
 		os.Exit(2)
 	}
 
+	// Collect all pipeline documents first so we can build a complete cache key.
 	seen := map[string]bool{}
 	if abs, absErr := filepath.Abs(file); absErr == nil {
 		seen[abs] = true
 	}
+	allDocs := collectDocuments(doc, file, cfg.ExcludePaths, seen)
 
+	// Compute job count across all documents.
 	jobCount := parser.CountJobs(doc.Root)
-	findings := collectFindings(doc, file, cfg, gitlabVersion, *generateIgnoreFlag)
-	childFindings, childJobs := scanChildPipelines(doc, file, cfg, gitlabVersion, *generateIgnoreFlag, cfg.ExcludePaths, seen, 0)
-	findings = append(findings, childFindings...)
-	jobCount += childJobs
+	for _, d := range allDocs[1:] {
+		jobCount += parser.CountJobs(d.Root)
+	}
+
+	// Cache lookup (skipped for --generate-ignore since it writes new state).
+	useCache := !*noCacheFlag && !*generateIgnoreFlag
+	var cacheKey string
+	if useCache {
+		filePaths := make([]string, len(allDocs))
+		for i, d := range allDocs {
+			filePaths[i] = d.File
+		}
+		cacheKey, err = cache.Key(resolvedVersion(), gitlabVersionStr, filePaths, *configFlag, suppress.IgnoreFile, cfg.ExcludePaths)
+		if err == nil {
+			if entry, ok := cache.Load(cacheKey); ok {
+				writeAndExit(os.Stdout, format, entry.Findings, entry.JobCount, cfg)
+			}
+		}
+	}
+
+	// Cache miss — run rules across all collected documents.
+	var findings []finding.Finding
+	for _, d := range allDocs {
+		findings = append(findings, collectFindings(d, d.File, cfg, gitlabVersion, *generateIgnoreFlag)...)
+	}
 
 	if *generateIgnoreFlag {
 		if err := writeIgnoreFile(suppress.IgnoreFile, findings); err != nil {
@@ -141,17 +177,25 @@ func main() {
 		return // exit 0
 	}
 
+	if useCache && cacheKey != "" {
+		cache.Store(cacheKey, &cache.Entry{Findings: findings, JobCount: jobCount})
+	}
+
+	writeAndExit(os.Stdout, format, findings, jobCount, cfg)
+}
+
+func writeAndExit(w *os.File, format output.Format, findings []finding.Finding, jobCount int, cfg *config.Config) {
 	var writeErr error
 	switch format {
 	case output.FormatSARIF:
-		writeErr = output.WriteSARIF(os.Stdout, findings, rules.CWEID, rules.CWEName, rules.OWASPCategories, rules.OWASPCategoryName)
+		writeErr = output.WriteSARIF(w, findings, rules.CWEID, rules.CWEName, rules.OWASPCategories, rules.OWASPCategoryName)
 	case output.FormatJSON:
-		writeErr = output.WriteJSON(os.Stdout, findings, rules.OWASPCategories)
+		writeErr = output.WriteJSON(w, findings, rules.OWASPCategories)
 	default:
-		writeErr = output.Write(os.Stdout, format, findings, jobCount)
+		writeErr = output.Write(w, format, findings, jobCount)
 	}
-	if err := writeErr; err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+	if writeErr != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", writeErr)
 		os.Exit(2)
 	}
 
@@ -202,6 +246,31 @@ func matchesExclude(file string, patterns []string) bool {
 	return false
 }
 
+// collectDocuments recursively collects all pipeline documents (main + children)
+// without running any rules. The first element is always the root document.
+func collectDocuments(doc *parser.Document, path string, excludePaths []string, seen map[string]bool) []*parser.Document {
+	all := []*parser.Document{doc}
+	baseDir := filepath.Dir(path)
+	for _, child := range parser.ChildPipelinePaths(doc.Root) {
+		childPath := filepath.Join(baseDir, child)
+		if matchesExclude(childPath, excludePaths) {
+			continue
+		}
+		abs, err := filepath.Abs(childPath)
+		if err != nil || seen[abs] {
+			continue
+		}
+		seen[abs] = true
+		childDoc, err := parser.ParseFile(childPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "warning: child pipeline %s: %v\n", childPath, err)
+			continue
+		}
+		all = append(all, collectDocuments(childDoc, childPath, excludePaths, seen)...)
+	}
+	return all
+}
+
 // collectFindings runs all applicable rules against doc and returns the findings.
 func collectFindings(doc *parser.Document, path string, cfg *config.Config, gitlabVersion gitlabver.Version, generateIgnore bool) []finding.Finding {
 	sm := suppress.Build(doc.Root)
@@ -230,43 +299,6 @@ func collectFindings(doc *parser.Document, path string, cfg *config.Config, gitl
 		}
 	}
 	return findings
-}
-
-const maxChildDepth = 5
-
-// scanChildPipelines recursively scans local child pipeline files referenced
-// by trigger: include: in doc. seen prevents re-scanning the same file twice.
-// Returns findings and the total number of jobs across all child pipelines.
-func scanChildPipelines(doc *parser.Document, path string, cfg *config.Config, gitlabVersion gitlabver.Version, generateIgnore bool, excludePaths []string, seen map[string]bool, depth int) ([]finding.Finding, int) {
-	if depth >= maxChildDepth {
-		return nil, 0
-	}
-	baseDir := filepath.Dir(path)
-	var all []finding.Finding
-	jobCount := 0
-	for _, child := range parser.ChildPipelinePaths(doc.Root) {
-		childPath := filepath.Join(baseDir, child)
-		if matchesExclude(childPath, excludePaths) {
-			continue
-		}
-		abs, err := filepath.Abs(childPath)
-		if err != nil || seen[abs] {
-			continue
-		}
-		seen[abs] = true
-
-		childDoc, err := parser.ParseFile(childPath)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "warning: child pipeline %s: %v\n", childPath, err)
-			continue
-		}
-		jobCount += parser.CountJobs(childDoc.Root)
-		all = append(all, collectFindings(childDoc, childPath, cfg, gitlabVersion, generateIgnore)...)
-		childFindings, childJobs := scanChildPipelines(childDoc, childPath, cfg, gitlabVersion, generateIgnore, excludePaths, seen, depth+1)
-		all = append(all, childFindings...)
-		jobCount += childJobs
-	}
-	return all, jobCount
 }
 
 // writeIgnoreFile creates or overwrites .glsec-ignore with one entry per finding.
