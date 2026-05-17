@@ -43,6 +43,31 @@ build:
 	}
 }
 
+func TestGL026_CloneBranchEqualsForm(t *testing.T) {
+	f := findings026(t, `
+build:
+  script:
+    - git clone --branch=main https://github.com/org/tools.git
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for --branch=main, got %d", len(f))
+	}
+	if f[0].Message == "" {
+		t.Error("expected non-empty message")
+	}
+}
+
+func TestGL026_CloneBranchEqualsWithSHA_NoFinding(t *testing.T) {
+	f := findings026(t, `
+build:
+  script:
+    - git clone --branch=`+sha40+` https://github.com/org/lib.git
+`)
+	if len(f) != 0 {
+		t.Errorf("expected no finding for --branch=<sha>, got %d", len(f))
+	}
+}
+
 func TestGL026_CloneWithBranchFlagShortForm(t *testing.T) {
 	f := findings026(t, `
 build:
