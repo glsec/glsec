@@ -79,6 +79,18 @@ build:
 	}
 }
 
+func TestGL006_OpenAIProjectKey(t *testing.T) {
+	f := findings006(t, `
+variables:
+  OPENAI_KEY: "sk-proj-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+build:
+  script: [echo ok]
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for OpenAI project API key, got %d", len(f))
+	}
+}
+
 func TestGL006_VariableReference_NoFinding(t *testing.T) {
 	f := findings006(t, `
 variables:
