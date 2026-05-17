@@ -40,14 +40,14 @@ func Dir() string {
 func Key(version, gitlabVersion string, filePaths []string, configPath, ignorePath string, excludePatterns []string) (string, error) {
 	h := sha256.New()
 
-	fmt.Fprintf(h, "version:%s\n", version)
-	fmt.Fprintf(h, "gitlab-version:%s\n", gitlabVersion)
+	_, _ = fmt.Fprintf(h, "version:%s\n", version)
+	_, _ = fmt.Fprintf(h, "gitlab-version:%s\n", gitlabVersion)
 
 	sorted := make([]string, len(excludePatterns))
 	copy(sorted, excludePatterns)
 	sort.Strings(sorted)
 	for _, p := range sorted {
-		fmt.Fprintf(h, "exclude:%s\n", p)
+		_, _ = fmt.Fprintf(h, "exclude:%s\n", p)
 	}
 
 	sortedFiles := make([]string, len(filePaths))
@@ -75,7 +75,7 @@ func hashFile(h io.Writer, path string) error {
 	resolved, err := filepath.EvalSymlinks(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			fmt.Fprintf(h, "file:%s:missing\n", path)
+			_, _ = fmt.Fprintf(h, "file:%s:missing\n", path)
 			return nil
 		}
 		return err
@@ -83,13 +83,13 @@ func hashFile(h io.Writer, path string) error {
 	data, err := os.ReadFile(resolved) //nolint:gosec
 	if err != nil {
 		if os.IsNotExist(err) {
-			fmt.Fprintf(h, "file:%s:missing\n", path)
+			_, _ = fmt.Fprintf(h, "file:%s:missing\n", path)
 			return nil
 		}
 		return err
 	}
 	fh := sha256.Sum256(data)
-	fmt.Fprintf(h, "file:%s:%s\n", path, hex.EncodeToString(fh[:]))
+	_, _ = fmt.Fprintf(h, "file:%s:%s\n", path, hex.EncodeToString(fh[:]))
 	return nil
 }
 
