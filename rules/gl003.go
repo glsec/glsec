@@ -24,6 +24,7 @@ var mutableRefs = map[string]bool{
 	"main": true, "master": true, "dev": true, "develop": true,
 	"staging": true, "production": true, "latest": true, "HEAD": true,
 	"nightly": true, "canary": true, "edge": true,
+	"stable": true, "trunk": true,
 }
 
 func (r *gl003) Check(doc *yaml.Node, file string) []finding.Finding {
@@ -118,7 +119,7 @@ func checkComponentRef(node *yaml.Node, file string) []finding.Finding {
 		}}
 	}
 	ref := node.Value[at+1:]
-	if isMutableRef(ref) {
+	if ref == "~latest" || isMutableRef(ref) {
 		return []finding.Finding{{
 			RuleID:   "GL003",
 			Severity: finding.Error,
