@@ -22,6 +22,8 @@ var (
 	pipeToShellRe = regexp.MustCompile(`\|\s*(?:bash|sh|python[23]?|ruby|perl|node)\b`)
 	// processSubstRe matches bash process substitution: <(curl ...) or <(wget ...).
 	processSubstRe = regexp.MustCompile(`<\s*\(\s*(?:curl|wget)\b`)
+	// cmdSubstRe matches command substitution passed to a shell: bash -c "$(curl ...)".
+	cmdSubstRe = regexp.MustCompile(`\b(?:bash|sh)\b.*\$\(\s*(?:curl|wget)\b`)
 )
 
 func (r *gl011) Check(doc *yaml.Node, file string) []finding.Finding {
@@ -80,6 +82,9 @@ func checkScriptDownloadExecute(node *yaml.Node, file string) []finding.Finding 
 
 func isDownloadExecute(line string) bool {
 	if processSubstRe.MatchString(line) {
+		return true
+	}
+	if cmdSubstRe.MatchString(line) {
 		return true
 	}
 	return downloadToolRe.MatchString(line) && pipeToShellRe.MatchString(line)
