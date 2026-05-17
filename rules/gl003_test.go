@@ -150,6 +150,40 @@ include:
 	}
 }
 
+func TestGL003_ProjectStableRef(t *testing.T) {
+	f := findings003(t, `
+include:
+  - project: 'company/ci-templates'
+    file: '/jobs/deploy.yml'
+    ref: stable
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for stable ref, got %d", len(f))
+	}
+}
+
+func TestGL003_ProjectTrunkRef(t *testing.T) {
+	f := findings003(t, `
+include:
+  - project: 'company/ci-templates'
+    file: '/jobs/deploy.yml'
+    ref: trunk
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for trunk ref, got %d", len(f))
+	}
+}
+
+func TestGL003_ComponentTildeLatest(t *testing.T) {
+	f := findings003(t, `
+include:
+  - component: 'gitlab.com/my-org/my-component/build@~latest'
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for ~latest component ref, got %d", len(f))
+	}
+}
+
 func TestGL003_LineNumbers(t *testing.T) {
 	f := findings003(t, `
 include:
