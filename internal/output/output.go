@@ -6,6 +6,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/glsec/glsec/internal/color"
 	"github.com/glsec/glsec/internal/finding"
 )
 
@@ -26,34 +27,37 @@ func ParseFormat(s string) (Format, bool) {
 	}
 }
 
-func Write(w io.Writer, format Format, findings []finding.Finding, jobCount int) error {
+func Write(w io.Writer, format Format, findings []finding.Finding, jobCount int, colorEnabled bool) error {
 	switch format {
 	case FormatJSON:
 		return writeJSON(w, findings, nil)
 	case FormatSARIF:
 		return writeSARIF(w, findings, nil, nil, nil, nil)
 	default:
-		return writeText(w, findings, jobCount)
+		return writeText(w, findings, jobCount, colorEnabled)
 	}
 }
 
-func writeText(w io.Writer, findings []finding.Finding, jobCount int) error {
+func writeText(w io.Writer, findings []finding.Finding, jobCount int, col bool) error {
 	for _, f := range findings {
+		sev := strings.ToUpper(string(f.Severity))
+		switch f.Severity {
+		case finding.Error:
+			sev = color.Red(sev, col)
+		case finding.Warn:
+			sev = color.Yellow(sev, col)
+		}
+		ruleID := color.Bold(f.RuleID, col)
+		location := color.Bold(fmt.Sprintf("%s:%d", f.File, f.Line), col)
+
 		var err error
 		if f.Job != "" {
-			_, err = fmt.Fprintf(w, "%-6s %s:%d  %s  [%s]  %s\n",
-				strings.ToUpper(string(f.Severity)),
-				f.File, f.Line,
-				f.RuleID,
-				f.Job,
-				f.Message,
+			_, err = fmt.Fprintf(w, "%-6s %s  %s  [%s]  %s\n",
+				sev, location, ruleID, f.Job, f.Message,
 			)
 		} else {
-			_, err = fmt.Fprintf(w, "%-6s %s:%d  %s  %s\n",
-				strings.ToUpper(string(f.Severity)),
-				f.File, f.Line,
-				f.RuleID,
-				f.Message,
+			_, err = fmt.Fprintf(w, "%-6s %s  %s  %s\n",
+				sev, location, ruleID, f.Message,
 			)
 		}
 		if err != nil {

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/glsec/glsec/internal/cache"
+	"github.com/glsec/glsec/internal/color"
 	"github.com/glsec/glsec/internal/config"
 	"github.com/glsec/glsec/internal/finding"
 	"github.com/glsec/glsec/internal/output"
@@ -36,6 +37,7 @@ func main() {
 	generateIgnoreFlag := flag.Bool("generate-ignore", false, "write all current findings to .glsec-ignore as a baseline and exit 0")
 	noCacheFlag := flag.Bool("no-cache", false, "disable result cache for this run")
 	clearCacheFlag := flag.Bool("clear-cache", false, "remove all cached results and exit")
+	noColorFlag := flag.Bool("no-color", false, "disable colored output")
 	var excludeArgs []string
 	flag.Func("exclude", "exclude a file or glob pattern from scanning (may be repeated)", func(s string) error {
 		excludeArgs = append(excludeArgs, s)
@@ -146,6 +148,8 @@ func main() {
 		jobCount += parser.CountJobs(d.Root)
 	}
 
+	colorEnabled := color.IsEnabled(*noColorFlag, os.Stdout)
+
 	// Cache lookup (skipped for --generate-ignore since it writes new state).
 	useCache := !*noCacheFlag && !*generateIgnoreFlag
 	var cacheKey string
@@ -157,7 +161,7 @@ func main() {
 		cacheKey, err = cache.Key(resolvedVersion(), gitlabVersionStr, filePaths, *configFlag, suppress.IgnoreFile, cfg.ExcludePaths)
 		if err == nil {
 			if entry, ok := cache.Load(cacheKey); ok {
-				writeAndExit(os.Stdout, format, entry.Findings, entry.JobCount, cfg)
+				writeAndExit(os.Stdout, format, entry.Findings, entry.JobCount, cfg, colorEnabled)
 			}
 		}
 	}
@@ -181,10 +185,10 @@ func main() {
 		cache.Store(cacheKey, &cache.Entry{Findings: findings, JobCount: jobCount})
 	}
 
-	writeAndExit(os.Stdout, format, findings, jobCount, cfg)
+	writeAndExit(os.Stdout, format, findings, jobCount, cfg, colorEnabled)
 }
 
-func writeAndExit(w *os.File, format output.Format, findings []finding.Finding, jobCount int, cfg *config.Config) {
+func writeAndExit(w *os.File, format output.Format, findings []finding.Finding, jobCount int, cfg *config.Config, colorEnabled bool) {
 	var writeErr error
 	switch format {
 	case output.FormatSARIF:
@@ -192,7 +196,7 @@ func writeAndExit(w *os.File, format output.Format, findings []finding.Finding, 
 	case output.FormatJSON:
 		writeErr = output.WriteJSON(w, findings, rules.OWASPCategories)
 	default:
-		writeErr = output.Write(w, format, findings, jobCount)
+		writeErr = output.Write(w, format, findings, jobCount, colorEnabled)
 	}
 	if writeErr != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", writeErr)
