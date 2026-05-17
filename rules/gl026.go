@@ -25,7 +25,8 @@ var (
 	gitCheckoutRe = regexp.MustCompile(`\bgit\b[^|;&]*\bcheckout\b`)
 
 	// branchFlagRe captures the value of --branch or -b.
-	branchFlagRe = regexp.MustCompile(`(?:--branch|-b)\s+(\S+)`)
+	// Handles both space-separated (--branch main) and equals-sign (--branch=main) forms.
+	branchFlagRe = regexp.MustCompile(`(?:--branch|-b)(?:\s+|=)(\S+)`)
 
 	// newBranchFlagRe detects -b or --orphan (creates a local branch, not a dep checkout).
 	newBranchFlagRe = regexp.MustCompile(`\s(?:-b|--orphan)(?:\s|$)`)
