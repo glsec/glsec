@@ -155,3 +155,25 @@ notify:
 		t.Fatalf("expected 1 finding for braced variable, got %d", len(f))
 	}
 }
+
+func TestGL025_CommitBranch(t *testing.T) {
+	f := findings025(t, `
+notify:
+  script:
+    - curl https://api.example.com/builds/$CI_COMMIT_BRANCH
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for CI_COMMIT_BRANCH, got %d", len(f))
+	}
+}
+
+func TestGL025_CommitTag(t *testing.T) {
+	f := findings025(t, `
+notify:
+  script:
+    - curl https://api.example.com/releases/$CI_COMMIT_TAG
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for CI_COMMIT_TAG, got %d", len(f))
+	}
+}

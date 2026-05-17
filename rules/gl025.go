@@ -17,7 +17,7 @@ func (r *gl025) ID() string { return "GL025" }
 // userControlledVarRe matches any of the CI variables an attacker can influence
 // via branch name, MR title, commit message, etc.
 var userControlledVarRe = regexp.MustCompile(
-	`\$\{?CI_(?:COMMIT_REF_NAME|COMMIT_REF_SLUG|COMMIT_MESSAGE|COMMIT_TITLE|COMMIT_DESCRIPTION|MERGE_REQUEST_SOURCE_BRANCH_NAME|MERGE_REQUEST_TITLE)\}?`,
+	`\$\{?CI_(?:COMMIT_REF_NAME|COMMIT_REF_SLUG|COMMIT_BRANCH|COMMIT_TAG|COMMIT_MESSAGE|COMMIT_TITLE|COMMIT_DESCRIPTION|MERGE_REQUEST_SOURCE_BRANCH_NAME|MERGE_REQUEST_TITLE)\}?`,
 )
 
 // curlWgetRe matches curl or wget invocations.
