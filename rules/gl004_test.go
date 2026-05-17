@@ -98,6 +98,31 @@ build:
 	}
 }
 
+func TestGL004_GitCloneWithToken(t *testing.T) {
+	f := findings004(t, `
+build:
+  script:
+    - git clone https://gitlab-ci-token:$CI_JOB_TOKEN@gitlab.com/org/repo.git
+`)
+	if len(f) != 0 {
+		t.Errorf("expected no findings for git clone to gitlab.com with token in userinfo, got %d", len(f))
+	}
+}
+
+func TestGL004_ExternalUserinfoURL(t *testing.T) {
+	f := findings004(t, `
+build:
+  script:
+    - curl https://user:$CI_JOB_TOKEN@external.com/upload
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for token sent to external host via userinfo, got %d", len(f))
+	}
+	if f[0].Message != `CI_JOB_TOKEN sent to non-GitLab host "external.com" — this token is scoped to the GitLab API and should not be forwarded to external services` {
+		t.Errorf("unexpected message: %s", f[0].Message)
+	}
+}
+
 func TestGL004_LineNumbers(t *testing.T) {
 	f := findings004(t, `
 upload:
