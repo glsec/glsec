@@ -18,8 +18,8 @@ func (r *gl004) ID() string { return "GL004" }
 
 var (
 	jobTokenPattern = regexp.MustCompile(`\$\{?CI_JOB_TOKEN\}?`)
-	// urlPattern captures the full URL and its domain separately.
-	urlPattern004 = regexp.MustCompile(`https?://([a-zA-Z0-9.\-]+)`)
+	// urlPattern captures the hostname from a URL, skipping optional userinfo (user:pass@).
+	urlPattern004 = regexp.MustCompile(`https?://(?:[^@]*@)?([a-zA-Z0-9.\-]+)`)
 )
 
 func (r *gl004) Check(doc *yaml.Node, file string) []finding.Finding {
