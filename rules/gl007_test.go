@@ -63,6 +63,17 @@ build:
 	}
 }
 
+func TestGL007_CommitTagInImage(t *testing.T) {
+	f := findings007(t, `
+build:
+  image: registry.example.com/app:$CI_COMMIT_TAG
+  script: [make]
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for CI_COMMIT_TAG in image tag, got %d", len(f))
+	}
+}
+
 func TestGL007_SafeImage_NoFinding(t *testing.T) {
 	f := findings007(t, `
 build:
