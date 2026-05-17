@@ -32,6 +32,7 @@ var secretPatterns = []secretPattern{
 	{"GitHub fine-grained PAT", regexp.MustCompile(`^github_pat_[A-Za-z0-9_]{82,}$`)},
 	{"Slack token", regexp.MustCompile(`^xox[baprs]-[A-Za-z0-9-]{10,}$`)},
 	{"OpenAI API key", regexp.MustCompile(`^sk-[A-Za-z0-9]{32,}$`)},
+	{"OpenAI project API key", regexp.MustCompile(`^sk-proj-[A-Za-z0-9_-]{80,}$`)},
 }
 
 func (r *gl006) Check(doc *yaml.Node, file string) []finding.Finding {
