@@ -74,6 +74,28 @@ setup:
 	}
 }
 
+func TestGL011_CommandSubstitutionBash(t *testing.T) {
+	f := findings011(t, `
+setup:
+  script:
+    - bash -c "$(curl -sSL https://example.com/install.sh)"
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for bash -c $(curl ...), got %d", len(f))
+	}
+}
+
+func TestGL011_CommandSubstitutionSh(t *testing.T) {
+	f := findings011(t, `
+setup:
+  script:
+    - sh -c "$(wget -qO- https://example.com/install.sh)"
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for sh -c $(wget ...), got %d", len(f))
+	}
+}
+
 func TestGL011_CurlDownloadOnly_NoFinding(t *testing.T) {
 	f := findings011(t, `
 setup:
