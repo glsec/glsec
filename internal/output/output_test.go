@@ -22,7 +22,7 @@ var testFindingsWithJob = []finding.Finding{
 
 func TestWriteText(t *testing.T) {
 	var buf bytes.Buffer
-	if err := Write(&buf, FormatText, testFindings, 5); err != nil {
+	if err := Write(&buf, FormatText, testFindings, 5, false); err != nil {
 		t.Fatal(err)
 	}
 	got := buf.String()
@@ -39,7 +39,7 @@ func TestWriteText(t *testing.T) {
 
 func TestWriteText_Empty(t *testing.T) {
 	var buf bytes.Buffer
-	if err := Write(&buf, FormatText, nil, 7); err != nil {
+	if err := Write(&buf, FormatText, nil, 7, false); err != nil {
 		t.Fatal(err)
 	}
 	got := buf.String()
@@ -50,7 +50,7 @@ func TestWriteText_Empty(t *testing.T) {
 
 func TestWriteJSON(t *testing.T) {
 	var buf bytes.Buffer
-	if err := Write(&buf, FormatJSON, testFindings, 0); err != nil {
+	if err := Write(&buf, FormatJSON, testFindings, 0, false); err != nil {
 		t.Fatal(err)
 	}
 	var out jsonOutput
@@ -68,7 +68,7 @@ func TestWriteJSON(t *testing.T) {
 
 func TestWriteJSON_Empty(t *testing.T) {
 	var buf bytes.Buffer
-	if err := Write(&buf, FormatJSON, nil, 0); err != nil {
+	if err := Write(&buf, FormatJSON, nil, 0, false); err != nil {
 		t.Fatal(err)
 	}
 	var out jsonOutput
@@ -82,7 +82,7 @@ func TestWriteJSON_Empty(t *testing.T) {
 
 func TestWriteSARIF(t *testing.T) {
 	var buf bytes.Buffer
-	if err := Write(&buf, FormatSARIF, testFindings, 0); err != nil {
+	if err := Write(&buf, FormatSARIF, testFindings, 0, false); err != nil {
 		t.Fatal(err)
 	}
 	var log sarifLog
@@ -113,7 +113,7 @@ func TestWriteSARIF(t *testing.T) {
 
 func TestWriteText_WithJob(t *testing.T) {
 	var buf bytes.Buffer
-	if err := Write(&buf, FormatText, testFindingsWithJob, 3); err != nil {
+	if err := Write(&buf, FormatText, testFindingsWithJob, 3, false); err != nil {
 		t.Fatal(err)
 	}
 	got := buf.String()
@@ -133,7 +133,7 @@ func TestWriteText_WithJob(t *testing.T) {
 
 func TestWriteJSON_WithJob(t *testing.T) {
 	var buf bytes.Buffer
-	if err := Write(&buf, FormatJSON, testFindingsWithJob, 0); err != nil {
+	if err := Write(&buf, FormatJSON, testFindingsWithJob, 0, false); err != nil {
 		t.Fatal(err)
 	}
 	var out jsonOutput
