@@ -201,6 +201,83 @@ build:
 	}
 }
 
+func TestGL016_TopLevelBeforeScript_Warn(t *testing.T) {
+	f := findings016(t, `
+before_script:
+  - curl http://install.example.com/setup.sh -o setup.sh
+
+build:
+  script: [make]
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for top-level before_script curl http://, got %d", len(f))
+	}
+	if f[0].Severity != finding.Warn {
+		t.Errorf("expected Warn severity, got %s", f[0].Severity)
+	}
+}
+
+func TestGL016_TopLevelAfterScript_Warn(t *testing.T) {
+	f := findings016(t, `
+after_script:
+  - wget http://metrics.example.com/report
+
+build:
+  script: [make]
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for top-level after_script wget http://, got %d", len(f))
+	}
+}
+
+func TestGL016_DefaultVariables_Warn(t *testing.T) {
+	f := findings016(t, `
+default:
+  variables:
+    REGISTRY: "http://registry.example.com"
+
+build:
+  script: [make]
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for default: variables: http://, got %d", len(f))
+	}
+	if f[0].Severity != finding.Warn {
+		t.Errorf("expected Warn severity for public host in default variable, got %s", f[0].Severity)
+	}
+}
+
+func TestGL016_DefaultBeforeScript_Warn(t *testing.T) {
+	f := findings016(t, `
+default:
+  before_script:
+    - curl http://nexus.example.com/tool.sh -o tool.sh
+
+build:
+  script: [make]
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for default: before_script curl http://, got %d", len(f))
+	}
+}
+
+func TestGL016_DefaultVariablesInternal_Info(t *testing.T) {
+	f := findings016(t, `
+default:
+  variables:
+    NEXUS: "http://nexus.internal/repo"
+
+build:
+  script: [make]
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for default: variables: internal http://, got %d", len(f))
+	}
+	if f[0].Severity != finding.Info {
+		t.Errorf("expected Info severity for internal host, got %s", f[0].Severity)
+	}
+}
+
 func TestGL016_LineNumber(t *testing.T) {
 	f := findings016(t, `
 include:
