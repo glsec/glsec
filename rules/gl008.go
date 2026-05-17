@@ -28,7 +28,6 @@ var securityScanJobs = map[string]bool{
 	"coverage_fuzzing":      true,
 	"api_fuzzing":           true,
 	"license_scanning":      true,
-	"license_management":    true,
 }
 
 func (r *gl008) Check(doc *yaml.Node, file string) []finding.Finding {
