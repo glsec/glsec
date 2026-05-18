@@ -1,0 +1,13 @@
+stages:
+  - build
+  - release
+
+build:
+  stage: build
+  script:
+    - docker build -t registry.example.com/app:$CI_COMMIT_TAG .
+
+publish:
+  stage: release
+  script:
+    - docker push registry.example.com/app:$CI_COMMIT_TAG
