@@ -67,6 +67,7 @@ Downloads and executions that bypass integrity checks, enabling tampering mid-pi
 | ID | Severity | Description |
 |----|----------|-------------|
 | [GL020](rules/GL020.md) | `warn`  | File downloaded with `curl`/`wget` without checksum verification before execution |
+| [GL045](rules/GL045.md) | `warn`  | Release job pushes artifacts without a signing step (`cosign sign`, `gpg --detach-sign`, `notation sign`) |
 
 ---
 
