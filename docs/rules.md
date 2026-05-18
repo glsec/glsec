@@ -102,3 +102,4 @@ Misconfigured CI settings that expand the attack surface or leak build context.
 | [GL031](rules/GL031.md) | `error` | `DOCKER_TLS_CERTDIR: ""` disables Docker daemon TLS — exposes port 2375 unauthenticated on the runner network |
 | [GL042](rules/GL042.md) | `warn`  | TLS certificate verification disabled (`curl -k`, `wget --no-check-certificate`, `GIT_SSL_NO_VERIFY`, etc.) |
 | [GL047](rules/GL047.md) | `warn`  | SSH connection to remote host as `root` — use a least-privilege service account instead |
+| [GL048](rules/GL048.md) | `error` | `StrictHostKeyChecking` disabled in SSH command or config — host identity not verified, enabling MITM attacks |

@@ -49,6 +49,7 @@ var cweIDs = map[string]string{
 	"GL045": "CWE-494",
 	"GL046": "CWE-494",
 	"GL047": "CWE-250",
+	"GL048": "CWE-295",
 }
 
 // cweNames maps CWE IDs to their short names.
