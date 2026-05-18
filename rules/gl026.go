@@ -36,7 +36,7 @@ func (r *gl026) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
 
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
-		lines := collectScriptLines(job)
+		lines := CollectJobScriptLines(job)
 		if len(lines) == 0 {
 			return
 		}
