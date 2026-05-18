@@ -172,6 +172,90 @@ build:
 	}
 }
 
+func TestGL005_AbsolutePath(t *testing.T) {
+	f := findings005(t, `
+build:
+  script: [make]
+  artifacts:
+    paths:
+      - /etc/passwd
+    expire_in: 1 day
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for absolute path, got %d", len(f))
+	}
+	if f[0].Severity != finding.Error {
+		t.Errorf("expected Error severity")
+	}
+}
+
+func TestGL005_PathTraversal(t *testing.T) {
+	f := findings005(t, `
+build:
+  script: [make]
+  artifacts:
+    paths:
+      - ../../etc/shadow
+    expire_in: 1 day
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for path traversal, got %d", len(f))
+	}
+	if f[0].Severity != finding.Error {
+		t.Errorf("expected Error severity")
+	}
+}
+
+func TestGL005_UserControlledVarNoFinding(t *testing.T) {
+	f := findings005(t, `
+build:
+  script: [make]
+  artifacts:
+    paths:
+      - dist/$CI_COMMIT_REF_NAME
+    expire_in: 1 day
+`)
+	if len(f) != 0 {
+		t.Fatalf("expected no findings for common branch-based artifact path, got %d", len(f))
+	}
+}
+
+func TestGL005_ExcludePath(t *testing.T) {
+	f := findings005(t, `
+build:
+  script: [make]
+  artifacts:
+    paths:
+      - dist/
+    exclude:
+      - ../secrets.env
+    expire_in: 1 day
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for traversal in exclude, got %d", len(f))
+	}
+	if f[0].Severity != finding.Error {
+		t.Errorf("expected Error severity")
+	}
+}
+
+func TestGL005_AbsolutePathWithVar(t *testing.T) {
+	f := findings005(t, `
+build:
+  script: [make]
+  artifacts:
+    paths:
+      - /tmp/$CI_COMMIT_REF_NAME
+    expire_in: 1 day
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding (absolute path only), got %d", len(f))
+	}
+	if f[0].Severity != finding.Error {
+		t.Errorf("expected Error severity")
+	}
+}
+
 func TestGL005_NoArtifacts(t *testing.T) {
 	f := findings005(t, `
 build:

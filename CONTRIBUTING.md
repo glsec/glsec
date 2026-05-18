@@ -153,6 +153,50 @@ func TestGL006_Clean(t *testing.T) {
 
 Cover the happy path (flagged), the clean path, and any edge cases (empty values, missing keys, nested structures).
 
+### Avoiding false positives
+
+Before finishing a rule, work through this checklist:
+
+**1. Verify the YAML key exists and does what you think**
+
+Check the [GitLab CI/CD YAML syntax reference](https://docs.gitlab.com/ci/yaml/) to confirm the key you are inspecting is actually used by GitLab Runner, not just valid YAML syntax. A key that GitLab silently ignores cannot be a real vulnerability.
+
+Common areas to check:
+- [`artifacts:`](https://docs.gitlab.com/ci/yaml/#artifacts) — paths, exclude, reports, expire_in
+- [`variables:`](https://docs.gitlab.com/ci/yaml/#variables) — job-level vs. global, `expand`/`value`/`description` sub-keys
+- [`rules:`](https://docs.gitlab.com/ci/yaml/#rules) — if, changes, exists, when, variables
+- [`trigger:`](https://docs.gitlab.com/ci/yaml/#trigger) — forward, strategy, branch
+
+**2. Consider common legitimate patterns**
+
+Before flagging a pattern, search for how it is used in real-world GitLab CI configs. If a pattern appears constantly in legitimate pipelines (e.g. `dist/$CI_COMMIT_REF_NAME` as an artifact path), the rule will create noise and get ignored or suppressed.
+
+Ask: _is there a realistic, benign configuration that would trigger this finding?_ If yes, refine the detection or raise the threshold.
+
+**3. Understand variable constraints**
+
+[Predefined CI/CD variables](https://docs.gitlab.com/ci/variables/predefined_variables/) are not all equal. Variables derived from Git ref names (`CI_COMMIT_REF_NAME`, `CI_COMMIT_BRANCH`, `CI_COMMIT_TAG`, `CI_MERGE_REQUEST_SOURCE_BRANCH_NAME`) are constrained by [`git check-ref-format`](https://git-scm.com/docs/git-check-ref-format) and cannot contain sequences like `..`. Free-form text variables (`CI_COMMIT_MESSAGE`, `CI_MERGE_REQUEST_TITLE`, `CI_PIPELINE_NAME`, etc.) can contain arbitrary content. Treat them differently when assessing injection risk.
+
+**4. Write an explicit no-finding test**
+
+Every rule must have at least one test that asserts _zero_ findings for a realistic, valid config. Name it `TestGLNNN_<CommonPattern>NoFinding` or `TestGLNNN_Clean` so its intent is clear:
+
+```go
+func TestGL006_CommonPatternNoFinding(t *testing.T) {
+    f := findings006(t, `
+build:
+  script: [make]
+  artifacts:
+    paths:
+      - dist/$CI_COMMIT_REF_NAME   # common pattern — must not be flagged
+    expire_in: 1 week
+`)
+    if len(f) != 0 {
+        t.Fatalf("expected no findings for common artifact path, got %d", len(f))
+    }
+}
+```
+
 ### Step 6 — add a fixture
 
 Create `testdata/fixtures/glNNN-short-name.yml` with a realistic example that exercises the rule. The fixture must be valid GitLab CI YAML — CI validates all fixtures against the GitLab CI JSON schema via `check-jsonschema`.
