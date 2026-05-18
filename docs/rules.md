@@ -103,3 +103,5 @@ Misconfigured CI settings that expand the attack surface or leak build context.
 | [GL042](rules/GL042.md) | `warn`  | TLS certificate verification disabled (`curl -k`, `wget --no-check-certificate`, `GIT_SSL_NO_VERIFY`, etc.) |
 | [GL047](rules/GL047.md) | `warn`  | SSH connection to remote host as `root` — use a least-privilege service account instead |
 | [GL048](rules/GL048.md) | `error` | `StrictHostKeyChecking` disabled in SSH command or config — host identity not verified, enabling MITM attacks |
+| [GL049](rules/GL049.md) | `warn`  | Deploy job with `interruptible: true` — mid-run cancellation leaves the target environment in an undefined state |
+| [GL050](rules/GL050.md) | `warn`  | `sudo` in CI script — escalates to root, amplifying blast radius if the pipeline is compromised |

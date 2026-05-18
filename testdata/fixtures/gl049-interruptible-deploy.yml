@@ -1,0 +1,9 @@
+stages:
+  - deploy
+
+deploy-production:
+  stage: deploy
+  interruptible: true
+  script:
+    - kubectl apply -f k8s/
+    - kubectl rollout status deployment/app
