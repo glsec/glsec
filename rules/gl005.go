@@ -57,22 +57,16 @@ func (r *gl005) Check(doc *yaml.Node, file string) []finding.Finding {
 func checkArtifacts(node *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
 
-	pathsNode := parser.FindKey(node, "paths")
-	if pathsNode != nil && pathsNode.Kind == yaml.SequenceNode {
-		for _, item := range pathsNode.Content {
+	for _, section := range []string{"paths", "exclude"} {
+		seqNode := parser.FindKey(node, section)
+		if seqNode == nil || seqNode.Kind != yaml.SequenceNode {
+			continue
+		}
+		for _, item := range seqNode.Content {
 			if item.Kind != yaml.ScalarNode {
 				continue
 			}
-			if pat := matchesSensitivePattern(item.Value); pat != "" {
-				findings = append(findings, finding.Finding{
-					RuleID:   "GL005",
-					Severity: finding.Error,
-					Message:  fmt.Sprintf("artifact path %q matches sensitive file pattern %q — exclude secrets from artifacts", item.Value, pat),
-					File:     file,
-					Line:     item.Line,
-					Col:      item.Column,
-				})
-			}
+			findings = append(findings, checkArtifactPath(item, file)...)
 		}
 	}
 
@@ -86,6 +80,45 @@ func checkArtifacts(node *yaml.Node, file string) []finding.Finding {
 			Line:     node.Line,
 			Col:      node.Column,
 		})
+	}
+
+	return findings
+}
+
+func checkArtifactPath(item *yaml.Node, file string) []finding.Finding {
+	var findings []finding.Finding
+	path := item.Value
+
+	switch {
+	case strings.HasPrefix(path, "/"):
+		findings = append(findings, finding.Finding{
+			RuleID:   "GL005",
+			Severity: finding.Error,
+			Message:  fmt.Sprintf("artifact path %q is an absolute path — references the host filesystem directly and can exfiltrate arbitrary files on shell executors", path),
+			File:     file,
+			Line:     item.Line,
+			Col:      item.Column,
+		})
+	case strings.Contains(path, "../"):
+		findings = append(findings, finding.Finding{
+			RuleID:   "GL005",
+			Severity: finding.Error,
+			Message:  fmt.Sprintf("artifact path %q contains path traversal — can escape the project directory on shell executors", path),
+			File:     file,
+			Line:     item.Line,
+			Col:      item.Column,
+		})
+	default:
+		if pat := matchesSensitivePattern(path); pat != "" {
+			findings = append(findings, finding.Finding{
+				RuleID:   "GL005",
+				Severity: finding.Error,
+				Message:  fmt.Sprintf("artifact path %q matches sensitive file pattern %q — exclude secrets from artifacts", path, pat),
+				File:     file,
+				Line:     item.Line,
+				Col:      item.Column,
+			})
+		}
 	}
 
 	return findings

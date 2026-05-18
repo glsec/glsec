@@ -12,3 +12,7 @@ build-job:
       - dist/
       - .env.production
       - deploy-key.pem
+      - /etc/passwd
+      - ../../etc/shadow
+    exclude:
+      - ../other-project/secrets.env
