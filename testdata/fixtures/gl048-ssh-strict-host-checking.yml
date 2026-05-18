@@ -1,0 +1,7 @@
+stages:
+  - deploy
+
+deploy:
+  stage: deploy
+  script:
+    - ssh -o StrictHostKeyChecking=no deploy@$PRODUCTION_HOST "systemctl restart app"

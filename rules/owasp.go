@@ -50,6 +50,7 @@ var owaspCategories = map[string][]string{
 	"GL045": {"CICD-SEC-9"},
 	"GL046": {"CICD-SEC-3"},
 	"GL047": {"CICD-SEC-7"},
+	"GL048": {"CICD-SEC-7"},
 }
 
 // owaspCategoryNames maps OWASP CI/CD Security Risks category IDs to their names.
