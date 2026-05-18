@@ -1,0 +1,12 @@
+stages:
+  - build
+
+build:
+  stage: build
+  cache:
+    key: $CI_COMMIT_REF_NAME
+    paths:
+      - node_modules/
+  script:
+    - npm ci
+    - npm run build
