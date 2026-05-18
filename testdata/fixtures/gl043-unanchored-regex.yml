@@ -1,0 +1,26 @@
+stages:
+  - build
+  - deploy
+
+workflow:
+  rules:
+    - if: $CI_COMMIT_BRANCH =~ /^release/
+
+build:
+  stage: build
+  script:
+    - make build
+
+deploy-prod:
+  stage: deploy
+  script:
+    - ./deploy.sh
+  rules:
+    - if: $GITLAB_USER_LOGIN =~ /^admin/
+
+restricted:
+  stage: deploy
+  script:
+    - ./restricted.sh
+  rules:
+    - if: $CI_PROJECT_NAMESPACE =~ /^myteam/
