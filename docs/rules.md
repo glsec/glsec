@@ -41,6 +41,7 @@ Mutable references that allow silent substitution of images, templates, or packa
 | [GL016](rules/GL016.md) | varies  | HTTP instead of HTTPS (`include:remote`, scripts, variables) |
 | [GL022](rules/GL022.md) | `warn`  | Package manager install without version pin or explicit update-to-latest in CI |
 | [GL023](rules/GL023.md) | `warn`  | Lockfile not enforced (`npm install` instead of `npm ci`, `yarn install` without `--frozen-lockfile`, etc.) |
+| [GL046](rules/GL046.md) | `warn`  | `cache: key:` derived from user-controlled variable — attacker can craft a branch name to collide with and poison the cache of a protected pipeline |
 | [GL026](rules/GL026.md) | `warn`  | `git clone`/`checkout` uses a mutable ref (branch or tag) instead of a pinned commit SHA |
 
 ---
