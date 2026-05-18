@@ -1,7 +1,6 @@
 package rules
 
 import (
-	"fmt"
 	"regexp"
 	"strings"
 
@@ -91,9 +90,7 @@ func checkScriptForMRSourceSHA(node *yaml.Node, file string) []finding.Finding {
 			findings = append(findings, finding.Finding{
 				RuleID:   "GL044",
 				Severity: finding.Warn,
-				Message: fmt.Sprintf(
-					"MR-triggered job checks out $CI_MERGE_REQUEST_SOURCE_BRANCH_SHA — executes attacker-controlled code with access to $CI_JOB_TOKEN and protected variables",
-				),
+				Message: "MR-triggered job checks out $CI_MERGE_REQUEST_SOURCE_BRANCH_SHA — executes attacker-controlled code with access to $CI_JOB_TOKEN and protected variables",
 				File: file,
 				Line: item.Line,
 				Col:  item.Column,
