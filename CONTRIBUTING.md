@@ -92,6 +92,16 @@ Every `finding.Finding` needs `RuleID`, `Severity`, `Message`, `File`, `Line`. S
 
 Severities: `finding.Error` (must fix), `finding.Warn` (should fix), `finding.Info` (informational).
 
+Shared helpers live in `rules/helpers.go`. Check there before writing a new helper function:
+
+| Helper | What it does |
+|--------|-------------|
+| `CollectJobScriptLines(job)` | Returns all scalar script lines across `before_script`, `script`, `after_script` for a single job |
+| `EachScriptLine(doc, file, fn)` | Calls `fn` for every script line in the whole document — global sections, `default:`, and all jobs. Use this for rules that scan script content across the entire file |
+| `IsDeployLikeJob(jobName, job)` | Returns true when the job name, stage, or `environment:` key indicates deployment or release activity |
+
+If you find that two or more rules need the same detection logic, extract it into `helpers.go` rather than duplicating it. Use unexported names for helpers that are only used within the `rules` package.
+
 ### Step 3 — register the rule
 
 Add it to `rules/all.go`:

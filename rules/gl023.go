@@ -62,7 +62,7 @@ func (r *gl023) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
 
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
-		lines := collectScriptLines(job)
+		lines := CollectJobScriptLines(job)
 		for _, l := range lines {
 			if f := checkLockfileLine(l.Value, file, l.Line, l.Column); f != nil {
 				f.Job = name.Value

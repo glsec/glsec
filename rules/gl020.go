@@ -27,7 +27,7 @@ func (r *gl020) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
 
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
-		lines := collectScriptLines(job)
+		lines := CollectJobScriptLines(job)
 		if len(lines) == 0 {
 			return
 		}
@@ -65,19 +65,3 @@ func (r *gl020) Check(doc *yaml.Node, file string) []finding.Finding {
 	return findings
 }
 
-// collectScriptLines returns all scalar script lines across script/before_script/after_script.
-func collectScriptLines(job *yaml.Node) []*yaml.Node {
-	var lines []*yaml.Node
-	for _, key := range []string{"before_script", "script", "after_script"} {
-		node := parser.FindKey(job, key)
-		if node == nil || node.Kind != yaml.SequenceNode {
-			continue
-		}
-		for _, item := range node.Content {
-			if item.Kind == yaml.ScalarNode {
-				lines = append(lines, item)
-			}
-		}
-	}
-	return lines
-}

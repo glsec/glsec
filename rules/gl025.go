@@ -27,7 +27,7 @@ func (r *gl025) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
 
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
-		for _, l := range collectScriptLines(job) {
+		for _, l := range CollectJobScriptLines(job) {
 			if !curlWgetRe.MatchString(l.Value) {
 				continue
 			}
