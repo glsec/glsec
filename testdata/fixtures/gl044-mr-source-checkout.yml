@@ -1,0 +1,10 @@
+stages:
+  - test
+
+security-scan:
+  stage: test
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  script:
+    - git checkout $CI_MERGE_REQUEST_SOURCE_BRANCH_SHA
+    - ./scan.sh
