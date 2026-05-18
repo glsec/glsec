@@ -1,0 +1,7 @@
+stages:
+  - deploy
+
+deploy:
+  stage: deploy
+  script:
+    - ssh root@$PRODUCTION_HOST "cd /app && git pull && systemctl restart app"
