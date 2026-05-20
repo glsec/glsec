@@ -58,6 +58,7 @@ User-controlled inputs and unversioned component references that allow malicious
 | [GL025](rules/GL025.md) | `warn`  | `curl`/`wget` uses a user-controlled CI variable — attacker can redirect the request to an arbitrary host |
 | [GL041](rules/GL041.md) | `warn`  | `include: component:` without a pinned semver tag or commit SHA |
 | [GL044](rules/GL044.md) | `warn`  | MR-triggered job checks out `$CI_MERGE_REQUEST_SOURCE_BRANCH_SHA` — executes attacker-controlled code with `$CI_JOB_TOKEN` access |
+| [GL051](rules/GL051.md) | `warn`  | Unconstrained `spec:inputs` entry interpolated into `image:`, `script:`, or `environment:name:` — caller can supply arbitrary values |
 
 ---
 
