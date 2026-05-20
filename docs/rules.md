@@ -26,6 +26,7 @@ Secrets hardcoded, leaked through logs, or forwarded to unintended consumers.
 | [GL035](rules/GL035.md) | `warn`  | `git` command uses URL with embedded credentials (`user:token@host`) — token appears in job logs |
 | [GL038](rules/GL038.md) | `error` | Hardcoded credential literal passed to CLI tool in script (`sqlcmd -P`, `mysql -p`, `PGPASSWORD=`, etc.) |
 | [GL040](rules/GL040.md) | `warn`  | Script uses plain `ftp://` — credentials and content transmitted unencrypted |
+| [GL052](rules/GL052.md) | `warn`  | User-controlled variable in `environment:name:` — attacker can craft a branch name that resolves to a protected environment and access its secrets |
 
 ---
 

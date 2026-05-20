@@ -1,0 +1,6 @@
+deploy:
+  script:
+    - ./deploy.sh
+  environment:
+    name: review/$CI_COMMIT_REF_NAME
+    on_stop: stop-review
