@@ -13,7 +13,8 @@ import (
 // pattern matches:  # glsec:ignore GL001
 //
 //	# glsec:ignore GL001 -- approved, updated monthly
-var pattern = regexp.MustCompile(`glsec:ignore\s+(GL\d{3})(?:\s+--\s+(.+))?`)
+//	# glsec:ignore SC2086
+var pattern = regexp.MustCompile(`glsec:ignore\s+((?:GL|SC)\d+)(?:\s+--\s+(.+))?`)
 
 // IgnoreFile is the default name of the baseline ignore file written by
 // --generate-ignore and read automatically on each run.

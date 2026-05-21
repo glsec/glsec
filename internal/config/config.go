@@ -47,6 +47,12 @@ func (r *RuleConfig) UnmarshalYAML(value *yaml.Node) error {
 	}
 }
 
+// ShellCheckConfig holds the optional ShellCheck integration settings.
+type ShellCheckConfig struct {
+	Enabled bool   `yaml:"enabled"`
+	Path    string `yaml:"path"`
+}
+
 // Config holds the parsed contents of a .glsec.yml file.
 type Config struct {
 	// Rules maps rule ID to a per-rule override.
@@ -58,6 +64,8 @@ type Config struct {
 	GitLabVersion string `yaml:"gitlab-version"`
 	// TrustedHosts is a list of hostnames or CIDRs whose HTTP URLs are never flagged.
 	TrustedHosts []string `yaml:"trusted-hosts"`
+	// ShellCheck holds optional ShellCheck integration settings.
+	ShellCheck ShellCheckConfig `yaml:"shellcheck"`
 	// Strict makes warn findings count as errors for exit-code purposes.
 	Strict bool `yaml:"strict"`
 	// NoExitCodes makes glsec always exit 0 on successful execution,
@@ -141,6 +149,7 @@ var allowedTopLevelKeys = map[string]bool{
 	"exclude_paths":  true,
 	"owasp":          true,
 	"owasp_exclude":  true,
+	"shellcheck":     true,
 }
 
 func checkUnknownKeys(mapping *yaml.Node, path string) error {
@@ -162,8 +171,8 @@ var validSeverities = map[string]bool{
 
 func (c *Config) validate(path string) error {
 	for id, rc := range c.Rules {
-		if !strings.HasPrefix(id, "GL") {
-			return fmt.Errorf("%s: rules: invalid rule ID %q (must start with GL)", path, id)
+		if !strings.HasPrefix(id, "GL") && !strings.HasPrefix(id, "SC") {
+			return fmt.Errorf("%s: rules: invalid rule ID %q (must start with GL or SC)", path, id)
 		}
 		if !validSeverities[rc.Severity] {
 			return fmt.Errorf("%s: rules.%s: invalid severity %q (use error, warn, info, or off)", path, id, rc.Severity)

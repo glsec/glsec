@@ -14,6 +14,7 @@ import (
 	"github.com/glsec/glsec/internal/finding"
 	"github.com/glsec/glsec/internal/output"
 	"github.com/glsec/glsec/internal/parser"
+	"github.com/glsec/glsec/internal/shellcheck"
 	"github.com/glsec/glsec/internal/suppress"
 	"github.com/glsec/glsec/internal/validate"
 	gitlabver "github.com/glsec/glsec/internal/version"
@@ -328,6 +329,23 @@ func collectFindings(doc *parser.Document, path string, cfg *config.Config, gitl
 			findings = append(findings, f)
 		}
 	}
+
+	if cfg.ShellCheck.Enabled {
+		for _, f := range shellcheck.Run(doc.Root, path, cfg.ShellCheck.Path) {
+			if !cfg.RuleEnabled(f.RuleID) {
+				continue
+			}
+			f = cfg.ApplySeverity(f)
+			if !cfg.AboveMinSeverity(f) {
+				continue
+			}
+			if !generateIgnore && sm.IsSuppressed(f.Line, f.RuleID) {
+				continue
+			}
+			findings = append(findings, f)
+		}
+	}
+
 	return findings
 }
 
