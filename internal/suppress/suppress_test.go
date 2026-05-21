@@ -87,6 +87,29 @@ func TestBuild_EmptyDocument(t *testing.T) {
 	}
 }
 
+func TestFromComment_SCCode(t *testing.T) {
+	sups := fromComment("# glsec:ignore SC2086", 7)
+	if len(sups) != 1 {
+		t.Fatalf("expected 1 suppression, got %d", len(sups))
+	}
+	if sups[0].RuleID != "SC2086" {
+		t.Errorf("expected SC2086, got %q", sups[0].RuleID)
+	}
+}
+
+func TestFromComment_SCCodeWithReason(t *testing.T) {
+	sups := fromComment("# glsec:ignore SC2086 -- CI variable always set by platform", 3)
+	if len(sups) != 1 {
+		t.Fatalf("expected 1 suppression, got %d", len(sups))
+	}
+	if sups[0].RuleID != "SC2086" {
+		t.Errorf("expected SC2086, got %q", sups[0].RuleID)
+	}
+	if sups[0].Reason != "CI variable always set by platform" {
+		t.Errorf("unexpected reason: %q", sups[0].Reason)
+	}
+}
+
 func TestIsSuppressed_MissingLine(t *testing.T) {
 	m := Map{}
 	if m.IsSuppressed(99, "GL001") {
