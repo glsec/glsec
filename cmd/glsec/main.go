@@ -28,6 +28,31 @@ var (
 )
 
 func main() {
+	if len(os.Args) >= 2 && os.Args[1] == "explain" {
+		if len(os.Args) < 3 {
+			fmt.Fprintln(os.Stderr, "usage: glsec explain <RULE-ID>")
+			os.Exit(2)
+		}
+		noColor := false
+		ruleID := ""
+		for _, arg := range os.Args[2:] {
+			switch arg {
+			case "--no-color", "-no-color":
+				noColor = true
+			default:
+				if !strings.HasPrefix(arg, "-") && ruleID == "" {
+					ruleID = arg
+				}
+			}
+		}
+		if ruleID == "" {
+			fmt.Fprintln(os.Stderr, "usage: glsec explain <RULE-ID>")
+			os.Exit(2)
+		}
+		runExplain(ruleID, noColor)
+		return
+	}
+
 	formatFlag := flag.String("format", "text", "output format: text, json, sarif")
 	configFlag := flag.String("config", config.DefaultFile, "path to .glsec.yml config file")
 	versionFlag := flag.Bool("version", false, "print version and exit")
@@ -45,6 +70,7 @@ func main() {
 	})
 	flag.Usage = func() {
 		fmt.Fprintln(os.Stderr, "usage: glsec [flags] [file]")
+		fmt.Fprintln(os.Stderr, "       glsec explain <RULE-ID>")
 		fmt.Fprintln(os.Stderr, "       If no file is given, glsec looks for .gitlab-ci.yml in the current directory.")
 		flag.PrintDefaults()
 	}
