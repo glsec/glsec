@@ -106,6 +106,42 @@ exclude_paths:
 
 **Not covered:** [CICD-SEC-2](https://owasp.org/www-project-top-10-ci-cd-security-risks/CICD-SEC-02-Inadequate-Identity-And-Access-Management) (Identity & Access Management) and [CICD-SEC-10](https://owasp.org/www-project-top-10-ci-cd-security-risks/CICD-SEC-10-Insufficient-Logging-And-Visibility) (Insufficient Logging & Visibility) are not detectable from static `.gitlab-ci.yml` analysis — they require platform-level context such as GitLab group/project settings, audit logs, or API access.
 
+## ShellCheck integration
+
+glsec can optionally pass `script:`, `before_script:`, and `after_script:` blocks to [ShellCheck](https://www.shellcheck.net/) for deeper shell analysis. This is **opt-in** and requires ShellCheck to be installed separately.
+
+Enable it in `.glsec.yml`:
+
+```yaml
+shellcheck:
+  enabled: true
+  path: /usr/bin/shellcheck  # optional — defaults to PATH lookup
+```
+
+ShellCheck findings are reported alongside GL findings and use `SC` rule IDs:
+
+```
+WARN   .gitlab-ci.yml:12  SC2086  [build]  Double quote to prevent globbing and word splitting.
+```
+
+If the ShellCheck binary is not found, glsec prints a warning to stderr and continues scanning normally.
+
+**Suppressing specific codes** — inline:
+
+```yaml
+  script:
+    - echo $CI_COMMIT_REF_NAME  # glsec:ignore SC2086 -- set by platform
+```
+
+Or globally in `.glsec.yml`:
+
+```yaml
+rules:
+  SC2086: off
+```
+
+ShellCheck's own inline directives (`# shellcheck disable=SC2086`) are also respected.
+
 ---
 
 ## CI integration
