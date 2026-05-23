@@ -108,3 +108,4 @@ Misconfigured CI settings that expand the attack surface or leak build context.
 | [GL048](rules/GL048.md) | `error` | `StrictHostKeyChecking` disabled in SSH command or config — host identity not verified, enabling MITM attacks |
 | [GL049](rules/GL049.md) | `warn`  | Deploy job with `interruptible: true` — mid-run cancellation leaves the target environment in an undefined state |
 | [GL050](rules/GL050.md) | `warn`  | `sudo` in CI script — escalates to root, amplifying blast radius if the pipeline is compromised |
+| [GL054](rules/GL054.md) | `warn`  | `docker:dind` service (or `DOCKER_HOST` pointing at it) implies a privileged runner with full host root access |

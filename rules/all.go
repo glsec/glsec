@@ -57,5 +57,6 @@ func All() []rule.Rule {
 		GL051,
 		GL052,
 		GL053,
+		GL054,
 	}
 }

@@ -1,0 +1,10 @@
+# docker-in-docker build job — requires a privileged runner.
+build-image:
+  image: docker:26.0
+  services:
+    - docker:26.0-dind
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+  script:
+    - docker build -t myapp .
+    - docker push myapp
