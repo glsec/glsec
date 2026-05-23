@@ -175,6 +175,13 @@ stages:
 
 Pin to an explicit component tag (not `@~latest`) — glsec's own GL003 / GL041 rules flag floating refs.
 
+**Coloured output in CI logs:** glsec auto-disables ANSI colors when stdout is not a terminal (the standard convention). Force colors back on by setting `FORCE_COLOR=1` (or `CLICOLOR_FORCE=1`) in your pipeline variables:
+
+```yaml
+variables:
+  FORCE_COLOR: "1"
+```
+
 **Component repo and full input reference:** https://gitlab.com/glsec-io/glsec
 
 **Runnable example projects:** https://gitlab.com/glsec-io/examples
