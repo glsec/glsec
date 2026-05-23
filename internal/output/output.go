@@ -1,6 +1,8 @@
 package output
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -13,14 +15,15 @@ import (
 type Format string
 
 const (
-	FormatText Format = "text"
-	FormatJSON Format = "json"
-	FormatSARIF Format = "sarif"
+	FormatText        Format = "text"
+	FormatJSON        Format = "json"
+	FormatSARIF       Format = "sarif"
+	FormatCodeClimate Format = "codeclimate"
 )
 
 func ParseFormat(s string) (Format, bool) {
 	switch Format(s) {
-	case FormatText, FormatJSON, FormatSARIF:
+	case FormatText, FormatJSON, FormatSARIF, FormatCodeClimate:
 		return Format(s), true
 	default:
 		return "", false
@@ -33,6 +36,8 @@ func Write(w io.Writer, format Format, findings []finding.Finding, jobCount int,
 		return writeJSON(w, findings, nil)
 	case FormatSARIF:
 		return writeSARIF(w, findings, nil, nil, nil, nil)
+	case FormatCodeClimate:
+		return writeCodeClimate(w, findings)
 	default:
 		return writeText(w, findings, jobCount, colorEnabled)
 	}
@@ -312,4 +317,69 @@ func writeSARIF(w io.Writer, findings []finding.Finding,
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	return enc.Encode(log)
+}
+
+// Code Climate JSON — consumed natively by GitLab's Code Quality widget
+// (artifacts:reports:codequality). Spec:
+// https://github.com/codeclimate/platform/blob/master/spec/analyzers/SPEC.md
+type codeClimateIssue struct {
+	Type        string               `json:"type"`
+	CheckName   string               `json:"check_name"`
+	Description string               `json:"description"`
+	Categories  []string             `json:"categories"`
+	Severity    string               `json:"severity"`
+	Fingerprint string               `json:"fingerprint"`
+	Location    codeClimateLocation  `json:"location"`
+}
+
+type codeClimateLocation struct {
+	Path  string           `json:"path"`
+	Lines codeClimateLines `json:"lines"`
+}
+
+type codeClimateLines struct {
+	Begin int `json:"begin"`
+}
+
+func severityToCodeClimate(s finding.Severity) string {
+	switch s {
+	case finding.Error:
+		return "critical"
+	case finding.Warn:
+		return "major"
+	default:
+		return "info"
+	}
+}
+
+func codeClimateFingerprint(f finding.Finding) string {
+	h := sha256.Sum256([]byte(f.RuleID + "|" + f.File + "|" + f.Job + "|" + f.Message + "|" + fmt.Sprintf("%d", f.Line)))
+	return hex.EncodeToString(h[:])
+}
+
+// WriteCodeClimate writes findings in the Code Climate JSON format
+// consumed by GitLab's Code Quality (artifacts:reports:codequality).
+func WriteCodeClimate(w io.Writer, findings []finding.Finding) error {
+	return writeCodeClimate(w, findings)
+}
+
+func writeCodeClimate(w io.Writer, findings []finding.Finding) error {
+	out := make([]codeClimateIssue, 0, len(findings))
+	for _, f := range findings {
+		out = append(out, codeClimateIssue{
+			Type:        "issue",
+			CheckName:   f.RuleID,
+			Description: f.Message,
+			Categories:  []string{"Security"},
+			Severity:    severityToCodeClimate(f.Severity),
+			Fingerprint: codeClimateFingerprint(f),
+			Location: codeClimateLocation{
+				Path:  f.File,
+				Lines: codeClimateLines{Begin: f.Line},
+			},
+		})
+	}
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	return enc.Encode(out)
 }
