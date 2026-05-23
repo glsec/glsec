@@ -149,13 +149,15 @@ ShellCheck's own inline directives (`# shellcheck disable=SC2086`) are also resp
 
 ## CI integration
 
+> **Runnable examples for every pattern below:** [gitlab.com/glsec-io/examples](https://gitlab.com/glsec-io/examples) — [Catalog component](https://gitlab.com/glsec-io/examples/component) · [Catalog + Code Quality](https://gitlab.com/glsec-io/examples/component-code-quality) · [Docker image](https://gitlab.com/glsec-io/examples/docker) · [Binary download](https://gitlab.com/glsec-io/examples/binary)
+
 ### GitLab CI Catalog component (recommended)
 
 Use the official component from the [GitLab CI Catalog](https://gitlab.com/explore/catalog/glsec-io/glsec) — no need to manage image pins or script wiring yourself:
 
 ```yaml
 include:
-  - component: gitlab.com/glsec-io/glsec/glsec@~latest
+  - component: gitlab.com/glsec-io/glsec/glsec@1.0.2
 
 stages:
   - test
@@ -165,49 +167,51 @@ For inline findings on merge request diffs, add the `glsec-code-quality` templat
 
 ```yaml
 include:
-  - component: gitlab.com/glsec-io/glsec/glsec-code-quality@~latest
+  - component: gitlab.com/glsec-io/glsec/glsec-code-quality@1.0.2
 
 stages:
   - test
 ```
 
+Pin to an explicit component tag (not `@~latest`) — glsec's own GL003 / GL041 rules flag floating refs.
+
 **Component repo and full input reference:** https://gitlab.com/glsec-io/glsec
+
+**Runnable example projects:** https://gitlab.com/glsec-io/examples
 
 ### GitLab CI — Docker image
 
-The fastest way: use the pre-built image from GHCR. No Go toolchain needed.
+If you need more control than the Catalog component offers, use the pre-built image from GHCR directly:
 
 ```yaml
 glsec:
   stage: test
-  image: ghcr.io/glsec/glsec:latest
+  image:
+    name: ghcr.io/glsec/glsec:1.2.0
+    entrypoint: [""]
   script:
     - glsec .gitlab-ci.yml
 ```
 
-Pin to a specific release for reproducible pipelines:
-
-```yaml
-glsec:
-  stage: test
-  image: ghcr.io/glsec/glsec:0.1.0
-  script:
-    - glsec .gitlab-ci.yml
-```
+The `entrypoint: [""]` override is required: the image sets `ENTRYPOINT ["glsec"]` for `docker run` convenience, which conflicts with GitLab Runner's shell wrapper. Pin to a specific tag (`1.2.0`, not `:latest`) for reproducible pipelines.
 
 ### GitLab CI — binary download
 
 For pipelines that cannot pull from GHCR:
 
 ```yaml
+variables:
+  GLSEC_VERSION: "1.2.0"
+
 glsec:
   stage: test
-  image: alpine:3.19
+  image: alpine:3.20
+  before_script:
+    - apk add --no-cache curl tar
+    - curl -sSLO "https://github.com/glsec/glsec/releases/download/v${GLSEC_VERSION}/glsec_${GLSEC_VERSION}_linux_amd64.tar.gz"
+    - curl -sSL "https://github.com/glsec/glsec/releases/download/v${GLSEC_VERSION}/checksums.txt" | grep "glsec_${GLSEC_VERSION}_linux_amd64.tar.gz" | sha256sum -c
+    - tar xzf "glsec_${GLSEC_VERSION}_linux_amd64.tar.gz"
   script:
-    - |
-      curl -sSLO https://github.com/glsec/glsec/releases/latest/download/glsec_linux_amd64.tar.gz
-      echo "$(curl -sSL https://github.com/glsec/glsec/releases/latest/download/checksums.txt | grep glsec_linux_amd64.tar.gz)" | sha256sum -c
-      tar xzf glsec_linux_amd64.tar.gz
     - ./glsec .gitlab-ci.yml
 ```
 
@@ -218,7 +222,9 @@ Publish findings to GitLab's Security Dashboard by emitting SARIF and exposing i
 ```yaml
 glsec:
   stage: test
-  image: ghcr.io/glsec/glsec:latest
+  image:
+    name: ghcr.io/glsec/glsec:1.2.0
+    entrypoint: [""]
   script:
     - glsec --format sarif .gitlab-ci.yml > glsec.sarif || true
   artifacts:
@@ -230,12 +236,14 @@ Findings appear in the pipeline Security tab and the project Security Dashboard.
 
 ### GitLab Code Quality integration
 
-Show findings **inline on merge request diffs** using GitLab's Code Quality widget — works on all GitLab tiers (no Ultimate required, unlike SAST):
+Show findings **inline on merge request diffs** using GitLab's Code Quality widget — works on all GitLab tiers (no Ultimate required, unlike SAST). The easiest path is the `glsec-code-quality` template from the [Catalog component](#gitlab-ci-catalog-component-recommended) above. The equivalent manual setup:
 
 ```yaml
 glsec:
   stage: test
-  image: ghcr.io/glsec/glsec:latest
+  image:
+    name: ghcr.io/glsec/glsec:1.2.0
+    entrypoint: [""]
   script:
     - glsec --format codeclimate .gitlab-ci.yml > gl-code-quality.json || true
   artifacts:
