@@ -160,6 +160,7 @@ func TestParseFormat(t *testing.T) {
 		{"text", FormatText, true},
 		{"json", FormatJSON, true},
 		{"sarif", FormatSARIF, true},
+		{"codeclimate", FormatCodeClimate, true},
 		{"xml", "", false},
 		{"", "", false},
 	} {
@@ -251,6 +252,110 @@ func TestWriteJSON_WithOWASP(t *testing.T) {
 	}
 	if len(out.Findings[1].OWASP) != 1 || out.Findings[1].OWASP[0] != "CICD-SEC-6" {
 		t.Errorf("unexpected OWASP for GL002: %v", out.Findings[1].OWASP)
+	}
+}
+
+func TestWriteCodeClimate(t *testing.T) {
+	var buf bytes.Buffer
+	if err := Write(&buf, FormatCodeClimate, testFindings, 0, false); err != nil {
+		t.Fatal(err)
+	}
+	var issues []codeClimateIssue
+	if err := json.Unmarshal(buf.Bytes(), &issues); err != nil {
+		t.Fatalf("invalid Code Climate JSON: %v", err)
+	}
+	if len(issues) != 2 {
+		t.Fatalf("expected 2 issues, got %d", len(issues))
+	}
+
+	got := issues[0]
+	if got.Type != "issue" {
+		t.Errorf("expected type=issue, got %q", got.Type)
+	}
+	if got.CheckName != "GL001" {
+		t.Errorf("expected check_name=GL001, got %q", got.CheckName)
+	}
+	if got.Description != testFindings[0].Message {
+		t.Errorf("description mismatch: %q", got.Description)
+	}
+	if got.Severity != "critical" {
+		t.Errorf("expected severity=critical for Error finding, got %q", got.Severity)
+	}
+	if len(got.Categories) != 1 || got.Categories[0] != "Security" {
+		t.Errorf("expected categories=[Security], got %v", got.Categories)
+	}
+	if got.Location.Path != "ci.yml" || got.Location.Lines.Begin != 4 {
+		t.Errorf("unexpected location: %+v", got.Location)
+	}
+	if len(got.Fingerprint) != 64 {
+		t.Errorf("expected 64-char sha256 fingerprint, got %d chars", len(got.Fingerprint))
+	}
+
+	if issues[1].Severity != "major" {
+		t.Errorf("expected severity=major for Warn finding, got %q", issues[1].Severity)
+	}
+}
+
+func TestWriteCodeClimate_Empty(t *testing.T) {
+	var buf bytes.Buffer
+	if err := Write(&buf, FormatCodeClimate, nil, 0, false); err != nil {
+		t.Fatal(err)
+	}
+	var issues []codeClimateIssue
+	if err := json.Unmarshal(buf.Bytes(), &issues); err != nil {
+		t.Fatalf("invalid Code Climate JSON: %v", err)
+	}
+	if len(issues) != 0 {
+		t.Errorf("expected empty array, got %d", len(issues))
+	}
+	if !strings.HasPrefix(strings.TrimSpace(buf.String()), "[") {
+		t.Errorf("expected JSON array, got %q", buf.String())
+	}
+}
+
+func TestWriteCodeClimate_FingerprintStable(t *testing.T) {
+	var buf1, buf2 bytes.Buffer
+	if err := WriteCodeClimate(&buf1, testFindings); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteCodeClimate(&buf2, testFindings); err != nil {
+		t.Fatal(err)
+	}
+	if buf1.String() != buf2.String() {
+		t.Error("two runs over identical findings produced different output (fingerprints not deterministic)")
+	}
+}
+
+func TestWriteCodeClimate_FingerprintUnique(t *testing.T) {
+	var buf bytes.Buffer
+	if err := WriteCodeClimate(&buf, testFindingsWithJob); err != nil {
+		t.Fatal(err)
+	}
+	var issues []codeClimateIssue
+	if err := json.Unmarshal(buf.Bytes(), &issues); err != nil {
+		t.Fatalf("invalid Code Climate JSON: %v", err)
+	}
+	seen := map[string]bool{}
+	for _, issue := range issues {
+		if seen[issue.Fingerprint] {
+			t.Errorf("duplicate fingerprint %s — distinct findings collided", issue.Fingerprint)
+		}
+		seen[issue.Fingerprint] = true
+	}
+}
+
+func TestSeverityToCodeClimate(t *testing.T) {
+	for _, tc := range []struct {
+		in   finding.Severity
+		want string
+	}{
+		{finding.Error, "critical"},
+		{finding.Warn, "major"},
+		{finding.Info, "info"},
+	} {
+		if got := severityToCodeClimate(tc.in); got != tc.want {
+			t.Errorf("severityToCodeClimate(%q) = %q, want %q", tc.in, got, tc.want)
+		}
 	}
 }
 

@@ -54,7 +54,7 @@ func main() {
 		return
 	}
 
-	formatFlag := flag.String("format", "text", "output format: text, json, sarif")
+	formatFlag := flag.String("format", "text", "output format: text, json, sarif, codeclimate")
 	configFlag := flag.String("config", config.DefaultFile, "path to .glsec.yml config file")
 	versionFlag := flag.Bool("version", false, "print version and exit")
 	gitlabVersionFlag := flag.String("gitlab-version", "", "target GitLab version, e.g. 16.0 (skips rules not available in that version)")
@@ -98,7 +98,7 @@ func main() {
 
 	format, ok := output.ParseFormat(*formatFlag)
 	if !ok {
-		fmt.Fprintf(os.Stderr, "unknown format %q — use text, json, or sarif\n", *formatFlag)
+		fmt.Fprintf(os.Stderr, "unknown format %q — use text, json, sarif, or codeclimate\n", *formatFlag)
 		os.Exit(2)
 	}
 

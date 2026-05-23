@@ -55,6 +55,9 @@ glsec --format json .gitlab-ci.yml
 # SARIF output for GitHub Code Scanning / GitLab SAST
 glsec --format sarif .gitlab-ci.yml > gl.sarif
 
+# Code Climate output for GitLab Code Quality (inline MR findings, works on all tiers)
+glsec --format codeclimate .gitlab-ci.yml > gl-code-quality.json
+
 # treat warn findings as hard failures (exit 1)
 glsec --strict .gitlab-ci.yml
 
@@ -200,6 +203,23 @@ glsec:
 ```
 
 Findings appear in the pipeline Security tab and the project Security Dashboard. Use `|| true` to prevent the glsec job itself from blocking the pipeline — the SAST report is uploaded regardless.
+
+### GitLab Code Quality integration
+
+Show findings **inline on merge request diffs** using GitLab's Code Quality widget — works on all GitLab tiers (no Ultimate required, unlike SAST):
+
+```yaml
+glsec:
+  stage: test
+  image: ghcr.io/glsec/glsec:latest
+  script:
+    - glsec --format codeclimate .gitlab-ci.yml > gl-code-quality.json || true
+  artifacts:
+    reports:
+      codequality: gl-code-quality.json
+```
+
+Severity mapping (glsec → Code Climate): `error` → `critical`, `warn` → `major`, `info` → `info`.
 
 ### GitHub Actions
 
