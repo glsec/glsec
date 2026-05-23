@@ -13,13 +13,17 @@ const (
 )
 
 // IsEnabled returns true if color output should be used.
-// Color is disabled when:
-//   - noColor is true (--no-color flag)
-//   - NO_COLOR env var is set (https://no-color.org)
-//   - w is not a terminal
+//
+// Precedence (highest first):
+//  1. noColor (--no-color flag) or NO_COLOR env → disabled
+//  2. FORCE_COLOR or CLICOLOR_FORCE env set to a non-empty, non-"0" value → enabled
+//  3. Auto-detect: w must be a terminal
 func IsEnabled(noColor bool, w io.Writer) bool {
 	if noColor || os.Getenv("NO_COLOR") != "" {
 		return false
+	}
+	if forceColor("FORCE_COLOR") || forceColor("CLICOLOR_FORCE") {
+		return true
 	}
 	f, ok := w.(*os.File)
 	if !ok {
@@ -30,6 +34,11 @@ func IsEnabled(noColor bool, w io.Writer) bool {
 		return false
 	}
 	return fi.Mode()&os.ModeCharDevice != 0
+}
+
+func forceColor(env string) bool {
+	v := os.Getenv(env)
+	return v != "" && v != "0"
 }
 
 // Red wraps s in red ANSI codes if enabled.
