@@ -1,0 +1,5 @@
+# No top-level workflow: block — pipelines run for every event, including fork MRs.
+build:
+  image: alpine:3.20
+  script:
+    - make build
