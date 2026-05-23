@@ -60,6 +60,7 @@ User-controlled inputs and unversioned component references that allow malicious
 | [GL041](rules/GL041.md) | `warn`  | `include: component:` without a pinned semver tag or commit SHA |
 | [GL044](rules/GL044.md) | `warn`  | MR-triggered job checks out `$CI_MERGE_REQUEST_SOURCE_BRANCH_SHA` — executes attacker-controlled code with `$CI_JOB_TOKEN` access |
 | [GL051](rules/GL051.md) | `warn`  | Unconstrained `spec:inputs` entry interpolated into `image:`, `script:`, or `environment:name:` — caller can supply arbitrary values |
+| [GL053](rules/GL053.md) | `warn`  | Missing or unrestricted `workflow:rules` — pipelines run for every event, including untrusted fork merge requests |
 
 ---
 
