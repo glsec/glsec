@@ -149,7 +149,31 @@ ShellCheck's own inline directives (`# shellcheck disable=SC2086`) are also resp
 
 ## CI integration
 
-### GitLab CI — Docker image (recommended)
+### GitLab CI Catalog component (recommended)
+
+Use the official component from the [GitLab CI Catalog](https://gitlab.com/explore/catalog/glsec-io/glsec) — no need to manage image pins or script wiring yourself:
+
+```yaml
+include:
+  - component: gitlab.com/glsec-io/glsec/glsec@~latest
+
+stages:
+  - test
+```
+
+For inline findings on merge request diffs, add the `glsec-code-quality` template — works on **all GitLab tiers**, no Ultimate required:
+
+```yaml
+include:
+  - component: gitlab.com/glsec-io/glsec/glsec-code-quality@~latest
+
+stages:
+  - test
+```
+
+**Component repo and full input reference:** https://gitlab.com/glsec-io/glsec
+
+### GitLab CI — Docker image
 
 The fastest way: use the pre-built image from GHCR. No Go toolchain needed.
 
