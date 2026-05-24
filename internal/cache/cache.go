@@ -37,7 +37,7 @@ func Dir() string {
 // Key computes a deterministic hex key from all inputs that affect scan results.
 // filePaths must include the main pipeline file and all discovered child pipeline files.
 // configPath and ignorePath are read from disk if they exist.
-func Key(version, gitlabVersion string, filePaths []string, configPath, ignorePath string, excludePatterns []string) (string, error) {
+func Key(version, gitlabVersion string, filePaths []string, configPath, ignorePath string, excludePatterns, only, skip []string) (string, error) {
 	h := sha256.New()
 
 	_, _ = fmt.Fprintf(h, "version:%s\n", version)
@@ -49,6 +49,9 @@ func Key(version, gitlabVersion string, filePaths []string, configPath, ignorePa
 	for _, p := range sorted {
 		_, _ = fmt.Fprintf(h, "exclude:%s\n", p)
 	}
+
+	hashSorted(h, "only", only)
+	hashSorted(h, "skip", skip)
 
 	sortedFiles := make([]string, len(filePaths))
 	copy(sortedFiles, filePaths)
@@ -69,6 +72,17 @@ func Key(version, gitlabVersion string, filePaths []string, configPath, ignorePa
 	}
 
 	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// hashSorted writes a sorted, labelled list into the cache key so order does
+// not affect the result.
+func hashSorted(h io.Writer, label string, items []string) {
+	sorted := make([]string, len(items))
+	copy(sorted, items)
+	sort.Strings(sorted)
+	for _, s := range sorted {
+		_, _ = fmt.Fprintf(h, "%s:%s\n", label, s)
+	}
 }
 
 func hashFile(h io.Writer, path string) error {

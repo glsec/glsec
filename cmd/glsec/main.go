@@ -69,6 +69,15 @@ func main() {
 		excludeArgs = append(excludeArgs, s)
 		return nil
 	})
+	var onlyArgs, skipArgs []string
+	flag.Func("only", "run only these rule IDs (comma-separated, may be repeated)", func(s string) error {
+		onlyArgs = append(onlyArgs, splitRuleIDs(s)...)
+		return nil
+	})
+	flag.Func("skip", "skip these rule IDs (comma-separated, may be repeated)", func(s string) error {
+		skipArgs = append(skipArgs, splitRuleIDs(s)...)
+		return nil
+	})
 	flag.Usage = func() {
 		fmt.Fprintln(os.Stderr, "usage: glsec [flags] [file]")
 		fmt.Fprintln(os.Stderr, "       glsec explain <RULE-ID>")
@@ -116,6 +125,15 @@ func main() {
 		cfg.NoExitCodes = true
 	}
 	cfg.ExcludePaths = append(cfg.ExcludePaths, excludeArgs...)
+
+	if len(onlyArgs) > 0 {
+		cfg.Only = ruleIDSet(onlyArgs)
+		warnUnknownRuleIDs("--only", cfg.Only)
+	}
+	if len(skipArgs) > 0 {
+		cfg.Skip = ruleIDSet(skipArgs)
+		warnUnknownRuleIDs("--skip", cfg.Skip)
+	}
 
 	rules.GL016.SetTrustedHosts(cfg.TrustedHosts)
 
@@ -185,7 +203,7 @@ func main() {
 		for i, d := range allDocs {
 			filePaths[i] = d.File
 		}
-		cacheKey, err = cache.Key(resolvedVersion(), gitlabVersionStr, filePaths, *configFlag, suppress.IgnoreFile, cfg.ExcludePaths)
+		cacheKey, err = cache.Key(resolvedVersion(), gitlabVersionStr, filePaths, *configFlag, suppress.IgnoreFile, cfg.ExcludePaths, onlyArgs, skipArgs)
 		if err == nil {
 			if entry, ok := cache.Load(cacheKey); ok {
 				writeAndExit(os.Stdout, format, entry.Findings, entry.JobCount, cfg, colorEnabled)
@@ -251,6 +269,41 @@ func resolvedVersion() string {
 		return info.Main.Version
 	}
 	return "dev"
+}
+
+// splitRuleIDs splits a comma-separated rule list, trims and upper-cases each
+// entry, and drops empties.
+func splitRuleIDs(s string) []string {
+	var out []string
+	for _, part := range strings.Split(s, ",") {
+		if id := strings.ToUpper(strings.TrimSpace(part)); id != "" {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+// ruleIDSet builds a set from a list of rule IDs.
+func ruleIDSet(ids []string) map[string]bool {
+	set := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		set[id] = true
+	}
+	return set
+}
+
+// warnUnknownRuleIDs prints a stderr warning for any ID in set that is not a
+// known rule, so typos (e.g. --only GL01) do not silently match nothing.
+func warnUnknownRuleIDs(flagName string, set map[string]bool) {
+	known := make(map[string]bool, len(rules.All()))
+	for _, r := range rules.All() {
+		known[r.ID()] = true
+	}
+	for id := range set {
+		if !known[id] {
+			fmt.Fprintf(os.Stderr, "warning: %s: unknown rule ID %q\n", flagName, id)
+		}
+	}
 }
 
 // matchesExclude returns true if file matches any of the given patterns.
