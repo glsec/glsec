@@ -13,3 +13,6 @@ coverage.html
 .idea/
 .vscode/
 *.swp
+
+# Playwright MCP artifacts
+.playwright-mcp/

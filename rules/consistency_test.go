@@ -220,3 +220,75 @@ func checkRulesOverviewLink(t *testing.T, id, overview string) {
 		t.Errorf("%s has no proper link in docs/rules.md (expected %q)", id, link)
 	}
 }
+
+// TestReadmeRuleTable verifies the README "Rules" category table stays in sync
+// with the registered rules and their owasp.go category mappings — a table
+// that is otherwise hand-maintained and prone to drift.
+func TestReadmeRuleTable(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "README.md"))
+	if err != nil {
+		t.Fatalf("read README.md: %v", err)
+	}
+	readme := string(data)
+
+	// Rule count: "N rules across ..." must equal the registered rule count.
+	countPat := regexp.MustCompile(`(?m)^(\d+) rules across`)
+	cm := countPat.FindStringSubmatch(readme)
+	if cm == nil {
+		t.Fatal("could not find 'N rules across' line in README")
+	}
+	want := len(All())
+	if cm[1] != fmt.Sprint(want) {
+		t.Errorf("README says %s rules, but %d are registered", cm[1], want)
+	}
+
+	// Category table rows: "| name | CICD-SEC-... | GL..., ... |".
+	rowPat := regexp.MustCompile(`(?m)^\|[^|]+\|([^|]*CICD-SEC[^|]*)\|([^|]+)\|\s*$`)
+	catPat := regexp.MustCompile(`CICD-SEC-\d+`)
+	idPat := regexp.MustCompile(`GL\d{3}`)
+
+	rows := rowPat.FindAllStringSubmatch(readme, -1)
+	if len(rows) == 0 {
+		t.Fatal("no category rows found in README rule table")
+	}
+
+	seen := map[string]int{}
+	for _, row := range rows {
+		rowCats := map[string]bool{}
+		for _, c := range catPat.FindAllString(row[1], -1) {
+			rowCats[c] = true
+		}
+		for _, id := range idPat.FindAllString(row[2], -1) {
+			seen[id]++
+			cats := OWASPCategories(id)
+			matched := false
+			for _, c := range cats {
+				if rowCats[c] {
+					matched = true
+					break
+				}
+			}
+			if !matched {
+				t.Errorf("README lists %s under categories %v, but owasp.go maps it to %v", id, keysOf(rowCats), cats)
+			}
+		}
+	}
+
+	for _, r := range All() {
+		switch seen[r.ID()] {
+		case 0:
+			t.Errorf("%s is registered but missing from the README rule table", r.ID())
+		case 1:
+		default:
+			t.Errorf("%s appears %d times in the README rule table (want 1)", r.ID(), seen[r.ID()])
+		}
+	}
+}
+
+func keysOf(m map[string]bool) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
+}
