@@ -29,6 +29,10 @@ var (
 )
 
 func main() {
+	if len(os.Args) >= 2 && os.Args[1] == "list" {
+		runList(os.Args[2:])
+		return
+	}
 	if len(os.Args) >= 2 && os.Args[1] == "explain" {
 		if len(os.Args) < 3 {
 			fmt.Fprintln(os.Stderr, "usage: glsec explain <RULE-ID>")
@@ -81,6 +85,7 @@ func main() {
 	flag.Usage = func() {
 		fmt.Fprintln(os.Stderr, "usage: glsec [flags] [file]")
 		fmt.Fprintln(os.Stderr, "       glsec explain <RULE-ID>")
+		fmt.Fprintln(os.Stderr, "       glsec list [--format text|json] [--owasp CICD-SEC-N]")
 		fmt.Fprintln(os.Stderr, "       If no file is given, glsec looks for .gitlab-ci.yml in the current directory.")
 		flag.PrintDefaults()
 	}

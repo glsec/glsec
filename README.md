@@ -73,6 +73,13 @@ glsec --only GL001,GL003 .gitlab-ci.yml
 # skip specific rules
 glsec --skip GL008,GL022 .gitlab-ci.yml
 
+# list all rules (ID, severity, OWASP, description); --format json / --owasp also supported
+glsec list
+glsec list --owasp CICD-SEC-4
+
+# explain a specific rule
+glsec explain GL001
+
 # baseline existing findings so only new violations are reported
 glsec --generate-ignore .gitlab-ci.yml
 glsec .gitlab-ci.yml  # now exits 0; new violations will be caught
