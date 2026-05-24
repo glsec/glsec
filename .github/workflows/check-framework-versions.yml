@@ -1,0 +1,63 @@
+name: Check framework versions
+
+# Monthly check for newer releases of the security frameworks glsec maps to.
+# When a newer version is found, opens an issue so the mapping can be reviewed
+# before the pinned version constant is bumped.
+#
+# Currently checks OWASP ASVS (rules/asvs.go). The OWASP Top 10 CI/CD Security
+# Risks taxonomy is a living document without a release feed and is reviewed
+# manually.
+
+on:
+  schedule:
+    - cron: "0 8 1 * *" # 08:00 UTC on the 1st of each month
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Check mapped framework versions
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Check OWASP ASVS version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          pinned=$(grep -oP 'ASVSVersion = "\K[^"]+' rules/asvs.go)
+          if [ -z "$pinned" ]; then
+            echo "could not read ASVSVersion from rules/asvs.go" >&2
+            exit 1
+          fi
+
+          # The latest stable ASVS release; ignore the rolling "latest"
+          # (bleeding-edge) tag and pre-release tags.
+          latest=$(gh api repos/OWASP/ASVS/releases --jq '.[].tag_name' \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+_release$' \
+            | sed -E 's/^v//; s/_release$//' \
+            | sort -V | tail -1)
+
+          echo "OWASP ASVS: pinned=$pinned latest=$latest"
+          if [ -z "$latest" ] || [ "$latest" = "$pinned" ]; then
+            echo "ASVS mapping is up to date."
+            exit 0
+          fi
+
+          title="Framework update available: OWASP ASVS $latest"
+          if [ "$(gh issue list --state open --search "\"$title\" in:title" --json number --jq 'length')" != "0" ]; then
+            echo "An open issue for this update already exists; skipping."
+            exit 0
+          fi
+
+          body="OWASP ASVS \`$latest\` is available; glsec maps to \`$pinned\` (\`ASVSVersion\` in \`rules/asvs.go\`). Review the V14 (Build and Deploy) requirement mapping against the new release, update it if needed, then bump \`ASVSVersion\`. Related: #156."
+          gh issue create --title "$title" --label "enhancement" --body "$body"
