@@ -1,0 +1,7 @@
+# docker run --pid host shares the host PID namespace with the container.
+test:
+  image: docker:26.0
+  services:
+    - docker:26.0-dind
+  script:
+    - docker run --pid host myimage ./perf-test.sh
