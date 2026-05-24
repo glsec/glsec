@@ -28,6 +28,7 @@ Secrets hardcoded, leaked through logs, or forwarded to unintended consumers.
 | [GL040](rules/GL040.md) | `warn`  | Script uses plain `ftp://` — credentials and content transmitted unencrypted |
 | [GL052](rules/GL052.md) | `warn`  | User-controlled variable in `environment:name:` — attacker can craft a branch name that resolves to a protected environment and access its secrets |
 | [GL059](rules/GL059.md) | `warn`  | `docker build --build-arg` with a secret-keyword name bakes the value into image layer metadata (visible via `docker history`) |
+| [GL062](rules/GL062.md) | `warn`  | `printenv` or bare `env` dumps every variable (including secrets) to the job log |
 
 ---
 
