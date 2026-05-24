@@ -1,0 +1,7 @@
+# docker run --network host removes network isolation from the runner host.
+test:
+  image: docker:26.0
+  services:
+    - docker:26.0-dind
+  script:
+    - docker run --network host myimage ./integration-test.sh

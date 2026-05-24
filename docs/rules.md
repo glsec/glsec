@@ -112,3 +112,4 @@ Misconfigured CI settings that expand the attack surface or leak build context.
 | [GL054](rules/GL054.md) | `warn`  | `docker:dind` service (or `DOCKER_HOST` pointing at it) implies a privileged runner with full host root access |
 | [GL056](rules/GL056.md) | `warn`  | `docker run --privileged` in a script grants the container full host kernel access |
 | [GL057](rules/GL057.md) | `error`/`warn` | `docker run --cap-add` with dangerous Linux capabilities (`ALL`, `SYS_ADMIN`, `SYS_PTRACE`, `SYS_MODULE`, `NET_ADMIN`) |
+| [GL058](rules/GL058.md) | `warn`  | `docker run --network host` removes network isolation from the runner host |
