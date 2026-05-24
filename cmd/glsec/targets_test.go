@@ -8,7 +8,7 @@ import (
 
 func writeFile(t *testing.T, path string) {
 	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(path, []byte("build:\n  script: [echo hi]\n"), 0o600); err != nil {
