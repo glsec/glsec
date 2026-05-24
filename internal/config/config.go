@@ -80,6 +80,12 @@ type Config struct {
 	// OWASPExclude is a denylist of OWASP CICD-SEC category IDs. Rules
 	// belonging to any listed category are skipped.
 	OWASPExclude []string `yaml:"owasp_exclude"`
+	// Only, when non-empty, restricts execution to these rule IDs. Set from
+	// the --only CLI flag; takes precedence over per-rule config.
+	Only map[string]bool `yaml:"-"`
+	// Skip lists rule IDs to exclude. Set from the --skip CLI flag; takes
+	// precedence over per-rule config.
+	Skip map[string]bool `yaml:"-"`
 }
 
 // Default returns a Config with no overrides.
@@ -205,8 +211,16 @@ var validOWASPCategories = map[string]bool{
 
 func validOWASPCategory(s string) bool { return validOWASPCategories[s] }
 
-// RuleEnabled returns false if the rule is set to "off" in the config.
+// RuleEnabled returns false if the rule is disabled. The --only and --skip
+// CLI selections take precedence over per-rule config: a non-empty Only set
+// restricts execution to its members, and any rule in Skip is disabled.
 func (c *Config) RuleEnabled(id string) bool {
+	if len(c.Only) > 0 && !c.Only[id] {
+		return false
+	}
+	if c.Skip[id] {
+		return false
+	}
 	rc, ok := c.Rules[id]
 	return !ok || rc.Severity != "off"
 }

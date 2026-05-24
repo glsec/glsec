@@ -67,6 +67,12 @@ glsec --no-exit-codes .gitlab-ci.yml
 # exclude a file or directory from scanning
 glsec --exclude vendor/ .gitlab-ci.yml
 
+# run only specific rules (comma-separated or repeated)
+glsec --only GL001,GL003 .gitlab-ci.yml
+
+# skip specific rules
+glsec --skip GL008,GL022 .gitlab-ci.yml
+
 # baseline existing findings so only new violations are reported
 glsec --generate-ignore .gitlab-ci.yml
 glsec .gitlab-ci.yml  # now exits 0; new violations will be caught
