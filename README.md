@@ -94,7 +94,7 @@ exclude_paths:
 
 ## Rules
 
-54 rules across 8 [OWASP CI/CD security categories](https://owasp.org/www-project-top-10-ci-cd-security-risks/):
+55 rules across 8 [OWASP CI/CD security categories](https://owasp.org/www-project-top-10-ci-cd-security-risks/):
 
 | Category | OWASP | Rules |
 |----------|-------|-------|
@@ -102,7 +102,7 @@ exclude_paths:
 | Dependency & Image Pinning | CICD-SEC-3 | GL001, GL003, GL015, GL022, GL023, GL026, GL046 |
 | Component & Third-Party Integrity | CICD-SEC-4, CICD-SEC-8 | GL041, GL044, GL051, GL053 |
 | Supply Chain Integrity | CICD-SEC-9 | GL011, GL020, GL025, GL045 |
-| Pipeline Flow & Access Control | CICD-SEC-1, CICD-SEC-5 | GL008, GL009, GL012, GL013, GL017, GL019, GL034, GL039, GL043 |
+| Pipeline Flow & Access Control | CICD-SEC-1, CICD-SEC-5 | GL008, GL009, GL012, GL013, GL017, GL019, GL034, GL039, GL043, GL055 |
 | Insecure Configuration | CICD-SEC-7 | GL005, GL007, GL016, GL024, GL028, GL030, GL031, GL042, GL047, GL048, GL049, GL050, GL054 |
 
 → **[Full rule reference with descriptions and examples](docs/rules.md)**
