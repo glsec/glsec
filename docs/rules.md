@@ -46,6 +46,7 @@ Mutable references that allow silent substitution of images, templates, or packa
 | [GL023](rules/GL023.md) | `warn`  | Lockfile not enforced (`npm install` instead of `npm ci`, `yarn install` without `--frozen-lockfile`, etc.) |
 | [GL046](rules/GL046.md) | `warn`  | `cache: key:` derived from user-controlled variable — attacker can craft a branch name to collide with and poison the cache of a protected pipeline |
 | [GL026](rules/GL026.md) | `warn`  | `git clone`/`checkout` uses a mutable ref (branch or tag) instead of a pinned commit SHA |
+| [GL064](rules/GL064.md) | `warn`  | `include: component:` path is one edit from a popular component under a different namespace (typosquat) |
 
 ---
 
