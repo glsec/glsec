@@ -117,3 +117,4 @@ Misconfigured CI settings that expand the attack surface or leak build context.
 | [GL058](rules/GL058.md) | `warn`  | `docker run --network host` removes network isolation from the runner host |
 | [GL060](rules/GL060.md) | `error`/`warn` | `docker run -v` mounts a sensitive host path (`/`, `/etc`, `/root`, `/proc`, `/sys`, …) breaking isolation |
 | [GL061](rules/GL061.md) | `warn`  | `docker run --pid host` shares the host PID namespace — container can see/signal all host processes |
+| [GL063](rules/GL063.md) | `warn`  | `chmod` grants world-writable permissions (`777`, `a+w`, `o+w`) — TOCTOU risk on shared runners |
