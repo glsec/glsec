@@ -1,0 +1,8 @@
+# docker run --cap-add with dangerous Linux capabilities.
+test:
+  image: docker:26.0
+  services:
+    - docker:26.0-dind
+  script:
+    - docker run --cap-add ALL myimage ./test.sh
+    - docker run --cap-add SYS_ADMIN myimage ./mount-test.sh
