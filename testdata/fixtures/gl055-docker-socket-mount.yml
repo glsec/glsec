@@ -1,9 +1,7 @@
-# Host Docker socket mounted into a service — full control of the runner's daemon.
+# DOCKER_HOST wired to the host Docker socket — job can control the runner's daemon.
 build:
   image: docker:26.0
-  services:
-    - name: docker:26.0-dind
-      volumes:
-        - /var/run/docker.sock:/var/run/docker.sock
+  variables:
+    DOCKER_HOST: unix:///var/run/docker.sock
   script:
     - docker build -t myapp .

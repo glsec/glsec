@@ -20,71 +20,46 @@ func (r *gl055) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
 	mapping := parser.Unwrap(doc)
 
-	findings = append(findings, checkDockerSocket(
-		parser.FindKey(mapping, "services"), parser.FindKey(mapping, "variables"), file, "")...)
+	if f := checkDockerSocketVars(parser.FindKey(mapping, "variables"), file, ""); f != nil {
+		findings = append(findings, *f)
+	}
 
 	if def := parser.FindKey(mapping, "default"); def != nil {
-		findings = append(findings, checkDockerSocket(
-			parser.FindKey(def, "services"), parser.FindKey(def, "variables"), file, "")...)
+		if f := checkDockerSocketVars(parser.FindKey(def, "variables"), file, ""); f != nil {
+			findings = append(findings, *f)
+		}
 	}
 
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
-		findings = append(findings, checkDockerSocket(
-			parser.FindKey(job, "services"), parser.FindKey(job, "variables"), file, name.Value)...)
+		if f := checkDockerSocketVars(parser.FindKey(job, "variables"), file, name.Value); f != nil {
+			findings = append(findings, *f)
+		}
 	})
 
 	return findings
 }
 
-// checkDockerSocket flags a host Docker socket exposed to a job — either as a
-// service volume mount or via a DOCKER_HOST unix-socket variable. A volume
-// mount is the more explicit signal; when present, the DOCKER_HOST check for
-// the same scope is skipped to avoid a redundant second finding.
-func checkDockerSocket(servicesNode, varsNode *yaml.Node, file, job string) []finding.Finding {
-	var findings []finding.Finding
-
-	if servicesNode != nil && servicesNode.Kind == yaml.SequenceNode {
-		for _, item := range servicesNode.Content {
-			if item.Kind != yaml.MappingNode {
-				continue
-			}
-			volumes := parser.FindKey(item, "volumes")
-			if volumes == nil || volumes.Kind != yaml.SequenceNode {
-				continue
-			}
-			for _, v := range volumes.Content {
-				if v.Kind == yaml.ScalarNode && strings.Contains(v.Value, dockerSocketPath) {
-					findings = append(findings, finding.Finding{
-						RuleID:   "GL055",
-						Severity: finding.Warn,
-						Job:      job,
-						Message:  "host Docker socket " + dockerSocketPath + " mounted into a service — grants full control of the runner's Docker daemon (container escape, access to other jobs' secrets); use TLS-based docker:dind (tcp://docker:2376) instead",
-						File:     file, Line: v.Line, Col: v.Column,
-					})
-				}
-			}
+// checkDockerSocketVars flags a DOCKER_HOST variable pointing at the host
+// Docker socket. The socket itself is mounted via runner config.toml, not
+// .gitlab-ci.yml, so the DOCKER_HOST reference is the statically detectable
+// signal that a job is wired to control the host daemon.
+func checkDockerSocketVars(node *yaml.Node, file, job string) *finding.Finding {
+	if node == nil || node.Kind != yaml.MappingNode {
+		return nil
+	}
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		key := node.Content[i]
+		val := resolveScalar(node.Content[i+1])
+		if key.Value != "DOCKER_HOST" || val == nil || !strings.Contains(val.Value, dockerSocketPath) {
+			continue
+		}
+		return &finding.Finding{
+			RuleID:   "GL055",
+			Severity: finding.Warn,
+			Job:      job,
+			Message:  "DOCKER_HOST points at the host Docker socket (" + dockerSocketPath + ") — the job can control the runner's Docker daemon (container escape, access to other jobs' secrets); use TLS-based docker:dind (tcp://docker:2376) instead",
+			File:     file, Line: key.Line, Col: key.Column,
 		}
 	}
-
-	if len(findings) > 0 {
-		return findings
-	}
-
-	if varsNode != nil && varsNode.Kind == yaml.MappingNode {
-		for i := 0; i+1 < len(varsNode.Content); i += 2 {
-			key := varsNode.Content[i]
-			val := resolveScalar(varsNode.Content[i+1])
-			if key.Value == "DOCKER_HOST" && val != nil && strings.Contains(val.Value, dockerSocketPath) {
-				return []finding.Finding{{
-					RuleID:   "GL055",
-					Severity: finding.Warn,
-					Job:      job,
-					Message:  "DOCKER_HOST points at the host Docker socket (" + dockerSocketPath + ") — the job can control the runner's Docker daemon; use TLS-based docker:dind (tcp://docker:2376) instead",
-					File:     file, Line: key.Line, Col: key.Column,
-				}}
-			}
-		}
-	}
-
 	return nil
 }
