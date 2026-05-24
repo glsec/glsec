@@ -1,0 +1,6 @@
+# printenv / bare env dump every variable, including secrets, to the job log.
+debug:
+  image: alpine:3.20
+  script:
+    - printenv
+    - env
