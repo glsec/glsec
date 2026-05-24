@@ -49,6 +49,13 @@ Homebrew coming soon.
 # scan a file (exits 1 on error findings, 0 if clean, 2 on parse error)
 glsec .gitlab-ci.yml
 
+# scan multiple files or a glob in one run
+glsec .gitlab-ci.yml pipelines/deploy.yml
+glsec pipelines/*.yml
+
+# recursively scan a tree for all .gitlab-ci.yml files
+glsec --recursive .
+
 # JSON output for machine consumption
 glsec --format json .gitlab-ci.yml
 

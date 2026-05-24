@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime/debug"
@@ -68,6 +69,7 @@ func main() {
 	noCacheFlag := flag.Bool("no-cache", false, "disable result cache for this run")
 	clearCacheFlag := flag.Bool("clear-cache", false, "remove all cached results and exit")
 	noColorFlag := flag.Bool("no-color", false, "disable colored output")
+	recursiveFlag := flag.Bool("recursive", false, "recursively scan the given directories for .gitlab-ci.yml files")
 	var excludeArgs []string
 	flag.Func("exclude", "exclude a file or glob pattern from scanning (may be repeated)", func(s string) error {
 		excludeArgs = append(excludeArgs, s)
@@ -103,11 +105,6 @@ func main() {
 		}
 		fmt.Fprintln(os.Stderr, "cache cleared")
 		return
-	}
-
-	if flag.NArg() > 1 {
-		flag.Usage()
-		os.Exit(2)
 	}
 
 	format, ok := output.ParseFormat(*formatFlag)
@@ -156,24 +153,81 @@ func main() {
 		fmt.Fprintf(os.Stderr, "warning: gitlab-version %s is below the minimum supported version %s\n", gitlabVersion, gitlabver.Minimum)
 	}
 
-	file := flag.Arg(0)
-	if file == "" {
-		const defaultCI = ".gitlab-ci.yml"
-		if _, statErr := os.Stat(defaultCI); statErr != nil {
-			fmt.Fprintf(os.Stderr, "error: no .gitlab-ci.yml found in current directory — pass a file path explicitly\n")
-			os.Exit(2)
-		}
-		file = defaultCI
-	}
-
-	if matchesExclude(file, cfg.ExcludePaths) {
-		return // file is excluded — exit 0 with no output
-	}
-
-	doc, err := parser.ParseFile(file)
+	targets, err := resolveTargets(flag.Args(), *recursiveFlag)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(2)
+	}
+
+	colorEnabled := color.IsEnabled(*noColorFlag, os.Stdout)
+	useCache := !*noCacheFlag && !*generateIgnoreFlag
+
+	scanOpts := scanOptions{
+		cfg:            cfg,
+		gitlabVersion:  gitlabVersion,
+		versionStr:     gitlabVersionStr,
+		configPath:     *configFlag,
+		only:           onlyArgs,
+		skip:           skipArgs,
+		useCache:       useCache,
+		generateIgnore: *generateIgnoreFlag,
+	}
+
+	var allFindings []finding.Finding
+	totalJobCount := 0
+	hadError := false
+	for _, file := range targets {
+		if matchesExclude(file, cfg.ExcludePaths) {
+			continue
+		}
+		findings, jobCount, ok := scanRoot(file, scanOpts)
+		if !ok {
+			hadError = true
+			continue
+		}
+		allFindings = append(allFindings, findings...)
+		totalJobCount += jobCount
+	}
+
+	if *generateIgnoreFlag {
+		if err := writeIgnoreFile(suppress.IgnoreFile, allFindings); err != nil {
+			fmt.Fprintf(os.Stderr, "error: --generate-ignore: %v\n", err)
+			os.Exit(2)
+		}
+		fmt.Fprintf(os.Stderr, "wrote %d suppression(s) to %s\n", len(allFindings), suppress.IgnoreFile)
+		return // exit 0
+	}
+
+	if err := writeOutput(os.Stdout, format, allFindings, totalJobCount, colorEnabled); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(2)
+	}
+
+	if hadError {
+		os.Exit(2)
+	}
+	os.Exit(exitCode(allFindings, cfg))
+}
+
+type scanOptions struct {
+	cfg            *config.Config
+	gitlabVersion  gitlabver.Version
+	versionStr     string
+	configPath     string
+	only           []string
+	skip           []string
+	useCache       bool
+	generateIgnore bool
+}
+
+// scanRoot parses one root pipeline file (and its child pipelines), runs the
+// rules, and returns the findings and job count. ok is false if the file could
+// not be parsed or validated; the error has already been reported to stderr.
+func scanRoot(file string, opt scanOptions) (findings []finding.Finding, jobCount int, ok bool) {
+	doc, err := parser.ParseFile(file)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		return nil, 0, false
 	}
 
 	warns, valErr := validate.File(file, doc)
@@ -182,88 +236,72 @@ func main() {
 	}
 	if valErr != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", valErr)
-		os.Exit(2)
+		return nil, 0, false
 	}
 
-	// Collect all pipeline documents first so we can build a complete cache key.
 	seen := map[string]bool{}
 	if abs, absErr := filepath.Abs(file); absErr == nil {
 		seen[abs] = true
 	}
-	allDocs := collectDocuments(doc, file, cfg.ExcludePaths, seen)
+	allDocs := collectDocuments(doc, file, opt.cfg.ExcludePaths, seen)
 
-	// Compute job count across all documents.
-	jobCount := parser.CountJobs(doc.Root)
+	jobCount = parser.CountJobs(doc.Root)
 	for _, d := range allDocs[1:] {
 		jobCount += parser.CountJobs(d.Root)
 	}
 
-	colorEnabled := color.IsEnabled(*noColorFlag, os.Stdout)
-
-	// Cache lookup (skipped for --generate-ignore since it writes new state).
-	useCache := !*noCacheFlag && !*generateIgnoreFlag
 	var cacheKey string
-	if useCache {
+	if opt.useCache {
 		filePaths := make([]string, len(allDocs))
 		for i, d := range allDocs {
 			filePaths[i] = d.File
 		}
-		cacheKey, err = cache.Key(resolvedVersion(), gitlabVersionStr, filePaths, *configFlag, suppress.IgnoreFile, cfg.ExcludePaths, onlyArgs, skipArgs)
-		if err == nil {
-			if entry, ok := cache.Load(cacheKey); ok {
-				writeAndExit(os.Stdout, format, entry.Findings, entry.JobCount, cfg, colorEnabled)
+		if key, kerr := cache.Key(resolvedVersion(), opt.versionStr, filePaths, opt.configPath, suppress.IgnoreFile, opt.cfg.ExcludePaths, opt.only, opt.skip); kerr == nil {
+			cacheKey = key
+			if entry, hit := cache.Load(cacheKey); hit {
+				return entry.Findings, entry.JobCount, true
 			}
 		}
 	}
 
-	// Cache miss — run rules across all collected documents.
-	var findings []finding.Finding
 	for _, d := range allDocs {
-		findings = append(findings, collectFindings(d, d.File, cfg, gitlabVersion, *generateIgnoreFlag)...)
+		findings = append(findings, collectFindings(d, d.File, opt.cfg, opt.gitlabVersion, opt.generateIgnore)...)
 	}
 
-	if *generateIgnoreFlag {
-		if err := writeIgnoreFile(suppress.IgnoreFile, findings); err != nil {
-			fmt.Fprintf(os.Stderr, "error: --generate-ignore: %v\n", err)
-			os.Exit(2)
-		}
-		fmt.Fprintf(os.Stderr, "wrote %d suppression(s) to %s\n", len(findings), suppress.IgnoreFile)
-		return // exit 0
-	}
-
-	if useCache && cacheKey != "" {
+	if opt.useCache && cacheKey != "" {
 		cache.Store(cacheKey, &cache.Entry{Findings: findings, JobCount: jobCount})
 	}
 
-	writeAndExit(os.Stdout, format, findings, jobCount, cfg, colorEnabled)
+	return findings, jobCount, true
 }
 
-func writeAndExit(w *os.File, format output.Format, findings []finding.Finding, jobCount int, cfg *config.Config, colorEnabled bool) {
-	var writeErr error
+// writeOutput renders findings in the requested format.
+func writeOutput(w *os.File, format output.Format, findings []finding.Finding, jobCount int, colorEnabled bool) error {
 	switch format {
 	case output.FormatSARIF:
-		writeErr = output.WriteSARIF(w, findings, rules.CWEID, rules.CWEName, rules.OWASPCategories, rules.OWASPCategoryName)
+		return output.WriteSARIF(w, findings, rules.CWEID, rules.CWEName, rules.OWASPCategories, rules.OWASPCategoryName)
 	case output.FormatJSON:
-		writeErr = output.WriteJSON(w, findings, rules.OWASPCategories)
+		return output.WriteJSON(w, findings, rules.OWASPCategories)
 	default:
-		writeErr = output.Write(w, format, findings, jobCount, colorEnabled)
+		return output.Write(w, format, findings, jobCount, colorEnabled)
 	}
-	if writeErr != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", writeErr)
-		os.Exit(2)
-	}
+}
 
+// exitCode returns the process exit code for the given findings and config:
+// 1 if any error finding (or any warn finding under --strict), else 0.
+func exitCode(findings []finding.Finding, cfg *config.Config) int {
 	if cfg.NoExitCodes {
-		return
+		return 0
 	}
 	for _, f := range findings {
 		if f.Severity == finding.Error {
-			os.Exit(1)
+			return 1
 		}
 		if cfg.Strict && f.Severity == finding.Warn {
-			os.Exit(1)
+			return 1
 		}
 	}
+	return 0
 }
 
 func resolvedVersion() string {
@@ -309,6 +347,88 @@ func warnUnknownRuleIDs(flagName string, set map[string]bool) {
 			fmt.Fprintf(os.Stderr, "warning: %s: unknown rule ID %q\n", flagName, id)
 		}
 	}
+}
+
+// resolveTargets turns the positional arguments into a list of pipeline files
+// to scan. Without --recursive: each argument is used as a literal file if it
+// exists, otherwise expanded as a glob; with no arguments it falls back to
+// .gitlab-ci.yml in the current directory. With --recursive: each argument (or
+// "." if none) is walked for files named .gitlab-ci.yml.
+func resolveTargets(args []string, recursive bool) ([]string, error) {
+	if recursive {
+		dirs := args
+		if len(dirs) == 0 {
+			dirs = []string{"."}
+		}
+		var out []string
+		for _, d := range dirs {
+			files, err := walkForCIFiles(d)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, files...)
+		}
+		if len(out) == 0 {
+			return nil, fmt.Errorf("no .gitlab-ci.yml files found under %s", strings.Join(dirs, ", "))
+		}
+		return dedupeStrings(out), nil
+	}
+
+	if len(args) == 0 {
+		const defaultCI = ".gitlab-ci.yml"
+		if _, err := os.Stat(defaultCI); err != nil {
+			return nil, fmt.Errorf("no .gitlab-ci.yml found in current directory — pass a file path explicitly")
+		}
+		return []string{defaultCI}, nil
+	}
+
+	var out []string
+	for _, a := range args {
+		if _, err := os.Stat(a); err == nil {
+			out = append(out, a)
+			continue
+		}
+		if matches, _ := filepath.Glob(a); len(matches) > 0 {
+			out = append(out, matches...)
+			continue
+		}
+		return nil, fmt.Errorf("no such file or glob match: %s", a)
+	}
+	return dedupeStrings(out), nil
+}
+
+// walkForCIFiles returns all files named .gitlab-ci.yml under dir, skipping
+// .git directories.
+func walkForCIFiles(dir string) ([]string, error) {
+	var out []string
+	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if d.Name() == ".git" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if d.Name() == ".gitlab-ci.yml" {
+			out = append(out, path)
+		}
+		return nil
+	})
+	return out, err
+}
+
+func dedupeStrings(in []string) []string {
+	seen := make(map[string]bool, len(in))
+	out := make([]string, 0, len(in))
+	for _, s := range in {
+		if !seen[s] {
+			seen[s] = true
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // matchesExclude returns true if file matches any of the given patterns.
