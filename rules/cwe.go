@@ -59,6 +59,7 @@ var cweIDs = map[string]string{
 	"GL055": "CWE-250",
 	"GL056": "CWE-250",
 	"GL057": "CWE-250",
+	"GL058": "CWE-653",
 }
 
 // cweNames maps CWE IDs to their short names.
@@ -80,6 +81,7 @@ var cweNames = map[string]string{
 	"CWE-250":  "Execution with Unnecessary Privileges",
 	"CWE-625":  "Permissive Regular Expression",
 	"CWE-829":  "Inclusion of Functionality from Untrusted Control Sphere",
+	"CWE-653":  "Improper Isolation or Compartmentalization",
 	"CWE-1104": "Use of Unmaintained Third-Party Components",
 }
 
