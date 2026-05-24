@@ -119,3 +119,20 @@ Misconfigured CI settings that expand the attack surface or leak build context.
 | [GL060](rules/GL060.md) | `error`/`warn` | `docker run -v` mounts a sensitive host path (`/`, `/etc`, `/root`, `/proc`, `/sys`, …) breaking isolation |
 | [GL061](rules/GL061.md) | `warn`  | `docker run --pid host` shares the host PID namespace — container can see/signal all host processes |
 | [GL063](rules/GL063.md) | `warn`  | `chmod` grants world-writable permissions (`777`, `a+w`, `o+w`) — TOCTOU risk on shared runners |
+
+---
+
+## OWASP ASVS v4.0.3 — V14 (Build and Deploy) mapping
+
+A subset of rules is mapped to [OWASP ASVS](https://owasp.org/www-project-application-security-verification-standard/) v4.0.3 Chapter V14 requirements, surfaced in JSON output (`asvs` field) and SARIF (an `OWASP ASVS` taxonomy) for compliance evidence.
+
+| ASVS requirement | Rules |
+|---|---|
+| V14.2.1 — Components from trusted, maintained sources | GL003, GL011, GL016 |
+| V14.2.2 — Components up to date and pinned | GL001, GL022, GL023, GL026, GL041 |
+| V14.2.3 — Dependencies verified for integrity | GL020 |
+| V14.3.1 — Pipeline config protected from modification | GL003, GL019 |
+| V14.3.2 — Security tools run and failures block the build | GL008, GL039 |
+| V14.3.3 — Secrets absent from source and logs | GL006, GL014, GL018, GL021, GL027, GL032, GL033, GL035, GL036, GL038 |
+| V14.3.4 — Build environment isolated | GL007, GL015, GL025 |
+| V14.4.1 — Third-party CI/CD service dependence minimised | GL041 |

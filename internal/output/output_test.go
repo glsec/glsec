@@ -186,7 +186,7 @@ func TestWriteSARIF_WithCWE(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := WriteSARIF(&buf, testFindings, cweID, cweName, nil, nil); err != nil {
+	if err := WriteSARIF(&buf, testFindings, cweID, cweName, nil, nil, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	var log sarifLog
@@ -217,7 +217,7 @@ func TestWriteSARIF_WithCWE(t *testing.T) {
 
 func TestWriteSARIF_NoCWE(t *testing.T) {
 	var buf bytes.Buffer
-	if err := WriteSARIF(&buf, testFindings, nil, nil, nil, nil); err != nil {
+	if err := WriteSARIF(&buf, testFindings, nil, nil, nil, nil, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	var log sarifLog
@@ -240,7 +240,7 @@ func TestWriteJSON_WithOWASP(t *testing.T) {
 		return []string{"CICD-SEC-6"}
 	}
 	var buf bytes.Buffer
-	if err := WriteJSON(&buf, testFindings, owasp); err != nil {
+	if err := WriteJSON(&buf, testFindings, owasp, nil); err != nil {
 		t.Fatal(err)
 	}
 	var out jsonOutput
@@ -373,7 +373,7 @@ func TestWriteSARIF_WithOWASP(t *testing.T) {
 		return ""
 	}
 	var buf bytes.Buffer
-	if err := WriteSARIF(&buf, testFindings, nil, nil, owasp, owaspName); err != nil {
+	if err := WriteSARIF(&buf, testFindings, nil, nil, owasp, owaspName, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	var log sarifLog
@@ -399,5 +399,62 @@ func TestWriteSARIF_WithOWASP(t *testing.T) {
 	}
 	if len(run.Taxonomies[0].Taxa) != 1 || run.Taxonomies[0].Taxa[0].ID != "CICD-SEC-3" {
 		t.Errorf("unexpected taxa: %+v", run.Taxonomies[0].Taxa)
+	}
+}
+
+func TestWriteJSON_WithASVS(t *testing.T) {
+	asvs := func(id string) []string {
+		if id == "GL001" {
+			return []string{"ASVS-V14.2.2"}
+		}
+		return nil
+	}
+	var buf bytes.Buffer
+	if err := WriteJSON(&buf, testFindings, nil, asvs); err != nil {
+		t.Fatal(err)
+	}
+	var out jsonOutput
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if len(out.Findings[0].ASVS) != 1 || out.Findings[0].ASVS[0] != "ASVS-V14.2.2" {
+		t.Errorf("expected ASVS-V14.2.2 for GL001, got %v", out.Findings[0].ASVS)
+	}
+	if len(out.Findings[1].ASVS) != 0 {
+		t.Errorf("expected no ASVS for GL002, got %v", out.Findings[1].ASVS)
+	}
+}
+
+func TestWriteSARIF_WithASVS(t *testing.T) {
+	asvs := func(id string) []string {
+		if id == "GL001" {
+			return []string{"ASVS-V14.2.2"}
+		}
+		return nil
+	}
+	asvsName := func(id string) string {
+		if id == "ASVS-V14.2.2" {
+			return "Verify that all components are up to date and pinned to a specific version"
+		}
+		return ""
+	}
+	var buf bytes.Buffer
+	if err := WriteSARIF(&buf, testFindings, nil, nil, nil, nil, asvs, asvsName); err != nil {
+		t.Fatal(err)
+	}
+	var log sarifLog
+	if err := json.Unmarshal(buf.Bytes(), &log); err != nil {
+		t.Fatalf("invalid SARIF JSON: %v", err)
+	}
+	run := log.Runs[0]
+	rule := run.Tool.Driver.Rules[0]
+	if rule.ID != "GL001" || len(rule.Relationships) != 1 || rule.Relationships[0].Target.ID != "ASVS-V14.2.2" {
+		t.Errorf("unexpected ASVS relationship: %+v", rule.Relationships)
+	}
+	if rule.Relationships[0].Target.ToolComponent.Name != "OWASP ASVS" {
+		t.Errorf("unexpected tool component: %q", rule.Relationships[0].Target.ToolComponent.Name)
+	}
+	if len(run.Taxonomies) != 1 || run.Taxonomies[0].Name != "OWASP ASVS" || run.Taxonomies[0].Version != "4.0.3" {
+		t.Fatalf("expected OWASP ASVS 4.0.3 taxonomy, got %+v", run.Taxonomies)
 	}
 }
