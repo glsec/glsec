@@ -33,9 +33,9 @@ func ParseFormat(s string) (Format, bool) {
 func Write(w io.Writer, format Format, findings []finding.Finding, jobCount int, colorEnabled bool) error {
 	switch format {
 	case FormatJSON:
-		return writeJSON(w, findings, nil)
+		return writeJSON(w, findings, nil, nil)
 	case FormatSARIF:
-		return writeSARIF(w, findings, nil, nil, nil, nil)
+		return writeSARIF(w, findings, nil, nil, nil, nil, nil, nil)
 	case FormatCodeClimate:
 		return writeCodeClimate(w, findings)
 	default:
@@ -84,19 +84,20 @@ type jsonFinding struct {
 	Line     int      `json:"line"`
 	Message  string   `json:"message"`
 	OWASP    []string `json:"owasp,omitempty"`
+	ASVS     []string `json:"asvs,omitempty"`
 }
 
 type jsonOutput struct {
 	Findings []jsonFinding `json:"findings"`
 }
 
-// WriteJSON writes findings as JSON. owasp, if non-nil, is called per finding
-// to populate the "owasp" field with category IDs.
-func WriteJSON(w io.Writer, findings []finding.Finding, owasp func(string) []string) error {
-	return writeJSON(w, findings, owasp)
+// WriteJSON writes findings as JSON. owasp and asvs, if non-nil, are called
+// per finding to populate the "owasp" and "asvs" fields.
+func WriteJSON(w io.Writer, findings []finding.Finding, owasp, asvs func(string) []string) error {
+	return writeJSON(w, findings, owasp, asvs)
 }
 
-func writeJSON(w io.Writer, findings []finding.Finding, owasp func(string) []string) error {
+func writeJSON(w io.Writer, findings []finding.Finding, owasp, asvs func(string) []string) error {
 	out := jsonOutput{Findings: make([]jsonFinding, 0, len(findings))}
 	for _, f := range findings {
 		jf := jsonFinding{
@@ -109,6 +110,9 @@ func writeJSON(w io.Writer, findings []finding.Finding, owasp func(string) []str
 		}
 		if owasp != nil {
 			jf.OWASP = owasp(f.RuleID)
+		}
+		if asvs != nil {
+			jf.ASVS = asvs(f.RuleID)
 		}
 		out.Findings = append(out.Findings, jf)
 	}
@@ -125,9 +129,9 @@ type sarifLog struct {
 }
 
 type sarifRun struct {
-	Tool       sarifTool        `json:"tool"`
-	Taxonomies []sarifTaxonomy  `json:"taxonomies,omitempty"`
-	Results    []sarifResult    `json:"results"`
+	Tool       sarifTool       `json:"tool"`
+	Taxonomies []sarifTaxonomy `json:"taxonomies,omitempty"`
+	Results    []sarifResult   `json:"results"`
 }
 
 type sarifTool struct {
@@ -135,14 +139,14 @@ type sarifTool struct {
 }
 
 type sarifDriver struct {
-	Name           string       `json:"name"`
-	InformationURI string       `json:"informationUri"`
-	Rules          []sarifRule  `json:"rules,omitempty"`
+	Name           string      `json:"name"`
+	InformationURI string      `json:"informationUri"`
+	Rules          []sarifRule `json:"rules,omitempty"`
 }
 
 type sarifRule struct {
-	ID            string                  `json:"id"`
-	Relationships []sarifRelationship     `json:"relationships,omitempty"`
+	ID            string              `json:"id"`
+	Relationships []sarifRelationship `json:"relationships,omitempty"`
 }
 
 type sarifRelationship struct {
@@ -151,8 +155,8 @@ type sarifRelationship struct {
 }
 
 type sarifRelationshipTarget struct {
-	ID            string                    `json:"id"`
-	ToolComponent sarifToolComponentRef     `json:"toolComponent"`
+	ID            string                `json:"id"`
+	ToolComponent sarifToolComponentRef `json:"toolComponent"`
 }
 
 type sarifToolComponentRef struct {
@@ -160,10 +164,10 @@ type sarifToolComponentRef struct {
 }
 
 type sarifTaxonomy struct {
-	Name             string      `json:"name"`
-	Version          string      `json:"version"`
-	Organization     string      `json:"organization"`
-	Taxa             []sarifTaxon `json:"taxa"`
+	Name         string       `json:"name"`
+	Version      string       `json:"version"`
+	Organization string       `json:"organization"`
+	Taxa         []sarifTaxon `json:"taxa"`
 }
 
 type sarifTaxon struct {
@@ -219,13 +223,15 @@ func severityToSARIFLevel(s finding.Severity) string {
 func WriteSARIF(w io.Writer, findings []finding.Finding,
 	cweID func(string) string, cweName func(string) string,
 	owasp func(string) []string, owaspName func(string) string,
+	asvs func(string) []string, asvsName func(string) string,
 ) error {
-	return writeSARIF(w, findings, cweID, cweName, owasp, owaspName)
+	return writeSARIF(w, findings, cweID, cweName, owasp, owaspName, asvs, asvsName)
 }
 
 func writeSARIF(w io.Writer, findings []finding.Finding,
 	cweID func(string) string, cweName func(string) string,
 	owasp func(string) []string, owaspName func(string) string,
+	asvs func(string) []string, asvsName func(string) string,
 ) error {
 	results := make([]sarifResult, 0, len(findings))
 	for _, f := range findings {
@@ -253,6 +259,7 @@ func writeSARIF(w io.Writer, findings []finding.Finding,
 	seenRules := map[string]bool{}
 	seenCWEs := map[string]bool{}
 	seenOWASP := map[string]bool{}
+	seenASVS := map[string]bool{}
 
 	for _, f := range findings {
 		if seenRules[f.RuleID] {
@@ -279,6 +286,16 @@ func writeSARIF(w io.Writer, findings []finding.Finding,
 					Kinds:  []string{"superset"},
 				})
 				seenOWASP[cat] = true
+			}
+		}
+
+		if asvs != nil {
+			for _, req := range asvs(f.RuleID) {
+				rels = append(rels, sarifRelationship{
+					Target: sarifRelationshipTarget{ID: req, ToolComponent: sarifToolComponentRef{Name: "OWASP ASVS"}},
+					Kinds:  []string{"superset"},
+				})
+				seenASVS[req] = true
 			}
 		}
 
@@ -309,6 +326,16 @@ func writeSARIF(w io.Writer, findings []finding.Finding,
 		})
 	}
 
+	if len(seenASVS) > 0 && asvsName != nil {
+		taxa := make([]sarifTaxon, 0, len(seenASVS))
+		for req := range seenASVS {
+			taxa = append(taxa, sarifTaxon{ID: req, Name: asvsName(req)})
+		}
+		run.Taxonomies = append(run.Taxonomies, sarifTaxonomy{
+			Name: "OWASP ASVS", Version: "4.0.3", Organization: "OWASP", Taxa: taxa,
+		})
+	}
+
 	log := sarifLog{
 		Schema:  "https://json.schemastore.org/sarif-2.1.0.json",
 		Version: "2.1.0",
@@ -323,13 +350,13 @@ func writeSARIF(w io.Writer, findings []finding.Finding,
 // (artifacts:reports:codequality). Spec:
 // https://github.com/codeclimate/platform/blob/master/spec/analyzers/SPEC.md
 type codeClimateIssue struct {
-	Type        string               `json:"type"`
-	CheckName   string               `json:"check_name"`
-	Description string               `json:"description"`
-	Categories  []string             `json:"categories"`
-	Severity    string               `json:"severity"`
-	Fingerprint string               `json:"fingerprint"`
-	Location    codeClimateLocation  `json:"location"`
+	Type        string              `json:"type"`
+	CheckName   string              `json:"check_name"`
+	Description string              `json:"description"`
+	Categories  []string            `json:"categories"`
+	Severity    string              `json:"severity"`
+	Fingerprint string              `json:"fingerprint"`
+	Location    codeClimateLocation `json:"location"`
 }
 
 type codeClimateLocation struct {

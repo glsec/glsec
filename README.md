@@ -62,6 +62,8 @@ glsec --format json .gitlab-ci.yml
 # SARIF output for GitHub Code Scanning / GitLab SAST
 glsec --format sarif .gitlab-ci.yml > gl.sarif
 
+# JSON/SARIF carry OWASP CICD-SEC, CWE, and OWASP ASVS V14 mappings per finding
+
 # Code Climate output for GitLab Code Quality (inline MR findings, works on all tiers)
 glsec --format codeclimate .gitlab-ci.yml > gl-code-quality.json
 
