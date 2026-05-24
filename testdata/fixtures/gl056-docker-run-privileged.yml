@@ -1,0 +1,7 @@
+# docker run --privileged grants full host kernel access from within the job.
+test:
+  image: docker:26.0
+  services:
+    - docker:26.0-dind
+  script:
+    - docker run --privileged myimage ./run-tests.sh

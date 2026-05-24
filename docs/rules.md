@@ -110,3 +110,4 @@ Misconfigured CI settings that expand the attack surface or leak build context.
 | [GL049](rules/GL049.md) | `warn`  | Deploy job with `interruptible: true` — mid-run cancellation leaves the target environment in an undefined state |
 | [GL050](rules/GL050.md) | `warn`  | `sudo` in CI script — escalates to root, amplifying blast radius if the pipeline is compromised |
 | [GL054](rules/GL054.md) | `warn`  | `docker:dind` service (or `DOCKER_HOST` pointing at it) implies a privileged runner with full host root access |
+| [GL056](rules/GL056.md) | `warn`  | `docker run --privileged` in a script grants the container full host kernel access |
