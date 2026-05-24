@@ -1,0 +1,6 @@
+# chmod 777 makes the file world-writable, risking a TOCTOU race before execution.
+build:
+  image: alpine:3.20
+  script:
+    - chmod 777 deploy.sh
+    - ./deploy.sh
