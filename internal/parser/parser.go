@@ -28,6 +28,7 @@ func Parse(data []byte, file string) (*Document, error) {
 	if root.Kind == 0 {
 		return nil, fmt.Errorf("%s: empty document", file)
 	}
+	ResolveReferences(&root)
 	return &Document{Root: &root, File: file}, nil
 }
 
