@@ -67,9 +67,9 @@ func runList(args []string) {
 
 func printRuleTable(infos []ruleInfo) {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "ID\tSEVERITY\tOWASP\tDESCRIPTION")
+	_, _ = fmt.Fprintln(w, "ID\tSEVERITY\tOWASP\tDESCRIPTION")
 	for _, info := range infos {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
 			info.ID, info.Severity, strings.Join(info.OWASP, ", "), info.Description)
 	}
 	_ = w.Flush()
