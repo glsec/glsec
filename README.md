@@ -113,6 +113,10 @@ exclude_paths:
 
 The script-analysis rules (e.g. GL002, GL011, GL024, GL025, GL047, GL048, GL050) assume **POSIX shell** (`bash`/`sh`) semantics — the default for Linux and macOS runners. PowerShell pipelines on Windows runners use different syntax (`$env:VAR` instead of `$VAR`, `Invoke-WebRequest` instead of `curl`, etc.), so these rules will not match them. **A Windows-runner job that emits no findings has not been meaningfully checked for shell issues** — don't treat the absence of findings there as a clean bill of health.
 
+### Reusable configuration
+
+glsec resolves YAML anchors/aliases (`&anchor` / `*alias`, handled natively by the parser) and GitLab [`!reference` tags](https://docs.gitlab.com/ci/yaml/yaml_optimization/#reference-tags) that point within the same file. Content pulled in via `!reference` is analysed as if it were inlined into the referencing job, so issues hidden in shared `.template` blocks are caught. References that resolve into `include:`d files are not yet expanded.
+
 ## ShellCheck integration
 
 glsec can optionally pass `script:`, `before_script:`, and `after_script:` blocks to [ShellCheck](https://www.shellcheck.net/) for deeper shell analysis. This is **opt-in** and requires ShellCheck to be installed separately.
