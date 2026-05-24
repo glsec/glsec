@@ -1,0 +1,7 @@
+# docker run -v mounting a sensitive host path breaks container isolation.
+test:
+  image: docker:26.0
+  services:
+    - docker:26.0-dind
+  script:
+    - docker run -v /:/host -it myimage chroot /host
