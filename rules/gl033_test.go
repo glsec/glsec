@@ -1,8 +1,10 @@
 package rules
 
 import (
+	"strings"
 	"testing"
 
+	"github.com/glsec/glsec/internal/finding"
 	"github.com/glsec/glsec/internal/parser"
 )
 
@@ -50,6 +52,48 @@ deploy:
     - ./deploy.sh`,
 			wantHits: 2,
 		},
+		{
+			name: "top-level CI_DEBUG_SERVICES true",
+			yaml: `variables:
+  CI_DEBUG_SERVICES: "true"`,
+			wantHits: 1,
+		},
+		{
+			name: "CI_DEBUG_SERVICES unquoted true",
+			yaml: `variables:
+  CI_DEBUG_SERVICES: true`,
+			wantHits: 1,
+		},
+		{
+			name: "CI_DEBUG_SERVICES truthy 1",
+			yaml: `variables:
+  CI_DEBUG_SERVICES: "1"`,
+			wantHits: 1,
+		},
+		{
+			name: "CI_DEBUG_SERVICES false — safe",
+			yaml: `variables:
+  CI_DEBUG_SERVICES: "false"`,
+			wantHits: 0,
+		},
+		{
+			name: "job-level CI_DEBUG_SERVICES true",
+			yaml: `e2e:
+  variables:
+    CI_DEBUG_SERVICES: "true"
+  services:
+    - postgres:16
+  script:
+    - ./test.sh`,
+			wantHits: 1,
+		},
+		{
+			name: "both debug toggles in one block — two findings",
+			yaml: `variables:
+  CI_DEBUG_TRACE: "true"
+  CI_DEBUG_SERVICES: "true"`,
+			wantHits: 2,
+		},
 	}
 
 	for _, tt := range tests {
@@ -66,5 +110,25 @@ deploy:
 				}
 			}
 		})
+	}
+}
+
+func TestGL033Severity(t *testing.T) {
+	doc, err := parser.Parse([]byte(`variables:
+  CI_DEBUG_TRACE: "true"
+  CI_DEBUG_SERVICES: "true"`), "test.yml")
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	want := map[string]finding.Severity{
+		"CI_DEBUG_TRACE":    finding.Error,
+		"CI_DEBUG_SERVICES": finding.Warn,
+	}
+	for _, f := range GL033.Check(doc.Root, "test.yml") {
+		for varName, sev := range want {
+			if strings.Contains(f.Message, varName) && f.Severity != sev {
+				t.Errorf("%s: got severity %q, want %q", varName, f.Severity, sev)
+			}
+		}
 	}
 }

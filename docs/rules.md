@@ -21,7 +21,7 @@ Secrets hardcoded, leaked through logs, or forwarded to unintended consumers.
 | [GL018](rules/GL018.md) | `warn`  | Secret variable re-exported at pipeline level — available to all jobs including untrusted ones |
 | [GL021](rules/GL021.md) | `warn`  | Secret variable value printed to job log via `echo`/`printf` |
 | [GL032](rules/GL032.md) | `warn`  | SSH private key written to file via `echo` — key appears in job logs when debug tracing is active |
-| [GL033](rules/GL033.md) | `error` | `CI_DEBUG_TRACE: "true"` committed — shell tracing dumps all variable values including secrets to job logs |
+| [GL033](rules/GL033.md) | `error`/`warn` | `CI_DEBUG_TRACE`/`CI_DEBUG_SERVICES` committed — debug logging dumps variable values or service-container credentials to job logs |
 | [GL029](rules/GL029.md) | `warn`  | `docker login -p` exposes password in process table — use `--password-stdin` instead |
 | [GL035](rules/GL035.md) | `warn`  | `git` command uses URL with embedded credentials (`user:token@host`) — token appears in job logs |
 | [GL038](rules/GL038.md) | `error` | Hardcoded credential literal passed to CLI tool in script (`sqlcmd -P`, `mysql -p`, `PGPASSWORD=`, etc.) |
