@@ -56,6 +56,9 @@ glsec pipelines/*.yml
 # recursively scan a tree for all .gitlab-ci.yml files
 glsec --recursive .
 
+# aligned table view, easier to scan when there are many findings
+glsec --format table .gitlab-ci.yml
+
 # JSON output for machine consumption
 glsec --format json .gitlab-ci.yml
 

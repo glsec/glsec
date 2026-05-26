@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"text/tabwriter"
 
 	"github.com/glsec/glsec/internal/color"
 	"github.com/glsec/glsec/internal/finding"
@@ -19,11 +20,12 @@ const (
 	FormatJSON        Format = "json"
 	FormatSARIF       Format = "sarif"
 	FormatCodeClimate Format = "codeclimate"
+	FormatTable       Format = "table"
 )
 
 func ParseFormat(s string) (Format, bool) {
 	switch Format(s) {
-	case FormatText, FormatJSON, FormatSARIF, FormatCodeClimate:
+	case FormatText, FormatJSON, FormatSARIF, FormatCodeClimate, FormatTable:
 		return Format(s), true
 	default:
 		return "", false
@@ -38,9 +40,39 @@ func Write(w io.Writer, format Format, findings []finding.Finding, jobCount int,
 		return writeSARIF(w, findings, nil, nil, nil, nil, nil, nil)
 	case FormatCodeClimate:
 		return writeCodeClimate(w, findings)
+	case FormatTable:
+		return writeTable(w, findings, jobCount)
 	default:
 		return writeText(w, findings, jobCount, colorEnabled)
 	}
+}
+
+// writeTable renders findings as an aligned column table, similar to
+// osv-scanner's table output. Columns are tab-separated and padded with
+// text/tabwriter. On a clean run it falls back to the same summary line as the
+// text format.
+func writeTable(w io.Writer, findings []finding.Finding, jobCount int) error {
+	if len(findings) == 0 {
+		_, err := fmt.Fprintf(w, "Scanned %d jobs, 0 issues found.\n", jobCount)
+		return err
+	}
+
+	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	if _, err := fmt.Fprintln(tw, "SEVERITY\tRULE\tJOB\tFILE\tLINE\tMESSAGE"); err != nil {
+		return err
+	}
+	for _, f := range findings {
+		job := f.Job
+		if job == "" {
+			job = "-"
+		}
+		if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\t%s\n",
+			strings.ToUpper(string(f.Severity)), f.RuleID, job, f.File, f.Line, f.Message,
+		); err != nil {
+			return err
+		}
+	}
+	return tw.Flush()
 }
 
 func writeText(w io.Writer, findings []finding.Finding, jobCount int, col bool) error {

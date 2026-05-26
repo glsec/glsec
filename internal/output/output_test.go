@@ -151,6 +151,38 @@ func TestWriteJSON_WithJob(t *testing.T) {
 	}
 }
 
+func TestWriteTable(t *testing.T) {
+	var buf bytes.Buffer
+	if err := Write(&buf, FormatTable, testFindingsWithJob, 3, false); err != nil {
+		t.Fatal(err)
+	}
+	got := buf.String()
+	for _, want := range []string{"SEVERITY", "RULE", "JOB", "FILE", "LINE", "MESSAGE", "GL024", "phpmd", ".gitlab-ci.yml"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("table output missing %q:\n%s", want, got)
+		}
+	}
+	// A finding without a job renders a "-" placeholder, never an empty cell.
+	lines := strings.Split(strings.TrimRight(got, "\n"), "\n")
+	if !strings.Contains(lines[len(lines)-1], "-") {
+		t.Errorf("expected job placeholder in no-job row, got: %q", lines[len(lines)-1])
+	}
+}
+
+func TestWriteTable_Empty(t *testing.T) {
+	var buf bytes.Buffer
+	if err := Write(&buf, FormatTable, nil, 9, false); err != nil {
+		t.Fatal(err)
+	}
+	got := buf.String()
+	if !strings.Contains(got, "9") || !strings.Contains(got, "0 issues found") {
+		t.Errorf("expected summary line on clean run, got %q", got)
+	}
+	if strings.Contains(got, "SEVERITY") {
+		t.Errorf("did not expect a table header on a clean run, got %q", got)
+	}
+}
+
 func TestParseFormat(t *testing.T) {
 	for _, tc := range []struct {
 		in   string
@@ -158,6 +190,7 @@ func TestParseFormat(t *testing.T) {
 		ok   bool
 	}{
 		{"text", FormatText, true},
+		{"table", FormatTable, true},
 		{"json", FormatJSON, true},
 		{"sarif", FormatSARIF, true},
 		{"codeclimate", FormatCodeClimate, true},
