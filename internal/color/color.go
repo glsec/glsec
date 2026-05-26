@@ -25,6 +25,12 @@ func IsEnabled(noColor bool, w io.Writer) bool {
 	if forceColor("FORCE_COLOR") || forceColor("CLICOLOR_FORCE") {
 		return true
 	}
+	return IsTerminal(w)
+}
+
+// IsTerminal reports whether w is a character device (an interactive
+// terminal), ignoring any color env overrides.
+func IsTerminal(w io.Writer) bool {
 	f, ok := w.(*os.File)
 	if !ok {
 		return false

@@ -160,6 +160,7 @@ func main() {
 	}
 
 	colorEnabled := color.IsEnabled(*noColorFlag, os.Stdout)
+	stdoutIsTTY := color.IsTerminal(os.Stdout)
 	useCache := !*noCacheFlag && !*generateIgnoreFlag
 
 	scanOpts := scanOptions{
@@ -198,7 +199,7 @@ func main() {
 		return // exit 0
 	}
 
-	if err := writeOutput(os.Stdout, format, allFindings, totalJobCount, colorEnabled); err != nil {
+	if err := writeOutput(os.Stdout, format, allFindings, totalJobCount, colorEnabled, stdoutIsTTY); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(2)
 	}
@@ -276,14 +277,14 @@ func scanRoot(file string, opt scanOptions) (findings []finding.Finding, jobCoun
 }
 
 // writeOutput renders findings in the requested format.
-func writeOutput(w *os.File, format output.Format, findings []finding.Finding, jobCount int, colorEnabled bool) error {
+func writeOutput(w *os.File, format output.Format, findings []finding.Finding, jobCount int, colorEnabled, isTTY bool) error {
 	switch format {
 	case output.FormatSARIF:
 		return output.WriteSARIF(w, findings, rules.CWEID, rules.CWEName, rules.OWASPCategories, rules.OWASPCategoryName, rules.ASVSRequirements, rules.ASVSRequirementName)
 	case output.FormatJSON:
 		return output.WriteJSON(w, findings, rules.OWASPCategories, rules.ASVSRequirements)
 	default:
-		return output.Write(w, format, findings, jobCount, colorEnabled)
+		return output.Write(w, format, findings, jobCount, colorEnabled, isTTY)
 	}
 }
 

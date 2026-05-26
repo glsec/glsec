@@ -32,7 +32,10 @@ func ParseFormat(s string) (Format, bool) {
 	}
 }
 
-func Write(w io.Writer, format Format, findings []finding.Finding, jobCount int, colorEnabled bool) error {
+// Write renders findings in the given format. isTTY reports whether w is an
+// interactive terminal; the text format uses it to decide whether to print the
+// clean-run summary line (suppressed when piped, e.g. in CI).
+func Write(w io.Writer, format Format, findings []finding.Finding, jobCount int, colorEnabled, isTTY bool) error {
 	switch format {
 	case FormatJSON:
 		return writeJSON(w, findings, nil, nil)
@@ -41,20 +44,23 @@ func Write(w io.Writer, format Format, findings []finding.Finding, jobCount int,
 	case FormatCodeClimate:
 		return writeCodeClimate(w, findings)
 	case FormatTable:
-		return writeTable(w, findings, jobCount)
+		return writeTable(w, findings, jobCount, isTTY)
 	default:
-		return writeText(w, findings, jobCount, colorEnabled)
+		return writeText(w, findings, jobCount, colorEnabled, isTTY)
 	}
 }
 
 // writeTable renders findings as an aligned column table, similar to
 // osv-scanner's table output. Columns are tab-separated and padded with
 // text/tabwriter. On a clean run it falls back to the same summary line as the
-// text format.
-func writeTable(w io.Writer, findings []finding.Finding, jobCount int) error {
+// text format, which is only emitted on an interactive terminal (issue #273).
+func writeTable(w io.Writer, findings []finding.Finding, jobCount int, isTTY bool) error {
 	if len(findings) == 0 {
-		_, err := fmt.Fprintf(w, "Scanned %d jobs, 0 issues found.\n", jobCount)
-		return err
+		if isTTY {
+			_, err := fmt.Fprintf(w, "Scanned %d jobs, 0 issues found.\n", jobCount)
+			return err
+		}
+		return nil
 	}
 
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
@@ -75,7 +81,7 @@ func writeTable(w io.Writer, findings []finding.Finding, jobCount int) error {
 	return tw.Flush()
 }
 
-func writeText(w io.Writer, findings []finding.Finding, jobCount int, col bool) error {
+func writeText(w io.Writer, findings []finding.Finding, jobCount int, col, isTTY bool) error {
 	for _, f := range findings {
 		sev := strings.ToUpper(string(f.Severity))
 		switch f.Severity {
@@ -101,7 +107,10 @@ func writeText(w io.Writer, findings []finding.Finding, jobCount int, col bool) 
 			return err
 		}
 	}
-	if len(findings) == 0 {
+	// The clean-run summary is a human-facing nicety: only emit it on an
+	// interactive terminal. When piped (e.g. a CI runner), keep stdout empty so
+	// the line cannot be duplicated by the executor's trace handling (issue #273).
+	if len(findings) == 0 && isTTY {
 		_, err := fmt.Fprintf(w, "Scanned %d jobs, 0 issues found.\n", jobCount)
 		return err
 	}
