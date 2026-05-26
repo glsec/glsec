@@ -22,7 +22,7 @@ var testFindingsWithJob = []finding.Finding{
 
 func TestWriteText(t *testing.T) {
 	var buf bytes.Buffer
-	if err := Write(&buf, FormatText, testFindings, 5, false); err != nil {
+	if err := Write(&buf, FormatText, testFindings, 5, false, false); err != nil {
 		t.Fatal(err)
 	}
 	got := buf.String()
@@ -39,7 +39,7 @@ func TestWriteText(t *testing.T) {
 
 func TestWriteText_Empty(t *testing.T) {
 	var buf bytes.Buffer
-	if err := Write(&buf, FormatText, nil, 7, false); err != nil {
+	if err := Write(&buf, FormatText, nil, 7, false, true); err != nil {
 		t.Fatal(err)
 	}
 	got := buf.String()
@@ -48,9 +48,19 @@ func TestWriteText_Empty(t *testing.T) {
 	}
 }
 
+func TestWriteText_EmptyNonTTY(t *testing.T) {
+	var buf bytes.Buffer
+	if err := Write(&buf, FormatText, nil, 7, false, false); err != nil {
+		t.Fatal(err)
+	}
+	if got := buf.String(); got != "" {
+		t.Errorf("expected no summary line when not a TTY, got %q", got)
+	}
+}
+
 func TestWriteJSON(t *testing.T) {
 	var buf bytes.Buffer
-	if err := Write(&buf, FormatJSON, testFindings, 0, false); err != nil {
+	if err := Write(&buf, FormatJSON, testFindings, 0, false, false); err != nil {
 		t.Fatal(err)
 	}
 	var out jsonOutput
@@ -68,7 +78,7 @@ func TestWriteJSON(t *testing.T) {
 
 func TestWriteJSON_Empty(t *testing.T) {
 	var buf bytes.Buffer
-	if err := Write(&buf, FormatJSON, nil, 0, false); err != nil {
+	if err := Write(&buf, FormatJSON, nil, 0, false, false); err != nil {
 		t.Fatal(err)
 	}
 	var out jsonOutput
@@ -82,7 +92,7 @@ func TestWriteJSON_Empty(t *testing.T) {
 
 func TestWriteSARIF(t *testing.T) {
 	var buf bytes.Buffer
-	if err := Write(&buf, FormatSARIF, testFindings, 0, false); err != nil {
+	if err := Write(&buf, FormatSARIF, testFindings, 0, false, false); err != nil {
 		t.Fatal(err)
 	}
 	var log sarifLog
@@ -113,7 +123,7 @@ func TestWriteSARIF(t *testing.T) {
 
 func TestWriteText_WithJob(t *testing.T) {
 	var buf bytes.Buffer
-	if err := Write(&buf, FormatText, testFindingsWithJob, 3, false); err != nil {
+	if err := Write(&buf, FormatText, testFindingsWithJob, 3, false, false); err != nil {
 		t.Fatal(err)
 	}
 	got := buf.String()
@@ -133,7 +143,7 @@ func TestWriteText_WithJob(t *testing.T) {
 
 func TestWriteJSON_WithJob(t *testing.T) {
 	var buf bytes.Buffer
-	if err := Write(&buf, FormatJSON, testFindingsWithJob, 0, false); err != nil {
+	if err := Write(&buf, FormatJSON, testFindingsWithJob, 0, false, false); err != nil {
 		t.Fatal(err)
 	}
 	var out jsonOutput
@@ -153,7 +163,7 @@ func TestWriteJSON_WithJob(t *testing.T) {
 
 func TestWriteTable(t *testing.T) {
 	var buf bytes.Buffer
-	if err := Write(&buf, FormatTable, testFindingsWithJob, 3, false); err != nil {
+	if err := Write(&buf, FormatTable, testFindingsWithJob, 3, false, false); err != nil {
 		t.Fatal(err)
 	}
 	got := buf.String()
@@ -171,7 +181,7 @@ func TestWriteTable(t *testing.T) {
 
 func TestWriteTable_Empty(t *testing.T) {
 	var buf bytes.Buffer
-	if err := Write(&buf, FormatTable, nil, 9, false); err != nil {
+	if err := Write(&buf, FormatTable, nil, 9, false, true); err != nil {
 		t.Fatal(err)
 	}
 	got := buf.String()
@@ -180,6 +190,16 @@ func TestWriteTable_Empty(t *testing.T) {
 	}
 	if strings.Contains(got, "SEVERITY") {
 		t.Errorf("did not expect a table header on a clean run, got %q", got)
+	}
+}
+
+func TestWriteTable_EmptyNonTTY(t *testing.T) {
+	var buf bytes.Buffer
+	if err := Write(&buf, FormatTable, nil, 9, false, false); err != nil {
+		t.Fatal(err)
+	}
+	if got := buf.String(); got != "" {
+		t.Errorf("expected no summary line when not a TTY, got %q", got)
 	}
 }
 
@@ -290,7 +310,7 @@ func TestWriteJSON_WithOWASP(t *testing.T) {
 
 func TestWriteCodeClimate(t *testing.T) {
 	var buf bytes.Buffer
-	if err := Write(&buf, FormatCodeClimate, testFindings, 0, false); err != nil {
+	if err := Write(&buf, FormatCodeClimate, testFindings, 0, false, false); err != nil {
 		t.Fatal(err)
 	}
 	var issues []codeClimateIssue
@@ -331,7 +351,7 @@ func TestWriteCodeClimate(t *testing.T) {
 
 func TestWriteCodeClimate_Empty(t *testing.T) {
 	var buf bytes.Buffer
-	if err := Write(&buf, FormatCodeClimate, nil, 0, false); err != nil {
+	if err := Write(&buf, FormatCodeClimate, nil, 0, false, false); err != nil {
 		t.Fatal(err)
 	}
 	var issues []codeClimateIssue
