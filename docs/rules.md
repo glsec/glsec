@@ -14,6 +14,7 @@ Secrets hardcoded, leaked through logs, or forwarded to unintended consumers.
 | [GL027](rules/GL027.md) | `warn`  | Secret-like variable defined without `masked: true` |
 | [GL004](rules/GL004.md) | `warn`  | `CI_JOB_TOKEN` forwarded to a non-GitLab host |
 | [GL006](rules/GL006.md) | `error` | Hardcoded secret in `variables:` block |
+| [GL066](rules/GL066.md) | `error` | Inline registry credentials in `DOCKER_AUTH_CONFIG` instead of a masked CI/CD variable |
 | [GL036](rules/GL036.md) | `warn`  | Connection string with embedded credentials (`scheme://user:pass@host`) in `variables:` block |
 | [GL010](rules/GL010.md) | `warn`  | `trigger: forward: pipeline_variables: true` leaks secrets to downstream pipeline (GitLab ≥ 14.9) |
 | [GL037](rules/GL037.md) | `warn`  | `trigger:` job without `inherit: variables: false` — top-level secrets implicitly forwarded to downstream |
@@ -134,6 +135,6 @@ A subset of rules is mapped to [OWASP ASVS](https://owasp.org/www-project-applic
 | V14.2.3 — Dependencies verified for integrity | GL020 |
 | V14.3.1 — Pipeline config protected from modification | GL003, GL019 |
 | V14.3.2 — Security tools run and failures block the build | GL008, GL039 |
-| V14.3.3 — Secrets absent from source and logs | GL006, GL014, GL018, GL021, GL027, GL032, GL033, GL035, GL036, GL038 |
+| V14.3.3 — Secrets absent from source and logs | GL006, GL014, GL018, GL021, GL027, GL032, GL033, GL035, GL036, GL038, GL066 |
 | V14.3.4 — Build environment isolated | GL007, GL015, GL025 |
 | V14.4.1 — Third-party CI/CD service dependence minimised | GL041 |
