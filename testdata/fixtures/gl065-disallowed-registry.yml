@@ -1,0 +1,17 @@
+stages:
+  - build
+  - deploy
+
+build:
+  stage: build
+  image: docker.io/library/node:20.11.0
+  services:
+    - name: docker.io/library/postgres:16.2
+  script:
+    - npm ci
+
+deploy:
+  stage: deploy
+  image: registry.example.com/deployer:1.2.3
+  script:
+    - ./deploy.sh

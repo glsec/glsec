@@ -64,6 +64,10 @@ type Config struct {
 	GitLabVersion string `yaml:"gitlab-version"`
 	// TrustedHosts is a list of hostnames or CIDRs whose HTTP URLs are never flagged.
 	TrustedHosts []string `yaml:"trusted-hosts"`
+	// AllowedRegistries is an opt-in allowlist of container registry hosts (or
+	// host/namespace prefixes). When non-empty, GL065 flags any image/service
+	// from a registry not on the list. Empty disables the check.
+	AllowedRegistries []string `yaml:"allowed_registries"`
 	// ShellCheck holds optional ShellCheck integration settings.
 	ShellCheck ShellCheckConfig `yaml:"shellcheck"`
 	// Strict makes warn findings count as errors for exit-code purposes.
@@ -146,16 +150,17 @@ func parse(data []byte, path string) (*Config, error) {
 }
 
 var allowedTopLevelKeys = map[string]bool{
-	"rules":          true,
-	"min-severity":   true,
-	"gitlab-version": true,
-	"trusted-hosts":  true,
-	"strict":         true,
-	"no-exit-codes":  true,
-	"exclude_paths":  true,
-	"owasp":          true,
-	"owasp_exclude":  true,
-	"shellcheck":     true,
+	"rules":              true,
+	"min-severity":       true,
+	"gitlab-version":     true,
+	"trusted-hosts":      true,
+	"allowed_registries": true,
+	"strict":             true,
+	"no-exit-codes":      true,
+	"exclude_paths":      true,
+	"owasp":              true,
+	"owasp_exclude":      true,
+	"shellcheck":         true,
 }
 
 func checkUnknownKeys(mapping *yaml.Node, path string) error {
