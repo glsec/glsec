@@ -64,6 +64,7 @@ User-controlled inputs and unversioned component references that allow malicious
 | [GL044](rules/GL044.md) | `warn`  | MR-triggered job checks out `$CI_MERGE_REQUEST_SOURCE_BRANCH_SHA` — executes attacker-controlled code with `$CI_JOB_TOKEN` access |
 | [GL051](rules/GL051.md) | `warn`  | Unconstrained `spec:inputs` entry interpolated into `image:`, `script:`, or `environment:name:` — caller can supply arbitrary values |
 | [GL053](rules/GL053.md) | `warn`  | Missing or unrestricted `workflow:rules` — pipelines run for every event, including untrusted fork merge requests |
+| [GL065](rules/GL065.md) | `warn`  | `image:`/`services:` from a registry not in the opt-in `allowed_registries` allowlist |
 
 ---
 
@@ -128,7 +129,7 @@ A subset of rules is mapped to [OWASP ASVS](https://owasp.org/www-project-applic
 
 | ASVS requirement | Rules |
 |---|---|
-| V14.2.1 — Components from trusted, maintained sources | GL003, GL011, GL016 |
+| V14.2.1 — Components from trusted, maintained sources | GL003, GL011, GL016, GL065 |
 | V14.2.2 — Components up to date and pinned | GL001, GL022, GL023, GL026, GL041 |
 | V14.2.3 — Dependencies verified for integrity | GL020 |
 | V14.3.1 — Pipeline config protected from modification | GL003, GL019 |

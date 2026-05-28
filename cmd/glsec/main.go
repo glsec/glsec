@@ -138,6 +138,7 @@ func main() {
 	}
 
 	rules.GL016.SetTrustedHosts(cfg.TrustedHosts)
+	rules.GL065.SetAllowedRegistries(cfg.AllowedRegistries)
 
 	// --gitlab-version flag overrides the config file value.
 	gitlabVersionStr := cfg.GitLabVersion
