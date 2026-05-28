@@ -1,0 +1,19 @@
+stages:
+  - build
+
+variables:
+  DOCKER_AUTH_CONFIG: '{"auths":{"registry.example.com":{"auth":"dXNlcjpwYXNz"}}}'
+
+build:
+  stage: build
+  image: registry.example.com/builder:1.0.0
+  script:
+    - docker build -t registry.example.com/app:1.0.0 .
+
+deploy:
+  stage: build
+  variables:
+    DOCKER_AUTH_CONFIG: $REGISTRY_AUTH
+  image: registry.example.com/deployer:1.0.0
+  script:
+    - ./deploy.sh
