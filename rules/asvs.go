@@ -35,6 +35,7 @@ var asvsRequirements = map[string][]string{
 	"GL041": {"ASVS-V14.2.2", "ASVS-V14.4.1"},
 	"GL065": {"ASVS-V14.2.1"},
 	"GL066": {"ASVS-V14.3.3"},
+	"GL067": {"ASVS-V14.2.1"},
 }
 
 // asvsRequirementNames maps an ASVS requirement ID to its short description.
