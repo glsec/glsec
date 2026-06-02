@@ -70,6 +70,11 @@ func main() {
 	clearCacheFlag := flag.Bool("clear-cache", false, "remove all cached results and exit")
 	noColorFlag := flag.Bool("no-color", false, "disable colored output")
 	recursiveFlag := flag.Bool("recursive", false, "recursively scan the given directories for .gitlab-ci.yml files")
+	var nameArgs []string
+	flag.Func("name", "additional filename/path glob to treat as a CI config during --recursive walks (may be repeated)", func(s string) error {
+		nameArgs = append(nameArgs, s)
+		return nil
+	})
 	var excludeArgs []string
 	flag.Func("exclude", "exclude a file or glob pattern from scanning (may be repeated)", func(s string) error {
 		excludeArgs = append(excludeArgs, s)
@@ -154,7 +159,12 @@ func main() {
 		fmt.Fprintf(os.Stderr, "warning: gitlab-version %s is below the minimum supported version %s\n", gitlabVersion, gitlabver.Minimum)
 	}
 
-	targets, err := resolveTargets(flag.Args(), *recursiveFlag)
+	recursivePatterns := append(append([]string{}, cfg.RecursivePatterns...), nameArgs...)
+	if len(recursivePatterns) > 0 && !*recursiveFlag {
+		fmt.Fprintln(os.Stderr, "warning: --name / recursive_patterns only apply with --recursive; ignoring")
+	}
+
+	targets, err := resolveTargets(flag.Args(), *recursiveFlag, recursivePatterns)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(2)
@@ -355,23 +365,33 @@ func warnUnknownRuleIDs(flagName string, set map[string]bool) {
 // to scan. Without --recursive: each argument is used as a literal file if it
 // exists, otherwise expanded as a glob; with no arguments it falls back to
 // .gitlab-ci.yml in the current directory. With --recursive: each argument (or
-// "." if none) is walked for files named .gitlab-ci.yml.
-func resolveTargets(args []string, recursive bool) ([]string, error) {
+// "." if none) is walked for files named .gitlab-ci.yml plus any extra
+// patterns.
+func resolveTargets(args []string, recursive bool, patterns []string) ([]string, error) {
 	if recursive {
+		for _, p := range patterns {
+			if _, err := filepath.Match(p, ""); err != nil {
+				return nil, fmt.Errorf("invalid --name pattern %q: %w", p, err)
+			}
+		}
 		dirs := args
 		if len(dirs) == 0 {
 			dirs = []string{"."}
 		}
 		var out []string
 		for _, d := range dirs {
-			files, err := walkForCIFiles(d)
+			files, err := walkForCIFiles(d, patterns)
 			if err != nil {
 				return nil, err
 			}
 			out = append(out, files...)
 		}
 		if len(out) == 0 {
-			return nil, fmt.Errorf("no .gitlab-ci.yml files found under %s", strings.Join(dirs, ", "))
+			what := ".gitlab-ci.yml files"
+			if len(patterns) > 0 {
+				what = "matching CI config files"
+			}
+			return nil, fmt.Errorf("no %s found under %s", what, strings.Join(dirs, ", "))
 		}
 		return dedupeStrings(out), nil
 	}
@@ -399,9 +419,11 @@ func resolveTargets(args []string, recursive bool) ([]string, error) {
 	return dedupeStrings(out), nil
 }
 
-// walkForCIFiles returns all files named .gitlab-ci.yml under dir, skipping
-// .git directories.
-func walkForCIFiles(dir string) ([]string, error) {
+// walkForCIFiles returns all CI config files under dir, skipping .git
+// directories. A file matches if its basename is .gitlab-ci.yml or if it
+// matches one of the extra patterns: a pattern without "/" is matched against
+// the basename, one with "/" against the path relative to dir.
+func walkForCIFiles(dir string, patterns []string) ([]string, error) {
 	var out []string
 	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -413,12 +435,34 @@ func walkForCIFiles(dir string) ([]string, error) {
 			}
 			return nil
 		}
-		if d.Name() == ".gitlab-ci.yml" {
+		if matchesCIFile(dir, path, d.Name(), patterns) {
 			out = append(out, path)
 		}
 		return nil
 	})
 	return out, err
+}
+
+// matchesCIFile reports whether a walked file should be treated as a CI config.
+func matchesCIFile(dir, path, base string, patterns []string) bool {
+	if base == ".gitlab-ci.yml" {
+		return true
+	}
+	rel, err := filepath.Rel(dir, path)
+	if err != nil {
+		rel = path
+	}
+	rel = filepath.ToSlash(rel)
+	for _, p := range patterns {
+		target := base
+		if strings.Contains(p, "/") {
+			target = rel
+		}
+		if ok, _ := filepath.Match(filepath.ToSlash(p), target); ok {
+			return true
+		}
+	}
+	return false
 }
 
 func dedupeStrings(in []string) []string {

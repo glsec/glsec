@@ -56,6 +56,9 @@ glsec pipelines/*.yml
 # recursively scan a tree for all .gitlab-ci.yml files
 glsec --recursive .
 
+# also pick up CI configs with non-default names/paths during a recursive scan
+glsec --recursive --name '*.gitlab-ci.yml' --name 'ci/pipeline.yml' .
+
 # aligned table view, easier to scan when there are many findings
 glsec --format table .gitlab-ci.yml
 
@@ -115,6 +118,10 @@ exclude_paths:
   - legacy/.gitlab-ci.yml
   - infra/old-pipelines/**
   - vendor/
+
+recursive_patterns:    # extra CI-config names/paths for --recursive (default: .gitlab-ci.yml)
+  - '*.gitlab-ci.yml'   # no "/" → matched against the basename
+  - ci/pipeline.yml     # contains "/" → matched against the path relative to each scanned dir
 ```
 
 ## Rules

@@ -78,6 +78,11 @@ type Config struct {
 	// ExcludePaths is a list of file globs to skip entirely.
 	// Supports filepath.Match patterns and directory suffixes (/ or /**).
 	ExcludePaths []string `yaml:"exclude_paths"`
+	// RecursivePatterns lists additional filename/path globs that --recursive
+	// treats as CI config files (alongside the built-in .gitlab-ci.yml). A
+	// pattern without a "/" matches the basename; one with a "/" matches the
+	// path relative to the scanned directory (e.g. ci/pipeline.yml).
+	RecursivePatterns []string `yaml:"recursive_patterns"`
 	// OWASP is an allowlist of OWASP CICD-SEC category IDs. When non-empty,
 	// only rules belonging to one of these categories are run.
 	OWASP []string `yaml:"owasp"`
