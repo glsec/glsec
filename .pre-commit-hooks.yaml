@@ -1,0 +1,23 @@
+- id: glsec
+  name: glsec (GitLab CI security scan)
+  description: Scan .gitlab-ci.yml for CI/CD security issues (builds glsec from source)
+  entry: glsec
+  language: golang
+  files: '(^|/)\.gitlab-ci\.yml$'
+  pass_filenames: true
+
+- id: glsec-system
+  name: glsec (GitLab CI security scan, system binary)
+  description: Scan .gitlab-ci.yml using a glsec binary already on PATH
+  entry: glsec
+  language: system
+  files: '(^|/)\.gitlab-ci\.yml$'
+  pass_filenames: true
+
+- id: glsec-docker
+  name: glsec (GitLab CI security scan, Docker)
+  description: Scan .gitlab-ci.yml using the published glsec Docker image
+  entry: ghcr.io/glsec/glsec
+  language: docker_image
+  files: '(^|/)\.gitlab-ci\.yml$'
+  pass_filenames: true

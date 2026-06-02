@@ -187,6 +187,39 @@ ShellCheck's own inline directives (`# shellcheck disable=SC2086`) are also resp
 
 ---
 
+## Pre-commit hook
+
+glsec ships a [pre-commit](https://pre-commit.com/) hook so `.gitlab-ci.yml` issues are caught before they're pushed. Add this to your `.pre-commit-config.yaml`:
+
+```yaml
+repos:
+  - repo: https://github.com/glsec/glsec
+    rev: v1.4.0
+    hooks:
+      - id: glsec
+```
+
+Then `pre-commit install` once; the hook runs on every commit that touches a matching file. Run it across the whole tree at any time with `pre-commit run glsec --all-files`.
+
+Three hook variants are provided — pick the one that fits how you install glsec:
+
+| Hook id | `language` | Use when |
+|---------|------------|----------|
+| `glsec` | `golang` | Default — pre-commit builds glsec from source at the pinned `rev` (needs a Go toolchain; no separate install). |
+| `glsec-system` | `system` | You already have a `glsec` binary on `PATH` (fastest; version is whatever is installed). |
+| `glsec-docker` | `docker_image` | You'd rather not install anything but Docker — runs `ghcr.io/glsec/glsec` (pin the image version in your own config if reproducibility matters). |
+
+By default the hook only matches files named `.gitlab-ci.yml`. To also scan custom CI-config names/paths (see `--recursive --name`), override `files:`:
+
+```yaml
+      - id: glsec
+        files: '(^|/)[^/]*\.gitlab-ci\.yml$'   # also matches *.gitlab-ci.yml
+```
+
+The hook exits non-zero (failing the commit) on `error` findings or parse errors, matching glsec's normal [exit codes](#exit-codes).
+
+---
+
 ## CI integration
 
 > **Runnable examples for every pattern below:** [gitlab.com/glsec-io/examples](https://gitlab.com/glsec-io/examples) — [Catalog component](https://gitlab.com/glsec-io/examples/component) · [Catalog + Code Quality](https://gitlab.com/glsec-io/examples/component-code-quality) · [Docker image](https://gitlab.com/glsec-io/examples/docker) · [Binary download](https://gitlab.com/glsec-io/examples/binary)
