@@ -1,0 +1,13 @@
+{
+  "name": "glsec",
+  "description": "Static security scanner for GitLab CI/CD pipelines",
+  "version": "1.5.0",
+  "author": {
+    "name": "glsec",
+    "url": "https://github.com/glsec/glsec"
+  },
+  "homepage": "https://github.com/glsec/glsec",
+  "repository": "https://github.com/glsec/glsec",
+  "license": "Apache-2.0",
+  "keywords": ["security", "gitlab-ci", "claude-code", "sast", "ci-cd"]
+}
