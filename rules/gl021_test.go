@@ -281,6 +281,19 @@ publish:
 	}
 }
 
+func TestGL021_CredentialHelperString_NoFinding(t *testing.T) {
+	// The echo lives inside a git credential-helper string argument; git
+	// consumes the helper's output, it is never printed to the log.
+	f := findings021(t, `
+update:
+  before_script:
+    - 'git config --local credential.helper "!echo \"password=$LOCKFILE_UPDATE_GITLAB_TOKEN\"; :"'
+`)
+	if len(f) != 0 {
+		t.Errorf("expected no finding for echo inside credential.helper string, got %d", len(f))
+	}
+}
+
 func TestGL021_BraceVarRedirect_NoFinding(t *testing.T) {
 	// Regression: the closing `}` of ${VAR} must not be treated as a command
 	// separator, or the trailing redirect is missed and this is flagged.
