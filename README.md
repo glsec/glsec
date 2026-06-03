@@ -220,6 +220,24 @@ The hook exits non-zero (failing the commit) on `error` findings or parse errors
 
 ---
 
+## Claude Code plugin
+
+glsec ships as a [Claude Code](https://claude.com/claude-code) plugin so Claude can scan your GitLab CI config on demand and as you edit it. Install it from glsec's own marketplace:
+
+```
+/plugin marketplace add glsec/glsec
+/plugin install glsec@glsec
+```
+
+This adds:
+
+- **`/glsec:scan`** — a command that runs glsec over the project and has Claude explain and remediate each finding.
+- **An edit hook** — after Claude writes or edits a `.gitlab-ci.yml` (or a `.gitlab/*.yml`) file, glsec scans it automatically and surfaces any findings.
+
+No Go toolchain is required: the plugin bundles a small POSIX wrapper that resolves a `glsec` binary in order of preference — an existing one on your `PATH`, a cached download, or the prebuilt release asset (downloaded and **verified against `checksums.txt`**, then cached). Supported on **Linux and macOS** (amd64/arm64); the wrapper needs `curl` or `wget`, and the edit hook needs `jq`. On other platforms it prints an install hint instead.
+
+---
+
 ## CI integration
 
 > **Runnable examples for every pattern below:** [gitlab.com/glsec-io/examples](https://gitlab.com/glsec-io/examples) — [Catalog component](https://gitlab.com/glsec-io/examples/component) · [Catalog + Code Quality](https://gitlab.com/glsec-io/examples/component-code-quality) · [Docker image](https://gitlab.com/glsec-io/examples/docker) · [Binary download](https://gitlab.com/glsec-io/examples/binary)

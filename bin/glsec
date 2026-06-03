@@ -1,0 +1,118 @@
+#!/bin/sh
+# glsec Claude Code plugin wrapper.
+#
+# Resolves a real glsec binary WITHOUT requiring a Go toolchain, in order of
+# preference:
+#   1. an existing glsec already on PATH (Homebrew / go install / manual),
+#      skipping this wrapper itself to avoid self-recursion;
+#   2. a previously downloaded copy in the cache;
+#   3. the prebuilt release asset from GitHub Releases, verified against
+#      checksums.txt, extracted, cached, then exec'd.
+#
+# Supports linux + darwin only. VERSION is kept in lockstep with the release.
+set -eu
+
+VERSION="1.5.0"
+REPO="glsec/glsec"
+
+hint() {
+	cat >&2 <<EOF
+glsec: $1
+
+Install glsec one of these ways, then re-run:
+  - Go:        go install github.com/glsec/glsec/cmd/glsec@latest
+  - Binaries:  https://github.com/glsec/glsec/releases
+EOF
+	exit 1
+}
+
+# abspath prints the absolute path of its argument (dir resolved, basename kept).
+abspath() {
+	_d=$(dirname -- "$1")
+	_b=$(basename -- "$1")
+	_r=$(CDPATH= cd -- "$_d" 2>/dev/null && pwd -P) || return 1
+	printf '%s/%s\n' "$_r" "$_b"
+}
+
+self=$(abspath "$0" 2>/dev/null || printf '%s\n' "$0")
+
+# 1) An existing glsec elsewhere on PATH (not this wrapper). The lookup runs in
+# a subshell (so the local IFS change is contained) and prints the first match.
+found=$(
+	IFS=:
+	for d in $PATH; do
+		[ -n "$d" ] || d=.
+		cand="$d/glsec"
+		[ -x "$cand" ] || continue
+		[ "$(abspath "$cand" 2>/dev/null || true)" = "$self" ] && continue
+		printf '%s\n' "$cand"
+		break
+	done
+)
+if [ -n "$found" ]; then
+	exec "$found" "$@"
+fi
+
+# Map the platform to the release asset's os/arch tokens.
+os=$(uname -s)
+case "$os" in
+	Linux) os=linux ;;
+	Darwin) os=darwin ;;
+	*) hint "unsupported OS '$os' (this plugin supports linux and darwin only)" ;;
+esac
+
+arch=$(uname -m)
+case "$arch" in
+	x86_64 | amd64) arch=amd64 ;;
+	aarch64 | arm64) arch=arm64 ;;
+	*) hint "unsupported architecture '$arch'" ;;
+esac
+
+cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}/glsec"
+cached="$cache_dir/glsec-$VERSION-$os-$arch"
+
+# 2) Cached download from a previous run.
+if [ -x "$cached" ]; then
+	exec "$cached" "$@"
+fi
+
+# 3) Download, verify, cache.
+asset="glsec_${VERSION}_${os}_${arch}.tar.gz"
+base="https://github.com/$REPO/releases/download/v$VERSION"
+
+if command -v curl >/dev/null 2>&1; then
+	dl() { curl -fsSL "$1" -o "$2"; }
+elif command -v wget >/dev/null 2>&1; then
+	dl() { wget -qO "$2" "$1"; }
+else
+	hint "need curl or wget to download the glsec binary"
+fi
+
+if command -v sha256sum >/dev/null 2>&1; then
+	sha256() { sha256sum "$1" | awk '{print $1}'; }
+elif command -v shasum >/dev/null 2>&1; then
+	sha256() { shasum -a 256 "$1" | awk '{print $1}'; }
+else
+	hint "need sha256sum or shasum to verify the download"
+fi
+
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/glsec.XXXXXX") || hint "could not create a temp directory"
+trap 'rm -rf "$tmp"' EXIT INT TERM
+
+dl "$base/$asset" "$tmp/$asset" || hint "failed to download $asset from $base"
+dl "$base/checksums.txt" "$tmp/checksums.txt" || hint "failed to download checksums.txt from $base"
+
+want=$(awk -v f="$asset" '$2 == f {print $1}' "$tmp/checksums.txt")
+[ -n "$want" ] || hint "no checksum for $asset in checksums.txt"
+got=$(sha256 "$tmp/$asset")
+[ "$want" = "$got" ] || hint "checksum mismatch for $asset (expected $want, got $got)"
+
+tar -xzf "$tmp/$asset" -C "$tmp" || hint "failed to extract $asset"
+[ -f "$tmp/glsec" ] || hint "glsec binary not found inside $asset"
+
+mkdir -p "$cache_dir"
+chmod +x "$tmp/glsec"
+# Move into place atomically where possible; fall back to copy across devices.
+mv "$tmp/glsec" "$cached" 2>/dev/null || cp "$tmp/glsec" "$cached" || hint "failed to install glsec into $cache_dir"
+
+exec "$cached" "$@"

@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "f=$(jq -r '.tool_input.file_path'); printf '%s' \"$f\" | grep -qE '\\.gitlab-ci\\.yml$|\\.gitlab/.*\\.ya?ml$' && \"${CLAUDE_PLUGIN_ROOT}/bin/glsec\" \"$f\" || true"
+          }
+        ]
+      }
+    ]
+  }
+}

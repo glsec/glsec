@@ -1,0 +1,14 @@
+{
+  "name": "glsec",
+  "owner": {
+    "name": "glsec",
+    "url": "https://github.com/glsec/glsec"
+  },
+  "plugins": [
+    {
+      "name": "glsec",
+      "source": "./",
+      "description": "Static security scanner for GitLab CI/CD pipelines"
+    }
+  ]
+}
