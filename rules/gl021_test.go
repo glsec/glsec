@@ -145,6 +145,51 @@ debug:
 	}
 }
 
+func TestGL021_PasswordStdin_NoFinding(t *testing.T) {
+	// `echo "$SECRET" | docker login --password-stdin` pipes the value to the
+	// command's stdin, not the job log — the idiom GL029 recommends.
+	f := findings021(t, `
+build:
+  before_script:
+    - echo "${CI_REGISTRY_PASSWORD}" | docker login --username "${CI_REGISTRY_USER}" --password-stdin "${CI_REGISTRY}"
+`)
+	if len(f) != 0 {
+		t.Errorf("expected no finding for --password-stdin idiom, got %d", len(f))
+	}
+}
+
+func TestGL021_BlockScalarCrossLine_NoFinding(t *testing.T) {
+	// echo (non-secret) and the secret var are on different lines of one block
+	// scalar — the secret is passed as a curl header, never printed.
+	f := findings021(t, `
+deps:
+  script:
+    - |
+      if curl -H "JOB-TOKEN: $CI_JOB_TOKEN" -sLO "$PACKAGE_URL"; then
+        echo "Found dependencies in package registry."
+      fi
+`)
+	if len(f) != 0 {
+		t.Errorf("expected no finding when echo and secret are on different lines, got %d", len(f))
+	}
+}
+
+func TestGL021_BlockScalarSameLine_Finding(t *testing.T) {
+	// A real leak inside a block scalar (echo + secret on the same line) must
+	// still be caught.
+	f := findings021(t, `
+deps:
+  script:
+    - |
+      echo "starting"
+      echo "$DEPLOY_TOKEN"
+      echo "done"
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for echo of secret inside block scalar, got %d", len(f))
+	}
+}
+
 func TestGL021_LineNumber(t *testing.T) {
 	f := findings021(t, `
 debug:

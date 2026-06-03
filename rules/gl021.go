@@ -3,6 +3,7 @@ package rules
 import (
 	"fmt"
 	"regexp"
+	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
 	"github.com/glsec/glsec/internal/parser"
@@ -25,6 +26,12 @@ var (
 	// safeCheckRe matches patterns that reference the variable without printing its value:
 	// length checks (-n "$VAR"), default expansions (${VAR:-}, ${VAR:+}), and masked prints.
 	safeCheckRe = regexp.MustCompile(`\[\s*(?:-n|-z)\s+|:\-|:\+`)
+
+	// stdinPipeRe matches the safe idiom where an echo/printf is piped into a
+	// command reading the secret from stdin (e.g. `echo "$PASS" | docker login
+	// --password-stdin`). The value goes to the command's stdin, not the job
+	// log — this is the very pattern GL029 recommends.
+	stdinPipeRe = regexp.MustCompile(`\|[^|]*--[A-Za-z-]*stdin\b`)
 )
 
 func (r *gl021) Check(doc *yaml.Node, file string) []finding.Finding {
@@ -40,27 +47,35 @@ func (r *gl021) Check(doc *yaml.Node, file string) []finding.Finding {
 				if item.Kind != yaml.ScalarNode {
 					continue
 				}
-				line := item.Value
-				if !printCmdRe.MatchString(line) {
-					continue
+				// Match per physical line: a `|` block scalar is one item but
+				// many commands, so an echo on one line must not be paired with
+				// a secret on another.
+				for i, line := range strings.Split(item.Value, "\n") {
+					if !printCmdRe.MatchString(line) {
+						continue
+					}
+					match := secretVarRe.FindString(line)
+					if match == "" {
+						continue
+					}
+					// Skip lines that only check the variable's presence, not its value.
+					if safeCheckRe.MatchString(line) {
+						continue
+					}
+					// Skip the `echo "$SECRET" | … --password-stdin` idiom.
+					if stdinPipeRe.MatchString(line) {
+						continue
+					}
+					findings = append(findings, finding.Finding{
+						RuleID:   "GL021",
+						Severity: finding.Warn,
+						Job:      name.Value,
+						Message:  fmt.Sprintf("script prints secret variable %s — value may appear in job logs", match),
+						File:     file,
+						Line:     item.Line + i,
+						Col:      item.Column,
+					})
 				}
-				match := secretVarRe.FindString(line)
-				if match == "" {
-					continue
-				}
-				// Skip lines that only check the variable's presence, not its value.
-				if safeCheckRe.MatchString(line) {
-					continue
-				}
-				findings = append(findings, finding.Finding{
-					RuleID:   "GL021",
-					Severity: finding.Warn,
-					Job:      name.Value,
-					Message:  fmt.Sprintf("script prints secret variable %s — value may appear in job logs", match),
-					File:     file,
-					Line:     item.Line,
-					Col:      item.Column,
-				})
 			}
 		}
 	})
