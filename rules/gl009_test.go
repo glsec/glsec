@@ -101,6 +101,33 @@ deploy:
 	}
 }
 
+func TestGL009_VaultServiceSubdomain_NoFinding(t *testing.T) {
+	// vault.gitlab.net is a Vault service audience, not the GitLab instance.
+	f := findings009(t, `
+deploy:
+  id_tokens:
+    VAULT_ID_TOKEN:
+      aud: "https://vault.gitlab.net"
+  script: [./deploy.sh]
+`)
+	if len(f) != 0 {
+		t.Errorf("expected no finding for service subdomain on a gitlab domain, got %d", len(f))
+	}
+}
+
+func TestGL009_RegistrySubdomain_NoFinding(t *testing.T) {
+	f := findings009(t, `
+deploy:
+  id_tokens:
+    TOKEN:
+      aud: "https://registry.gitlab.com"
+  script: [./deploy.sh]
+`)
+	if len(f) != 0 {
+		t.Errorf("expected no finding for registry subdomain, got %d", len(f))
+	}
+}
+
 func TestGL009_NoIdTokens_NoFinding(t *testing.T) {
 	f := findings009(t, `
 build:
