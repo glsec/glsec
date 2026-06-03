@@ -58,7 +58,7 @@ func (r *gl021) Check(doc *yaml.Node, file string) []finding.Finding {
 						Job:      name.Value,
 						Message:  fmt.Sprintf("script prints secret variable %s — value may appear in job logs", match),
 						File:     file,
-						Line:     item.Line + i,
+						Line:     parser.ScalarContentLine(item, i),
 						Col:      item.Column,
 					})
 				}

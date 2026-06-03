@@ -74,6 +74,18 @@ func Unwrap(node *yaml.Node) *yaml.Node {
 	return node
 }
 
+// ScalarContentLine returns the source line of the i-th line of a scalar
+// node's value. For block scalars (literal "|" or folded ">"), node.Line points
+// at the indicator line and the content begins on the next line, so the offset
+// is shifted by one; for plain or quoted scalars node.Line is the content line
+// itself. Use this when reporting findings located within a multi-line scalar.
+func ScalarContentLine(node *yaml.Node, i int) int {
+	if node.Style&(yaml.LiteralStyle|yaml.FoldedStyle) != 0 {
+		return node.Line + 1 + i
+	}
+	return node.Line + i
+}
+
 // reservedKeys are top-level GitLab CI keys that are configuration, not job definitions.
 var reservedKeys = map[string]bool{
 	"stages":        true,
