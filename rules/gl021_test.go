@@ -306,6 +306,22 @@ debug:
 	}
 }
 
+func TestGL021_BlockScalarLineNumber(t *testing.T) {
+	// The secret echo is on file line 5; a block scalar's node.Line points at
+	// the `- |` line (3), so the offset must account for the indicator line.
+	f := findings021(t, `job:
+  script:
+    - |
+      echo "start"
+      echo "$DEPLOY_TOKEN"`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding, got %d", len(f))
+	}
+	if f[0].Line != 5 {
+		t.Errorf("expected line 5, got %d", f[0].Line)
+	}
+}
+
 func TestGL021_LineNumber(t *testing.T) {
 	f := findings021(t, `
 debug:
