@@ -79,6 +79,37 @@ func TestGL032(t *testing.T) {
   - echo "$SSH_PRIVATE_KEY" >> ~/.ssh/config`,
 			wantHits: 1,
 		},
+		{
+			name: "public key variable — not a private key",
+			yaml: `before_script:
+  - echo "extra-trusted-public-keys = $ATTIC_PUBLIC_KEY" >> /etc/nix/nix.conf`,
+			wantHits: 0,
+		},
+		{
+			name: "host key into known_hosts via variable-name branch",
+			yaml: `before_script:
+  - echo "${SSH_HOST_KEY}" > ~/.ssh/known_hosts`,
+			wantHits: 0,
+		},
+		{
+			name: "public key written to authorized_keys",
+			yaml: `before_script:
+  - echo "${PUBLIC_KEY}" > ~/.ssh/authorized_keys`,
+			wantHits: 0,
+		},
+		{
+			name: "private key still flagged alongside public key on same line",
+			yaml: `before_script:
+  - echo "${PRIVATE_KEY}" > ~/.ssh/id_rsa && echo "${PUBLIC_KEY}" > ~/.ssh/authorized_keys`,
+			wantHits: 1,
+		},
+		{ //nolint:gosec // G101: non-SSH credential, test of generalized detection
+			name: "non-SSH key variable (GCP) flagged via generalized message",
+			yaml: `deploy:
+  script:
+    - echo "$GCP_SERVICE_ACCOUNT_KEY" | base64 -d > /tmp/gcloud-key.json`,
+			wantHits: 1,
+		},
 	}
 
 	for _, tt := range tests {
