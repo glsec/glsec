@@ -190,6 +190,122 @@ deps:
 	}
 }
 
+func TestGL021_RedirectToFile_NoFinding(t *testing.T) {
+	f := findings021(t, `
+deploy:
+  script:
+    - echo "$AWS_ACCESS_KEY_ID" >> ~/.s3cfg
+`)
+	if len(f) != 0 {
+		t.Errorf("expected no finding for redirect to file, got %d", len(f))
+	}
+}
+
+func TestGL021_PipeToConsumer_NoFinding(t *testing.T) {
+	f := findings021(t, `
+deploy:
+  script:
+    - echo "$CARGO_TOKEN" | cargo login
+`)
+	if len(f) != 0 {
+		t.Errorf("expected no finding for echo piped into a command, got %d", len(f))
+	}
+}
+
+func TestGL021_SshAddStdin_NoFinding(t *testing.T) {
+	// The very idiom GL032's message recommends; the key never hits the log.
+	f := findings021(t, `
+deploy:
+  script:
+    - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
+`)
+	if len(f) != 0 {
+		t.Errorf("expected no finding for echo piped into ssh-add, got %d", len(f))
+	}
+}
+
+func TestGL021_ProcessSubstitution_NoFinding(t *testing.T) {
+	f := findings021(t, `
+deploy:
+  script:
+    - ssh-add <(echo "$DEPLOY_SSH_KEY")
+`)
+	if len(f) != 0 {
+		t.Errorf("expected no finding for process substitution, got %d", len(f))
+	}
+}
+
+func TestGL021_CommandSubstitution_NoFinding(t *testing.T) {
+	f := findings021(t, `
+query:
+  script:
+    - 'export AUTH="Basic $(echo -n "$MIMIR_API_USER:$MIMIR_API_KEY" | base64)"'
+`)
+	if len(f) != 0 {
+		t.Errorf("expected no finding for command substitution, got %d", len(f))
+	}
+}
+
+func TestGL021_SingleQuotedLiteral_NoFinding(t *testing.T) {
+	f := findings021(t, `
+notice:
+  script:
+    - "echo '$GITLAB_STATE_CLEANER_TOKEN is deprecated'"
+`)
+	if len(f) != 0 {
+		t.Errorf("expected no finding for single-quoted literal, got %d", len(f))
+	}
+}
+
+func TestGL021_PresenceCheckTestN_NoFinding(t *testing.T) {
+	f := findings021(t, `
+guard:
+  script:
+    - 'test -n "$GITLAB_TOKEN" || { echo "GITLAB_TOKEN not set"; exit 1; }'
+`)
+	if len(f) != 0 {
+		t.Errorf("expected no finding for test -n presence check, got %d", len(f))
+	}
+}
+
+func TestGL021_SecretAsCommandArg_NoFinding(t *testing.T) {
+	// echo is an unrelated warning on the same line; the secret is an argument
+	// of a different command, not printed.
+	f := findings021(t, `
+publish:
+  script:
+    - 'gnome-extensions upload --password "$EGO_PASSWORD" "$FILE" || { echo "upload failed"; exit 1; }'
+`)
+	if len(f) != 0 {
+		t.Errorf("expected no finding when secret is an arg of a non-print command, got %d", len(f))
+	}
+}
+
+func TestGL021_BraceVarRedirect_NoFinding(t *testing.T) {
+	// Regression: the closing `}` of ${VAR} must not be treated as a command
+	// separator, or the trailing redirect is missed and this is flagged.
+	f := findings021(t, `
+deploy:
+  script:
+    - echo "secret_key = ${AWS_SECRET_ACCESS_KEY}" >> ~/.s3cfg
+`)
+	if len(f) != 0 {
+		t.Errorf("expected no finding for brace-var redirect to file, got %d", len(f))
+	}
+}
+
+func TestGL021_EchoWithTextPrefix_Finding(t *testing.T) {
+	// A genuine leak: the secret is printed to the log alongside text.
+	f := findings021(t, `
+debug:
+  script:
+    - echo "token=$API_TOKEN"
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for echoed secret with text, got %d", len(f))
+	}
+}
+
 func TestGL021_LineNumber(t *testing.T) {
 	f := findings021(t, `
 debug:
