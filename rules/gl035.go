@@ -61,7 +61,7 @@ func checkGitCredURL(node *yaml.Node, file, job string) []finding.Finding {
 				RuleID:   "GL035",
 				Severity: finding.Warn,
 				Job:      job,
-				Message:  "git command uses URL with embedded credentials (user:token@host) — the expanded URL including the token appears in job logs; use a credential helper or CI_JOB_TOKEN without embedding it in the URL",
+				Message:  "git command uses URL with embedded credentials (user:token@host) — the credential sits in the runner's process table and in .git/config, and reaches the job log if CI_DEBUG_TRACE is enabled or the tool does not redact it (git redacts its own output, many tools do not); use a credential helper, an auth header, or an SSH remote instead of embedding it in the URL",
 				File:     file,
 				Line:     item.Line,
 				Col:      item.Column,
