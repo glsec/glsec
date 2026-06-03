@@ -65,12 +65,18 @@ func checkAudNode(node *yaml.Node, file string) []finding.Finding {
 // isOverbroad returns true when the audience is a GitLab instance root URL.
 // Such an audience accepts OIDC tokens from any project on that instance,
 // rather than being scoped to a specific cloud service.
+//
+// The host must *be* a GitLab instance — its first DNS label is "gitlab"
+// (gitlab.com, gitlab.example.com). A service that merely lives on a gitlab.*
+// domain (vault.gitlab.net, registry.gitlab.com) is a legitimate, scoped
+// audience and is not flagged.
 func isOverbroad(aud string) bool {
 	u, err := url.Parse(aud)
-	if err != nil || u.Host == "" {
+	if err != nil || u.Hostname() == "" {
 		return false
 	}
-	return strings.Contains(strings.ToLower(u.Hostname()), "gitlab")
+	labels := strings.Split(strings.ToLower(u.Hostname()), ".")
+	return len(labels) >= 2 && labels[0] == "gitlab"
 }
 
 func overbroad(aud string, line, col int, file string) finding.Finding {
