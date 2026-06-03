@@ -17,8 +17,9 @@ var GL021 = &gl021{}
 func (r *gl021) ID() string { return "GL021" }
 
 var (
-	// printCmdRe matches shell output commands.
-	printCmdRe = regexp.MustCompile(`\b(?:echo|printf|print)\b`)
+	// assignRe matches a leading shell env assignment (VAR=value) that precedes
+	// a command without being one.
+	assignRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*=`)
 
 	// secretVarRe matches CI variable references whose names end with a secret-indicating suffix.
 	secretVarRe = regexp.MustCompile(`\$\{?[A-Za-z_][A-Za-z0-9_]*(?:_TOKEN|_SECRET|_PASSWORD|_PASSWD|_PASS|_PWD|_KEY|_CREDENTIAL|_CERT)\}?`)
@@ -96,8 +97,10 @@ func printedSecret(line string) (string, bool) {
 			right++
 		}
 
-		// The secret must be an argument of a print command in this segment.
-		if !printCmdRe.MatchString(s[left+1 : start]) {
+		// The secret must be an argument of a print command that is the
+		// segment's command — not an `echo` buried inside a quoted argument to
+		// another command (e.g. git config credential.helper "!echo $TOKEN").
+		if !segmentCommandPrints(s[left+1 : start]) {
 			continue
 		}
 		seg := s[left+1 : right]
@@ -116,6 +119,29 @@ func printedSecret(line string) (string, bool) {
 		return s[start:end], true
 	}
 	return "", false
+}
+
+// gl021PrefixTokens are leading tokens that introduce a command without being
+// one (group/subshell openers and shell keywords). Env assignments are matched
+// separately by assignRe.
+var gl021PrefixTokens = map[string]bool{
+	"{": true, "(": true, "!": true,
+	"then": true, "do": true, "else": true, "elif": true,
+}
+
+// segmentCommandPrints reports whether the command at the start of a segment is
+// a print command (echo/printf/print). It skips leading env assignments and
+// group/keyword openers, then checks the first real token — so an `echo` that
+// only appears inside a quoted argument (the secret is not actually printed)
+// does not count.
+func segmentCommandPrints(segHead string) bool {
+	for _, tok := range strings.Fields(segHead) {
+		if assignRe.MatchString(tok) || gl021PrefixTokens[tok] {
+			continue
+		}
+		return tok == "echo" || tok == "printf" || tok == "print"
+	}
+	return false
 }
 
 // isShellSep reports whether b separates shell commands (pipeline, list, or
