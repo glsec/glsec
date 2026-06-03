@@ -59,6 +59,26 @@ func TestGL032(t *testing.T) {
   - chmod 600 ~/.ssh/id_rsa`,
 			wantHits: 1,
 		},
+		{
+			name: "echo StrictHostKeyChecking into ~/.ssh/config — config, not a key",
+			yaml: `before_script:
+  - mkdir -p ~/.ssh
+  - echo "StrictHostKeyChecking no" >> ~/.ssh/config`,
+			wantHits: 0,
+		},
+		{
+			name: "echo into ~/.ssh/known_hosts — not a key",
+			yaml: `before_script:
+  - ssh-keyscan gitlab.com >> ~/.ssh/known_hosts
+  - echo "gitlab.com ssh-rsa AAAA..." >> ~/.ssh/known_hosts`,
+			wantHits: 0,
+		},
+		{
+			name: "echo key variable redirected into ~/.ssh/config still flagged",
+			yaml: `before_script:
+  - echo "$SSH_PRIVATE_KEY" >> ~/.ssh/config`,
+			wantHits: 1,
+		},
 	}
 
 	for _, tt := range tests {
