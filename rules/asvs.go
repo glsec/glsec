@@ -1,9 +1,22 @@
 package rules
 
 // ASVSVersion is the OWASP ASVS release the V14 (Build and Deploy) mappings
-// below are pinned to. Bump only after reviewing the mapping against the new
-// release.
+// below are pinned to.
+//
+// This pin is deliberate, not stale. ASVS 5.0.0 restructured the standard and
+// removed the V14 "Configuration" CI/CD and build-pipeline requirements that
+// glsec lints — "requirements that did not align with the intended scope of the
+// standard ... have been removed". The build/deploy/isolation/tooling controls
+// have no equivalent in 5.0.0, so 4.0.3 V14 remains the best fit for a CI/CD
+// security linter. See issue #290 for the per-requirement gap analysis.
 const ASVSVersion = "4.0.3"
+
+// ASVSReviewedThrough is the newest ASVS release the mapping above has been
+// reviewed against. The check-framework-versions workflow only flags releases
+// newer than this, so it stays quiet about 5.0.0 (reviewed, deliberately not
+// adopted) while still alerting on any future release that warrants a fresh
+// look. Bump this after each such review.
+const ASVSReviewedThrough = "5.0.0"
 
 // asvsRequirements maps a rule ID to the OWASP ASVS v4.0.3 V14 requirement(s)
 // it provides evidence for.
