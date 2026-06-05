@@ -129,6 +129,8 @@ Misconfigured CI settings that expand the attack surface or leak build context.
 
 A subset of rules is mapped to [OWASP ASVS](https://owasp.org/www-project-application-security-verification-standard/) v4.0.3 Chapter V14 requirements, surfaced in JSON output (`asvs` field) and SARIF (an `OWASP ASVS` taxonomy) for compliance evidence.
 
+> **Why v4.0.3 and not 5.0.0?** ASVS 5.0.0 restructured the standard and removed the V14 "Configuration" CI/CD and build-pipeline requirements — build environment isolation, pipeline integrity, security-tooling gates and the like have no equivalent in 5.0.0, which narrowed its scope to the application itself. Since those controls are exactly what glsec lints, v4.0.3 V14 remains the most accurate mapping for a CI/CD security linter. The pin is reviewed against each new ASVS release (see [#290](https://github.com/glsec/glsec/issues/290)).
+
 | ASVS requirement | Rules |
 |---|---|
 | V14.2.1 — Components from trusted, maintained sources | GL003, GL011, GL016, GL065, GL067 |

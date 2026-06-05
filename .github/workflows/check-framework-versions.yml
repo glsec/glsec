@@ -1,12 +1,14 @@
 name: Check framework versions
 
 # Monthly check for newer releases of the security frameworks glsec maps to.
-# When a newer version is found, opens an issue so the mapping can be reviewed
-# before the pinned version constant is bumped.
+# When a release newer than the last reviewed one is found, opens an issue so
+# the mapping can be reviewed.
 #
-# Currently checks OWASP ASVS (rules/asvs.go). The OWASP Top 10 CI/CD Security
-# Risks taxonomy is a living document without a release feed and is reviewed
-# manually.
+# Currently checks OWASP ASVS (rules/asvs.go). The mapping is pinned to ASVS
+# 4.0.3 on purpose — 5.0.0 dropped the CI/CD build-pipeline requirements glsec
+# lints (#290) — so the check compares against ASVSReviewedThrough, not the
+# pinned mapping version. The OWASP Top 10 CI/CD Security Risks taxonomy is a
+# living document without a release feed and is reviewed manually.
 
 on:
   schedule:
@@ -34,9 +36,13 @@ jobs:
         run: |
           set -euo pipefail
 
-          pinned=$(grep -oP 'ASVSVersion = "\K[^"]+' rules/asvs.go)
-          if [ -z "$pinned" ]; then
-            echo "could not read ASVSVersion from rules/asvs.go" >&2
+          # The mapping is pinned to ASVSVersion (4.0.3) deliberately; ASVS 5.0.0
+          # dropped the CI/CD build-pipeline requirements glsec lints (see #290).
+          # We therefore alert on releases newer than ASVSReviewedThrough — the
+          # newest release already reviewed — not on every release past the pin.
+          reviewed=$(grep -oP 'ASVSReviewedThrough = "\K[^"]+' rules/asvs.go)
+          if [ -z "$reviewed" ]; then
+            echo "could not read ASVSReviewedThrough from rules/asvs.go" >&2
             exit 1
           fi
 
@@ -47,9 +53,15 @@ jobs:
             | sed -E 's/^v//; s/_release$//' \
             | sort -V | tail -1)
 
-          echo "OWASP ASVS: pinned=$pinned latest=$latest"
-          if [ -z "$latest" ] || [ "$latest" = "$pinned" ]; then
-            echo "ASVS mapping is up to date."
+          echo "OWASP ASVS: reviewed_through=$reviewed latest=$latest"
+          if [ -z "$latest" ] || [ "$latest" = "$reviewed" ]; then
+            echo "No ASVS release newer than the last reviewed one."
+            exit 0
+          fi
+          # Only alert when latest is strictly newer than what we have reviewed.
+          newer=$(printf '%s\n%s\n' "$reviewed" "$latest" | sort -V | tail -1)
+          if [ "$newer" = "$reviewed" ]; then
+            echo "Latest ASVS release ($latest) is not newer than reviewed ($reviewed)."
             exit 0
           fi
 
@@ -59,5 +71,5 @@ jobs:
             exit 0
           fi
 
-          body="OWASP ASVS \`$latest\` is available; glsec maps to \`$pinned\` (\`ASVSVersion\` in \`rules/asvs.go\`). Review the V14 (Build and Deploy) requirement mapping against the new release, update it if needed, then bump \`ASVSVersion\`. Related: #156."
+          body="OWASP ASVS \`$latest\` is available; the glsec mapping was last reviewed against \`$reviewed\` (\`ASVSReviewedThrough\` in \`rules/asvs.go\`) and is deliberately pinned to \`ASVSVersion\` (4.0.3) because ASVS 5.0.0 removed the CI/CD build-pipeline requirements glsec lints. Review the V14 (Build and Deploy) mapping against \`$latest\`; if still the best fit, just bump \`ASVSReviewedThrough\`, otherwise update the mapping and \`ASVSVersion\` too. See #290."
           gh issue create --title "$title" --label "enhancement" --body "$body"
