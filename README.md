@@ -98,6 +98,9 @@ glsec explain GL001
 # baseline existing findings so only new violations are reported
 glsec --generate-ignore .gitlab-ci.yml
 glsec .gitlab-ci.yml  # now exits 0; new violations will be caught
+
+# audit mode: report everything, bypassing all glsec suppressions
+glsec --no-ignores .gitlab-ci.yml  # ignores inline # glsec:ignore and the .glsec-ignore baseline
 ```
 
 ### Exit codes
@@ -183,7 +186,7 @@ rules:
   SC2086: off
 ```
 
-ShellCheck's own inline directives (`# shellcheck disable=SC2086`) are also respected.
+ShellCheck's own inline directives (`# shellcheck disable=SC2086`) are also respected. `--no-ignores` bypasses glsec's suppressions (inline `# glsec:ignore` and the `.glsec-ignore` baseline) but **not** ShellCheck's native `# shellcheck disable=` directives, which are handled inside ShellCheck itself.
 
 ---
 

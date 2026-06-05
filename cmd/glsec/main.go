@@ -66,6 +66,7 @@ func main() {
 	strictFlag := flag.Bool("strict", false, "treat warn findings as errors for the exit code (output severity is unchanged)")
 	noExitCodesFlag := flag.Bool("no-exit-codes", false, "always exit 0 on successful execution, regardless of findings")
 	generateIgnoreFlag := flag.Bool("generate-ignore", false, "write all current findings to .glsec-ignore as a baseline and exit 0")
+	noIgnoresFlag := flag.Bool("no-ignores", false, "audit mode: bypass all glsec suppressions (inline # glsec:ignore directives and the .glsec-ignore baseline) for this run; report every finding")
 	noCacheFlag := flag.Bool("no-cache", false, "disable result cache for this run")
 	clearCacheFlag := flag.Bool("clear-cache", false, "remove all cached results and exit")
 	noColorFlag := flag.Bool("no-color", false, "disable colored output")
@@ -172,7 +173,7 @@ func main() {
 
 	colorEnabled := color.IsEnabled(*noColorFlag, os.Stdout)
 	stdoutIsTTY := color.IsTerminal(os.Stdout)
-	useCache := !*noCacheFlag && !*generateIgnoreFlag
+	useCache := !*noCacheFlag && !*generateIgnoreFlag && !*noIgnoresFlag
 
 	scanOpts := scanOptions{
 		cfg:            cfg,
@@ -183,6 +184,7 @@ func main() {
 		skip:           skipArgs,
 		useCache:       useCache,
 		generateIgnore: *generateIgnoreFlag,
+		noIgnores:      *noIgnoresFlag,
 	}
 
 	var allFindings []finding.Finding
@@ -230,6 +232,7 @@ type scanOptions struct {
 	skip           []string
 	useCache       bool
 	generateIgnore bool
+	noIgnores      bool
 }
 
 // scanRoot parses one root pipeline file (and its child pipelines), runs the
@@ -276,8 +279,9 @@ func scanRoot(file string, opt scanOptions) (findings []finding.Finding, jobCoun
 		}
 	}
 
+	skipSuppress := opt.generateIgnore || opt.noIgnores
 	for _, d := range allDocs {
-		findings = append(findings, collectFindings(d, d.File, opt.cfg, opt.gitlabVersion, opt.generateIgnore)...)
+		findings = append(findings, collectFindings(d, d.File, opt.cfg, opt.gitlabVersion, skipSuppress)...)
 	}
 
 	if opt.useCache && cacheKey != "" {
@@ -527,7 +531,7 @@ func collectDocuments(doc *parser.Document, path string, excludePaths []string, 
 }
 
 // collectFindings runs all applicable rules against doc and returns the findings.
-func collectFindings(doc *parser.Document, path string, cfg *config.Config, gitlabVersion gitlabver.Version, generateIgnore bool) []finding.Finding {
+func collectFindings(doc *parser.Document, path string, cfg *config.Config, gitlabVersion gitlabver.Version, skipSuppress bool) []finding.Finding {
 	sm := suppress.Build(doc.Root)
 	sm.Merge(suppress.LoadIgnoreFile(suppress.IgnoreFile, path))
 
@@ -547,7 +551,7 @@ func collectFindings(doc *parser.Document, path string, cfg *config.Config, gitl
 			if !cfg.AboveMinSeverity(f) {
 				continue
 			}
-			if !generateIgnore && sm.IsSuppressed(f.Line, f.RuleID) {
+			if !skipSuppress && sm.IsSuppressed(f.Line, f.RuleID) {
 				continue
 			}
 			findings = append(findings, f)
@@ -563,7 +567,7 @@ func collectFindings(doc *parser.Document, path string, cfg *config.Config, gitl
 			if !cfg.AboveMinSeverity(f) {
 				continue
 			}
-			if !generateIgnore && sm.IsSuppressed(f.Line, f.RuleID) {
+			if !skipSuppress && sm.IsSuppressed(f.Line, f.RuleID) {
 				continue
 			}
 			findings = append(findings, f)
