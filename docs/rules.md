@@ -31,6 +31,7 @@ Secrets hardcoded, leaked through logs, or forwarded to unintended consumers.
 | [GL059](rules/GL059.md) | `warn`  | `docker build --build-arg` with a secret-keyword name bakes the value into image layer metadata (visible via `docker history`) |
 | [GL062](rules/GL062.md) | `warn`  | `printenv` or bare `env` dumps every variable (including secrets) to the job log |
 | [GL068](rules/GL068.md) | `warn`  | `set -x` / xtrace in a script traces expanded commands — including secrets — to the job log |
+| [GL070](rules/GL070.md) | `warn`  | Static cloud service-account credential in script (`gcloud --key-file`, `aws_secret_access_key`, `az --password`) — prefer keyless OIDC |
 
 ---
 
