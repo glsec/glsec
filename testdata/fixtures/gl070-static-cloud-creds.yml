@@ -1,0 +1,16 @@
+# Static cloud service-account credentials — prefer keyless OIDC.
+gcp-deploy:
+  image: google/cloud-sdk:slim
+  script:
+    - gcloud auth activate-service-account --key-file "$GCP_KEY"
+
+aws-deploy:
+  image: amazon/aws-cli:latest
+  script:
+    - aws configure set aws_secret_access_key "$AWS_SECRET"
+    - export AWS_SECRET_ACCESS_KEY="$AWS_SECRET"
+
+azure-deploy:
+  image: mcr.microsoft.com/azure-cli:latest
+  script:
+    - az login --service-principal -u "$APP_ID" --password "$SP_SECRET" --tenant "$TENANT"
