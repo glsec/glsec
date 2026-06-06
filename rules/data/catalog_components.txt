@@ -1,6 +1,8 @@
 # Popular GitLab CI Catalog component resource paths (namespace/project),
 # sorted by star count at generation time. Used by GL064 for typosquatting
 # detection. Regenerate from the GitLab GraphQL ciCatalogResources API.
+# The check-catalog-components workflow watches this monthly and opens an issue
+# when the list drifts from the most-starred components.
 TECHNOFAB/nix-gitlab-ci
 components/code-quality-oss/codequality-os-scanners-integration
 components/opentofu
