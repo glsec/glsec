@@ -44,6 +44,8 @@ func TestGL069_NotFlagged(t *testing.T) {
 		"apt-key add key.gpg",                         // intentionally out of scope
 		"add-apt-repository ppa:openmw/openmw",        // intentionally out of scope
 		"# apt-get install --allow-unauthenticated x", // comment
+		"gcloud run deploy svc --allow-unauthenticated --region us",   // GCP Cloud Run public access, not apt
+		"apk add curl",                                                // normal apk
 	}
 	for _, line := range clean {
 		if f := findings069(t, "job:\n  script:\n    - '"+escapeSingle(line)+"'\n"); len(f) != 0 {
