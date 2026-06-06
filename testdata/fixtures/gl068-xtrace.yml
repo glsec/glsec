@@ -1,0 +1,13 @@
+# set -x / xtrace prints expanded commands — including secrets — to the job log.
+deploy:
+  image: alpine:3.20
+  script:
+    - set -euxo pipefail
+    - 'git push "https://ci:${DEPLOY_TOKEN}@gitlab.example/repo.git" HEAD:main'
+
+release:
+  image: alpine:3.20
+  before_script:
+    - set -o xtrace
+  script:
+    - 'curl -H "Authorization: Bearer $API_TOKEN" https://api.example/release'

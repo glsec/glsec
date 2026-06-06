@@ -30,6 +30,7 @@ Secrets hardcoded, leaked through logs, or forwarded to unintended consumers.
 | [GL052](rules/GL052.md) | `warn`  | User-controlled variable in `environment:name:` — attacker can craft a branch name that resolves to a protected environment and access its secrets |
 | [GL059](rules/GL059.md) | `warn`  | `docker build --build-arg` with a secret-keyword name bakes the value into image layer metadata (visible via `docker history`) |
 | [GL062](rules/GL062.md) | `warn`  | `printenv` or bare `env` dumps every variable (including secrets) to the job log |
+| [GL068](rules/GL068.md) | `warn`  | `set -x` / xtrace in a script traces expanded commands — including secrets — to the job log |
 
 ---
 
@@ -138,6 +139,6 @@ A subset of rules is mapped to [OWASP ASVS](https://owasp.org/www-project-applic
 | V14.2.3 — Dependencies verified for integrity | GL020 |
 | V14.3.1 — Pipeline config protected from modification | GL003, GL019 |
 | V14.3.2 — Security tools run and failures block the build | GL008, GL039 |
-| V14.3.3 — Secrets absent from source and logs | GL006, GL014, GL018, GL021, GL027, GL032, GL033, GL035, GL036, GL038, GL066 |
+| V14.3.3 — Secrets absent from source and logs | GL006, GL014, GL018, GL021, GL027, GL032, GL033, GL035, GL036, GL038, GL066, GL068 |
 | V14.3.4 — Build environment isolated | GL007, GL015, GL025 |
 | V14.4.1 — Third-party CI/CD service dependence minimised | GL041 |
