@@ -1,6 +1,6 @@
 name: Check framework versions
 
-# Monthly check for newer releases of the security frameworks glsec maps to.
+# Weekly check for newer releases of the security frameworks glsec maps to.
 # When a release newer than the last reviewed one is found, opens an issue so
 # the mapping can be reviewed.
 #
@@ -12,7 +12,7 @@ name: Check framework versions
 
 on:
   schedule:
-    - cron: "0 8 1 * *" # 08:00 UTC on the 1st of each month
+    - cron: "0 8 * * 1" # 08:00 UTC every Monday
   workflow_dispatch:
 
 permissions:
