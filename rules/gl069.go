@@ -24,7 +24,10 @@ type pkgAuthCheck struct {
 // GL042 covers). Each is a high-signal, explicit bypass flag.
 var pkgAuthChecks = []pkgAuthCheck{
 	{
-		re:  regexp.MustCompile(`--allow-unauthenticated\b`),
+		// Scoped to an apt command on the same line: "--allow-unauthenticated"
+		// is also a GCP Cloud Run flag (gcloud run deploy --allow-unauthenticated)
+		// meaning public service access, which is unrelated to package signatures.
+		re:  regexp.MustCompile(`\b(?:apt-get|apt|aptitude)\b[^\n]*--allow-unauthenticated\b`),
 		msg: `apt "--allow-unauthenticated" disables package signature verification — an unsigned or tampered package from a compromised or MITM'd mirror would install without error; import the repository signing key and reference it with signed-by= instead`,
 	},
 	{
@@ -36,7 +39,7 @@ var pkgAuthChecks = []pkgAuthCheck{
 		msg: `apt source marked "[trusted=yes]" disables package signature verification for that repository — use "signed-by=<keyring>" to verify packages against the repository's GPG key instead`,
 	},
 	{
-		re:  regexp.MustCompile(`--allow-untrusted\b`),
+		re:  regexp.MustCompile(`\bapk\b[^\n]*--allow-untrusted\b`),
 		msg: `apk "--allow-untrusted" disables package signature verification — an unsigned or tampered package would install without error; add the repository's signing key to /etc/apk/keys instead`,
 	},
 }
