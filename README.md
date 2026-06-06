@@ -153,11 +153,11 @@ glsec --new-only --baseline base.json .gitlab-ci.yml
 
 ## Rules
 
-67 rules across 8 [OWASP CI/CD security categories](https://owasp.org/www-project-top-10-ci-cd-security-risks/):
+68 rules across 8 [OWASP CI/CD security categories](https://owasp.org/www-project-top-10-ci-cd-security-risks/):
 
 | Category | OWASP | Rules |
 |----------|-------|-------|
-| Credential Hygiene | CICD-SEC-6 | GL004, GL005, GL006, GL010, GL014, GL018, GL021, GL027, GL029, GL032, GL033, GL035, GL036, GL037, GL038, GL040, GL052, GL059, GL062, GL066 |
+| Credential Hygiene | CICD-SEC-6 | GL004, GL005, GL006, GL010, GL014, GL018, GL021, GL027, GL029, GL032, GL033, GL035, GL036, GL037, GL038, GL040, GL052, GL059, GL062, GL066, GL068 |
 | Dependency & Image Pinning | CICD-SEC-3 | GL001, GL003, GL011, GL016, GL022, GL023, GL026, GL046, GL064 |
 | Component & Third-Party Integrity | CICD-SEC-4, CICD-SEC-8 | GL002, GL007, GL015, GL025, GL041, GL044, GL051, GL053, GL065, GL067 |
 | Supply Chain Integrity | CICD-SEC-9 | GL020, GL045 |
