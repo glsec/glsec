@@ -1,0 +1,13 @@
+# Package signature/auth verification disabled — unsigned packages install silently.
+build:
+  image: debian:12
+  script:
+    - apt-get update
+    - apt-get install -y --allow-unauthenticated somepkg
+    - 'echo "deb [trusted=yes] http://repo.example/ ./" >> /etc/apt/sources.list'
+    - apt-get -o APT::Get::AllowUnauthenticated=true install -y otherpkg
+
+alpine-build:
+  image: alpine:3.20
+  script:
+    - apk add --allow-untrusted somepkg
