@@ -101,6 +101,10 @@ glsec .gitlab-ci.yml  # now exits 0; new violations will be caught
 
 # audit mode: report everything, bypassing all glsec suppressions
 glsec --no-ignores .gitlab-ci.yml  # ignores inline # glsec:ignore and the .glsec-ignore baseline
+
+# gate MRs on "don't make it worse": fail only on findings not in the baseline
+glsec --new-only .gitlab-ci.yml                       # diff against .glsec-ignore
+glsec --new-only --baseline main.json .gitlab-ci.yml  # diff against a saved JSON snapshot
 ```
 
 ### Exit codes
@@ -125,6 +129,26 @@ exclude_paths:
 recursive_patterns:    # extra CI-config names/paths for --recursive (default: .gitlab-ci.yml)
   - '*.gitlab-ci.yml'   # no "/" → matched against the basename
   - ci/pipeline.yml     # contains "/" → matched against the path relative to each scanned dir
+```
+
+### Baseline diff (`--new-only`)
+
+For adopting glsec on an established pipeline without drowning in pre-existing findings, `--new-only` reports — and fails — only on findings **not** in a baseline, leaving the existing backlog out of the way. It honours `--strict` and `min-severity`, so the exit code reflects new findings alone.
+
+Two baseline sources are supported:
+
+- **`.glsec-ignore`** (default, no flag needed) — the file written by `--generate-ignore`. Matched on `(rule, file)`, since that format carries no message.
+- **`--baseline <file.json>`** — a snapshot saved from a prior `--format json` run (e.g. a scan of the target branch). Matched on `(rule, file, message)`.
+
+Matching is **line-insensitive**: a finding that merely shifts to a different line because unrelated content moved is recognised as the same finding and stays in the baseline, rather than resurfacing as "new". Duplicates are tracked by count, so a genuinely new third occurrence of an already-baselined finding is still reported. The JSON snapshot matches more precisely (it has the message); the `.glsec-ignore` baseline is the simple, zero-setup case. In `--new-only` mode the `.glsec-ignore` line suppression is replaced by this diff; inline `# glsec:ignore` directives still apply.
+
+Snapshot the base branch at the **same path** (the `file` field is part of the match), then fail only on what the MR adds:
+
+```bash
+git checkout origin/main -- .gitlab-ci.yml
+glsec --format json .gitlab-ci.yml > base.json
+git checkout HEAD -- .gitlab-ci.yml
+glsec --new-only --baseline base.json .gitlab-ci.yml
 ```
 
 ## Rules
