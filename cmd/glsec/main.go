@@ -9,6 +9,7 @@ import (
 	"runtime/debug"
 	"strings"
 
+	"github.com/glsec/glsec/internal/baseline"
 	"github.com/glsec/glsec/internal/cache"
 	"github.com/glsec/glsec/internal/color"
 	"github.com/glsec/glsec/internal/config"
@@ -67,6 +68,8 @@ func main() {
 	noExitCodesFlag := flag.Bool("no-exit-codes", false, "always exit 0 on successful execution, regardless of findings")
 	generateIgnoreFlag := flag.Bool("generate-ignore", false, "write all current findings to .glsec-ignore as a baseline and exit 0")
 	noIgnoresFlag := flag.Bool("no-ignores", false, "audit mode: bypass all glsec suppressions (inline # glsec:ignore directives and the .glsec-ignore baseline) for this run; report every finding")
+	newOnlyFlag := flag.Bool("new-only", false, "report (and fail) only on findings absent from the baseline; defaults to the .glsec-ignore baseline unless --baseline is given")
+	baselineFlag := flag.String("baseline", "", "path to a baseline to diff against in --new-only mode: a glsec JSON snapshot (--format json) or a .glsec-ignore file (implies --new-only)")
 	noCacheFlag := flag.Bool("no-cache", false, "disable result cache for this run")
 	clearCacheFlag := flag.Bool("clear-cache", false, "remove all cached results and exit")
 	noColorFlag := flag.Bool("no-color", false, "disable colored output")
@@ -173,7 +176,8 @@ func main() {
 
 	colorEnabled := color.IsEnabled(*noColorFlag, os.Stdout)
 	stdoutIsTTY := color.IsTerminal(os.Stdout)
-	useCache := !*noCacheFlag && !*generateIgnoreFlag && !*noIgnoresFlag
+	newOnly := *newOnlyFlag || *baselineFlag != ""
+	useCache := !*noCacheFlag && !*generateIgnoreFlag && !*noIgnoresFlag && !newOnly
 
 	scanOpts := scanOptions{
 		cfg:            cfg,
@@ -185,6 +189,7 @@ func main() {
 		useCache:       useCache,
 		generateIgnore: *generateIgnoreFlag,
 		noIgnores:      *noIgnoresFlag,
+		newOnly:        newOnly,
 	}
 
 	var allFindings []finding.Finding
@@ -212,6 +217,10 @@ func main() {
 		return // exit 0
 	}
 
+	if newOnly {
+		allFindings = filterNewOnly(allFindings, *baselineFlag)
+	}
+
 	if err := writeOutput(os.Stdout, format, allFindings, totalJobCount, colorEnabled, stdoutIsTTY); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(2)
@@ -233,6 +242,7 @@ type scanOptions struct {
 	useCache       bool
 	generateIgnore bool
 	noIgnores      bool
+	newOnly        bool
 }
 
 // scanRoot parses one root pipeline file (and its child pipelines), runs the
@@ -281,7 +291,7 @@ func scanRoot(file string, opt scanOptions) (findings []finding.Finding, jobCoun
 
 	skipSuppress := opt.generateIgnore || opt.noIgnores
 	for _, d := range allDocs {
-		findings = append(findings, collectFindings(d, d.File, opt.cfg, opt.gitlabVersion, skipSuppress)...)
+		findings = append(findings, collectFindings(d, d.File, opt.cfg, opt.gitlabVersion, skipSuppress, opt.newOnly)...)
 	}
 
 	if opt.useCache && cacheKey != "" {
@@ -531,9 +541,14 @@ func collectDocuments(doc *parser.Document, path string, excludePaths []string, 
 }
 
 // collectFindings runs all applicable rules against doc and returns the findings.
-func collectFindings(doc *parser.Document, path string, cfg *config.Config, gitlabVersion gitlabver.Version, skipSuppress bool) []finding.Finding {
+// skipIgnoreFile drops the .glsec-ignore line suppression (but keeps inline
+// directives) so --new-only can diff the full backlog against the baseline by
+// fingerprint instead of by exact line.
+func collectFindings(doc *parser.Document, path string, cfg *config.Config, gitlabVersion gitlabver.Version, skipSuppress, skipIgnoreFile bool) []finding.Finding {
 	sm := suppress.Build(doc.Root)
-	sm.Merge(suppress.LoadIgnoreFile(suppress.IgnoreFile, path))
+	if !skipIgnoreFile {
+		sm.Merge(suppress.LoadIgnoreFile(suppress.IgnoreFile, path))
+	}
 
 	var findings []finding.Finding
 	for _, rule := range rules.All() {
@@ -575,6 +590,37 @@ func collectFindings(doc *parser.Document, path string, cfg *config.Config, gitl
 	}
 
 	return findings
+}
+
+// filterNewOnly keeps only findings absent from the baseline. baselinePath is
+// empty for the default .glsec-ignore baseline (a missing default is treated as
+// an empty baseline — everything is new); an explicit --baseline that cannot be
+// read is a fatal error. The number of baselined findings is reported to stderr.
+func filterNewOnly(findings []finding.Finding, baselinePath string) []finding.Finding {
+	path := baselinePath
+	if path == "" {
+		path = suppress.IgnoreFile
+	}
+	bl, err := baseline.Load(path)
+	if err != nil {
+		if baselinePath == "" && os.IsNotExist(err) {
+			bl = baseline.Empty()
+		} else {
+			fmt.Fprintf(os.Stderr, "error: --baseline: %v\n", err)
+			os.Exit(2)
+		}
+	}
+
+	newFindings := make([]finding.Finding, 0, len(findings))
+	for _, f := range findings {
+		if bl.IsNew(f) {
+			newFindings = append(newFindings, f)
+		}
+	}
+	if n := len(findings) - len(newFindings); n > 0 {
+		fmt.Fprintf(os.Stderr, "%d finding(s) matched the baseline and were not reported\n", n)
+	}
+	return newFindings
 }
 
 // writeIgnoreFile creates or overwrites .glsec-ignore with one entry per finding.

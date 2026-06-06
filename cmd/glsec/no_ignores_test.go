@@ -19,7 +19,7 @@ func hasGL001(t *testing.T, content string, skipSuppress bool) bool {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	for _, f := range collectFindings(doc, "test.yml", config.Default(), gitlabver.Version{}, skipSuppress) {
+	for _, f := range collectFindings(doc, "test.yml", config.Default(), gitlabver.Version{}, skipSuppress, false) {
 		if f.RuleID == "GL001" {
 			return true
 		}
