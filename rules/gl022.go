@@ -73,7 +73,37 @@ var (
 			pinned:  regexp.MustCompile(`:\S`),
 			skip:    nil,
 		},
+		{
+			manager: "yum",
+			trigger: regexp.MustCompile(`\byum\s+install\b`),
+			pinned:  regexp.MustCompile(`\b\S+-\d`),
+			skip:    nil,
+		},
+		{
+			manager: "dnf",
+			trigger: regexp.MustCompile(`\bdnf\s+install\b`),
+			pinned:  regexp.MustCompile(`\b\S+-\d`),
+			skip:    nil,
+		},
+		{
+			manager: "zypper",
+			trigger: regexp.MustCompile(`\bzypper\s+(?:install|in)\b`),
+			pinned:  regexp.MustCompile(`\b\S+=\d`),
+			skip:    nil,
+		},
+		{
+			manager: "go",
+			trigger: regexp.MustCompile(`\bgo\s+install\b`),
+			pinned:  regexp.MustCompile(`@v?\d`),
+			// Local builds (no module, or a relative/absolute path target) need no version.
+			skip: regexp.MustCompile(`\bgo\s+install\s*$|\bgo\s+install\s+(?:-\S+\s+)*[./]`),
+		},
 	}
+
+	// pmVarPkg matches an install whose first non-flag argument is a CI variable
+	// (e.g. `apt-get install -y $PKG`). The version can't be checked statically, so
+	// the line is skipped to avoid false positives.
+	pmVarPkg = regexp.MustCompile(`\b(?:install|add|require|in)\s+(?:-\S+\s+)*["']?\$\{?[A-Za-z_]`)
 
 	pmUpdateChecks = []pmUpdateCheck{
 		{"npm", regexp.MustCompile(`\bnpm\s+update\b`)},
@@ -125,6 +155,9 @@ func checkPMLine(line, file string, lineNum, col int) *finding.Finding {
 			continue
 		}
 		if ic.skip != nil && ic.skip.MatchString(line) {
+			continue
+		}
+		if pmVarPkg.MatchString(line) {
 			continue
 		}
 		if ic.pinned != nil && ic.pinned.MatchString(line) {
