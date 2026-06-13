@@ -241,6 +241,186 @@ build:
 	}
 }
 
+// --- yum ---
+
+func TestGL022_YumUnpinned(t *testing.T) {
+	f := findings022(t, `
+build:
+  script:
+    - yum install -y httpd
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for unpinned yum install, got %d", len(f))
+	}
+}
+
+func TestGL022_YumPinned_NoFinding(t *testing.T) {
+	f := findings022(t, `
+build:
+  script:
+    - yum install -y httpd-2.4.6
+`)
+	if len(f) != 0 {
+		t.Errorf("expected no finding for pinned yum install, got %d", len(f))
+	}
+}
+
+// --- dnf ---
+
+func TestGL022_DnfUnpinned(t *testing.T) {
+	f := findings022(t, `
+build:
+  script:
+    - dnf install -y nginx
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for unpinned dnf install, got %d", len(f))
+	}
+}
+
+func TestGL022_DnfPinned_NoFinding(t *testing.T) {
+	f := findings022(t, `
+build:
+  script:
+    - dnf install -y nginx-1.20.1
+`)
+	if len(f) != 0 {
+		t.Errorf("expected no finding for pinned dnf install, got %d", len(f))
+	}
+}
+
+// --- zypper ---
+
+func TestGL022_ZypperUnpinned(t *testing.T) {
+	f := findings022(t, `
+build:
+  script:
+    - zypper install -y curl
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for unpinned zypper install, got %d", len(f))
+	}
+}
+
+func TestGL022_ZypperInUnpinned(t *testing.T) {
+	f := findings022(t, `
+build:
+  script:
+    - zypper in -y curl
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for unpinned zypper in, got %d", len(f))
+	}
+}
+
+func TestGL022_ZypperPinned_NoFinding(t *testing.T) {
+	f := findings022(t, `
+build:
+  script:
+    - zypper install -y curl=7.66.0
+`)
+	if len(f) != 0 {
+		t.Errorf("expected no finding for pinned zypper install, got %d", len(f))
+	}
+}
+
+func TestGL022_ZypperInfo_NoFinding(t *testing.T) {
+	f := findings022(t, `
+build:
+  script:
+    - zypper info curl
+`)
+	if len(f) != 0 {
+		t.Errorf("zypper info is not an install — expected no finding, got %d", len(f))
+	}
+}
+
+// --- go install ---
+
+func TestGL022_GoInstallLatest(t *testing.T) {
+	f := findings022(t, `
+build:
+  script:
+    - go install golang.org/x/tools/cmd/goimports@latest
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for go install @latest, got %d", len(f))
+	}
+}
+
+func TestGL022_GoInstallNoVersion(t *testing.T) {
+	f := findings022(t, `
+build:
+  script:
+    - go install github.com/golangci/golangci-lint/cmd/golangci-lint
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for go install without @version, got %d", len(f))
+	}
+}
+
+func TestGL022_GoInstallPinned_NoFinding(t *testing.T) {
+	f := findings022(t, `
+build:
+  script:
+    - go install golang.org/x/tools/cmd/goimports@v0.21.0
+`)
+	if len(f) != 0 {
+		t.Errorf("expected no finding for pinned go install, got %d", len(f))
+	}
+}
+
+func TestGL022_GoInstallLocalPath_NoFinding(t *testing.T) {
+	f := findings022(t, `
+build:
+  script:
+    - go install ./cmd/foo
+`)
+	if len(f) != 0 {
+		t.Errorf("local go install needs no version — expected no finding, got %d", len(f))
+	}
+}
+
+func TestGL022_GoInstallNoArgs_NoFinding(t *testing.T) {
+	f := findings022(t, `
+build:
+  script:
+    - go install
+`)
+	if len(f) != 0 {
+		t.Errorf("go install with no module builds the local package — expected no finding, got %d", len(f))
+	}
+}
+
+// --- variable package tokens (no FP) ---
+
+func TestGL022_VariablePackageToken_NoFinding(t *testing.T) {
+	for _, line := range []string{
+		"yum install -y $PKG",
+		"dnf install ${PKG}",
+		"zypper install $PKG",
+		"go install $TOOL",
+		"apt-get install -y $PKG",
+		"pip install ${PACKAGE}",
+	} {
+		if got := checkPMLine(line, "test.yml", 1, 1); got != nil {
+			t.Errorf("expected no finding for variable package token %q, got %+v", line, got)
+		}
+	}
+}
+
+func TestGL022_VariableNotPackageToken_StillFlagged(t *testing.T) {
+	// The package (cargo-audit) is a literal; the variable is only a flag value.
+	f := findings022(t, `
+build:
+  script:
+    - cargo install cargo-audit --root $HOME/.local
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding when only a flag value is a variable, got %d", len(f))
+	}
+}
+
 // --- update commands ---
 
 func TestGL022_ComposerUpdate(t *testing.T) {

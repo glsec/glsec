@@ -9,3 +9,7 @@ build:
     - npm install -g @angular/cli
     - apt-get install -y jq
     - composer require guzzlehttp/guzzle --no-interaction
+    - yum install -y httpd
+    - dnf install -y nginx
+    - zypper install -y curl
+    - go install golang.org/x/tools/cmd/goimports@latest
