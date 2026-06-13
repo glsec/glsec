@@ -42,6 +42,7 @@ func (r *gl051) Check(doc *yaml.Node, file string) []finding.Finding {
 		for _, key := range []string{"before_script", "after_script"} {
 			findings = append(findings, gl051CheckScripts(parser.FindKey(def, key), file, "", key, patterns)...)
 		}
+		findings = append(findings, gl051CheckScripts(hookScriptNode(def), file, "", "hooks:pre_get_sources_script", patterns)...)
 	}
 
 	parser.EachJob(doc, func(nameNode *yaml.Node, jobNode *yaml.Node) {
@@ -51,6 +52,7 @@ func (r *gl051) Check(doc *yaml.Node, file string) []finding.Finding {
 		for _, key := range []string{"script", "before_script", "after_script"} {
 			findings = append(findings, gl051CheckScripts(parser.FindKey(jobNode, key), file, job, key, patterns)...)
 		}
+		findings = append(findings, gl051CheckScripts(hookScriptNode(jobNode), file, job, "hooks:pre_get_sources_script", patterns)...)
 		findings = append(findings, gl051CheckEnvironment(parser.FindKey(jobNode, "environment"), file, job, patterns)...)
 	})
 

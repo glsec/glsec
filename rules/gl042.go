@@ -72,6 +72,9 @@ func (r *gl042) Check(doc *yaml.Node, file string) []finding.Finding {
 				findings = append(findings, checkTLSLines(node, file, "")...)
 			}
 		}
+		if h := hookScriptNode(def); h != nil {
+			findings = append(findings, checkTLSLines(h, file, "")...)
+		}
 	}
 
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
@@ -82,6 +85,9 @@ func (r *gl042) Check(doc *yaml.Node, file string) []finding.Finding {
 			if node := parser.FindKey(job, key); node != nil {
 				findings = append(findings, checkTLSLines(node, file, name.Value)...)
 			}
+		}
+		if h := hookScriptNode(job); h != nil {
+			findings = append(findings, checkTLSLines(h, file, name.Value)...)
 		}
 	})
 

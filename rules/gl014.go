@@ -29,8 +29,13 @@ func (r *gl014) Check(doc *yaml.Node, file string) []finding.Finding {
 			return
 		}
 		// Check all script blocks for an env dump line.
-		for _, key := range []string{"script", "before_script", "after_script"} {
-			scriptNode := parser.FindKey(job, key)
+		scriptNodes := []*yaml.Node{
+			parser.FindKey(job, "script"),
+			parser.FindKey(job, "before_script"),
+			parser.FindKey(job, "after_script"),
+			hookScriptNode(job),
+		}
+		for _, scriptNode := range scriptNodes {
 			if scriptNode == nil || scriptNode.Kind != yaml.SequenceNode {
 				continue
 			}

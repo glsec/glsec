@@ -62,6 +62,11 @@ func Run(doc *yaml.Node, file string, binPath string) []finding.Finding {
 				}
 			}
 		}
+		if node := hooksScriptNode(def); node != nil {
+			if lines := extractLines(node); len(lines) > 0 {
+				blocks = append(blocks, scriptBlock{jobName: "default.hooks:pre_get_sources_script", lines: lines})
+			}
+		}
 	}
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
 		for _, key := range []string{"script", "before_script", "after_script"} {
@@ -69,6 +74,11 @@ func Run(doc *yaml.Node, file string, binPath string) []finding.Finding {
 				if lines := extractLines(node); len(lines) > 0 {
 					blocks = append(blocks, scriptBlock{jobName: name.Value, lines: lines})
 				}
+			}
+		}
+		if node := hooksScriptNode(job); node != nil {
+			if lines := extractLines(node); len(lines) > 0 {
+				blocks = append(blocks, scriptBlock{jobName: name.Value, lines: lines})
 			}
 		}
 	})
@@ -158,6 +168,17 @@ func mapSeverity(level string) finding.Severity {
 	default:
 		return finding.Info
 	}
+}
+
+// hooksScriptNode returns the hooks:pre_get_sources_script sequence node for a
+// job or default: mapping, or nil. These commands run on the runner before the
+// repository is cloned and are valid shell to lint.
+func hooksScriptNode(container *yaml.Node) *yaml.Node {
+	hooks := parser.FindKey(container, "hooks")
+	if hooks == nil {
+		return nil
+	}
+	return parser.FindKey(hooks, "pre_get_sources_script")
 }
 
 // extractLines builds a flat slice of script lines with their YAML line numbers

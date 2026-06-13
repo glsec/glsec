@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
-	"github.com/glsec/glsec/internal/parser"
 	"gopkg.in/yaml.v3"
 )
 
@@ -24,32 +23,12 @@ var (
 
 func (r *gl004) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
-	mapping := parser.Unwrap(doc)
-
-	for _, key := range []string{"before_script", "after_script"} {
-		if node := parser.FindKey(mapping, key); node != nil {
-			findings = append(findings, scanScriptForToken(node, file)...)
-		}
-	}
-	if def := parser.FindKey(mapping, "default"); def != nil {
-		for _, key := range []string{"before_script", "after_script"} {
-			if node := parser.FindKey(def, key); node != nil {
-				findings = append(findings, scanScriptForToken(node, file)...)
-			}
-		}
-	}
-
-	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
-		for _, key := range []string{"script", "before_script", "after_script"} {
-			if node := parser.FindKey(job, key); node != nil {
-				for _, f := range scanScriptForToken(node, file) {
-					f.Job = name.Value
-					findings = append(findings, f)
-				}
-			}
+	EachScriptBlock(doc, file, func(node *yaml.Node, file, job string) {
+		for _, f := range scanScriptForToken(node, file) {
+			f.Job = job
+			findings = append(findings, f)
 		}
 	})
-
 	return findings
 }
 
