@@ -99,6 +99,7 @@ Gates bypassed, runners untrusted, or downstream pipelines outside access contro
 | [GL009](rules/GL009.md) | `warn`  | Overly broad OIDC `id_tokens` audience (GitLab ≥ 15.7) |
 | [GL017](rules/GL017.md) | `warn`  | Deploy/publish job has no `tags:` — can run on any runner including untrusted self-hosted |
 | [GL043](rules/GL043.md) | `warn`  | Unanchored regex on user-controlled variable in `rules:if` — prefix match can be bypassed by crafting a matching value |
+| [GL071](rules/GL071.md) | `warn`  | Manual approval gate before a production deploy without `allow_failure: false` — optional by default, so the pipeline can deploy without it being triggered |
 | [GL055](rules/GL055.md) | `warn`  | `DOCKER_HOST` points at the host Docker socket (`/var/run/docker.sock`) — full control of the runner's Docker daemon |
 
 ---

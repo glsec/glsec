@@ -1,0 +1,21 @@
+stages:
+  - build
+  - approve
+  - deploy
+
+build_app:
+  stage: build
+  script:
+    - make build
+
+approve_prod:
+  stage: approve
+  when: manual
+  script:
+    - echo "approved"
+
+deploy_prod:
+  stage: deploy
+  environment: production
+  script:
+    - ./deploy.sh
