@@ -38,14 +38,24 @@ func IsDeployLikeJob(jobName string, job *yaml.Node) bool {
 	return false
 }
 
+// hookScriptNode returns the hooks:pre_get_sources_script sequence node for a
+// job or default: mapping, or nil. These commands run on the runner before the
+// repository is cloned, so they are script lines that security rules must scan.
+func hookScriptNode(container *yaml.Node) *yaml.Node {
+	hooks := parser.FindKey(container, "hooks")
+	if hooks == nil {
+		return nil
+	}
+	return parser.FindKey(hooks, "pre_get_sources_script")
+}
+
 // CollectJobScriptLines returns all scalar script lines from a job's
-// before_script, script, and after_script sections.
+// before_script, script, after_script, and hooks:pre_get_sources_script sections.
 func CollectJobScriptLines(job *yaml.Node) []*yaml.Node {
 	var lines []*yaml.Node
-	for _, key := range []string{"before_script", "script", "after_script"} {
-		node := parser.FindKey(job, key)
+	appendScalars := func(node *yaml.Node) {
 		if node == nil || node.Kind != yaml.SequenceNode {
-			continue
+			return
 		}
 		for _, item := range node.Content {
 			if item.Kind == yaml.ScalarNode {
@@ -53,47 +63,57 @@ func CollectJobScriptLines(job *yaml.Node) []*yaml.Node {
 			}
 		}
 	}
+	for _, key := range []string{"before_script", "script", "after_script"} {
+		appendScalars(parser.FindKey(job, key))
+	}
+	appendScalars(hookScriptNode(job))
 	return lines
 }
 
-// EachScriptLine visits every scalar script line in the document, calling fn
-// for each. It covers global before/after_script, default: before/after_script,
-// and all job-level script/before_script/after_script sections.
-// fn receives the line node, the file path, and the job name (empty for
-// global and default: sections).
-func EachScriptLine(doc *yaml.Node, file string, fn func(line *yaml.Node, file, job string)) {
+// EachScriptBlock visits every script *sequence node* in the document: global
+// before/after_script, default: before/after_script + hooks:pre_get_sources_script,
+// and each job's script/before_script/after_script + hooks:pre_get_sources_script.
+// fn receives the sequence node, the file path, and the job name (empty for
+// global and default: blocks). hooks: is not a valid top-level keyword, so it is
+// only visited under default: and jobs.
+func EachScriptBlock(doc *yaml.Node, file string, fn func(node *yaml.Node, file, job string)) {
 	mapping := parser.Unwrap(doc)
 
-	for _, key := range []string{"before_script", "after_script"} {
-		if node := parser.FindKey(mapping, key); node != nil && node.Kind == yaml.SequenceNode {
-			for _, item := range node.Content {
-				if item.Kind == yaml.ScalarNode {
-					fn(item, file, "")
-				}
-			}
+	visit := func(node *yaml.Node, job string) {
+		if node != nil && node.Kind == yaml.SequenceNode {
+			fn(node, file, job)
 		}
+	}
+
+	for _, key := range []string{"before_script", "after_script"} {
+		visit(parser.FindKey(mapping, key), "")
 	}
 
 	if def := parser.FindKey(mapping, "default"); def != nil {
 		for _, key := range []string{"before_script", "after_script"} {
-			if node := parser.FindKey(def, key); node != nil && node.Kind == yaml.SequenceNode {
-				for _, item := range node.Content {
-					if item.Kind == yaml.ScalarNode {
-						fn(item, file, "")
-					}
-				}
-			}
+			visit(parser.FindKey(def, key), "")
 		}
+		visit(hookScriptNode(def), "")
 	}
 
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
 		for _, key := range []string{"script", "before_script", "after_script"} {
-			if node := parser.FindKey(job, key); node != nil && node.Kind == yaml.SequenceNode {
-				for _, item := range node.Content {
-					if item.Kind == yaml.ScalarNode {
-						fn(item, file, name.Value)
-					}
-				}
+			visit(parser.FindKey(job, key), name.Value)
+		}
+		visit(hookScriptNode(job), name.Value)
+	})
+}
+
+// EachScriptLine visits every scalar script line in the document, calling fn
+// for each. It covers the same blocks as EachScriptBlock (global, default:, and
+// per-job script sections, including hooks:pre_get_sources_script).
+// fn receives the line node, the file path, and the job name (empty for
+// global and default: sections).
+func EachScriptLine(doc *yaml.Node, file string, fn func(line *yaml.Node, file, job string)) {
+	EachScriptBlock(doc, file, func(node *yaml.Node, file, job string) {
+		for _, item := range node.Content {
+			if item.Kind == yaml.ScalarNode {
+				fn(item, file, job)
 			}
 		}
 	})

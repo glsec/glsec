@@ -25,7 +25,7 @@ func (r *gl016) SetTrustedHosts(hosts []string) {
 }
 
 var (
-	httpURLRe     = regexp.MustCompile(`https?://[^\s'"]+`)
+	httpURLRe      = regexp.MustCompile(`https?://[^\s'"]+`)
 	curlWgetHTTPRe = regexp.MustCompile(`\b(?:curl|wget)\b[^|]*\bhttp://`)
 	privateRanges  []*net.IPNet
 	internalTLDs   = []string{".local", ".internal", ".corp", ".lan"}
@@ -55,13 +55,16 @@ func (r *gl016) Check(doc *yaml.Node, file string) []finding.Finding {
 		}
 	}
 
-	// default: variables / before_script / after_script
+	// default: variables / before_script / after_script / hooks
 	if def := parser.FindKey(mapping, "default"); def != nil {
 		findings = append(findings, r.checkVariablesHTTP(parser.FindKey(def, "variables"), file)...)
 		for _, key := range []string{"before_script", "after_script"} {
 			if node := parser.FindKey(def, key); node != nil {
 				findings = append(findings, r.checkScriptHTTP(node, file)...)
 			}
+		}
+		if h := hookScriptNode(def); h != nil {
+			findings = append(findings, r.checkScriptHTTP(h, file)...)
 		}
 	}
 
@@ -77,6 +80,12 @@ func (r *gl016) Check(doc *yaml.Node, file string) []finding.Finding {
 					f.Job = name.Value
 					findings = append(findings, f)
 				}
+			}
+		}
+		if h := hookScriptNode(job); h != nil {
+			for _, f := range r.checkScriptHTTP(h, file) {
+				f.Job = name.Value
+				findings = append(findings, f)
 			}
 		}
 	})

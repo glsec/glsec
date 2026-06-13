@@ -37,8 +37,13 @@ func (r *gl021) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
 
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
-		for _, key := range []string{"before_script", "script", "after_script"} {
-			node := parser.FindKey(job, key)
+		scriptNodes := []*yaml.Node{
+			parser.FindKey(job, "before_script"),
+			parser.FindKey(job, "script"),
+			parser.FindKey(job, "after_script"),
+			hookScriptNode(job),
+		}
+		for _, node := range scriptNodes {
 			if node == nil || node.Kind != yaml.SequenceNode {
 				continue
 			}
