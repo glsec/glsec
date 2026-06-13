@@ -25,6 +25,8 @@ var (
 	processSubstRe = regexp.MustCompile(`<\s*\(\s*(?:curl|wget)\b`)
 	// cmdSubstRe matches command substitution passed to a shell: bash -c "$(curl ...)".
 	cmdSubstRe = regexp.MustCompile(`\b(?:bash|sh)\b.*\$\(\s*(?:curl|wget)\b`)
+	// downloadSubstRe matches a curl/wget inside a command substitution: $(curl ...) or $(wget ...).
+	downloadSubstRe = regexp.MustCompile(`\$\(\s*(?:curl|wget)\b`)
 	// base64ExecRe matches a base64-decode piped straight into a shell, e.g.
 	// echo "…" | base64 -d | bash — an inline-obfuscated payload with no download tool.
 	base64ExecRe = regexp.MustCompile(`\bbase64\s+(?:-d|--decode)\b.*\|\s*(?:` + shellAlt + `)\b`)
@@ -82,6 +84,11 @@ func isDownloadExecute(line string) bool {
 	}
 	// Command/process substitution intentionally lives inside quotes, so match the raw line.
 	if processSubstRe.MatchString(line) || cmdSubstRe.MatchString(line) {
+		return true
+	}
+	// A download inside $(…) piped into an interpreter, e.g. echo "$(curl …)" | bash.
+	// The quoted substitution is stripped above, so match the raw line.
+	if downloadSubstRe.MatchString(line) && pipeToShellRe.MatchString(line) {
 		return true
 	}
 	if downloadToolRe.MatchString(stripped) && pipeToShellRe.MatchString(stripped) {

