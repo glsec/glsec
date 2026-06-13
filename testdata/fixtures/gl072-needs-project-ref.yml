@@ -1,0 +1,22 @@
+stages:
+  - build
+
+consume_mutable:
+  stage: build
+  needs:
+    - project: my-group/my-project
+      job: build
+      ref: main
+      artifacts: true
+  script:
+    - ./use-artifacts.sh
+
+consume_variable:
+  stage: build
+  needs:
+    - project: my-group/my-project
+      job: build
+      ref: $ARTIFACTS_DOWNLOAD_REF
+      artifacts: true
+  script:
+    - ./use-artifacts.sh
