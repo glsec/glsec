@@ -1,0 +1,30 @@
+stages:
+  - deploy
+
+deploy_or_true:
+  stage: deploy
+  script:
+    - ./deploy.sh
+  rules:
+    - if: '$CI_COMMIT_BRANCH || true'
+
+deploy_tautology:
+  stage: deploy
+  script:
+    - ./deploy.sh
+  rules:
+    - if: '$CI_PIPELINE_SOURCE != "schedule" || $CI_PIPELINE_SOURCE == "schedule"'
+
+deploy_const_compare:
+  stage: deploy
+  script:
+    - ./deploy.sh
+  rules:
+    - if: '"true" == "true"'
+
+deploy_safe:
+  stage: deploy
+  script:
+    - ./deploy.sh
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
