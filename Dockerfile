@@ -3,7 +3,12 @@ WORKDIR /build
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o glsec ./cmd/glsec
+ARG VERSION=dev
+ARG COMMIT=none
+ARG DATE=unknown
+RUN CGO_ENABLED=0 GOOS=linux go build \
+    -ldflags="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE}" \
+    -o glsec ./cmd/glsec
 
 FROM alpine:3.19
 RUN apk add --no-cache ca-certificates
