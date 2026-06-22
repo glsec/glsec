@@ -20,6 +20,10 @@ var prodKeywords = []string{
 	"production", "prod", "live", "staging",
 }
 
+// prodTiers are environment:deployment_tier values treated as production-like,
+// matching the name-keyword semantics (which also include staging).
+var prodTiers = []string{"production", "staging"}
+
 func (r *gl013) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
 
@@ -29,7 +33,10 @@ func (r *gl013) Check(doc *yaml.Node, file string) []finding.Finding {
 			return
 		}
 		envName := extractEnvName(envNode)
-		if envName == "" || !isProdEnv(envName) {
+		tier := extractDeploymentTier(envNode)
+		byName := envName != "" && isProdEnv(envName)
+		byTier := isProdTier(tier)
+		if !byName && !byTier {
 			return
 		}
 		if hasExecutionRestriction(job) {
@@ -39,17 +46,55 @@ func (r *gl013) Check(doc *yaml.Node, file string) []finding.Finding {
 			RuleID:   "GL013",
 			Severity: finding.Warn,
 			Job:      name.Value,
-			Message: fmt.Sprintf(
-				"job %q deploys to %q but has no rules: or only: clause — any branch can trigger this deployment",
-				name.Value, envName,
-			),
-			File: file,
-			Line: envNode.Line,
-			Col:  envNode.Column,
+			Message:  gl013Message(name.Value, envName, tier, byName),
+			File:     file,
+			Line:     envNode.Line,
+			Col:      envNode.Column,
 		})
 	})
 
 	return findings
+}
+
+// gl013Message preserves the original name-based wording and adds a
+// deployment_tier-based variant when the job is only flagged via its tier.
+func gl013Message(job, envName, tier string, byName bool) string {
+	if byName {
+		return fmt.Sprintf(
+			"job %q deploys to %q but has no rules: or only: clause — any branch can trigger this deployment",
+			job, envName,
+		)
+	}
+	if envName != "" {
+		return fmt.Sprintf(
+			"job %q deploys to %q (deployment_tier: %s) but has no rules: or only: clause — any branch can trigger this deployment",
+			job, envName, tier,
+		)
+	}
+	return fmt.Sprintf(
+		"job %q has deployment_tier: %s but no rules: or only: clause — any branch can trigger this deployment",
+		job, tier,
+	)
+}
+
+func extractDeploymentTier(node *yaml.Node) string {
+	if node.Kind != yaml.MappingNode {
+		return ""
+	}
+	if v := parser.FindKey(node, "deployment_tier"); v != nil && v.Kind == yaml.ScalarNode {
+		return v.Value
+	}
+	return ""
+}
+
+func isProdTier(tier string) bool {
+	lower := strings.ToLower(tier)
+	for _, t := range prodTiers {
+		if lower == t {
+			return true
+		}
+	}
+	return false
 }
 
 func extractEnvName(node *yaml.Node) string {

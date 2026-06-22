@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -125,6 +126,75 @@ deploy-prod:
 `)
 	if len(f) != 0 {
 		t.Errorf("expected no finding for mapping env with rules:, got %d", len(f))
+	}
+}
+
+func TestGL013_DeploymentTierProduction(t *testing.T) {
+	f := findings013(t, `
+deploy:
+  environment:
+    name: my-app
+    deployment_tier: production
+  script: [./deploy.sh]
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for deployment_tier: production with non-prod name, got %d", len(f))
+	}
+	if !strings.Contains(f[0].Message, "deployment_tier: production") {
+		t.Errorf("expected tier in message, got %q", f[0].Message)
+	}
+}
+
+func TestGL013_DeploymentTierStaging(t *testing.T) {
+	f := findings013(t, `
+deploy:
+  environment:
+    name: eu-west
+    deployment_tier: staging
+  script: [./deploy.sh]
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for deployment_tier: staging, got %d", len(f))
+	}
+}
+
+func TestGL013_DeploymentTierWithRules_NoFinding(t *testing.T) {
+	f := findings013(t, `
+deploy:
+  environment:
+    name: my-app
+    deployment_tier: production
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  script: [./deploy.sh]
+`)
+	if len(f) != 0 {
+		t.Errorf("expected no finding when rules: present, got %d", len(f))
+	}
+}
+
+func TestGL013_DeploymentTierDevelopment_NoFinding(t *testing.T) {
+	f := findings013(t, `
+deploy:
+  environment:
+    name: my-app
+    deployment_tier: development
+  script: [./deploy.sh]
+`)
+	if len(f) != 0 {
+		t.Errorf("expected no finding for deployment_tier: development with non-prod name, got %d", len(f))
+	}
+}
+
+func TestGL013_DeploymentTierNoName(t *testing.T) {
+	f := findings013(t, `
+deploy:
+  environment:
+    deployment_tier: production
+  script: [./deploy.sh]
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for tier-only environment, got %d", len(f))
 	}
 }
 
