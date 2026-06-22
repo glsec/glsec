@@ -32,6 +32,7 @@ Secrets hardcoded, leaked through logs, or forwarded to unintended consumers.
 | [GL062](rules/GL062.md) | `warn`  | `printenv` or bare `env` dumps every variable (including secrets) to the job log |
 | [GL068](rules/GL068.md) | `warn`  | `set -x` / xtrace in a script traces expanded commands — including secrets — to the job log |
 | [GL070](rules/GL070.md) | `warn`  | Static cloud service-account credential in script (`gcloud --key-file`, `aws_secret_access_key`, `az --password`) — prefer keyless OIDC |
+| [GL073](rules/GL073.md) | `warn`/`error` | Artifacts exposed to unauthenticated users (`artifacts:public: true` / `artifacts:access: all`) — `error` when an exposed path looks sensitive |
 
 ---
 
