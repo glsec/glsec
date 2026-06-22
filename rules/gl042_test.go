@@ -82,6 +82,34 @@ build:
 			wantHits: 1,
 		},
 		{
+			name: "pip --trusted-host",
+			yaml: `build:
+  script:
+    - pip install --trusted-host pypi.org somepkg`,
+			wantHits: 1,
+		},
+		{
+			name: "pip3 --trusted-host",
+			yaml: `build:
+  script:
+    - pip3 install --trusted-host pypi.org --trusted-host files.pythonhosted.org somepkg`,
+			wantHits: 1,
+		},
+		{
+			name: "python -m pip --trusted-host",
+			yaml: `build:
+  script:
+    - python -m pip install --trusted-host pypi.org somepkg`,
+			wantHits: 1,
+		},
+		{
+			name: "pip install without --trusted-host — safe",
+			yaml: `build:
+  script:
+    - pip install somepkg`,
+			wantHits: 0,
+		},
+		{
 			name: "curl without -k — safe",
 			yaml: `build:
   script:
