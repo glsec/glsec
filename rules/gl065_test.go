@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -67,6 +68,41 @@ build:
 `, []string{"docker.io"})
 	if len(f) != 0 {
 		t.Errorf("expected no finding when docker.io is allowlisted, got %d", len(f))
+	}
+}
+
+func TestGL065_DockerHubAliasesFoldToDockerIO(t *testing.T) {
+	for _, ref := range []string{
+		"index.docker.io/library/node:20",
+		"registry-1.docker.io/library/node:20",
+	} {
+		f := findings065(t, "build:\n  image: "+ref+"\n", []string{"docker.io"})
+		if len(f) != 0 {
+			t.Errorf("expected no finding for %q when docker.io is allowlisted, got %d", ref, len(f))
+		}
+	}
+}
+
+func TestGL065_DockerHubAliasNamespacePrefix(t *testing.T) {
+	clean := findings065(t, `
+build:
+  image: index.docker.io/myorg/app:1.0.0
+`, []string{"docker.io/myorg"})
+	if len(clean) != 0 {
+		t.Errorf("expected no finding for index.docker.io/myorg under docker.io/myorg, got %d", len(clean))
+	}
+}
+
+func TestGL065_DockerHubAliasStillFlaggedWhenNotAllowed(t *testing.T) {
+	f := findings065(t, `
+build:
+  image: index.docker.io/library/node:20
+`, []string{"registry.example.com"})
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for index.docker.io when only registry.example.com allowed, got %d", len(f))
+	}
+	if got := f[0].Message; !strings.Contains(got, `registry "docker.io"`) {
+		t.Errorf("expected folded host docker.io in message, got %q", got)
 	}
 }
 
