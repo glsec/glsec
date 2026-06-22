@@ -1,0 +1,20 @@
+stages:
+  - build
+
+expose_access_all:
+  stage: build
+  script:
+    - make build
+  artifacts:
+    access: all
+    paths:
+      - dist/
+
+expose_secret:
+  stage: build
+  script:
+    - make build
+  artifacts:
+    access: all
+    paths:
+      - config/credentials.json
