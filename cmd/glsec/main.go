@@ -148,6 +148,7 @@ func main() {
 
 	rules.GL016.SetTrustedHosts(cfg.TrustedHosts)
 	rules.GL065.SetAllowedRegistries(cfg.AllowedRegistries)
+	rules.GL075.SetAllowedIncludeSources(cfg.AllowedIncludeSources)
 
 	// --gitlab-version flag overrides the config file value.
 	gitlabVersionStr := cfg.GitLabVersion

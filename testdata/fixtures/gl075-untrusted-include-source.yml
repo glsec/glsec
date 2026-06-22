@@ -1,0 +1,13 @@
+include:
+  - project: other-group/evil-ci
+    ref: 3fa92b1c4d5e6f7081920a1b2c3d4e5f60718293
+    file: /pipeline.yml
+  - project: my-group/ci-templates
+    ref: a1b2c3d4e5f60718293a4b5c6d7e8f9001122334
+    file: /build.yml
+  - component: gitlab.com/untrusted-org/scan@1.0.0
+
+build:
+  stage: build
+  script:
+    - make
