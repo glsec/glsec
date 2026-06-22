@@ -53,6 +53,7 @@ Mutable references that allow silent substitution of images, templates, or packa
 | [GL064](rules/GL064.md) | `warn`  | `include: component:` path is one edit from a popular component under a different namespace (typosquat) |
 | [GL069](rules/GL069.md) | `warn`  | Package signature/auth verification bypassed (`apt --allow-unauthenticated`, `[trusted=yes]`, `apk --allow-untrusted`) |
 | [GL072](rules/GL072.md) | `warn`  | `needs:project` cross-project artifact download with a mutable branch or variable `ref:` — the consumed artifacts can be poisoned |
+| [GL075](rules/GL075.md) | `warn`  | `include:` source (project / component / remote) not on the opt-in `allowed_include_sources` allowlist — provenance check complementing GL003's pinning |
 
 ---
 
@@ -140,7 +141,7 @@ A subset of rules is mapped to [OWASP ASVS](https://owasp.org/www-project-applic
 
 | ASVS requirement | Rules |
 |---|---|
-| V14.2.1 — Components from trusted, maintained sources | GL003, GL011, GL016, GL065, GL067 |
+| V14.2.1 — Components from trusted, maintained sources | GL003, GL011, GL016, GL065, GL067, GL075 |
 | V14.2.2 — Components up to date and pinned | GL001, GL022, GL023, GL026, GL041 |
 | V14.2.3 — Dependencies verified for integrity | GL020 |
 | V14.3.1 — Pipeline config protected from modification | GL003, GL019 |

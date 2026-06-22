@@ -68,6 +68,11 @@ type Config struct {
 	// host/namespace prefixes). When non-empty, GL065 flags any image/service
 	// from a registry not on the list. Empty disables the check.
 	AllowedRegistries []string `yaml:"allowed_registries"`
+	// AllowedIncludeSources is an opt-in allowlist of include sources (project
+	// namespaces, component hosts/paths, or remote hosts). When non-empty, GL075
+	// flags any include:project / include:component / include:remote whose source
+	// is not on the list. Empty disables the check.
+	AllowedIncludeSources []string `yaml:"allowed_include_sources"`
 	// ShellCheck holds optional ShellCheck integration settings.
 	ShellCheck ShellCheckConfig `yaml:"shellcheck"`
 	// Strict makes warn findings count as errors for exit-code purposes.
@@ -155,17 +160,18 @@ func parse(data []byte, path string) (*Config, error) {
 }
 
 var allowedTopLevelKeys = map[string]bool{
-	"rules":              true,
-	"min-severity":       true,
-	"gitlab-version":     true,
-	"trusted-hosts":      true,
-	"allowed_registries": true,
-	"strict":             true,
-	"no-exit-codes":      true,
-	"exclude_paths":      true,
-	"owasp":              true,
-	"owasp_exclude":      true,
-	"shellcheck":         true,
+	"rules":                   true,
+	"min-severity":            true,
+	"gitlab-version":          true,
+	"trusted-hosts":           true,
+	"allowed_registries":      true,
+	"allowed_include_sources": true,
+	"strict":                  true,
+	"no-exit-codes":           true,
+	"exclude_paths":           true,
+	"owasp":                   true,
+	"owasp_exclude":           true,
+	"shellcheck":              true,
 }
 
 func checkUnknownKeys(mapping *yaml.Node, path string) error {
