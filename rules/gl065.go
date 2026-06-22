@@ -105,15 +105,29 @@ func registryHostUnresolvable(ref string) bool {
 	return strings.Contains(first, "$")
 }
 
+// dockerHubAliases are the canonical Docker Hub hostnames that all refer to the
+// same registry as the implicit "docker.io"; they are folded together so an
+// allowlisted "docker.io" matches images pulled via any of them.
+var dockerHubAliases = map[string]bool{
+	"docker.io":            true,
+	"index.docker.io":      true,
+	"registry-1.docker.io": true,
+}
+
 // normalizeRegistry returns the registry host and the reference normalized to
 // carry an explicit, lowercased host. The first path segment is the registry
 // only when it contains a "." or ":port" (or is "localhost"); bare images
-// (node:20) and Docker Hub namespaces (myorg/app) resolve to docker.io.
+// (node:20) and Docker Hub namespaces (myorg/app) resolve to docker.io. The
+// canonical Docker Hub hostnames (index.docker.io, registry-1.docker.io) are
+// folded to docker.io.
 func normalizeRegistry(ref string) (host, normalized string) {
 	if i := strings.Index(ref, "/"); i >= 0 {
 		first := ref[:i]
 		if first == "localhost" || strings.ContainsAny(first, ".:") {
 			host = strings.ToLower(first)
+			if dockerHubAliases[host] {
+				return "docker.io", "docker.io" + ref[i:]
+			}
 			return host, host + ref[i:]
 		}
 	}
