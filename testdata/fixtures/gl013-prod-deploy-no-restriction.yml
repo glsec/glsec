@@ -15,3 +15,12 @@ deploy-production:
   environment: production
   script:
     - ./deploy.sh
+
+deploy-eu-west:
+  stage: deploy
+  image: alpine:3.19
+  environment:
+    name: eu-west
+    deployment_tier: production
+  script:
+    - ./deploy.sh
