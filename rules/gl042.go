@@ -47,6 +47,11 @@ var tlsChecks = []tlsCheck{
 		re:   regexp.MustCompile(`\bnpm\s+(?:config\s+set|set)\s+strict-ssl\s+false\b`),
 		msg:  `npm strict-ssl disabled via "npm config set" — TLS certificate verification disabled for all subsequent npm commands`,
 	},
+	{
+		tool: "pip",
+		re:   regexp.MustCompile(`\bpip[0-9]*\b.*--trusted-host\b`),
+		msg:  `pip invoked with "--trusted-host" — TLS certificate verification disabled for the package index, allowing a man-in-the-middle to swap package contents; add the proxy CA to the system trust store instead`,
+	},
 }
 
 // gitSSLNoVerifyRe matches GIT_SSL_NO_VERIFY=true/1 as a variable export or inline env.

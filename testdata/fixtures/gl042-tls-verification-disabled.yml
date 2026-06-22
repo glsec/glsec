@@ -1,3 +1,4 @@
 build:
   script:
     - curl -k https://internal.example.com/artifact.tar.gz
+    - pip install --trusted-host pypi.org somepkg
