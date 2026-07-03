@@ -129,6 +129,8 @@ Misconfigured CI settings that expand the attack surface or leak build context.
 | [GL058](rules/GL058.md) | `warn`  | `docker run --network host` removes network isolation from the runner host |
 | [GL060](rules/GL060.md) | `error`/`warn` | `docker run -v` mounts a sensitive host path (`/`, `/etc`, `/root`, `/proc`, `/sys`, …) breaking isolation |
 | [GL061](rules/GL061.md) | `warn`  | `docker run --pid host` shares the host PID namespace — container can see/signal all host processes |
+| [GL076](rules/GL076.md) | `warn`  | `docker run --security-opt seccomp=unconfined` / `apparmor=unconfined` disables kernel-level confinement — widens the escape surface without `--privileged` |
+| [GL077](rules/GL077.md) | `warn`  | `docker run --ipc host` shares the host IPC namespace — container can read host shared memory and signal host processes |
 | [GL063](rules/GL063.md) | `warn`  | `chmod` grants world-writable permissions (`777`, `a+w`, `o+w`) — TOCTOU risk on shared runners |
 
 ---
