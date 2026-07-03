@@ -30,9 +30,14 @@ var secretPatterns = []secretPattern{
 	{"PEM private key", regexp.MustCompile(`-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY`)},
 	{"GitHub PAT", regexp.MustCompile(`^ghp_[A-Za-z0-9]{36,}$`)},
 	{"GitHub fine-grained PAT", regexp.MustCompile(`^github_pat_[A-Za-z0-9_]{82,}$`)},
+	// Covers both the fixed-length ghs_<36+> form and the newer stateless
+	// ghs_<APPID>_<JWT> form (the JWT segment adds '.' separators).
+	{"GitHub App installation token", regexp.MustCompile(`^ghs_[A-Za-z0-9_.-]{36,}$`)},
 	{"Slack token", regexp.MustCompile(`^xox[baprs]-[A-Za-z0-9-]{10,}$`)},
 	{"OpenAI API key", regexp.MustCompile(`^sk-[A-Za-z0-9]{32,}$`)},
 	{"OpenAI project API key", regexp.MustCompile(`^sk-proj-[A-Za-z0-9_-]{80,}$`)},
+	{"OpenAI service/admin API key", regexp.MustCompile(`^sk-(?:svcacct|admin|service)-[A-Za-z0-9_-]{20,}$`)},
+	{"OpenAI realtime client secret", regexp.MustCompile(`^ek_[0-9a-f]{32,}$`)},
 }
 
 func (r *gl006) Check(doc *yaml.Node, file string) []finding.Finding {

@@ -67,6 +67,45 @@ build:
 	}
 }
 
+func TestGL006_GitHubAppInstallationToken(t *testing.T) {
+	f := findings006(t, `
+variables:
+  GHS_FIXED: "ghs_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  GHS_STATELESS: "ghs_1234_eyJhbGciOiJSUzI1NiJ9.eyJpc3MiOiIxMjM0In0.c2lnbmF0dXJlLXBhcnQtaGVyZQ"
+build:
+  script: [echo ok]
+`)
+	if len(f) != 2 {
+		t.Fatalf("expected 2 findings for ghs_ tokens, got %d", len(f))
+	}
+}
+
+func TestGL006_OpenAIServiceAdminKey(t *testing.T) {
+	f := findings006(t, `
+variables:
+  SVC: "sk-svcacct-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  ADMIN: "sk-admin-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  SERVICE: "sk-service-myapp-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+build:
+  script: [echo ok]
+`)
+	if len(f) != 3 {
+		t.Fatalf("expected 3 findings for OpenAI service/admin keys, got %d", len(f))
+	}
+}
+
+func TestGL006_OpenAIRealtimeSecret(t *testing.T) {
+	f := findings006(t, `
+variables:
+  RT: "ek_0123456789abcdef0123456789abcdef"
+build:
+  script: [echo ok]
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for OpenAI realtime client secret, got %d", len(f))
+	}
+}
+
 func TestGL006_SlackToken(t *testing.T) {
 	f := findings006(t, `
 variables:
