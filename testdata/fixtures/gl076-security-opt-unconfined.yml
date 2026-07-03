@@ -1,0 +1,7 @@
+# docker run --security-opt seccomp=unconfined disables kernel-level confinement.
+test:
+  image: docker:26.0
+  services:
+    - docker:26.0-dind
+  script:
+    - docker run --security-opt seccomp=unconfined myimage ./run.sh

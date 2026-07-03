@@ -153,7 +153,7 @@ glsec --new-only --baseline base.json .gitlab-ci.yml
 
 ## Rules
 
-75 rules across 8 [OWASP CI/CD security categories](https://owasp.org/www-project-top-10-ci-cd-security-risks/):
+77 rules across 8 [OWASP CI/CD security categories](https://owasp.org/www-project-top-10-ci-cd-security-risks/):
 
 | Category | OWASP | Rules |
 |----------|-------|-------|
@@ -162,7 +162,7 @@ glsec --new-only --baseline base.json .gitlab-ci.yml
 | Component & Third-Party Integrity | CICD-SEC-4, CICD-SEC-8 | GL002, GL007, GL015, GL025, GL041, GL044, GL051, GL053, GL065, GL067 |
 | Supply Chain Integrity | CICD-SEC-9 | GL020, GL045 |
 | Pipeline Flow & Access Control | CICD-SEC-1, CICD-SEC-5 | GL008, GL009, GL012, GL013, GL017, GL019, GL034, GL039, GL043, GL055, GL071, GL074 |
-| Insecure Configuration | CICD-SEC-7 | GL024, GL028, GL030, GL031, GL042, GL047, GL048, GL049, GL050, GL054, GL056, GL057, GL058, GL060, GL061, GL063 |
+| Insecure Configuration | CICD-SEC-7 | GL024, GL028, GL030, GL031, GL042, GL047, GL048, GL049, GL050, GL054, GL056, GL057, GL058, GL060, GL061, GL063, GL076, GL077 |
 
 → **[Full rule reference with descriptions and examples](docs/rules.md)**
 
