@@ -34,12 +34,15 @@ build:
 }
 
 func TestGL006_AWSAccessKey(t *testing.T) {
-	f := findings006(t, `
+	// Split literal so the contiguous key never appears in source (push protection);
+	// a non-"example" value so the placeholder allowlist does not suppress it.
+	key := "AKIA" + strings.Repeat("Q", 16)
+	f := findings006(t, fmt.Sprintf(`
 variables:
-  AWS_SECRET: "AKIAIOSFODNN7EXAMPLE"
+  AWS_SECRET: "%s"
 build:
   script: [echo ok]
-`)
+`, key))
 	if len(f) != 1 {
 		t.Fatalf("expected 1 finding for AWS key, got %d", len(f))
 	}
@@ -83,14 +86,20 @@ build:
 }
 
 func TestGL006_OpenAIServiceAdminKey(t *testing.T) {
-	f := findings006(t, `
+	// wm is the OpenAI watermark, split so the marker is not contiguous in source.
+	wm := "T3Blbk" + "FJ"
+	body := strings.Repeat("a", 12)
+	svc := "sk-svcacct-" + body + wm + body
+	admin := "sk-admin-" + body + wm + body
+	service := "sk-service-myapp-" + body + wm + body
+	f := findings006(t, fmt.Sprintf(`
 variables:
-  SVC: "sk-svcacct-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-  ADMIN: "sk-admin-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-  SERVICE: "sk-service-myapp-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  SVC: "%s"
+  ADMIN: "%s"
+  SERVICE: "%s"
 build:
   script: [echo ok]
-`)
+`, svc, admin, service))
 	if len(f) != 3 {
 		t.Fatalf("expected 3 findings for OpenAI service/admin keys, got %d", len(f))
 	}
@@ -109,12 +118,13 @@ build:
 }
 
 func TestGL006_AWSTemporaryKey(t *testing.T) {
-	f := findings006(t, `
+	key := "ASIA" + strings.Repeat("Q", 16)
+	f := findings006(t, fmt.Sprintf(`
 variables:
-  AWS_SESSION: "ASIAIOSFODNN7EXAMPLE"
+  AWS_SESSION: "%s"
 build:
   script: [echo ok]
-`)
+`, key))
 	if len(f) != 1 {
 		t.Fatalf("expected 1 finding for AWS STS session key, got %d", len(f))
 	}
@@ -216,14 +226,89 @@ build:
 }
 
 func TestGL006_OpenAIProjectKey(t *testing.T) {
+	wm := "T3Blbk" + "FJ"
+	key := "sk-proj-" + strings.Repeat("a", 40) + wm + strings.Repeat("a", 40)
+	f := findings006(t, fmt.Sprintf(`
+variables:
+  OPENAI_KEY: "%s"
+build:
+  script: [echo ok]
+`, key))
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for OpenAI project API key, got %d", len(f))
+	}
+}
+
+func TestGL006_OpenAIKeyRequiresWatermark(t *testing.T) {
+	wm := "T3Blbk" + "FJ"
+	withMark := "sk-" + strings.Repeat("a", 20) + wm + strings.Repeat("a", 20)
+	f := findings006(t, fmt.Sprintf(`
+variables:
+  OPENAI_KEY: "%s"
+build:
+  script: [echo ok]
+`, withMark))
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for watermarked OpenAI key, got %d", len(f))
+	}
+	if !strings.Contains(f[0].Message, "OpenAI") {
+		t.Errorf("expected OpenAI in message, got %q", f[0].Message)
+	}
+
+	// Same shape without the watermark must not be reported as an OpenAI key.
+	noMark := "sk-" + strings.Repeat("a", 44)
+	f = findings006(t, fmt.Sprintf(`
+variables:
+  NOT_OPENAI: "%s"
+build:
+  script: [echo ok]
+`, noMark))
+	if len(f) != 0 {
+		t.Fatalf("expected no finding for sk- value without watermark, got %d", len(f))
+	}
+}
+
+func TestGL006_AnthropicKeyNotOpenAI(t *testing.T) {
 	f := findings006(t, `
 variables:
-  OPENAI_KEY: "sk-proj-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  ANTHROPIC_KEY: "sk-ant-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 build:
   script: [echo ok]
 `)
 	if len(f) != 1 {
-		t.Fatalf("expected 1 finding for OpenAI project API key, got %d", len(f))
+		t.Fatalf("expected 1 finding for Anthropic key, got %d", len(f))
+	}
+	if !strings.Contains(f[0].Message, "Anthropic") {
+		t.Errorf("expected Anthropic in message, got %q", f[0].Message)
+	}
+}
+
+func TestGL006_OpenRouterKeyNotOpenAI(t *testing.T) {
+	f := findings006(t, `
+variables:
+  OPENROUTER_KEY: "sk-or-v1-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+build:
+  script: [echo ok]
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for OpenRouter key, got %d", len(f))
+	}
+	if !strings.Contains(f[0].Message, "OpenRouter") {
+		t.Errorf("expected OpenRouter in message, got %q", f[0].Message)
+	}
+}
+
+func TestGL006_PlaceholderExample_NoFinding(t *testing.T) {
+	f := findings006(t, `
+variables:
+  AWS_SECRET: "AKIAIOSFODNN7EXAMPLE"
+  GL_PAT: "glpat-EXAMPLEEXAMPLEEXAMPLE12"
+  PLACEHOLDER: "glpat-your-token-here-000000"
+build:
+  script: [echo ok]
+`)
+	if len(f) != 0 {
+		t.Fatalf("expected no findings for placeholder values, got %d", len(f))
 	}
 }
 
@@ -291,13 +376,14 @@ build:
 }
 
 func TestGL006_MultipleSecrets(t *testing.T) {
-	f := findings006(t, `
+	aws := "AKIA" + strings.Repeat("Q", 16)
+	f := findings006(t, fmt.Sprintf(`
 variables:
   PAT: "glpat-xxxxxxxxxxxxxxxxxxxx"
-  AWS: "AKIAIOSFODNN7EXAMPLE"
+  AWS: "%s"
 build:
   script: [echo ok]
-`)
+`, aws))
 	if len(f) != 2 {
 		t.Fatalf("expected 2 findings, got %d", len(f))
 	}
