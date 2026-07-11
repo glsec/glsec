@@ -73,6 +73,7 @@ User-controlled inputs and unversioned component references that allow malicious
 | [GL053](rules/GL053.md) | `warn`  | Missing or unrestricted `workflow:rules` — pipelines run for every event, including untrusted fork merge requests |
 | [GL065](rules/GL065.md) | `warn`  | `image:`/`services:` from a registry not in the opt-in `allowed_registries` allowlist |
 | [GL067](rules/GL067.md) | `warn`  | `SECURE_ANALYZERS_PREFIX` (or `*_ANALYZER_IMAGE`) repoints managed security scanners off `registry.gitlab.com` |
+| [GL078](rules/GL078.md) | `warn`  | Invisible / bidirectional Unicode control characters (Trojan Source) — rendered file can differ from what runs |
 
 ---
 
