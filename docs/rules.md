@@ -54,6 +54,7 @@ Mutable references that allow silent substitution of images, templates, or packa
 | [GL069](rules/GL069.md) | `warn`  | Package signature/auth verification bypassed (`apt --allow-unauthenticated`, `[trusted=yes]`, `apk --allow-untrusted`) |
 | [GL072](rules/GL072.md) | `warn`  | `needs:project` cross-project artifact download with a mutable branch or variable `ref:` — the consumed artifacts can be poisoned |
 | [GL075](rules/GL075.md) | `warn`  | `include:` source (project / component / remote) not on the opt-in `allowed_include_sources` allowlist — provenance check complementing GL003's pinning |
+| [GL079](rules/GL079.md) | `warn`  | `pip install --extra-index-url` adds a public index alongside the default — highest version wins across indexes, enabling dependency confusion |
 
 ---
 
