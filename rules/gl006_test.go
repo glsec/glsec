@@ -298,6 +298,50 @@ build:
 	}
 }
 
+func TestGL006_AnchoredFormatsExtra(t *testing.T) {
+	// Values are assembled from split literals + strings.Repeat so no contiguous
+	// token ever appears in source — otherwise GitHub push protection blocks the
+	// push (fixtures cannot split literals, so these formats live in unit tests).
+	a := func(n int) string { return strings.Repeat("a", n) }
+	cases := map[string]struct {
+		value string
+		label string
+	}{
+		"age":         {"AGE-SECRET-KEY-1" + strings.Repeat("A", 58), "age secret key"},
+		"clojars":     {"CLOJARS_" + a(60), "Clojars deploy token"},
+		"dynatrace":   {"dt0c01." + strings.Repeat("A", 24) + "." + strings.Repeat("B", 64), "Dynatrace token"},
+		"duffel":      {"duffel_" + "test_" + a(43), "Duffel API token"},
+		"frameio":     {"fio-u-" + a(64), "Frame.io token"},
+		"terraform":   {a(14) + ".atlasv1." + strings.Repeat("b", 70), "Terraform Cloud token"},
+		"linear":      {"lin_" + "api_" + a(40), "Linear API key"},
+		"nrjs":        {"NRJS-" + a(19), "New Relic browser key"},
+		"pulumi":      {"pul-" + a(40), "Pulumi access token"},
+		"shippo":      {"shippo_" + "live_" + a(40), "Shippo API token"},
+		"slack":       {"https://hooks.slack.com/services/T" + strings.Repeat("A", 9) + "/B" + strings.Repeat("A", 9) + "/" + a(24), "Slack webhook URL"},
+		"alibaba":     {"LTAI" + a(20), "Alibaba access key ID"},
+		"packagist":   {"packagist_" + "uip_" + a(68), "Private Packagist token"},
+		"adobe":       {"p8e-" + a(32), "Adobe client secret"},
+		"flutterwave": {"FLW" + "SECK_TEST-" + a(32) + "-X", "Flutterwave secret key"},
+	}
+	for name, tc := range cases {
+		tc := tc
+		t.Run(name, func(t *testing.T) {
+			f := findings006(t, fmt.Sprintf(`
+variables:
+  TOKEN: "%s"
+build:
+  script: [echo ok]
+`, tc.value))
+			if len(f) != 1 {
+				t.Fatalf("expected 1 finding for %s, got %d", name, len(f))
+			}
+			if !strings.Contains(f[0].Message, tc.label) {
+				t.Errorf("expected %q in message, got %q", tc.label, f[0].Message)
+			}
+		})
+	}
+}
+
 func TestGL006_PlaceholderExample_NoFinding(t *testing.T) {
 	f := findings006(t, `
 variables:

@@ -63,6 +63,21 @@ var secretPatterns = []secretPattern{
 	{"New Relic API key", regexp.MustCompile(`^NRAK-[A-Z0-9]{27}$`)},
 	{"Shopify access token", regexp.MustCompile(`^shp(?:ss|at|ca|pa)_[a-fA-F0-9]{32}$`)},
 	{"Brevo (Sendinblue) API key", regexp.MustCompile(`^xkeysib-[a-f0-9]{64}-[A-Za-z0-9]{16}$`)},
+	{"age secret key", regexp.MustCompile(`^AGE-SECRET-KEY-1[0-9A-Z]{50,}$`)},
+	{"Clojars deploy token", regexp.MustCompile(`^CLOJARS_[a-z0-9]{60}$`)},
+	{"Dynatrace token", regexp.MustCompile(`^dt0c01\.[A-Z0-9]{24}\.[A-Z0-9]{64}$`)},
+	{"Duffel API token", regexp.MustCompile(`^duffel_(?:test|live)_[A-Za-z0-9_-]{40,}$`)},
+	{"Frame.io token", regexp.MustCompile(`^fio-u-[A-Za-z0-9_-]{64}$`)},
+	{"Terraform Cloud token", regexp.MustCompile(`[A-Za-z0-9]{14}\.atlasv1\.[A-Za-z0-9_-]{60,}`)},
+	{"Linear API key", regexp.MustCompile(`^lin_api_[A-Za-z0-9]{40}$`)},
+	{"New Relic browser key", regexp.MustCompile(`^NRJS-[a-f0-9]{19}$`)},
+	{"Pulumi access token", regexp.MustCompile(`^pul-[a-f0-9]{40}$`)},
+	{"Shippo API token", regexp.MustCompile(`^shippo_(?:live|test)_[a-f0-9]{40}$`)},
+	{"Slack webhook URL", regexp.MustCompile(`^https://hooks\.slack\.com/services/T[A-Za-z0-9_]+/B[A-Za-z0-9_]+/[A-Za-z0-9_]{20,}$`)},
+	{"Alibaba access key ID", regexp.MustCompile(`^LTAI[A-Za-z0-9]{20}$`)},
+	{"Private Packagist token", regexp.MustCompile(`^packagist_[a-z]{3}_[a-f0-9]{68}$`)},
+	{"Adobe client secret", regexp.MustCompile(`^p8e-[a-z0-9]{32}$`)},
+	{"Flutterwave secret key", regexp.MustCompile(`^FLW(?:PUBK|SECK)_TEST-[a-h0-9]{32}-X$`)},
 }
 
 func (r *gl006) Check(doc *yaml.Node, file string) []finding.Finding {
