@@ -1,0 +1,27 @@
+stages:
+  - build
+  - deploy
+
+build-app:
+  stage: build
+  script:
+    - make build
+
+deploy-prod:
+  stage: deploy
+  script:
+    - ./deploy.sh production
+
+publish-artifacts:
+  stage: deploy
+  rules:
+    - when: on_success
+  script:
+    - ./publish.sh
+
+deploy-guarded:
+  stage: deploy
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push"'
+  script:
+    - ./deploy.sh
