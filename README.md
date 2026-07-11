@@ -221,7 +221,7 @@ glsec ships a [pre-commit](https://pre-commit.com/) hook so `.gitlab-ci.yml` iss
 ```yaml
 repos:
   - repo: https://github.com/glsec/glsec
-    rev: v1.9.0
+    rev: v1.10.0
     hooks:
       - id: glsec
 ```
@@ -312,13 +312,13 @@ If you need more control than the Catalog component offers, use the pre-built im
 glsec:
   stage: test
   image:
-    name: ghcr.io/glsec/glsec:1.9.0
+    name: ghcr.io/glsec/glsec:1.10.0
     entrypoint: [""]
   script:
     - glsec .gitlab-ci.yml
 ```
 
-The `entrypoint: [""]` override is required: the image sets `ENTRYPOINT ["glsec"]` for `docker run` convenience, which conflicts with GitLab Runner's shell wrapper. Pin to a specific tag (`1.9.0`, not `:latest`) for reproducible pipelines.
+The `entrypoint: [""]` override is required: the image sets `ENTRYPOINT ["glsec"]` for `docker run` convenience, which conflicts with GitLab Runner's shell wrapper. Pin to a specific tag (`1.10.0`, not `:latest`) for reproducible pipelines.
 
 ### GitLab CI — binary download
 
@@ -326,7 +326,7 @@ For pipelines that cannot pull from GHCR:
 
 ```yaml
 variables:
-  GLSEC_VERSION: "1.9.0"
+  GLSEC_VERSION: "1.10.0"
 
 glsec:
   stage: test
@@ -348,7 +348,7 @@ Publish findings to GitLab's Security Dashboard by emitting SARIF and exposing i
 glsec:
   stage: test
   image:
-    name: ghcr.io/glsec/glsec:1.9.0
+    name: ghcr.io/glsec/glsec:1.10.0
     entrypoint: [""]
   script:
     - glsec --format sarif .gitlab-ci.yml > glsec.sarif || true
@@ -367,7 +367,7 @@ Show findings **inline on merge request diffs** using GitLab's Code Quality widg
 glsec:
   stage: test
   image:
-    name: ghcr.io/glsec/glsec:1.9.0
+    name: ghcr.io/glsec/glsec:1.10.0
     entrypoint: [""]
   script:
     - glsec --format codeclimate .gitlab-ci.yml > gl-code-quality.json || true
