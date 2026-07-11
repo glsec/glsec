@@ -2,6 +2,7 @@ package rules
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
 	"github.com/glsec/glsec/internal/parser"
@@ -26,7 +27,17 @@ func (r *gl080) Check(doc *yaml.Node, file string) []finding.Finding {
 
 	var findings []finding.Finding
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
-		if !IsDeployLikeJob(name.Value, job) {
+		// Hidden jobs (names starting with ".") are templates GitLab never runs.
+		if strings.HasPrefix(name.Value, ".") {
+			return
+		}
+		// A job that pulls config in via extends: or a YAML merge (<<:) may
+		// inherit its guard from a base glsec does not resolve — skip it rather
+		// than report a guard that is present but invisible here.
+		if inheritsConfig(job) {
+			return
+		}
+		if !gl080Sensitive(name.Value, job) {
 			return
 		}
 		// The production-environment-without-rules case is already covered by
@@ -49,6 +60,69 @@ func (r *gl080) Check(doc *yaml.Node, file string) []finding.Finding {
 		})
 	})
 	return findings
+}
+
+// gl080DeployKeywords are the narrow set of job/stage name fragments that
+// reliably indicate a deployment or external publish. Broader terms used
+// elsewhere (push, upload, dist, ship, migrate) matched too many build/cache
+// jobs in real pipelines, so they are intentionally excluded here.
+var gl080DeployKeywords = []string{"deploy", "rollout", "release", "publish", "provision"}
+
+// gl080NotDeployKeywords mark jobs that only build, test, or package artifacts —
+// e.g. a "release build" or "docdist" is not a deployment. They veto a keyword
+// match so "windows-release-build" or "coverage-review" is not flagged.
+var gl080NotDeployKeywords = []string{
+	"build", "compile", "test", "lint", "cache", "coverage",
+	"check", "package", "bundle", "prepare", "validate", "audit",
+	"scan", "review", "dist",
+}
+
+// gl080Sensitive reports whether a job deploys or publishes to an external
+// target. An environment: (other than a teardown/stop job) is the strongest
+// signal; otherwise a narrow deploy keyword in the job or stage name, unless a
+// build/test/package keyword vetoes it.
+func gl080Sensitive(name string, job *yaml.Node) bool {
+	if env := parser.FindKey(job, "environment"); env != nil && !envActionStop(env) && extractEnvName(env) != "" {
+		return true
+	}
+	hay := strings.ToLower(name) + " " + jobStageName(job)
+	for _, neg := range gl080NotDeployKeywords {
+		if strings.Contains(hay, neg) {
+			return false
+		}
+	}
+	for _, kw := range gl080DeployKeywords {
+		if strings.Contains(hay, kw) {
+			return true
+		}
+	}
+	return false
+}
+
+// inheritsConfig reports whether a job draws configuration from a base via
+// extends: or a YAML merge key (<<:), which glsec does not resolve.
+func inheritsConfig(job *yaml.Node) bool {
+	return parser.FindKey(job, "extends") != nil || parser.FindKey(job, "<<") != nil
+}
+
+func jobStageName(job *yaml.Node) string {
+	if s := parser.FindKey(job, "stage"); s != nil && s.Kind == yaml.ScalarNode {
+		return strings.ToLower(s.Value)
+	}
+	return ""
+}
+
+// envActionStop reports whether an environment: block is a teardown job
+// (environment:action: stop), which tears an environment down rather than
+// deploying to it and carries little source-guard risk.
+func envActionStop(env *yaml.Node) bool {
+	if env.Kind != yaml.MappingNode {
+		return false
+	}
+	if a := parser.FindKey(env, "action"); a != nil && a.Kind == yaml.ScalarNode {
+		return a.Value == "stop"
+	}
+	return false
 }
 
 type guardState int
@@ -89,9 +163,12 @@ func jobGuardState(job *yaml.Node) guardState {
 		if item.Kind != yaml.MappingNode {
 			continue
 		}
+		// A rules item may pull its condition in from an anchor via a YAML merge
+		// (<<:), which glsec does not resolve — treat that as a real condition.
 		if parser.FindKey(item, "if") != nil ||
 			parser.FindKey(item, "changes") != nil ||
-			parser.FindKey(item, "exists") != nil {
+			parser.FindKey(item, "exists") != nil ||
+			parser.FindKey(item, "<<") != nil {
 			return guardEffective
 		}
 	}
