@@ -16,3 +16,11 @@ deploy-job:
     - echo $CI_COMMIT_MESSAGE
   script:
     - ./deploy.sh $CI_MERGE_REQUEST_SOURCE_BRANCH_NAME
+
+greet-job:
+  stage: test
+  image: alpine:3.19
+  script:
+    - echo hi $CI_COMMIT_AUTHOR
+    - ./greet.sh $GITLAB_USER_NAME
+    - ./mail.sh $GITLAB_USER_EMAIL
