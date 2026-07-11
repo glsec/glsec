@@ -146,6 +146,107 @@ deploy-prod:
 	}
 }
 
+func TestGL080_HiddenJobSkipped(t *testing.T) {
+	f := findings080(t, `
+.deploy_template:
+  stage: deploy
+  script:
+    - ./deploy.sh
+`)
+	if len(f) != 0 {
+		t.Errorf("expected no finding for a hidden (.-prefixed) template job, got %d", len(f))
+	}
+}
+
+func TestGL080_ExtendsSkipped(t *testing.T) {
+	f := findings080(t, `
+deploy-prod:
+  extends: .deploy_base
+  stage: deploy
+  script:
+    - ./deploy.sh
+`)
+	if len(f) != 0 {
+		t.Errorf("expected no finding for a job using extends: (guard may be inherited), got %d", len(f))
+	}
+}
+
+func TestGL080_MergeKeySkipped(t *testing.T) {
+	f := findings080(t, `
+.base: &base
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push"'
+
+deploy-prod:
+  <<: *base
+  stage: deploy
+  script:
+    - ./deploy.sh
+`)
+	if len(f) != 0 {
+		t.Errorf("expected no finding for a job using a <<: merge (guard may be inherited), got %d", len(f))
+	}
+}
+
+func TestGL080_MergeInsideRulesItemEffective(t *testing.T) {
+	f := findings080(t, `
+.if-main: &if-main
+  if: '$CI_COMMIT_BRANCH == "main"'
+
+deploy-prod:
+  stage: deploy
+  rules:
+    - <<: *if-main
+      variables:
+        X: "1"
+  script:
+    - ./deploy.sh
+`)
+	if len(f) != 0 {
+		t.Errorf("expected no finding when a rules item merges its condition via <<:, got %d", len(f))
+	}
+}
+
+func TestGL080_EmptyEnvironmentNotSensitive(t *testing.T) {
+	f := findings080(t, `
+run-tests:
+  stage: test
+  environment:
+  script:
+    - make test
+`)
+	if len(f) != 0 {
+		t.Errorf("expected no finding for an empty environment: on a test job, got %d", len(f))
+	}
+}
+
+func TestGL080_EnvironmentStopNotSensitive(t *testing.T) {
+	f := findings080(t, `
+stop-review:
+  stage: deploy
+  environment:
+    name: review/$CI_COMMIT_REF_SLUG
+    action: stop
+  script:
+    - ./teardown.sh
+`)
+	if len(f) != 0 {
+		t.Errorf("expected no finding for an environment teardown (action: stop) job, got %d", len(f))
+	}
+}
+
+func TestGL080_ReleaseBuildNotFlagged(t *testing.T) {
+	f := findings080(t, `
+windows-release-build:
+  stage: build
+  script:
+    - cmake --build . --config Release
+`)
+	if len(f) != 0 {
+		t.Errorf("expected no finding for a release *build* job, got %d", len(f))
+	}
+}
+
 func TestGL080_MultipleJobs(t *testing.T) {
 	f := findings080(t, `
 build-app:
