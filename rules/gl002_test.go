@@ -141,6 +141,50 @@ build:
 	}
 }
 
+func TestGL002_CommitAuthor(t *testing.T) {
+	f := findings002(t, `
+build:
+  script:
+    - echo hi $CI_COMMIT_AUTHOR
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for CI_COMMIT_AUTHOR, got %d", len(f))
+	}
+}
+
+func TestGL002_GitlabUserName(t *testing.T) {
+	f := findings002(t, `
+build:
+  script:
+    - ./greet.sh $GITLAB_USER_NAME
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for GITLAB_USER_NAME, got %d", len(f))
+	}
+}
+
+func TestGL002_GitlabUserEmail(t *testing.T) {
+	f := findings002(t, `
+build:
+  script:
+    - ./mail.sh $GITLAB_USER_EMAIL
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for GITLAB_USER_EMAIL, got %d", len(f))
+	}
+}
+
+func TestGL002_GitlabUserLoginNotFlagged(t *testing.T) {
+	f := findings002(t, `
+build:
+  script:
+    - echo $GITLAB_USER_LOGIN
+`)
+	if len(f) != 0 {
+		t.Errorf("expected no findings for GITLAB_USER_LOGIN (restricted charset), got %d", len(f))
+	}
+}
+
 func TestGL002_SafeVariable(t *testing.T) {
 	f := findings002(t, `
 build:

@@ -29,6 +29,14 @@ var userControlledVars = []string{
 	"CI_MERGE_REQUEST_TITLE",
 	"CI_MERGE_REQUEST_DESCRIPTION",
 	"CI_PIPELINE_NAME",
+	// Identity variables controlled directly by an untrusted contributor via
+	// the commit or their own account profile. In fork MR pipelines these
+	// reflect the external MR author. CI_COMMIT_AUTHOR is "Name <email>" taken
+	// verbatim from the commit; GITLAB_USER_NAME/EMAIL are user-editable.
+	// GITLAB_USER_LOGIN is deliberately excluded — its charset is restricted.
+	"CI_COMMIT_AUTHOR",
+	"GITLAB_USER_NAME",
+	"GITLAB_USER_EMAIL",
 }
 
 // userVarRe matches any user-controlled variable reference ($VAR or ${VAR})
