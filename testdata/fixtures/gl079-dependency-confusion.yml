@@ -1,0 +1,15 @@
+stages:
+  - build
+
+install-deps:
+  stage: build
+  image: python:3.12
+  script:
+    - pip install internal-lib --extra-index-url https://pypi.org/simple
+    - python -m pip install foo --extra-index-url=https://pypi.org/simple
+
+safe-install:
+  stage: build
+  image: python:3.12
+  script:
+    - pip install --index-url https://pypi.internal.example.com/simple -r requirements.txt
