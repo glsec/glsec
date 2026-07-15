@@ -10,7 +10,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
     -ldflags="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE}" \
     -o glsec ./cmd/glsec
 
-FROM alpine:3.19
+FROM alpine:3.21
 RUN apk add --no-cache ca-certificates
 COPY --from=builder /build/glsec /usr/local/bin/glsec
 ENTRYPOINT ["glsec"]
