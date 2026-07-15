@@ -2,7 +2,7 @@
 
 ## Dev environment
 
-**Requirements:** Go 1.21+
+**Requirements:** Go 1.25+
 
 ```sh
 git clone https://github.com/glsec/glsec.git

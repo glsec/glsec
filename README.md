@@ -25,7 +25,7 @@ ERROR  .gitlab-ci.yml:3   GL003  project include "company/templates" missing "re
 
 ## Install
 
-**Go install (requires Go 1.21+):**
+**Go install (requires Go 1.25+):**
 
 ```sh
 go install github.com/glsec/glsec@latest
