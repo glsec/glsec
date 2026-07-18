@@ -8,6 +8,8 @@ on:
 permissions:
   contents: read
   packages: write
+  id-token: write # keyless signing of the provenance via Sigstore
+  attestations: write # write the attestation to the GitHub attestations API
 
 jobs:
   docker:
@@ -40,6 +42,7 @@ jobs:
         run: echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
       - uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        id: build
         with:
           context: .
           push: true
@@ -49,3 +52,10 @@ jobs:
             DATE=${{ steps.date.outputs.date }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Attest image provenance
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-name: ghcr.io/glsec/glsec
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
