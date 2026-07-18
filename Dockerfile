@@ -11,6 +11,6 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
     -o glsec ./cmd/glsec
 
 FROM alpine:3.24
-RUN apk add --no-cache ca-certificates
 COPY --from=builder /build/glsec /usr/local/bin/glsec
+USER 65532:65532
 ENTRYPOINT ["glsec"]
