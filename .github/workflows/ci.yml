@@ -98,6 +98,31 @@ jobs:
           ignore-unfixed: true
           exit-code: "1"
 
+  hadolint:
+    name: Security (hadolint)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Lint Dockerfile
+        run: docker run --rm -i hadolint/hadolint:v2.14.0 hadolint - < Dockerfile
+
+  dockle:
+    name: Security (dockle)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Build image
+        run: docker build -t glsec:ci .
+      - name: Lint image
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            goodwithtech/dockle:v0.4.15 --exit-code 1 --exit-level warn glsec:ci
+
   validate-fixtures:
     name: Validate GitLab CI fixtures
     runs-on: ubuntu-latest
