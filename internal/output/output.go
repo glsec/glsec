@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"io"
 	"strings"
@@ -21,11 +22,12 @@ const (
 	FormatSARIF       Format = "sarif"
 	FormatCodeClimate Format = "codeclimate"
 	FormatTable       Format = "table"
+	FormatJUnit       Format = "junit"
 )
 
 func ParseFormat(s string) (Format, bool) {
 	switch Format(s) {
-	case FormatText, FormatJSON, FormatSARIF, FormatCodeClimate, FormatTable:
+	case FormatText, FormatJSON, FormatSARIF, FormatCodeClimate, FormatTable, FormatJUnit:
 		return Format(s), true
 	default:
 		return "", false
@@ -43,6 +45,8 @@ func Write(w io.Writer, format Format, findings []finding.Finding, jobCount int,
 		return writeSARIF(w, findings, nil, nil, nil, nil, nil, nil)
 	case FormatCodeClimate:
 		return writeCodeClimate(w, findings)
+	case FormatJUnit:
+		return writeJUnit(w, findings)
 	case FormatTable:
 		return writeTable(w, findings, jobCount, isTTY)
 	default:
@@ -450,4 +454,81 @@ func writeCodeClimate(w io.Writer, findings []finding.Finding) error {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	return enc.Encode(out)
+}
+
+type junitTestsuites struct {
+	XMLName  xml.Name         `xml:"testsuites"`
+	Name     string           `xml:"name,attr"`
+	Tests    int              `xml:"tests,attr"`
+	Failures int              `xml:"failures,attr"`
+	Suites   []junitTestsuite `xml:"testsuite"`
+}
+
+type junitTestsuite struct {
+	Name     string          `xml:"name,attr"`
+	Tests    int             `xml:"tests,attr"`
+	Failures int             `xml:"failures,attr"`
+	Cases    []junitTestcase `xml:"testcase"`
+}
+
+type junitTestcase struct {
+	Name      string        `xml:"name,attr"`
+	Classname string        `xml:"classname,attr"`
+	Failure   *junitFailure `xml:"failure,omitempty"`
+}
+
+type junitFailure struct {
+	Message string `xml:"message,attr"`
+	Type    string `xml:"type,attr"`
+	Text    string `xml:",chardata"`
+}
+
+// writeJUnit renders findings as a JUnit XML report, consumed by GitLab's
+// pipeline Tests tab and MR test widget via artifacts:reports:junit (all tiers).
+// Each finding becomes one failing test case; a clean run emits a single
+// passing case so the widget is not empty.
+func writeJUnit(w io.Writer, findings []finding.Finding) error {
+	suite := junitTestsuite{Name: "glsec"}
+	if len(findings) == 0 {
+		suite.Tests = 1
+		suite.Cases = []junitTestcase{{Name: "glsec: no findings", Classname: "glsec"}}
+	} else {
+		for _, f := range findings {
+			loc := f.File
+			if f.Line > 0 {
+				loc = fmt.Sprintf("%s:%d", f.File, f.Line)
+			}
+			name := f.RuleID
+			if f.Job != "" {
+				name = fmt.Sprintf("%s in job %q", f.RuleID, f.Job)
+			}
+			suite.Cases = append(suite.Cases, junitTestcase{
+				Name:      name,
+				Classname: loc,
+				Failure: &junitFailure{
+					Message: f.Message,
+					Type:    string(f.Severity),
+					Text:    fmt.Sprintf("%s [%s] %s", f.RuleID, f.Severity, loc),
+				},
+			})
+		}
+		suite.Tests = len(findings)
+		suite.Failures = len(findings)
+	}
+	root := junitTestsuites{
+		Name:     "glsec",
+		Tests:    suite.Tests,
+		Failures: suite.Failures,
+		Suites:   []junitTestsuite{suite},
+	}
+	if _, err := io.WriteString(w, xml.Header); err != nil {
+		return err
+	}
+	enc := xml.NewEncoder(w)
+	enc.Indent("", "  ")
+	if err := enc.Encode(root); err != nil {
+		return err
+	}
+	_, err := io.WriteString(w, "\n")
+	return err
 }

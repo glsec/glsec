@@ -73,6 +73,9 @@ glsec --format sarif .gitlab-ci.yml > gl.sarif
 # Code Climate output for GitLab Code Quality (inline MR findings, works on all tiers)
 glsec --format codeclimate .gitlab-ci.yml > gl-code-quality.json
 
+# JUnit output for the pipeline Tests tab / MR test widget (works on all tiers)
+glsec --format junit .gitlab-ci.yml > glsec-junit.xml
+
 # treat warn findings as hard failures (exit 1)
 glsec --strict .gitlab-ci.yml
 

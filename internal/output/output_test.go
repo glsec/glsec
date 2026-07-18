@@ -3,6 +3,7 @@ package output
 import (
 	"bytes"
 	"encoding/json"
+	"encoding/xml"
 	"strings"
 	"testing"
 
@@ -214,6 +215,7 @@ func TestParseFormat(t *testing.T) {
 		{"json", FormatJSON, true},
 		{"sarif", FormatSARIF, true},
 		{"codeclimate", FormatCodeClimate, true},
+		{"junit", FormatJUnit, true},
 		{"xml", "", false},
 		{"", "", false},
 	} {
@@ -221,6 +223,50 @@ func TestParseFormat(t *testing.T) {
 		if ok != tc.ok || got != tc.want {
 			t.Errorf("ParseFormat(%q) = (%q, %v), want (%q, %v)", tc.in, got, ok, tc.want, tc.ok)
 		}
+	}
+}
+
+func TestWriteJUnit(t *testing.T) {
+	var buf bytes.Buffer
+	if err := Write(&buf, FormatJUnit, testFindingsWithJob, 3, false, false); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	var root junitTestsuites
+	if err := xml.Unmarshal(buf.Bytes(), &root); err != nil {
+		t.Fatalf("output is not valid XML: %v\n%s", err, buf.String())
+	}
+	if root.Tests != 3 || root.Failures != 3 {
+		t.Errorf("root tests/failures = %d/%d, want 3/3", root.Tests, root.Failures)
+	}
+	if len(root.Suites) != 1 || len(root.Suites[0].Cases) != 3 {
+		t.Fatalf("expected 1 suite with 3 cases, got %d suites", len(root.Suites))
+	}
+	c := root.Suites[0].Cases[0]
+	if c.Failure == nil {
+		t.Fatal("expected a failure element on the first case")
+	}
+	if !strings.Contains(c.Name, "GL024") || !strings.Contains(c.Name, "phpmd") {
+		t.Errorf("case name %q should mention the rule and job", c.Name)
+	}
+	if c.Classname != ".gitlab-ci.yml:52" {
+		t.Errorf("classname = %q, want .gitlab-ci.yml:52", c.Classname)
+	}
+}
+
+func TestWriteJUnit_Empty(t *testing.T) {
+	var buf bytes.Buffer
+	if err := Write(&buf, FormatJUnit, nil, 4, false, false); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	var root junitTestsuites
+	if err := xml.Unmarshal(buf.Bytes(), &root); err != nil {
+		t.Fatalf("output is not valid XML: %v", err)
+	}
+	if root.Failures != 0 {
+		t.Errorf("clean run should report 0 failures, got %d", root.Failures)
+	}
+	if len(root.Suites) != 1 || len(root.Suites[0].Cases) != 1 || root.Suites[0].Cases[0].Failure != nil {
+		t.Error("clean run should emit a single passing case")
 	}
 }
 
