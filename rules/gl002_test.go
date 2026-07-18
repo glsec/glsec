@@ -130,6 +130,17 @@ build:
 	}
 }
 
+func TestGL002_CommitTagMessage(t *testing.T) {
+	f := findings002(t, `
+release:
+  script:
+    - echo Releasing $CI_COMMIT_TAG_MESSAGE
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for CI_COMMIT_TAG_MESSAGE, got %d", len(f))
+	}
+}
+
 func TestGL002_PipelineName(t *testing.T) {
 	f := findings002(t, `
 build:
