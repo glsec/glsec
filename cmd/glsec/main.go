@@ -562,6 +562,9 @@ func collectFindings(doc *parser.Document, path string, cfg *config.Config, gitl
 		if !rules.EnabledFor(rule.ID(), gitlabVersion) {
 			continue
 		}
+		if doc.ComponentTemplate && !rules.AppliesToComponentTemplate(rule.ID()) {
+			continue
+		}
 		for _, f := range rule.Check(doc.Root, path) {
 			f = cfg.ApplySeverity(f)
 			if !cfg.AboveMinSeverity(f) {

@@ -97,6 +97,11 @@ glsec --recursive .
 # also pick up CI configs with non-default names/paths during a recursive scan
 glsec --recursive --name '*.gitlab-ci.yml' --name 'ci/pipeline.yml' .
 
+# CI/CD Catalog component templates are detected automatically: a `spec:` header
+# followed by the template body. glsec lints the body and skips whole-pipeline
+# rules that a template fragment cannot satisfy.
+glsec templates/my-component.yml
+
 # aligned table view, easier to scan when there are many findings
 glsec --format table .gitlab-ci.yml
 
