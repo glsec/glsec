@@ -5,15 +5,41 @@ on:
     tags:
       - "v*"
 
-permissions:
-  contents: write
-  id-token: write # keyless signing of the provenance via Sigstore
-  attestations: write # write the attestation to the GitHub attestations API
+# Default-deny at the workflow level; each job grants only what it needs.
+permissions: {}
 
 jobs:
+  # Tags can point at any commit, so require that CI actually passed for it
+  # before publishing. Fails closed: no completed CI run means no release.
+  gate:
+    name: Require green CI
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    steps:
+      - name: Require a successful CI run for this commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          conclusion=$(gh api \
+            "repos/$REPO/actions/workflows/ci.yml/runs?head_sha=$SHA&status=completed" \
+            --jq '.workflow_runs[0].conclusion // "none"')
+          echo "CI conclusion for $SHA: $conclusion"
+          if [ "$conclusion" != "success" ]; then
+            echo "::error::Release blocked: CI for $SHA concluded '$conclusion', expected 'success'. Wait for CI to finish, then re-run this workflow."
+            exit 1
+          fi
+
   release:
     name: Release
+    needs: gate
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the GitHub release
+      id-token: write # keyless signing of the provenance via Sigstore
+      attestations: write # write the attestation to the GitHub attestations API
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
