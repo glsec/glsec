@@ -1,7 +1,10 @@
 package parser
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 
 	"gopkg.in/yaml.v3"
@@ -10,6 +13,11 @@ import (
 type Document struct {
 	Root *yaml.Node
 	File string
+	// ComponentTemplate reports whether the file is a GitLab CI/CD component
+	// template (a `spec:` document, then the template body). Root then points at
+	// the body. Such a file is a fragment, so rules that reason about a whole
+	// pipeline do not apply to it.
+	ComponentTemplate bool
 }
 
 func ParseFile(path string) (*Document, error) {
@@ -21,15 +29,51 @@ func ParseFile(path string) (*Document, error) {
 }
 
 func Parse(data []byte, file string) (*Document, error) {
-	var root yaml.Node
-	if err := yaml.Unmarshal(data, &root); err != nil {
-		return nil, fmt.Errorf("parse %s: %w", file, err)
+	// Decode every document, not just the first: a CI/CD component template is a
+	// two-document stream (`spec:` inputs, then the template body).
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	var docs []*yaml.Node
+	for {
+		var n yaml.Node
+		err := dec.Decode(&n)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("parse %s: %w", file, err)
+		}
+		if n.Kind != 0 {
+			docs = append(docs, &n)
+		}
 	}
-	if root.Kind == 0 {
+	if len(docs) == 0 {
 		return nil, fmt.Errorf("%s: empty document", file)
 	}
-	ResolveReferences(&root)
-	return &Document{Root: &root, File: file}, nil
+
+	root := docs[0]
+	component := false
+	if len(docs) > 1 && hasSpecHeader(docs[0]) {
+		root = docs[1]
+		component = true
+	}
+	ResolveReferences(root)
+	return &Document{Root: root, File: file, ComponentTemplate: component}, nil
+}
+
+// hasSpecHeader reports whether a document is a component template's `spec:`
+// header. Only the key matters; its contents are input declarations, not CI
+// configuration, so there is nothing in them for the rules to check.
+func hasSpecHeader(doc *yaml.Node) bool {
+	mapping := Unwrap(doc)
+	if mapping.Kind != yaml.MappingNode {
+		return false
+	}
+	for i := 0; i+1 < len(mapping.Content); i += 2 {
+		if mapping.Content[i].Value == "spec" {
+			return true
+		}
+	}
+	return false
 }
 
 // MappingNode returns the top-level mapping node of the document.

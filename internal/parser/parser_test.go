@@ -117,3 +117,50 @@ func TestEachJob_LineNumbers(t *testing.T) {
 		}
 	})
 }
+
+func TestParse_ComponentTemplate(t *testing.T) {
+	doc, err := Parse([]byte(`spec:
+  inputs:
+    version:
+      default: "1.0.0"
+---
+scan-job:
+  script: [echo hi]
+`), "template.yml")
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if !doc.ComponentTemplate {
+		t.Error("expected the file to be detected as a component template")
+	}
+	m := doc.MappingNode()
+	if FindKey(m, "scan-job") == nil {
+		t.Error("expected the root to be the template body")
+	}
+	if FindKey(m, "spec") != nil {
+		t.Error("the spec header must not be the linted document")
+	}
+}
+
+func TestParse_PlainPipelineIsNotComponentTemplate(t *testing.T) {
+	doc, err := Parse([]byte("build:\n  script: [make]\n"), "ci.yml")
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if doc.ComponentTemplate {
+		t.Error("a single-document pipeline must not be treated as a component template")
+	}
+}
+
+func TestParse_MultiDocumentWithoutSpecUsesFirst(t *testing.T) {
+	doc, err := Parse([]byte("build:\n  script: [make]\n---\nother:\n  script: [x]\n"), "ci.yml")
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if doc.ComponentTemplate {
+		t.Error("multiple documents without a spec header are not a component template")
+	}
+	if FindKey(doc.MappingNode(), "build") == nil {
+		t.Error("expected the first document to be linted")
+	}
+}
