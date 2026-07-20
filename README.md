@@ -431,6 +431,10 @@ Severity mapping (glsec → Code Climate): `error` → `critical`, `warn` → `m
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## Security
+
+To report a vulnerability in glsec, see [SECURITY.md](SECURITY.md). It also documents the trust boundary, which is worth reading before filing: a missed or wrong finding is a normal bug, while glsec misbehaving on attacker-supplied input is not.
+
 ## License
 
 Apache 2.0
