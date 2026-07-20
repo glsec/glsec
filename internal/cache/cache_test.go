@@ -65,11 +65,11 @@ func TestKey_Deterministic(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	k1, err := Key("v1.0.0", "16.0", []string{f}, "", "", nil, nil, nil)
+	k1, err := Key("v1.0.0", "2026-01-01", "16.0", []string{f}, "", "", nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	k2, err := Key("v1.0.0", "16.0", []string{f}, "", "", nil, nil, nil)
+	k2, err := Key("v1.0.0", "2026-01-01", "16.0", []string{f}, "", "", nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +85,7 @@ func TestKey_DiffersOnContentChange(t *testing.T) {
 	if err := os.WriteFile(f, []byte("stages: [build]"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	k1, err := Key("v1.0.0", "", []string{f}, "", "", nil, nil, nil)
+	k1, err := Key("v1.0.0", "2026-01-01", "", []string{f}, "", "", nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +93,7 @@ func TestKey_DiffersOnContentChange(t *testing.T) {
 	if err := os.WriteFile(f, []byte("stages: [deploy]"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	k2, err := Key("v1.0.0", "", []string{f}, "", "", nil, nil, nil)
+	k2, err := Key("v1.0.0", "2026-01-01", "", []string{f}, "", "", nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,17 +104,17 @@ func TestKey_DiffersOnContentChange(t *testing.T) {
 }
 
 func TestKey_DiffersOnVersion(t *testing.T) {
-	k1, _ := Key("v1.0.0", "", nil, "", "", nil, nil, nil)
-	k2, _ := Key("v1.0.1", "", nil, "", "", nil, nil, nil)
+	k1, _ := Key("v1.0.0", "2026-01-01", "", nil, "", "", nil, nil, nil)
+	k2, _ := Key("v1.0.1", "2026-01-01", "", nil, "", "", nil, nil, nil)
 	if k1 == k2 {
 		t.Error("key should differ on version change")
 	}
 }
 
 func TestKey_DiffersOnOnlySkip(t *testing.T) {
-	base, _ := Key("v1.0.0", "", nil, "", "", nil, nil, nil)
-	only, _ := Key("v1.0.0", "", nil, "", "", nil, []string{"GL001"}, nil)
-	skip, _ := Key("v1.0.0", "", nil, "", "", nil, nil, []string{"GL001"})
+	base, _ := Key("v1.0.0", "2026-01-01", "", nil, "", "", nil, nil, nil)
+	only, _ := Key("v1.0.0", "2026-01-01", "", nil, "", "", nil, []string{"GL001"}, nil)
+	skip, _ := Key("v1.0.0", "2026-01-01", "", nil, "", "", nil, nil, []string{"GL001"})
 	if base == only {
 		t.Error("key should differ when --only is set")
 	}
@@ -123,5 +123,13 @@ func TestKey_DiffersOnOnlySkip(t *testing.T) {
 	}
 	if only == skip {
 		t.Error("--only and --skip with the same ID should produce different keys")
+	}
+}
+
+func TestKeyChangesWithDay(t *testing.T) {
+	day1, _ := Key("v1.0.0", "2026-01-01", "", nil, "", "", nil, nil, nil)
+	day2, _ := Key("v1.0.0", "2026-01-02", "", nil, "", "", nil, nil, nil)
+	if day1 == day2 {
+		t.Error("the cache key must change between days, otherwise an expired suppression stays cached")
 	}
 }

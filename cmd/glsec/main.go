@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime/debug"
 	"strings"
+	"time"
 
 	"github.com/glsec/glsec/internal/baseline"
 	"github.com/glsec/glsec/internal/cache"
@@ -282,7 +283,7 @@ func scanRoot(file string, opt scanOptions) (findings []finding.Finding, jobCoun
 		for i, d := range allDocs {
 			filePaths[i] = d.File
 		}
-		if key, kerr := cache.Key(resolvedVersion(), opt.versionStr, filePaths, opt.configPath, suppress.IgnoreFile, opt.cfg.ExcludePaths, opt.only, opt.skip); kerr == nil {
+		if key, kerr := cache.Key(resolvedVersion(), time.Now().Format("2006-01-02"), opt.versionStr, filePaths, opt.configPath, suppress.IgnoreFile, opt.cfg.ExcludePaths, opt.only, opt.skip); kerr == nil {
 			cacheKey = key
 			if entry, hit := cache.Load(cacheKey); hit {
 				return entry.Findings, entry.JobCount, true
@@ -550,6 +551,23 @@ func collectFindings(doc *parser.Document, path string, cfg *config.Config, gitl
 	if !skipIgnoreFile {
 		sm.Merge(suppress.LoadIgnoreFile(suppress.IgnoreFile, path))
 	}
+	now := time.Now()
+
+	// keep reports a finding unless an unexpired suppression covers it. An
+	// expired suppression is announced, so a finding that suddenly reappears is
+	// traceable to the date rather than looking like a new violation.
+	keep := func(f finding.Finding) bool {
+		if skipSuppress {
+			return true
+		}
+		if sm.IsSuppressed(f.Line, f.RuleID, now) {
+			return false
+		}
+		if sm.ExpiredAt(f.Line, f.RuleID, now) {
+			fmt.Fprintf(os.Stderr, "%s:%d: %s suppression has expired, reporting the finding again\n", path, f.Line, f.RuleID)
+		}
+		return true
+	}
 
 	var findings []finding.Finding
 	for _, rule := range rules.All() {
@@ -570,7 +588,7 @@ func collectFindings(doc *parser.Document, path string, cfg *config.Config, gitl
 			if !cfg.AboveMinSeverity(f) {
 				continue
 			}
-			if !skipSuppress && sm.IsSuppressed(f.Line, f.RuleID) {
+			if !keep(f) {
 				continue
 			}
 			findings = append(findings, f)
@@ -586,7 +604,7 @@ func collectFindings(doc *parser.Document, path string, cfg *config.Config, gitl
 			if !cfg.AboveMinSeverity(f) {
 				continue
 			}
-			if !skipSuppress && sm.IsSuppressed(f.Line, f.RuleID) {
+			if !keep(f) {
 				continue
 			}
 			findings = append(findings, f)
