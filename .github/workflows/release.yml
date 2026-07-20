@@ -36,6 +36,9 @@ jobs:
       - name: Attest release artifacts
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
+          # checksums.txt is attested too: the install docs verify downloads
+          # against it, so it needs its own anchor, not just the archives.
           subject-path: |
             dist/*.tar.gz
             dist/*.zip
+            dist/checksums.txt
