@@ -37,10 +37,16 @@ func Dir() string {
 // Key computes a deterministic hex key from all inputs that affect scan results.
 // filePaths must include the main pipeline file and all discovered child pipeline files.
 // configPath and ignorePath are read from disk if they exist.
-func Key(version, gitlabVersion string, filePaths []string, configPath, ignorePath string, excludePatterns, only, skip []string) (string, error) {
+//
+// day is the current date as YYYY-MM-DD. It is part of the key because
+// suppressions can carry an expiry date: without it, a suppression that expired
+// overnight would keep hiding its finding until some file happened to change.
+// The cost is one cache miss per day.
+func Key(version, day, gitlabVersion string, filePaths []string, configPath, ignorePath string, excludePatterns, only, skip []string) (string, error) {
 	h := sha256.New()
 
 	_, _ = fmt.Fprintf(h, "version:%s\n", version)
+	_, _ = fmt.Fprintf(h, "day:%s\n", day)
 	_, _ = fmt.Fprintf(h, "gitlab-version:%s\n", gitlabVersion)
 
 	sorted := make([]string, len(excludePatterns))

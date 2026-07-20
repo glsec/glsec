@@ -197,6 +197,33 @@ git checkout HEAD -- .gitlab-ci.yml
 glsec --new-only --baseline base.json .gitlab-ci.yml
 ```
 
+### Suppressions
+
+Silence a finding on a single line with an inline comment, optionally with a reason after `--`:
+
+```yaml
+build:
+  image: node:latest  # glsec:ignore GL001 -- base image is pinned by the platform
+```
+
+A suppression can also carry an **expiry date**, so accepted risk gets re-reviewed instead of becoming permanent:
+
+```yaml
+deploy:
+  script:
+    - ./deploy.sh  # glsec:ignore GL013 exp:2026-12-01 -- accepted until the migration lands
+```
+
+Once the date has passed the suppression stops applying, the finding is reported again, and glsec notes on stderr that the suppression expired, so a finding that reappears is traceable to the date rather than looking like a new violation. The expiry date itself is inclusive. A malformed date counts as expired, so a typo surfaces the finding rather than hiding it forever.
+
+The same token works in the `.glsec-ignore` baseline, appended to a line:
+
+```
+.gitlab-ci.yml:14 GL013 exp:2026-12-01
+```
+
+Entries without the token never expire, so existing ignore files keep working unchanged.
+
 ## Rules
 
 80 rules across 8 [OWASP CI/CD security categories](https://owasp.org/www-project-top-10-ci-cd-security-risks/):
