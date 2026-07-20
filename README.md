@@ -60,18 +60,18 @@ Every release is signed and carries build provenance, so you can confirm an arti
 **Release binaries** carry a SLSA provenance attestation. Verify a downloaded archive with the [GitHub CLI](https://cli.github.com/):
 
 ```sh
-gh attestation verify glsec_1.11.0_linux_amd64.tar.gz --owner glsec
+gh attestation verify glsec_1.12.0_linux_amd64.tar.gz --owner glsec
 ```
 
 **The container image** is signed with [cosign](https://github.com/sigstore/cosign) and carries provenance plus an SBOM attestation:
 
 ```sh
-cosign verify ghcr.io/glsec/glsec:1.11.0 \
+cosign verify ghcr.io/glsec/glsec:1.12.0 \
   --certificate-identity-regexp 'https://github.com/glsec/glsec/.*' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 
 # list everything attached to the image (signature, provenance, SBOM)
-cosign tree ghcr.io/glsec/glsec:1.11.0
+cosign tree ghcr.io/glsec/glsec:1.12.0
 ```
 
 The two `--certificate-*` flags are what bind the signature to this repository's GitHub Actions workflow. Without them `cosign verify` accepts a signature from any identity, which defeats the point.
@@ -79,11 +79,11 @@ The two `--certificate-*` flags are what bind the signature to this repository's
 **Checksums** are published as `checksums.txt` next to the archives:
 
 ```sh
-curl -sSLO https://github.com/glsec/glsec/releases/download/v1.11.0/checksums.txt
+curl -sSLO https://github.com/glsec/glsec/releases/download/v1.12.0/checksums.txt
 sha256sum -c checksums.txt --ignore-missing
 ```
 
-Releases after v1.11.0 also attest `checksums.txt` itself, so the checksums file can be verified first and the digests it lists then trusted:
+`checksums.txt` is itself attested, so you can verify the checksums file first and then trust every digest it lists:
 
 ```sh
 gh attestation verify checksums.txt --owner glsec
@@ -317,7 +317,7 @@ glsec ships a [pre-commit](https://pre-commit.com/) hook so `.gitlab-ci.yml` iss
 ```yaml
 repos:
   - repo: https://github.com/glsec/glsec
-    rev: v1.11.0
+    rev: v1.12.0
     hooks:
       - id: glsec
 ```
@@ -408,13 +408,13 @@ If you need more control than the Catalog component offers, use the pre-built im
 glsec:
   stage: test
   image:
-    name: ghcr.io/glsec/glsec:1.11.0
+    name: ghcr.io/glsec/glsec:1.12.0
     entrypoint: [""]
   script:
     - glsec .gitlab-ci.yml
 ```
 
-The `entrypoint: [""]` override is required: the image sets `ENTRYPOINT ["glsec"]` for `docker run` convenience, which conflicts with GitLab Runner's shell wrapper. Pin to a specific tag (`1.11.0`, not `:latest`) for reproducible pipelines.
+The `entrypoint: [""]` override is required: the image sets `ENTRYPOINT ["glsec"]` for `docker run` convenience, which conflicts with GitLab Runner's shell wrapper. Pin to a specific tag (`1.12.0`, not `:latest`) for reproducible pipelines.
 
 ### GitLab CI — binary download
 
@@ -422,7 +422,7 @@ For pipelines that cannot pull from GHCR:
 
 ```yaml
 variables:
-  GLSEC_VERSION: "1.11.0"
+  GLSEC_VERSION: "1.12.0"
 
 glsec:
   stage: test
@@ -444,7 +444,7 @@ Publish findings to GitLab's Security Dashboard by emitting SARIF and exposing i
 glsec:
   stage: test
   image:
-    name: ghcr.io/glsec/glsec:1.11.0
+    name: ghcr.io/glsec/glsec:1.12.0
     entrypoint: [""]
   script:
     - glsec --format sarif .gitlab-ci.yml > glsec.sarif || true
@@ -463,7 +463,7 @@ Show findings **inline on merge request diffs** using GitLab's Code Quality widg
 glsec:
   stage: test
   image:
-    name: ghcr.io/glsec/glsec:1.11.0
+    name: ghcr.io/glsec/glsec:1.12.0
     entrypoint: [""]
   script:
     - glsec --format codeclimate .gitlab-ci.yml > gl-code-quality.json || true
