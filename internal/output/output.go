@@ -7,6 +7,8 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"os"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 
@@ -85,29 +87,19 @@ func writeTable(w io.Writer, findings []finding.Finding, jobCount int, isTTY boo
 	return tw.Flush()
 }
 
+// writeText renders findings as compiler-style diagnostics: a header carrying
+// severity, rule and message, the location, then the offending source line with
+// a caret at the recorded column. When the source cannot be read the header is
+// still printed, so output never depends on the file still being there.
 func writeText(w io.Writer, findings []finding.Finding, jobCount int, col, isTTY bool) error {
-	for _, f := range findings {
-		sev := strings.ToUpper(string(f.Severity))
-		switch f.Severity {
-		case finding.Error:
-			sev = color.Red(sev, col)
-		case finding.Warn:
-			sev = color.Yellow(sev, col)
+	src := newSourceCache()
+	for i, f := range findings {
+		if i > 0 {
+			if _, err := fmt.Fprintln(w); err != nil {
+				return err
+			}
 		}
-		ruleID := color.Bold(f.RuleID, col)
-		location := color.Bold(fmt.Sprintf("%s:%d", f.File, f.Line), col)
-
-		var err error
-		if f.Job != "" {
-			_, err = fmt.Fprintf(w, "%-6s %s  %s  [%s]  %s\n",
-				sev, location, ruleID, f.Job, f.Message,
-			)
-		} else {
-			_, err = fmt.Fprintf(w, "%-6s %s  %s  %s\n",
-				sev, location, ruleID, f.Message,
-			)
-		}
-		if err != nil {
+		if err := writeDiagnostic(w, f, src, col); err != nil {
 			return err
 		}
 	}
@@ -119,6 +111,70 @@ func writeText(w io.Writer, findings []finding.Finding, jobCount int, col, isTTY
 		return err
 	}
 	return nil
+}
+
+// writeDiagnostic renders one finding. The source block is best-effort: a
+// missing file, an out-of-range line or a zero column each degrade to printing
+// less, never to an error.
+func writeDiagnostic(w io.Writer, f finding.Finding, src *sourceCache, colorOn bool) error {
+	sev := string(f.Severity)
+	switch f.Severity {
+	case finding.Error:
+		sev = color.Red(sev, colorOn)
+	case finding.Warn:
+		sev = color.Yellow(sev, colorOn)
+	}
+	if _, err := fmt.Fprintf(w, "%s[%s]: %s\n", sev, color.Bold(f.RuleID, colorOn), f.Message); err != nil {
+		return err
+	}
+
+	loc := fmt.Sprintf("%s:%d", f.File, f.Line)
+	if f.Col > 0 {
+		loc += ":" + strconv.Itoa(f.Col)
+	}
+	if f.Job != "" {
+		loc += " (job: " + f.Job + ")"
+	}
+	if _, err := fmt.Fprintf(w, "  --> %s\n", color.Bold(loc, colorOn)); err != nil {
+		return err
+	}
+
+	line, ok := src.line(f.File, f.Line)
+	if !ok {
+		return nil
+	}
+	num := strconv.Itoa(f.Line)
+	pad := strings.Repeat(" ", len(num))
+	if _, err := fmt.Fprintf(w, "%s |\n%s | %s\n", pad, num, line); err != nil {
+		return err
+	}
+	if f.Col > 0 {
+		if _, err := fmt.Fprintf(w, "%s | %s^\n", pad, strings.Repeat(" ", f.Col-1)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// sourceCache reads files lazily so several findings in one file cost a single
+// read. A file that cannot be read is remembered as absent rather than retried.
+type sourceCache struct{ files map[string][]string }
+
+func newSourceCache() *sourceCache { return &sourceCache{files: make(map[string][]string)} }
+
+func (c *sourceCache) line(path string, n int) (string, bool) {
+	lines, cached := c.files[path]
+	if !cached {
+		data, err := os.ReadFile(path) //nolint:gosec // reads the file that was just scanned
+		if err == nil {
+			lines = strings.Split(string(data), "\n")
+		}
+		c.files[path] = lines
+	}
+	if n < 1 || n > len(lines) {
+		return "", false
+	}
+	return strings.TrimRight(lines[n-1], "\r"), true
 }
 
 type jsonFinding struct {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"encoding/xml"
+	"os"
 	"strings"
 	"testing"
 
@@ -27,14 +28,17 @@ func TestWriteText(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := buf.String()
-	if !strings.Contains(got, "ERROR") || !strings.Contains(got, "WARN") {
-		t.Errorf("missing severity labels: %q", got)
+	// Compiler-style header: severity[rule]: message
+	if !strings.Contains(got, "error[GL001]:") || !strings.Contains(got, "warn[GL002]:") {
+		t.Errorf("missing severity[rule] headers: %q", got)
 	}
-	if !strings.Contains(got, "GL001") || !strings.Contains(got, "GL002") {
-		t.Errorf("missing rule IDs: %q", got)
+	if !strings.Contains(got, "--> ci.yml:4") {
+		t.Errorf("missing location line: %q", got)
 	}
-	if !strings.Contains(got, "ci.yml:4") {
-		t.Errorf("missing file:line: %q", got)
+	// ci.yml does not exist on disk, so the source block is skipped rather than
+	// erroring. The header must still be there.
+	if strings.Contains(got, " | ") {
+		t.Errorf("no source block expected for a missing file: %q", got)
 	}
 }
 
@@ -128,17 +132,12 @@ func TestWriteText_WithJob(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := buf.String()
-	if !strings.Contains(got, "[phpmd]") {
-		t.Errorf("expected [phpmd] in output: %q", got)
+	if !strings.Contains(got, "(job: phpmd)") || !strings.Contains(got, "(job: e2e)") {
+		t.Errorf("expected job names on the location line: %q", got)
 	}
-	if !strings.Contains(got, "[e2e]") {
-		t.Errorf("expected [e2e] in output: %q", got)
-	}
-	// Finding without a job should not contain brackets around a job name.
-	lines := strings.Split(strings.TrimRight(got, "\n"), "\n")
-	last := lines[len(lines)-1]
-	if strings.Contains(last, "[") && strings.Contains(last, "]") {
-		t.Errorf("finding without job should not render brackets, got: %q", last)
+	// The third finding has no job, so exactly two location lines carry one.
+	if n := strings.Count(got, "(job: "); n != 2 {
+		t.Errorf("expected 2 job annotations, got %d: %q", n, got)
 	}
 }
 
@@ -555,5 +554,66 @@ func TestWriteSARIF_WithASVS(t *testing.T) {
 	}
 	if len(run.Taxonomies) != 1 || run.Taxonomies[0].Name != "OWASP ASVS" || run.Taxonomies[0].Version != "4.0.3" {
 		t.Fatalf("expected OWASP ASVS 4.0.3 taxonomy, got %+v", run.Taxonomies)
+	}
+}
+
+func TestWriteText_SourceContext(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/.gitlab-ci.yml"
+	content := "build:\n  image: node:latest\n  script: [make]\n"
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	f := []finding.Finding{{
+		RuleID: "GL001", Severity: finding.Error, File: path, Line: 2, Col: 10,
+		Message: "mutable image tag",
+	}}
+	var buf bytes.Buffer
+	if err := Write(&buf, FormatText, f, 1, false, false); err != nil {
+		t.Fatal(err)
+	}
+	got := buf.String()
+
+	if !strings.Contains(got, "2 |   image: node:latest") {
+		t.Errorf("expected the offending source line: %q", got)
+	}
+	// Verify alignment rather than a literal run of spaces: the caret must sit at
+	// the same offset as column 10 of the source line, gutter included.
+	lines := strings.Split(strings.TrimRight(got, "\n"), "\n")
+	srcIdx := -1
+	for i, l := range lines {
+		if strings.HasPrefix(l, "2 | ") {
+			srcIdx = i
+			break
+		}
+	}
+	if srcIdx < 0 || srcIdx+1 >= len(lines) {
+		t.Fatalf("expected a source line followed by a caret line: %q", got)
+	}
+	caretAt := strings.IndexByte(lines[srcIdx+1], '^')
+	if want := len("2 | ") + 10 - 1; caretAt != want {
+		t.Errorf("caret at offset %d, want %d (column 10): %q", caretAt, want, got)
+	}
+	if !strings.Contains(got, "--> "+path+":2:10") {
+		t.Errorf("expected location with column: %q", got)
+	}
+}
+
+func TestWriteText_OutOfRangeLineDegrades(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/.gitlab-ci.yml"
+	if err := os.WriteFile(path, []byte("build:\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	f := []finding.Finding{{
+		RuleID: "GL001", Severity: finding.Warn, File: path, Line: 99, Col: 3, Message: "x",
+	}}
+	var buf bytes.Buffer
+	if err := Write(&buf, FormatText, f, 1, false, false); err != nil {
+		t.Fatalf("a line past the end of the file must not error: %v", err)
+	}
+	if !strings.Contains(buf.String(), "warn[GL001]:") {
+		t.Errorf("header should still be printed: %q", buf.String())
 	}
 }
