@@ -43,6 +43,42 @@ curl -sSL https://github.com/glsec/glsec/releases/latest/download/glsec_linux_am
 
 Homebrew coming soon.
 
+## Verifying a release
+
+Every release is signed and carries build provenance, so you can confirm an artifact really came from this repository's workflow before trusting it. Signing is keyless through [Sigstore](https://www.sigstore.dev/), so there is no public key to fetch or rotate.
+
+**Release binaries** carry a SLSA provenance attestation. Verify a downloaded archive with the [GitHub CLI](https://cli.github.com/):
+
+```sh
+gh attestation verify glsec_1.11.0_linux_amd64.tar.gz --owner glsec
+```
+
+**The container image** is signed with [cosign](https://github.com/sigstore/cosign) and carries provenance plus an SBOM attestation:
+
+```sh
+cosign verify ghcr.io/glsec/glsec:1.11.0 \
+  --certificate-identity-regexp 'https://github.com/glsec/glsec/.*' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+
+# list everything attached to the image (signature, provenance, SBOM)
+cosign tree ghcr.io/glsec/glsec:1.11.0
+```
+
+The two `--certificate-*` flags are what bind the signature to this repository's GitHub Actions workflow. Without them `cosign verify` accepts a signature from any identity, which defeats the point.
+
+**Checksums** are published as `checksums.txt` next to the archives:
+
+```sh
+curl -sSLO https://github.com/glsec/glsec/releases/download/v1.11.0/checksums.txt
+sha256sum -c checksums.txt --ignore-missing
+```
+
+Releases after v1.11.0 also attest `checksums.txt` itself, so the checksums file can be verified first and the digests it lists then trusted:
+
+```sh
+gh attestation verify checksums.txt --owner glsec
+```
+
 ## Usage
 
 ```sh
