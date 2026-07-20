@@ -1,19 +1,31 @@
 version: 2
+
+# cooldown holds back a version update until the release has been out for a
+# while, which is the window in which a compromised release is usually caught
+# and pulled. GitHub's built-in default is 3 days, so 7 is the first value that
+# changes anything. Security updates are exempt from cooldown, so CVE fixes are
+# not delayed by it.
 updates:
   - package-ecosystem: gomod
     directory: /
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
 
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
 
   - package-ecosystem: docker
     directory: /
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
