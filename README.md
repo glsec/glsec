@@ -79,6 +79,8 @@ Releases after v1.11.0 also attest `checksums.txt` itself, so the checksums file
 gh attestation verify checksums.txt --owner glsec
 ```
 
+**SBOMs**: the container image carries its SBOM as a signed attestation, listed by `cosign tree` above. The per-archive `.sbom.json` files are published as plain release assets rather than attestations, deliberately. Each contains four entries: glsec itself, its single dependency `gopkg.in/yaml.v3`, the Go standard library, and the archive's own digest. That is the same information `go.mod` already makes public, and the archive it describes is covered by provenance, so a swapped SBOM cannot make a tampered archive verify. If you need an SBOM you can trust end to end, use the image attestation or regenerate one from a verified archive with [syft](https://github.com/anchore/syft).
+
 ## Usage
 
 ```sh
