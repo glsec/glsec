@@ -301,3 +301,21 @@ owasp:
 		t.Error("expected error for invalid OWASP category")
 	}
 }
+
+func TestRequireIgnoreReason(t *testing.T) {
+	cfg, err := parse([]byte("require_ignore_reason: true\n"), ".glsec.yml")
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if !cfg.RequireIgnoreReason {
+		t.Error("require_ignore_reason should be parsed from the config file")
+	}
+	// Absent means off, so existing configs keep their behaviour.
+	def, err := parse([]byte("strict: true\n"), ".glsec.yml")
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if def.RequireIgnoreReason {
+		t.Error("require_ignore_reason must default to false")
+	}
+}

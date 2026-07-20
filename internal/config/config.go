@@ -75,6 +75,10 @@ type Config struct {
 	AllowedIncludeSources []string `yaml:"allowed_include_sources"`
 	// ShellCheck holds optional ShellCheck integration settings.
 	ShellCheck ShellCheckConfig `yaml:"shellcheck"`
+	// RequireIgnoreReason makes an inline `# glsec:ignore` without a `-- reason`
+	// a policy violation. Off by default, so existing suppressions keep working.
+	// The .glsec-ignore baseline has no reason column and is not affected.
+	RequireIgnoreReason bool `yaml:"require_ignore_reason"`
 	// Strict makes warn findings count as errors for exit-code purposes.
 	Strict bool `yaml:"strict"`
 	// NoExitCodes makes glsec always exit 0 on successful execution,
@@ -172,6 +176,7 @@ var allowedTopLevelKeys = map[string]bool{
 	"owasp":                   true,
 	"owasp_exclude":           true,
 	"shellcheck":              true,
+	"require_ignore_reason":   true,
 }
 
 func checkUnknownKeys(mapping *yaml.Node, path string) error {

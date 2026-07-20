@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/debug"
+	"sort"
 	"strings"
 	"time"
 
@@ -71,6 +72,7 @@ func main() {
 	noIgnoresFlag := flag.Bool("no-ignores", false, "audit mode: bypass all glsec suppressions (inline # glsec:ignore directives and the .glsec-ignore baseline) for this run; report every finding")
 	newOnlyFlag := flag.Bool("new-only", false, "report (and fail) only on findings absent from the baseline; defaults to the .glsec-ignore baseline unless --baseline is given")
 	baselineFlag := flag.String("baseline", "", "path to a baseline to diff against in --new-only mode: a glsec JSON snapshot (--format json) or a .glsec-ignore file (implies --new-only)")
+	requireReasonFlag := flag.Bool("require-ignore-reason", false, "treat an inline # glsec:ignore without a \"-- reason\" as a policy violation (exit 2)")
 	noCacheFlag := flag.Bool("no-cache", false, "disable result cache for this run")
 	clearCacheFlag := flag.Bool("clear-cache", false, "remove all cached results and exit")
 	noColorFlag := flag.Bool("no-color", false, "disable colored output")
@@ -136,6 +138,9 @@ func main() {
 	if *noExitCodesFlag {
 		cfg.NoExitCodes = true
 	}
+	if *requireReasonFlag {
+		cfg.RequireIgnoreReason = true
+	}
 	cfg.ExcludePaths = append(cfg.ExcludePaths, excludeArgs...)
 
 	if len(onlyArgs) > 0 {
@@ -179,7 +184,10 @@ func main() {
 	colorEnabled := color.IsEnabled(*noColorFlag, os.Stdout)
 	stdoutIsTTY := color.IsTerminal(os.Stdout)
 	newOnly := *newOnlyFlag || *baselineFlag != ""
-	useCache := !*noCacheFlag && !*generateIgnoreFlag && !*noIgnoresFlag && !newOnly
+	// The reason check runs while collecting findings, so a cache hit would skip
+	// it and silently drop the per-suppression messages. Opt-in policy, so paying
+	// with a cold scan is the right trade.
+	useCache := !*noCacheFlag && !*generateIgnoreFlag && !*noIgnoresFlag && !newOnly && !cfg.RequireIgnoreReason
 
 	scanOpts := scanOptions{
 		cfg:            cfg,
@@ -196,18 +204,20 @@ func main() {
 
 	var allFindings []finding.Finding
 	totalJobCount := 0
+	totalUnjustified := 0
 	hadError := false
 	for _, file := range targets {
 		if matchesExclude(file, cfg.ExcludePaths) {
 			continue
 		}
-		findings, jobCount, ok := scanRoot(file, scanOpts)
+		findings, jobCount, unjustified, ok := scanRoot(file, scanOpts)
 		if !ok {
 			hadError = true
 			continue
 		}
 		allFindings = append(allFindings, findings...)
 		totalJobCount += jobCount
+		totalUnjustified += unjustified
 	}
 
 	if *generateIgnoreFlag {
@@ -231,6 +241,10 @@ func main() {
 	if hadError {
 		os.Exit(2)
 	}
+	if totalUnjustified > 0 {
+		fmt.Fprintf(os.Stderr, "%d suppression(s) without a reason; require_ignore_reason is enabled\n", totalUnjustified)
+		os.Exit(2)
+	}
 	os.Exit(exitCode(allFindings, cfg))
 }
 
@@ -250,11 +264,11 @@ type scanOptions struct {
 // scanRoot parses one root pipeline file (and its child pipelines), runs the
 // rules, and returns the findings and job count. ok is false if the file could
 // not be parsed or validated; the error has already been reported to stderr.
-func scanRoot(file string, opt scanOptions) (findings []finding.Finding, jobCount int, ok bool) {
+func scanRoot(file string, opt scanOptions) (findings []finding.Finding, jobCount, unjustified int, ok bool) {
 	doc, err := parser.ParseFile(file)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		return nil, 0, false
+		return nil, 0, 0, false
 	}
 
 	warns, valErr := validate.File(file, doc)
@@ -263,7 +277,7 @@ func scanRoot(file string, opt scanOptions) (findings []finding.Finding, jobCoun
 	}
 	if valErr != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", valErr)
-		return nil, 0, false
+		return nil, 0, 0, false
 	}
 
 	seen := map[string]bool{}
@@ -286,21 +300,23 @@ func scanRoot(file string, opt scanOptions) (findings []finding.Finding, jobCoun
 		if key, kerr := cache.Key(resolvedVersion(), time.Now().Format("2006-01-02"), opt.versionStr, filePaths, opt.configPath, suppress.IgnoreFile, opt.cfg.ExcludePaths, opt.only, opt.skip); kerr == nil {
 			cacheKey = key
 			if entry, hit := cache.Load(cacheKey); hit {
-				return entry.Findings, entry.JobCount, true
+				return entry.Findings, entry.JobCount, 0, true
 			}
 		}
 	}
 
 	skipSuppress := opt.generateIgnore || opt.noIgnores
 	for _, d := range allDocs {
-		findings = append(findings, collectFindings(d, d.File, opt.cfg, opt.gitlabVersion, skipSuppress, opt.newOnly)...)
+		f, u := collectFindings(d, d.File, opt.cfg, opt.gitlabVersion, skipSuppress, opt.newOnly)
+		findings = append(findings, f...)
+		unjustified += u
 	}
 
 	if opt.useCache && cacheKey != "" {
 		cache.Store(cacheKey, &cache.Entry{Findings: findings, JobCount: jobCount})
 	}
 
-	return findings, jobCount, true
+	return findings, jobCount, unjustified, true
 }
 
 // writeOutput renders findings in the requested format.
@@ -546,8 +562,14 @@ func collectDocuments(doc *parser.Document, path string, excludePaths []string, 
 // skipIgnoreFile drops the .glsec-ignore line suppression (but keeps inline
 // directives) so --new-only can diff the full backlog against the baseline by
 // fingerprint instead of by exact line.
-func collectFindings(doc *parser.Document, path string, cfg *config.Config, gitlabVersion gitlabver.Version, skipSuppress, skipIgnoreFile bool) []finding.Finding {
+func collectFindings(doc *parser.Document, path string, cfg *config.Config, gitlabVersion gitlabver.Version, skipSuppress, skipIgnoreFile bool) ([]finding.Finding, int) {
 	sm := suppress.Build(doc.Root)
+	// Checked against the inline map only: the .glsec-ignore baseline has no
+	// reason column, so requiring one there would be unsatisfiable.
+	unjustified := 0
+	if cfg.RequireIgnoreReason && !skipSuppress {
+		unjustified = reportUnjustified(sm, path)
+	}
 	if !skipIgnoreFile {
 		sm.Merge(suppress.LoadIgnoreFile(suppress.IgnoreFile, path))
 	}
@@ -611,7 +633,28 @@ func collectFindings(doc *parser.Document, path string, cfg *config.Config, gitl
 		}
 	}
 
-	return findings
+	return findings, unjustified
+}
+
+// reportUnjustified prints every inline suppression that carries no reason and
+// returns how many there were.
+func reportUnjustified(sm suppress.Map, path string) int {
+	entries := sm.Entries()
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].Line != entries[j].Line {
+			return entries[i].Line < entries[j].Line
+		}
+		return entries[i].RuleID < entries[j].RuleID
+	})
+	n := 0
+	for _, e := range entries {
+		if e.Reason != "" {
+			continue
+		}
+		n++
+		fmt.Fprintf(os.Stderr, "%s:%d: %s is suppressed without a reason; add \"-- why\" to the glsec:ignore comment\n", path, e.Line, e.RuleID)
+	}
+	return n
 }
 
 // filterNewOnly keeps only findings absent from the baseline. baselinePath is
