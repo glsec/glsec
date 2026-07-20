@@ -9,10 +9,20 @@
 ```
 $ glsec .gitlab-ci.yml
 
-ERROR  .gitlab-ci.yml:7   GL001  image "node:latest" uses mutable tag "latest" — pin to a specific version or digest
-WARN   .gitlab-ci.yml:14  GL002  variable $CI_COMMIT_REF_NAME in script is user-controlled and unquoted — wrap in double quotes
-ERROR  .gitlab-ci.yml:3   GL003  project include "company/templates" missing "ref" — defaults to HEAD of default branch (mutable)
+error[GL001]: image "node:latest" uses mutable tag "latest" — pin to a specific version or digest
+  --> .gitlab-ci.yml:7:10 (job: build)
+  |
+7 |   image: node:latest
+  |          ^
+
+warn[GL002]: unquoted user-controlled variable $CI_COMMIT_REF_NAME in script — value is set by commit authors and may contain shell metacharacters
+  --> .gitlab-ci.yml:14:7 (job: build)
+   |
+14 |     - echo $CI_COMMIT_REF_NAME
+   |       ^
 ```
+
+Use `--format table` for a compact one-line-per-finding view when there are many findings.
 
 ## Why glsec?
 
