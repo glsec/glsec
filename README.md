@@ -159,7 +159,7 @@ glsec --new-only --baseline main.json .gitlab-ci.yml  # diff against a saved JSO
 |------|---------|
 | 0 | No `error`-severity findings (warn-only findings exit 0 by default) |
 | 1 | One or more `error` findings; or any finding when `--strict` is set |
-| 2 | Usage error or file could not be parsed |
+| 2 | Usage error, file could not be parsed, or a suppression policy violation |
 
 Use `--strict` to treat `warn` findings as hard failures (exit 1). Use `--no-exit-codes` to always exit 0 regardless of findings (advisory/informational mode). All flags can also be set in `.glsec.yml`:
 
@@ -223,6 +223,19 @@ The same token works in the `.glsec-ignore` baseline, appended to a line:
 ```
 
 Entries without the token never expire, so existing ignore files keep working unchanged.
+
+To stop undocumented suppressions creeping in, require a reason:
+
+```sh
+glsec --require-ignore-reason .gitlab-ci.yml
+```
+
+```yaml
+# .glsec.yml
+require_ignore_reason: true
+```
+
+Any inline `# glsec:ignore` without a `-- reason` is then reported with its file and line, and glsec exits 2. Off by default, so existing suppressions keep working. The `.glsec-ignore` baseline is exempt because its format has no reason column. Note that enabling this disables the result cache: the check runs while findings are collected, so a cache hit would skip it.
 
 ## Rules
 
