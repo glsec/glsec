@@ -6,6 +6,7 @@ import "github.com/glsec/glsec/internal/version"
 // the feature the rule checks. Rules not listed here have no version gate.
 var minVersions = map[string]version.Version{
 	"GL009": {Major: 15, Minor: 7}, // id_tokens:
+	"GL081": {Major: 15, Minor: 7}, // id_tokens:
 	"GL010": {Major: 14, Minor: 9}, // trigger: forward:
 	"GL014": {Major: 12, Minor: 9}, // artifacts: reports: dotenv:
 }

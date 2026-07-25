@@ -1,0 +1,36 @@
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+aws-integration-test:
+  stage: test
+  image: amazon/aws-cli:2.15.17
+  id_tokens:
+    AWS_ID_TOKEN:
+      aud: https://sts.amazonaws.com
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  script:
+    - aws sts assume-role-with-web-identity --role-arn "$AWS_ROLE_ARN" --web-identity-token "$AWS_ID_TOKEN"
+    - aws s3 ls s3://my-integration-bucket/
+
+terraform-plan:
+  stage: test
+  image: hashicorp/terraform:1.7.3
+  id_tokens:
+    VAULT_ID_TOKEN:
+      aud: https://vault.example.com
+  script:
+    - export VAULT_TOKEN="$(vault write -field=token auth/jwt/login role=ci jwt=$VAULT_ID_TOKEN)"
+    - terraform plan
+
+deploy-prod:
+  stage: deploy
+  id_tokens:
+    AWS_ID_TOKEN:
+      aud: https://sts.amazonaws.com
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  script:
+    - aws s3 sync ./build s3://prod-bucket/
