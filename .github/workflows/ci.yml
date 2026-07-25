@@ -148,3 +148,44 @@ jobs:
       - run: pip install check-jsonschema
       - name: Validate against GitLab CI schema
         run: check-jsonschema --builtin-schema gitlab-ci testdata/fixtures/*.yml
+
+  version-pins:
+    name: Check version pins agree
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      # The Claude Code plugin ships its own version pin and downloads the
+      # matching release asset, so a release bump that misses it leaves plugin
+      # users on an old glsec (#441). The GitLab component version
+      # (gitlab.com/glsec-io/...@vX.Y.Z) is released separately and excluded.
+      - name: Compare plugin pins against README
+        run: |
+          set -euo pipefail
+
+          want=$(jq -r .version .claude-plugin/plugin.json)
+          echo "plugin.json: $want"
+
+          found=$(
+            {
+              grep -oE 'VERSION="[0-9]+\.[0-9]+\.[0-9]+"' bin/glsec |
+                grep -oE '[0-9]+\.[0-9]+\.[0-9]+'
+              grep -hoE \
+                -e 'glsec_[0-9]+\.[0-9]+\.[0-9]+_' \
+                -e 'ghcr\.io/glsec/glsec:[0-9]+\.[0-9]+\.[0-9]+' \
+                -e 'releases/download/v[0-9]+\.[0-9]+\.[0-9]+' \
+                -e 'rev: v[0-9]+\.[0-9]+\.[0-9]+' \
+                -e 'GLSEC_VERSION: "[0-9]+\.[0-9]+\.[0-9]+"' \
+                -e '`[0-9]+\.[0-9]+\.[0-9]+`, not `:latest`' \
+                README.md | grep -oE '[0-9]+\.[0-9]+\.[0-9]+'
+            } | sort -u
+          )
+
+          if [ "$found" != "$want" ]; then
+            echo "::error::version pins disagree; expected $want everywhere, found:"
+            printf '%s\n' "$found"
+            exit 1
+          fi
+          echo "all pins agree on $want"
