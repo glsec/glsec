@@ -108,6 +108,7 @@ Gates bypassed, runners untrusted, or downstream pipelines outside access contro
 | [GL074](rules/GL074.md) | `warn`  | Tautological (always-true) `rules:if` condition — the gate is a no-op and the job runs in every context it was meant to restrict |
 | [GL055](rules/GL055.md) | `warn`  | `DOCKER_HOST` points at the host Docker socket (`/var/run/docker.sock`) — full control of the runner's Docker daemon |
 | [GL080](rules/GL080.md) | `warn`  | Sensitive/deploy job with no pipeline-source guard (no `rules:`/`only:` or a `rules:` with no `if:`) — runs on every source including fork MRs |
+| [GL081](rules/GL081.md) | `warn`  | Job issues an OIDC `id_tokens:` credential on an unrestricted pipeline source — any branch or merge request can mint a cloud-federating token (GitLab ≥ 15.7) |
 
 ---
 
