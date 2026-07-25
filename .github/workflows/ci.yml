@@ -26,7 +26,17 @@ jobs:
 
   test:
     name: Test
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    # Force bash on every OS. The Windows runner defaults to PowerShell, which
+    # mangles `go test -race -coverprofile=coverage.out ./...` into a bogus
+    # ".out" package argument; bash parses the command identically everywhere.
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -37,7 +47,10 @@ jobs:
           cache: true
       - run: go mod verify
       - run: go test -race -coverprofile=coverage.out ./...
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      # Upload coverage from one OS only — a shared artifact name collides across
+      # matrix legs, and Linux coverage is representative.
+      - if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: coverage
           path: coverage.out
