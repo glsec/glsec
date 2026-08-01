@@ -14,3 +14,5 @@ build:
     - npm ci
     - curl http://install.example.com/tool.sh -o tool.sh
     - bash tool.sh
+    - git clone http://git.example.com/vendor/lib.git
+    - git clone git://git.example.com/vendor/tool.git

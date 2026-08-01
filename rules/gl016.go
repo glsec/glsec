@@ -26,7 +26,10 @@ func (r *gl016) SetTrustedHosts(hosts []string) {
 
 var (
 	httpURLRe      = regexp.MustCompile(`https?://[^\s'"]+`)
+	gitURLRe       = regexp.MustCompile(`\bgit://[^\s'"]+`)
 	curlWgetHTTPRe = regexp.MustCompile(`\b(?:curl|wget)\b[^|]*\bhttp://`)
+	// git fetches remote content just like curl/wget, so the same HTTP check applies.
+	gitFetchHTTPRe = regexp.MustCompile(`\bgit\b[^|]*\b(?:clone|fetch|pull|remote\s+add|submodule\s+add)\b[^|]*\bhttp://`)
 	privateRanges  []*net.IPNet
 	internalTLDs   = []string{".local", ".internal", ".corp", ".lan"}
 )
@@ -106,7 +109,13 @@ func (r *gl016) checkIncludes(node *yaml.Node, file string) []finding.Finding {
 		if remote == nil || remote.Kind != yaml.ScalarNode {
 			continue
 		}
-		if !strings.HasPrefix(remote.Value, "http://") {
+		var scheme string
+		switch {
+		case strings.HasPrefix(remote.Value, "http://"):
+			scheme = "HTTP"
+		case strings.HasPrefix(remote.Value, "git://"):
+			scheme = "the plaintext git:// transport"
+		default:
 			continue
 		}
 		host := hostOf(remote.Value)
@@ -114,10 +123,10 @@ func (r *gl016) checkIncludes(node *yaml.Node, file string) []finding.Finding {
 			continue
 		}
 		sev := finding.Error
-		msg := "include: remote: uses HTTP — a MITM attacker can inject arbitrary pipeline configuration"
+		msg := "include: remote: uses " + scheme + " — a MITM attacker can inject arbitrary pipeline configuration"
 		if isPrivateOrInternal(host) {
 			sev = finding.Info
-			msg = "include: remote: uses HTTP to a private/internal host — consider HTTPS even on internal networks"
+			msg = "include: remote: uses " + scheme + " to a private/internal host — consider HTTPS even on internal networks"
 		}
 		findings = append(findings, finding.Finding{
 			RuleID: "GL016", Severity: sev, Message: msg,
@@ -143,18 +152,27 @@ func (r *gl016) checkVariablesHTTP(node *yaml.Node, file string) []finding.Findi
 				scalar = v
 			}
 		}
-		if scalar == nil || !strings.Contains(scalar.Value, "http://") {
+		if scalar == nil {
 			continue
 		}
-		host := hostOf(scalar.Value)
+		var rawURL, scheme string
+		switch {
+		case strings.Contains(scalar.Value, "http://"):
+			rawURL, scheme = scalar.Value, "HTTP"
+		case gitURLRe.MatchString(scalar.Value):
+			rawURL, scheme = gitURLRe.FindString(scalar.Value), "the plaintext git:// transport"
+		default:
+			continue
+		}
+		host := hostOf(rawURL)
 		if r.skip(host) {
 			continue
 		}
 		sev := finding.Info
-		msg := "variable value uses HTTP — consider HTTPS to protect data in transit"
+		msg := "variable value uses " + scheme + " — consider HTTPS to protect data in transit"
 		if !isPrivateOrInternal(host) {
 			sev = finding.Warn
-			msg = "variable value uses HTTP to a public host — a MITM attacker can read or modify traffic"
+			msg = "variable value uses " + scheme + " to a public host — a MITM attacker can read or modify traffic"
 		}
 		findings = append(findings, finding.Finding{
 			RuleID: "GL016", Severity: sev, Message: msg,
@@ -173,30 +191,55 @@ func (r *gl016) checkScriptHTTP(node *yaml.Node, file string) []finding.Finding 
 		if item.Kind != yaml.ScalarNode {
 			continue
 		}
-		if !curlWgetHTTPRe.MatchString(item.Value) {
-			continue
+		if f := r.scriptLineFinding(item, file); f != nil {
+			findings = append(findings, *f)
 		}
-		// Extract the http:// URL from the line to get the host.
-		m := httpURLRe.FindString(item.Value)
-		if m == "" || !strings.HasPrefix(m, "http://") {
-			continue
-		}
-		host := hostOf(m)
-		if r.skip(host) {
-			continue
-		}
-		sev := finding.Warn
-		msg := "script downloads over HTTP — a MITM attacker can serve malicious content"
-		if isPrivateOrInternal(host) {
-			sev = finding.Info
-			msg = "script downloads over HTTP from a private/internal host — consider HTTPS"
-		}
-		findings = append(findings, finding.Finding{
-			RuleID: "GL016", Severity: sev, Message: msg,
-			File: file, Line: item.Line, Col: item.Column,
-		})
 	}
 	return findings
+}
+
+// scriptLineFinding reports at most one insecure-transport finding for a single
+// script line: git:// anywhere on the line, otherwise an HTTP URL fetched by a
+// known downloader (curl, wget, git).
+func (r *gl016) scriptLineFinding(item *yaml.Node, file string) *finding.Finding {
+	if m := gitURLRe.FindString(item.Value); m != "" {
+		host := hostOf(m)
+		if !r.skip(host) {
+			sev := finding.Warn
+			msg := "script fetches over git:// — git's plaintext, unauthenticated transport lets a MITM attacker serve modified source; use https:// or ssh://"
+			if isPrivateOrInternal(host) {
+				sev = finding.Info
+				msg = "script fetches over git:// from a private/internal host — use https:// or ssh://"
+			}
+			return &finding.Finding{
+				RuleID: "GL016", Severity: sev, Message: msg,
+				File: file, Line: item.Line, Col: item.Column,
+			}
+		}
+	}
+
+	if !curlWgetHTTPRe.MatchString(item.Value) && !gitFetchHTTPRe.MatchString(item.Value) {
+		return nil
+	}
+	// Extract the http:// URL from the line to get the host.
+	m := httpURLRe.FindString(item.Value)
+	if m == "" || !strings.HasPrefix(m, "http://") {
+		return nil
+	}
+	host := hostOf(m)
+	if r.skip(host) {
+		return nil
+	}
+	sev := finding.Warn
+	msg := "script downloads over HTTP — a MITM attacker can serve malicious content"
+	if isPrivateOrInternal(host) {
+		sev = finding.Info
+		msg = "script downloads over HTTP from a private/internal host — consider HTTPS"
+	}
+	return &finding.Finding{
+		RuleID: "GL016", Severity: sev, Message: msg,
+		File: file, Line: item.Line, Col: item.Column,
+	}
 }
 
 // skip returns true if the host should never be flagged (loopback or trusted).
