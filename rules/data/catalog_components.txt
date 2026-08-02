@@ -1,14 +1,19 @@
-# Popular GitLab CI Catalog component resource paths (namespace/project),
-# sorted by star count at generation time. Used by GL064 for typosquatting
-# detection. Regenerate from the GitLab GraphQL ciCatalogResources API.
+# Popular GitLab CI Catalog component resource paths (namespace/project), the
+# ~60 most-starred at generation time, listed in byte order. Used by GL064 for
+# typosquatting detection. Regenerate from the GitLab GraphQL
+# ciCatalogResources API (sort: STAR_COUNT_DESC).
 # The check-catalog-components workflow watches this monthly and opens an issue
-# when the list drifts from the most-starred components.
+# when the list drifts from the most-starred components. Refreshes are additive
+# unless an entry has fallen out of the API top 100 — an entry ranked 61-100 is
+# still a plausible squat target, so dropping it only loses coverage.
+# Last refreshed: 2026-08-02.
 TECHNOFAB/nix-gitlab-ci
 components/code-quality-oss/codequality-os-scanners-integration
 components/opentofu
 components/sast
 components/secret-detection
 dependabot-gitlab/dependabot-standalone
+gitlab-org/professional-services-automation/tools/utilities/pipeintel
 gitlab-org/quality/pipeline-common
 google-gitlab-components/artifact-registry
 guided-explorations/ci-components/checkov-iac-sast
@@ -16,6 +21,7 @@ guided-explorations/ci-components/kaniko
 guided-explorations/ci-components/scc-code-counter
 guided-explorations/ci-components/ultimate-auto-semversioning
 nagyv/gitlab-opencode
+rust-ci/rust-ci
 to-be-continuous/angular
 to-be-continuous/ansible
 to-be-continuous/aws
