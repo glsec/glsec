@@ -278,6 +278,153 @@ build:
 	}
 }
 
+func TestGL016_ScriptGitCloneHTTP_Warn(t *testing.T) {
+	f := findings016(t, `
+build:
+  script:
+    - git clone http://git.example.com/vendor/lib.git
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for git clone http://, got %d", len(f))
+	}
+	if f[0].Severity != finding.Warn {
+		t.Errorf("expected Warn severity for git clone over HTTP, got %s", f[0].Severity)
+	}
+}
+
+func TestGL016_ScriptGitSubcommandsHTTP_Warn(t *testing.T) {
+	for _, line := range []string{
+		"git -C vendor clone --depth 1 http://git.example.com/lib.git",
+		"git fetch http://git.example.com/lib.git main",
+		"git pull http://git.example.com/lib.git",
+		"git remote add upstream http://git.example.com/lib.git",
+		"git submodule add http://git.example.com/lib.git vendor/lib",
+	} {
+		f := findings016(t, "build:\n  script:\n    - "+line+"\n")
+		if len(f) != 1 {
+			t.Errorf("expected 1 finding for %q, got %d", line, len(f))
+		}
+	}
+}
+
+func TestGL016_ScriptGitCloneHTTPS_NoFinding(t *testing.T) {
+	f := findings016(t, `
+build:
+  script:
+    - git clone https://git.example.com/vendor/lib.git
+`)
+	if len(f) != 0 {
+		t.Errorf("expected no finding for git clone https://, got %d", len(f))
+	}
+}
+
+func TestGL016_ScriptGitProtocol_Warn(t *testing.T) {
+	f := findings016(t, `
+build:
+  script:
+    - git clone git://git.example.com/vendor/lib.git
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for git:// clone, got %d", len(f))
+	}
+	if f[0].Severity != finding.Warn {
+		t.Errorf("expected Warn severity for git:// transport, got %s", f[0].Severity)
+	}
+}
+
+func TestGL016_ScriptGitProtocolPrivate_Info(t *testing.T) {
+	f := findings016(t, `
+build:
+  script:
+    - git clone git://10.0.1.5/vendor/lib.git
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for git:// to private IP, got %d", len(f))
+	}
+	if f[0].Severity != finding.Info {
+		t.Errorf("expected Info severity for private host, got %s", f[0].Severity)
+	}
+}
+
+func TestGL016_ScriptGitProtocolTrusted_NoFinding(t *testing.T) {
+	f := findings016trusted(t, `
+build:
+  script:
+    - git clone git://git.corp.example.com/vendor/lib.git
+`, []string{"git.corp.example.com"})
+	if len(f) != 0 {
+		t.Errorf("expected no finding for trusted host, got %d", len(f))
+	}
+}
+
+func TestGL016_VariableGitProtocol_Warn(t *testing.T) {
+	f := findings016(t, `
+variables:
+  VENDOR_REPO: "git://git.example.com/vendor/lib.git"
+build:
+  script: [make]
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for git:// variable, got %d", len(f))
+	}
+	if f[0].Severity != finding.Warn {
+		t.Errorf("expected Warn for public host in git:// variable, got %s", f[0].Severity)
+	}
+}
+
+func TestGL016_VariableGitProtocolInternal_Info(t *testing.T) {
+	f := findings016(t, `
+variables:
+  VENDOR_REPO: "git://git.internal/vendor/lib.git"
+build:
+  script: [make]
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for internal git:// variable, got %d", len(f))
+	}
+	if f[0].Severity != finding.Info {
+		t.Errorf("expected Info for .internal host, got %s", f[0].Severity)
+	}
+}
+
+func TestGL016_IncludeRemoteGitProtocol_Error(t *testing.T) {
+	f := findings016(t, `
+include:
+  - remote: "git://templates.example.com/ci.yml"
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for git:// include, got %d", len(f))
+	}
+	if f[0].Severity != finding.Error {
+		t.Errorf("expected Error severity for git:// include, got %s", f[0].Severity)
+	}
+}
+
+// The scheme match is anchored on a word boundary so substrings such as
+// "digit://" in an unrelated URL path do not count as git transport.
+func TestGL016_GitSchemeSubstring_NoFinding(t *testing.T) {
+	f := findings016(t, `
+build:
+  script:
+    - echo "see https://docs.example.com/digit://notes"
+`)
+	if len(f) != 0 {
+		t.Errorf("expected no finding for digit:// substring, got %d", len(f))
+	}
+}
+
+func TestGL016_ScriptGitStatusNoURL_NoFinding(t *testing.T) {
+	f := findings016(t, `
+build:
+  script:
+    - git status
+    - git log --oneline -1
+`)
+	if len(f) != 0 {
+		t.Errorf("expected no finding for plain git commands, got %d", len(f))
+	}
+}
+
 func TestGL016_LineNumber(t *testing.T) {
 	f := findings016(t, `
 include:
