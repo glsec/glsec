@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -118,5 +119,29 @@ func TestEditDistanceAtMostOne(t *testing.T) {
 func TestCatalogCorpusLoaded(t *testing.T) {
 	if len(catalogComponents) < 20 {
 		t.Fatalf("expected a populated corpus, got %d entries", len(catalogComponents))
+	}
+}
+
+// TestCatalogCorpusSelfConsistent guards the corpus against entries that would
+// make each other look like squats. nearestTyposquat scans in file order and
+// only clears a path once it reaches the exact match, so a one-edit neighbour
+// listed earlier would flag a legitimate include of either component.
+func TestCatalogCorpusSelfConsistent(t *testing.T) {
+	seen := map[string]bool{}
+	for _, c := range catalogComponents {
+		if seen[c] {
+			t.Errorf("duplicate corpus entry %q", c)
+		}
+		seen[c] = true
+
+		if strings.Count(c, "/") < 1 {
+			t.Errorf("corpus entry %q is not a namespace/project path", c)
+		}
+	}
+
+	for _, c := range catalogComponents {
+		if match, ok := nearestTyposquat(c); ok {
+			t.Errorf("corpus entry %q is one edit from corpus entry %q — including either legitimately would be flagged", c, match)
+		}
 	}
 }
