@@ -109,6 +109,7 @@ Gates bypassed, runners untrusted, or downstream pipelines outside access contro
 | [GL055](rules/GL055.md) | `warn`  | `DOCKER_HOST` points at the host Docker socket (`/var/run/docker.sock`) — full control of the runner's Docker daemon |
 | [GL080](rules/GL080.md) | `warn`  | Sensitive/deploy job with no pipeline-source guard (no `rules:`/`only:` or a `rules:` with no `if:`) — runs on every source including fork MRs |
 | [GL081](rules/GL081.md) | `warn`  | Job issues an OIDC `id_tokens:` credential on an unrestricted pipeline source — any branch or merge request can mint a cloud-federating token (GitLab ≥ 15.7) |
+| [GL082](rules/GL082.md) | `warn`  | Managed security scan switched off by CI/CD variable (`SAST_DISABLED`, `SECRET_DETECTION_DISABLED`, …) — the template's jobs never run |
 
 ---
 
@@ -151,7 +152,7 @@ A subset of rules is mapped to [OWASP ASVS](https://owasp.org/www-project-applic
 | V14.2.2 — Components up to date and pinned | GL001, GL022, GL023, GL026, GL041 |
 | V14.2.3 — Dependencies verified for integrity | GL020 |
 | V14.3.1 — Pipeline config protected from modification | GL003, GL019 |
-| V14.3.2 — Security tools run and failures block the build | GL008, GL039 |
+| V14.3.2 — Security tools run and failures block the build | GL008, GL039, GL082 |
 | V14.3.3 — Secrets absent from source and logs | GL006, GL014, GL018, GL021, GL027, GL032, GL033, GL035, GL036, GL038, GL066, GL068 |
 | V14.3.4 — Build environment isolated | GL007, GL015, GL025 |
 | V14.4.1 — Third-party CI/CD service dependence minimised | GL041 |

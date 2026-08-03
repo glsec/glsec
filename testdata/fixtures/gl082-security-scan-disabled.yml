@@ -1,0 +1,18 @@
+include:
+  - template: Jobs/SAST.gitlab-ci.yml
+  - template: Jobs/Secret-Detection.gitlab-ci.yml
+
+stages:
+  - build
+
+variables:
+  SAST_DISABLED: "true"
+  SECRET_DETECTION_DISABLED: "1"
+
+build:
+  stage: build
+  image: alpine:3.19.1
+  variables:
+    DEPENDENCY_SCANNING_DISABLED: true
+  script:
+    - make
