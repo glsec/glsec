@@ -305,3 +305,43 @@ build:
 		t.Fatalf("expected 1 finding for unquoted use, got %d", len(f))
 	}
 }
+
+func TestGL002_ExternalPullRequestSourceBranch_Warn(t *testing.T) {
+	f := findings002(t, `
+build:
+  script:
+    - echo building $CI_EXTERNAL_PULL_REQUEST_SOURCE_BRANCH_NAME
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for CI_EXTERNAL_PULL_REQUEST_SOURCE_BRANCH_NAME, got %d", len(f))
+	}
+}
+
+// The rest of the external-pull-request family is not attacker-controlled in a
+// way that reaches a shell: the target branch belongs to the mirroring project,
+// the SHAs are hex, and the IID is numeric.
+func TestGL002_OtherExternalPullRequestVars_NoFinding(t *testing.T) {
+	for _, v := range []string{
+		"CI_EXTERNAL_PULL_REQUEST_IID",
+		"CI_EXTERNAL_PULL_REQUEST_SOURCE_BRANCH_SHA",
+		"CI_EXTERNAL_PULL_REQUEST_TARGET_BRANCH_NAME",
+		"CI_EXTERNAL_PULL_REQUEST_TARGET_BRANCH_SHA",
+	} {
+		f := findings002(t, "build:\n  script:\n    - echo $"+v+"\n")
+		if len(f) != 0 {
+			t.Errorf("expected no finding for %s, got %d", v, len(f))
+		}
+	}
+}
+
+// The \b anchor must not let the source-branch entry match its own SHA sibling.
+func TestGL002_ExternalPullRequestPrefixNotMatched(t *testing.T) {
+	f := findings002(t, `
+build:
+  script:
+    - echo $CI_EXTERNAL_PULL_REQUEST_SOURCE_BRANCH_SHA
+`)
+	if len(f) != 0 {
+		t.Errorf("expected no finding for the SHA variant, got %d", len(f))
+	}
+}
