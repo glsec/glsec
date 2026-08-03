@@ -1,7 +1,7 @@
 {
   "name": "glsec",
   "description": "Static security scanner for GitLab CI/CD pipelines",
-  "version": "1.13.0",
+  "version": "1.14.0",
   "author": {
     "name": "glsec",
     "url": "https://github.com/glsec/glsec"
