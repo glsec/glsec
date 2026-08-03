@@ -30,6 +30,11 @@ var userControlledVars = []string{
 	"CI_MERGE_REQUEST_TITLE",
 	"CI_MERGE_REQUEST_DESCRIPTION",
 	"CI_PIPELINE_NAME",
+	// Set only in external pull request pipelines (a project mirroring an
+	// external repository). The source branch lives in the contributor's fork
+	// on the external host, so the pull request author names it — the same
+	// trust level as CI_MERGE_REQUEST_SOURCE_BRANCH_NAME, and not slugified.
+	"CI_EXTERNAL_PULL_REQUEST_SOURCE_BRANCH_NAME",
 	// Identity variables controlled directly by an untrusted contributor via
 	// the commit or their own account profile. In fork MR pipelines these
 	// reflect the external MR author. CI_COMMIT_AUTHOR is "Name <email>" taken
