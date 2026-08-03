@@ -91,7 +91,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Install zizmor
-        run: pip install zizmor==1.28.0
+        run: pip install zizmor==1.29.0
       - name: Run zizmor
         run: zizmor --gh-token "${{ secrets.GITHUB_TOKEN }}" .github/workflows/
 
