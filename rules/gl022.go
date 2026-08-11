@@ -21,7 +21,17 @@ type pmInstallCheck struct {
 	trigger *regexp.Regexp // matches the install command
 	pinned  *regexp.Regexp // if present, version is pinned → no finding
 	skip    *regexp.Regexp // if present, skip the line entirely (e.g. -r file)
+	// mask matches the check against a quote-masked copy of the line, so that
+	// package names mentioned in prose (`echo "run npm install locally"`) are
+	// not read as install commands.
+	mask bool
 }
+
+// adhocFirstArg matches the first non-flag argument of an install command,
+// i.e. an explicitly named package. The argument must be unquoted: after
+// masking, a quoted argument carries no version information, so flagging it
+// would report `yarn add "pkg@1.2.3"` as unpinned.
+const adhocFirstArg = `\s+(?:-{1,2}[\w=@./:-]+\s+)*[^-\s"']`
 
 // pmUpdateCheck describes explicit update-to-latest commands that are always wrong in CI.
 type pmUpdateCheck struct {
@@ -39,9 +49,41 @@ var (
 		},
 		{
 			manager: "npm (global)",
-			trigger: regexp.MustCompile(`\bnpm\s+install\b.*(?:-g\b|--global\b)`),
+			trigger: regexp.MustCompile(`\bnpm\s+(?:install|i|add)\b.*(?:-g\b|--global\b)`),
 			pinned:  regexp.MustCompile(`@\d`),
 			skip:    nil,
+		},
+		{
+			// A named package installed on top of the manifest — the dependency
+			// is in no package.json and no lockfile, so the registry decides the
+			// version on every run. Bare `npm install` is GL023's territory.
+			manager: "npm (ad-hoc)",
+			trigger: regexp.MustCompile(`\bnpm\s+(?:install|i|add)` + adhocFirstArg),
+			pinned:  regexp.MustCompile(`@\d`),
+			skip:    regexp.MustCompile(`-g\b|--global\b|\s\.{1,2}/|\sfile:|\s\.\s*(?:$|&&|\|)`),
+			mask:    true,
+		},
+		{
+			manager: "yarn (ad-hoc)",
+			trigger: regexp.MustCompile(`\byarn\s+add` + adhocFirstArg),
+			pinned:  regexp.MustCompile(`@\d`),
+			skip:    regexp.MustCompile(`\s\.{1,2}/|\sfile:|\slink:`),
+			mask:    true,
+		},
+		{
+			manager: "pnpm (ad-hoc)",
+			trigger: regexp.MustCompile(`\bpnpm\s+add` + adhocFirstArg),
+			pinned:  regexp.MustCompile(`@\d`),
+			skip:    regexp.MustCompile(`\s\.{1,2}/|\sfile:|\slink:|\sworkspace:`),
+			mask:    true,
+		},
+		{
+			manager: "bundler (ad-hoc)",
+			trigger: regexp.MustCompile(`\bbundle\s+add` + adhocFirstArg),
+			// Accepts a quoted constraint too: --version '~> 7.1'.
+			pinned: regexp.MustCompile(`(?:-v|--version)\s+["']?[~^><=\s]*\d`),
+			skip:   nil,
+			mask:   true,
 		},
 		{
 			manager: "apt-get",
@@ -151,7 +193,15 @@ func checkPMLine(line, file string, lineNum, col int) *finding.Finding {
 
 	// Install without version pin.
 	for _, ic := range pmInstallChecks {
-		if !ic.trigger.MatchString(line) {
+		// Only the trigger runs against the masked copy: masking exists to stop
+		// prose inside a quoted string from reading as a command. The pin check
+		// stays on the raw line so that a quoted version constraint
+		// (`bundle add rails --version '~> 7.1'`) still counts as pinned.
+		probe := line
+		if ic.mask {
+			probe = maskShellQuotes(line)
+		}
+		if !ic.trigger.MatchString(probe) {
 			continue
 		}
 		if ic.skip != nil && ic.skip.MatchString(line) {

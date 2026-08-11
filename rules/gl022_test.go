@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -530,4 +531,118 @@ api:
 	if len(f) != 0 {
 		t.Errorf("composer install reads lockfile — expected no finding, got %d", len(f))
 	}
+}
+
+// --- ad-hoc dependency installs (issue #459) ---
+
+func TestGL022_AdhocInstalls(t *testing.T) {
+	cases := []struct {
+		name string
+		line string
+	}{
+		{"npm install pkg", "npm install lodash"},
+		{"npm i pkg", "npm i lodash"},
+		{"npm add pkg", "npm add lodash"},
+		{"yarn add", "yarn add left-pad"},
+		{"pnpm add", "pnpm add chalk"},
+		{"bundle add", "bundle add rails"},
+		{"npm install dist-tag", "npm install lodash@latest"},
+		{"yarn add dist-tag", "yarn add pkg@next"},
+		{"npm install with flags", "npm install --no-save lodash"},
+		{"bundle add in a compound command", `'[[ ! -f "Gemfile" ]] && bundle init && bundle add gitlab-dangerfiles'`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := findings022(t, "build:\n  script:\n    - "+tc.line+"\n")
+			if len(f) != 1 {
+				t.Fatalf("expected 1 finding for %q, got %d", tc.line, len(f))
+			}
+			if f[0].Severity != finding.Warn {
+				t.Errorf("expected Warn, got %s", f[0].Severity)
+			}
+		})
+	}
+}
+
+func TestGL022_AdhocInstallsPinned_NoFinding(t *testing.T) {
+	cases := []struct {
+		name string
+		line string
+	}{
+		{"npm install pinned", "npm install lodash@4.17.21"},
+		{"npm i pinned", "npm i lodash@4.17.21"},
+		{"yarn add pinned", "yarn add left-pad@1.3.0"},
+		{"pnpm add pinned", "pnpm add chalk@5.3.0"},
+		{"pnpm add scoped pinned", "pnpm add @scope/pkg@1.0.0"},
+		{"bundle add pinned short flag", "bundle add rails -v 7.1.3"},
+		{"bundle add pinned long flag", "bundle add rails --version 7.1.3"},
+		{"bundle add pinned constraint", `bundle add rails --version '~> 7.1'`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := findings022(t, "build:\n  script:\n    - "+tc.line+"\n")
+			if len(f) != 0 {
+				t.Errorf("expected no finding for %q, got %d (%s)", tc.line, len(f), first022Msg(f))
+			}
+		})
+	}
+}
+
+func TestGL022_AdhocSkips_NoFinding(t *testing.T) {
+	cases := []struct {
+		name string
+		line string
+	}{
+		{"bare npm install is GL023", "npm install"},
+		{"npm install flags only", "npm install --ignore-scripts"},
+		{"npm ci", "npm ci --cache .npm --prefer-offline"},
+		{"yarn install", "yarn install --frozen-lockfile"},
+		{"local path", "npm install ./packages/cli"},
+		{"file protocol", "yarn add file:../shared"},
+		{"link protocol", "pnpm add link:../shared"},
+		{"workspace protocol", "pnpm add workspace:@app/shared"},
+		{"variable package name", "npm install $PKG"},
+		{"package name in prose", `'diff a b || (echo "out of sync. Run npm install locally to fix it." && exit 1)'`},
+		{"quoted package argument", `yarn add "left-pad@1.3.0"`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := findings022(t, "build:\n  script:\n    - "+tc.line+"\n")
+			if len(f) != 0 {
+				t.Errorf("expected no finding for %q, got %d (%s)", tc.line, len(f), first022Msg(f))
+			}
+		})
+	}
+}
+
+func TestGL022_NpmGlobalSpellings(t *testing.T) {
+	cases := []struct {
+		name string
+		line string
+		want int
+	}{
+		{"npm i -g unpinned", "npm i markdown-spellcheck -g", 1},
+		{"npm add -g unpinned", "npm add -g markdownlint", 1},
+		{"npm install -g unpinned", "npm install -g typescript", 1},
+		{"npm i -g pinned", "npm i markdown-spellcheck@1.3.1 -g", 0},
+		{"npm add --global pinned", "npm add --global markdownlint@0.34.0", 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := findings022(t, "build:\n  script:\n    - "+tc.line+"\n")
+			if len(f) != tc.want {
+				t.Fatalf("expected %d finding(s) for %q, got %d (%s)", tc.want, tc.line, len(f), first022Msg(f))
+			}
+			if tc.want == 1 && !strings.Contains(f[0].Message, "npm (global)") {
+				t.Errorf("expected the global entry to report %q, got %q", tc.line, f[0].Message)
+			}
+		})
+	}
+}
+
+func first022Msg(f []finding.Finding) string {
+	if len(f) == 0 {
+		return ""
+	}
+	return f[0].Message
 }
