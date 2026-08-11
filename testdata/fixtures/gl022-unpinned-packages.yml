@@ -13,3 +13,8 @@ build:
     - dnf install -y nginx
     - zypper install -y curl
     - go install golang.org/x/tools/cmd/goimports@latest
+    - npm install lodash
+    - npm i markdown-spellcheck -g
+    - yarn add left-pad
+    - pnpm add chalk
+    - bundle add rails
