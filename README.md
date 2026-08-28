@@ -112,6 +112,11 @@ glsec --recursive --name '*.gitlab-ci.yml' --name 'ci/pipeline.yml' .
 # rules that a template fragment cannot satisfy.
 glsec templates/my-component.yml
 
+# jobs written with `run:` (CI/CD Steps) are scanned too — every script rule and
+# the ShellCheck integration read each step's `script:` the same way they read
+# `script:`, `before_script:`, and `after_script:`.
+glsec .gitlab-ci.yml
+
 # aligned table view, easier to scan when there are many findings
 glsec --format table .gitlab-ci.yml
 

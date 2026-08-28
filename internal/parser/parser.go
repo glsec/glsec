@@ -144,6 +144,43 @@ var reservedKeys = map[string]bool{
 	"after_script":  true,
 }
 
+// RunStepScripts returns the inline script scalar of each step in a job's run:
+// sequence. run: is the CI/CD Steps alternative to script: and is mutually
+// exclusive with it, so without this a job that uses it has no script content
+// at all from the scanner's point of view. A step carries either an inline
+// script string or a step:/func: reference to remote code; only the former
+// holds shell text to scan.
+func RunStepScripts(job *yaml.Node) []*yaml.Node {
+	run := FindKey(job, "run")
+	if run == nil || run.Kind != yaml.SequenceNode {
+		return nil
+	}
+	var scripts []*yaml.Node
+	for _, step := range run.Content {
+		if step.Kind != yaml.MappingNode {
+			continue
+		}
+		if script := FindKey(step, "script"); script != nil && script.Kind == yaml.ScalarNode {
+			scripts = append(scripts, script)
+		}
+	}
+	return scripts
+}
+
+// RunStepBlocks wraps each script from RunStepScripts in a single-item sequence
+// node, so callers that process script *sequences* need no special case for the
+// scalar shape a step uses. Each step is a separate shell invocation, so each
+// gets its own block rather than being pooled. Findings report the wrapped
+// scalar's own position, never the wrapper's.
+func RunStepBlocks(job *yaml.Node) []*yaml.Node {
+	scripts := RunStepScripts(job)
+	blocks := make([]*yaml.Node, 0, len(scripts))
+	for _, script := range scripts {
+		blocks = append(blocks, &yaml.Node{Kind: yaml.SequenceNode, Content: []*yaml.Node{script}})
+	}
+	return blocks
+}
+
 // CountJobs returns the number of job definitions in the document.
 func CountJobs(doc *yaml.Node) int {
 	n := 0

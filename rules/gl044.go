@@ -30,7 +30,7 @@ func (r *gl044) Check(doc *yaml.Node, file string) []finding.Finding {
 			parser.FindKey(job, "script"),
 			parser.FindKey(job, "before_script"),
 		}
-		jobScripts = append(jobScripts, RunStepBlocks(job)...)
+		jobScripts = append(jobScripts, parser.RunStepBlocks(job)...)
 		for _, node := range jobScripts {
 			if node == nil {
 				continue

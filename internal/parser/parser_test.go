@@ -164,3 +164,64 @@ func TestParse_MultiDocumentWithoutSpecUsesFirst(t *testing.T) {
 		t.Error("expected the first document to be linted")
 	}
 }
+
+func TestRunStepScripts(t *testing.T) {
+	doc, err := Parse([]byte(`
+build:
+  run:
+    - name: inline
+      script: make all
+    - name: remote
+      step: registry.example.com/org/scanner@v1
+    - name: second_inline
+      script: make test
+`), "test.yml")
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	EachJob(doc.Root, func(_ *yaml.Node, job *yaml.Node) {
+		scripts := RunStepScripts(job)
+		if len(scripts) != 2 {
+			t.Fatalf("expected 2 inline scripts (the step: reference carries none), got %d", len(scripts))
+		}
+		if scripts[0].Value != "make all" || scripts[1].Value != "make test" {
+			t.Errorf("unexpected scripts: %q, %q", scripts[0].Value, scripts[1].Value)
+		}
+		blocks := RunStepBlocks(job)
+		if len(blocks) != 2 {
+			t.Fatalf("expected 2 blocks, got %d", len(blocks))
+		}
+		for i, b := range blocks {
+			if b.Kind != yaml.SequenceNode || len(b.Content) != 1 {
+				t.Errorf("block %d: expected a single-item sequence", i)
+				continue
+			}
+			// The wrapped node must be the original scalar, so findings keep
+			// their real position.
+			if b.Content[0] != scripts[i] {
+				t.Errorf("block %d: wrapper does not hold the original scalar node", i)
+			}
+		}
+	})
+}
+
+func TestRunStepScripts_MalformedAndAbsent(t *testing.T) {
+	for _, src := range []string{
+		"build:\n  script: [make]\n",
+		"build:\n  run: not-a-sequence\n",
+		"build:\n  run: []\n",
+		"build:\n  run:\n    - just-a-scalar\n",
+		"build:\n  run:\n    - name: no_script\n",
+		"build:\n  run:\n    - name: seq_script\n      script: [a, b]\n",
+	} {
+		doc, err := Parse([]byte(src), "test.yml")
+		if err != nil {
+			t.Fatalf("parse error for %q: %v", src, err)
+		}
+		EachJob(doc.Root, func(_ *yaml.Node, job *yaml.Node) {
+			if got := len(RunStepScripts(job)); got != 0 {
+				t.Errorf("%q: expected no scripts, got %d", src, got)
+			}
+		})
+	}
+}

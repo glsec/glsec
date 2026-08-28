@@ -96,7 +96,7 @@ build:
         severity: high
 `)
 	parser.EachJob(doc, func(_ *yaml.Node, job *yaml.Node) {
-		if got := len(RunStepBlocks(job)); got != 0 {
+		if got := len(parser.RunStepBlocks(job)); got != 0 {
 			t.Errorf("expected no script blocks for a step: reference, got %d", got)
 		}
 		if got := len(CollectJobScriptLines(job)); got != 0 {
@@ -115,7 +115,7 @@ func TestRunSteps_MalformedShapes(t *testing.T) {
 	} {
 		doc := parseRunSteps(t, src)
 		parser.EachJob(doc, func(_ *yaml.Node, job *yaml.Node) {
-			if got := len(RunStepBlocks(job)); got != 0 {
+			if got := len(parser.RunStepBlocks(job)); got != 0 {
 				t.Errorf("%q: expected no blocks, got %d", src, got)
 			}
 		})
