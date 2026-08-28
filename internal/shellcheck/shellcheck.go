@@ -81,6 +81,14 @@ func Run(doc *yaml.Node, file string, binPath string) []finding.Finding {
 				blocks = append(blocks, scriptBlock{jobName: name.Value, lines: lines})
 			}
 		}
+		// run: is the CI/CD Steps alternative to script: and excludes it, so a
+		// job using steps has no script: block for ShellCheck to see. Each step
+		// is a separate shell invocation and is checked on its own.
+		for _, node := range parser.RunStepBlocks(job) {
+			if lines := extractLines(node); len(lines) > 0 {
+				blocks = append(blocks, scriptBlock{jobName: name.Value, lines: lines})
+			}
+		}
 	})
 
 	var findings []finding.Finding
