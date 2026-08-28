@@ -77,8 +77,14 @@ func (r *gl016) Check(doc *yaml.Node, file string) []finding.Finding {
 			f.Job = name.Value
 			findings = append(findings, f)
 		}
-		for _, key := range []string{"script", "before_script", "after_script"} {
-			if node := parser.FindKey(job, key); node != nil {
+		jobScripts := []*yaml.Node{
+			parser.FindKey(job, "script"),
+			parser.FindKey(job, "before_script"),
+			parser.FindKey(job, "after_script"),
+		}
+		jobScripts = append(jobScripts, RunStepBlocks(job)...)
+		for _, node := range jobScripts {
+			if node != nil {
 				for _, f := range r.checkScriptHTTP(node, file) {
 					f.Job = name.Value
 					findings = append(findings, f)
