@@ -35,7 +35,7 @@ func (r *gl014) Check(doc *yaml.Node, file string) []finding.Finding {
 			parser.FindKey(job, "after_script"),
 			hookScriptNode(job),
 		}
-		scriptNodes = append(scriptNodes, RunStepBlocks(job)...)
+		scriptNodes = append(scriptNodes, parser.RunStepBlocks(job)...)
 		for _, scriptNode := range scriptNodes {
 			if scriptNode == nil || scriptNode.Kind != yaml.SequenceNode {
 				continue
