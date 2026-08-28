@@ -49,6 +49,44 @@ func hookScriptNode(container *yaml.Node) *yaml.Node {
 	return parser.FindKey(hooks, "pre_get_sources_script")
 }
 
+// runStepScripts returns the inline script scalar of each step in a job's run:
+// sequence. run: is the CI/CD Steps alternative to script: and is mutually
+// exclusive with it, so without this a job that uses it has no script content
+// at all from the scanner's point of view. A step carries either an inline
+// script string or a step:/func: reference to remote code; only the former
+// holds shell text to scan. Unlike script:, a step's script is a single scalar
+// rather than a sequence, and it is commonly a multi-line block scalar.
+func runStepScripts(job *yaml.Node) []*yaml.Node {
+	run := parser.FindKey(job, "run")
+	if run == nil || run.Kind != yaml.SequenceNode {
+		return nil
+	}
+	var scripts []*yaml.Node
+	for _, step := range run.Content {
+		if step.Kind != yaml.MappingNode {
+			continue
+		}
+		if script := parser.FindKey(step, "script"); script != nil && script.Kind == yaml.ScalarNode {
+			scripts = append(scripts, script)
+		}
+	}
+	return scripts
+}
+
+// RunStepBlocks returns each of a job's run: step scripts wrapped as a
+// single-item sequence node. Callers that process script *sequences* can then
+// handle steps without special-casing the scalar shape. Each step is a separate
+// shell invocation, so each gets its own block rather than being pooled.
+// Findings report the wrapped scalar's own position, never the wrapper's.
+func RunStepBlocks(job *yaml.Node) []*yaml.Node {
+	scripts := runStepScripts(job)
+	blocks := make([]*yaml.Node, 0, len(scripts))
+	for _, script := range scripts {
+		blocks = append(blocks, &yaml.Node{Kind: yaml.SequenceNode, Content: []*yaml.Node{script}})
+	}
+	return blocks
+}
+
 // CollectJobScriptLines returns all scalar script lines from a job's
 // before_script, script, after_script, and hooks:pre_get_sources_script sections.
 func CollectJobScriptLines(job *yaml.Node) []*yaml.Node {
@@ -67,6 +105,7 @@ func CollectJobScriptLines(job *yaml.Node) []*yaml.Node {
 		appendScalars(parser.FindKey(job, key))
 	}
 	appendScalars(hookScriptNode(job))
+	lines = append(lines, runStepScripts(job)...)
 	return lines
 }
 
@@ -101,6 +140,9 @@ func EachScriptBlock(doc *yaml.Node, file string, fn func(node *yaml.Node, file,
 			visit(parser.FindKey(job, key), name.Value)
 		}
 		visit(hookScriptNode(job), name.Value)
+		for _, block := range RunStepBlocks(job) {
+			fn(block, file, name.Value)
+		}
 	})
 }
 

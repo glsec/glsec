@@ -100,3 +100,35 @@ my-job:
 		t.Errorf("job with script should be recognised: %v", err)
 	}
 }
+
+func TestFile_RunStepsOnly(t *testing.T) {
+	// run: is the CI/CD Steps alternative to script: and is mutually exclusive
+	// with it, so a steps-only pipeline has no script: key to recognise.
+	doc := parse(t, `
+build:
+  run:
+    - name: compile
+      script: make all
+`)
+	warns, err := File("test.yml", doc)
+	if err != nil {
+		t.Errorf("unexpected error for a run:-only pipeline: %v", err)
+	}
+	if len(warns) != 0 {
+		t.Errorf("unexpected warnings: %v", warns)
+	}
+}
+
+func TestFile_RunStepsWithFuncReferenceOnly(t *testing.T) {
+	// A step may reference remote code instead of carrying an inline script.
+	// The file is still GitLab CI.
+	doc := parse(t, `
+build:
+  run:
+    - name: scan
+      step: registry.example.com/org/scanner@v1
+`)
+	if _, err := File("test.yml", doc); err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+}

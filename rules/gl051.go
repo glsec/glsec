@@ -52,6 +52,9 @@ func (r *gl051) Check(doc *yaml.Node, file string) []finding.Finding {
 		for _, key := range []string{"script", "before_script", "after_script"} {
 			findings = append(findings, gl051CheckScripts(parser.FindKey(jobNode, key), file, job, key, patterns)...)
 		}
+		for _, block := range RunStepBlocks(jobNode) {
+			findings = append(findings, gl051CheckScripts(block, file, job, "run", patterns)...)
+		}
 		findings = append(findings, gl051CheckScripts(hookScriptNode(jobNode), file, job, "hooks:pre_get_sources_script", patterns)...)
 		findings = append(findings, gl051CheckEnvironment(parser.FindKey(jobNode, "environment"), file, job, patterns)...)
 	})
