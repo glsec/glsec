@@ -76,6 +76,7 @@ User-controlled inputs and unversioned component references that allow malicious
 | [GL067](rules/GL067.md) | `warn`  | `SECURE_ANALYZERS_PREFIX` (or `*_ANALYZER_IMAGE`) repoints managed security scanners off `registry.gitlab.com` |
 | [GL078](rules/GL078.md) | `warn`  | Invisible / bidirectional Unicode control characters (Trojan Source) — rendered file can differ from what runs |
 | [GL083](rules/GL083.md) | `error` | Reverse shell or backdoor payload in `script:` — connects the runner back to an attacker-controlled host |
+| [GL084](rules/GL084.md) | varies  | CI variable interpolation in an `include:` target — the included configuration is picked at pipeline start |
 
 ---
 
@@ -152,7 +153,7 @@ A subset of rules is mapped to [OWASP ASVS](https://owasp.org/www-project-applic
 | V14.2.1 — Components from trusted, maintained sources | GL003, GL011, GL016, GL065, GL067, GL075 |
 | V14.2.2 — Components up to date and pinned | GL001, GL022, GL023, GL026, GL041 |
 | V14.2.3 — Dependencies verified for integrity | GL020 |
-| V14.3.1 — Pipeline config protected from modification | GL003, GL019 |
+| V14.3.1 — Pipeline config protected from modification | GL003, GL019, GL084 |
 | V14.3.2 — Security tools run and failures block the build | GL008, GL039, GL082 |
 | V14.3.3 — Secrets absent from source and logs | GL006, GL014, GL018, GL021, GL027, GL032, GL033, GL035, GL036, GL038, GL066, GL068 |
 | V14.3.4 — Build environment isolated | GL007, GL015, GL025, GL083 |

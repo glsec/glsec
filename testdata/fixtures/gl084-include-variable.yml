@@ -1,0 +1,23 @@
+workflow:
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+include:
+  - local: "$TEMPLATE_PATH.yml"
+  - local: "/ci/$CI_COMMIT_REF_NAME.yml"
+  - project: $TEMPLATE_PROJECT
+    ref: 3a1f9c2b7e5d4a6f8c0b1d2e3f4a5b6c7d8e9f01
+    file: "$TEMPLATE_FILE.yml"
+  - project: my-group/ci-templates
+    ref: $CI_COMMIT_REF_NAME
+    file: /jobs/deploy.yml
+  - component: $CI_SERVER_FQDN/$CI_PROJECT_PATH/scan@1.2.3
+  - project: my-group/ci-templates
+    ref: 9f8e7d6c5b4a39281706f5e4d3c2b1a098765432
+    file: /jobs/test.yml
+
+build:
+  stage: build
+  image: alpine:3.19.1
+  script:
+    - make
