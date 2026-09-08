@@ -84,6 +84,7 @@ var cweIDs = map[string]string{
 	"GL080": "CWE-691",
 	"GL081": "CWE-284",
 	"GL082": "CWE-693",
+	"GL083": "CWE-506",
 }
 
 // cweNames maps CWE IDs to their short names.
@@ -97,6 +98,7 @@ var cweNames = map[string]string{
 	"CWE-390":  "Detection of Error Condition Without Action",
 	"CWE-441":  "Unintended Proxy or Intermediary ('Confused Deputy')",
 	"CWE-494":  "Download of Code Without Integrity Check",
+	"CWE-506":  "Embedded Malicious Code",
 	"CWE-522":  "Insufficiently Protected Credentials",
 	"CWE-532":  "Insertion of Sensitive Information into Log File",
 	"CWE-538":  "Insertion of Sensitive Information into Externally-Accessible File or Directory",
