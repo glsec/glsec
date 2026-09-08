@@ -20,8 +20,12 @@ wait-for-db:
       alias: postgres
   script:
     - timeout 1 bash -c "cat < /dev/null > /dev/tcp/postgres/5432"
+    - if (exec 3<>/dev/tcp/postgres/5432) 2>/dev/null; then echo up; fi
     - nc -z postgres 5432
+    - sh -c "apk add --no-cache netcat-openbsd && nc -z postgres 5432"
+    - nc -lc "printf 'HTTP/1.1 200 OK\n\n'; cat report.json" -l 8080
     - socat TCP-LISTEN:15432,fork TCP:postgres:5432 &
+    - socat EXEC:'psql -h postgres -c "select 1"',pty,setsid,ctty STDIO,ignoreeof
     - psql -h postgres -c 'select 1'
 
 build:

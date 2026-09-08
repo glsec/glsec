@@ -3,6 +3,7 @@ package rules
 import (
 	"fmt"
 	"regexp"
+	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
 	"gopkg.in/yaml.v3"
@@ -19,24 +20,26 @@ var (
 	// /dev/tcp/host/port device.
 	socketRedirRe = regexp.MustCompile(`/dev/(?:tcp|udp)/`)
 	// interactiveShellRe matches a shell invoked with the interactive flag, in
-	// any of the -i, -it, -si spellings.
-	interactiveShellRe = regexp.MustCompile(`\b(?:ba|z|k|da)?sh\b[^|;&]*\s-[a-zA-Z]*i\b`)
-	// socketExecRe matches a socket opened read-write on a file descriptor:
-	// exec 5<>/dev/tcp/host/port. The read-write form is what distinguishes it
-	// from a one-way connectivity probe.
-	socketExecRe = regexp.MustCompile(`\bexec\s+\d+<>\s*/dev/(?:tcp|udp)/`)
+	// any of the -i, -it, -si spellings. The interactive flag is what separates
+	// a reverse shell from the wait-for-service probe, which opens the socket
+	// and closes it again without ever attaching a shell to it.
+	interactiveShellRe = regexp.MustCompile(`\b(?:ba|z|k|da)?sh\b[^|;&\n]*\s-[a-zA-Z]*i\b`)
 
-	// netcatExecRe matches netcat asked to run a program on connect. -e and -c
-	// are the traditional and ncat spellings; both hand a shell to the peer.
-	netcatExecRe = regexp.MustCompile(`\b(?:nc|ncat|netcat)(?:\.traditional|\.openbsd)?\b[^|;&]*(?:\s-[a-zA-Z]*[ec]\b|\s--(?:exec|sh-exec|lua-exec)\b)`)
+	// netcatExecRe matches netcat asked to run a *shell* on connect. The flag
+	// alone is not enough: nc -lc "printf ..." is a one-shot HTTP responder, so
+	// the argument has to name a shell.
+	netcatExecRe = regexp.MustCompile(`\b(?:nc|ncat|netcat)(?:\.traditional|\.openbsd)?\b[^|;&\n]*(?:\s-[a-zA-Z]*[ec]\b|\s--(?:exec|sh-exec|lua-exec)\b)\s*['"]?\S*(?:\bsh\b|\bbash\b|\bzsh\b|\bash\b|\bdash\b|\bcmd(?:\.exe)?\b|\bpowershell\b)`)
 	// netcatRe matches any netcat invocation, used only in combination with mkfifo.
 	netcatRe = regexp.MustCompile(`\b(?:nc|ncat|netcat)(?:\.traditional|\.openbsd)?\b`)
 	mkfifoRe = regexp.MustCompile(`\bmkfifo\b`)
 
-	// socatExecRe matches socat wired to a program endpoint. socat address
-	// keywords are case-insensitive.
+	// socatRe, socatExecRe and socatNetRe together match socat wiring a program
+	// to a network peer. A program endpoint on its own is ordinary usage:
+	// socat EXEC:'...' STDIO drives a local command and never opens a socket.
+	// socat address keywords are case-insensitive.
 	socatRe     = regexp.MustCompile(`\bsocat\b`)
 	socatExecRe = regexp.MustCompile(`(?i)\b(?:exec|system):`)
+	socatNetRe  = regexp.MustCompile(`(?i)\b(?:tcp|udp|openssl|ssl|socks[45]a?)[46]?(?:-[a-z]+)?:`)
 
 	// interpreterRe, socketAPIRe and interpreterExecRe together match the
 	// scripting-language one-liners: an interpreter that opens a socket and
@@ -47,25 +50,28 @@ var (
 )
 
 // reverseShellKind returns a short description of the reverse-shell pattern in
-// line, or the empty string when the line carries none.
+// line, or the empty string when the line carries none. line is a single
+// physical line, never a whole block scalar: the character classes below skip
+// over shell separators, and letting them run past a newline would pair a
+// netcat on one line of a `|` block with a shell flag several lines down.
 //
 // Every check requires a combination. Each individual token here has ordinary
-// uses in CI: /dev/tcp is the standard wait-for-service probe, socat forwards
-// ports, nc -l is a throwaway test listener and mkfifo tees logs. It is the
-// pairing that has no innocent reading.
+// uses in CI: /dev/tcp is the standard wait-for-service probe, socat drives
+// local commands and forwards ports, nc -l is a throwaway test listener and
+// mkfifo tees logs. It is the pairing that has no innocent reading.
 //
 // Quoted substrings are deliberately not stripped the way GL011 strips them:
 // a reverse shell is routinely wrapped as bash -c "bash -i >& /dev/tcp/...",
 // and removing quotes first would remove the payload.
 func reverseShellKind(line string) string {
 	switch {
-	case socketRedirRe.MatchString(line) && (interactiveShellRe.MatchString(line) || socketExecRe.MatchString(line)):
+	case socketRedirRe.MatchString(line) && interactiveShellRe.MatchString(line):
 		return "shell redirected to a socket"
 	case netcatExecRe.MatchString(line):
 		return "netcat with command execution"
 	case mkfifoRe.MatchString(line) && netcatRe.MatchString(line):
 		return "named-pipe backdoor"
-	case socatRe.MatchString(line) && socatExecRe.MatchString(line):
+	case socatRe.MatchString(line) && socatExecRe.MatchString(line) && socatNetRe.MatchString(line):
 		return "socat with a program endpoint"
 	case interpreterRe.MatchString(line) && socketAPIRe.MatchString(line) && interpreterExecRe.MatchString(line):
 		return "interpreter socket one-liner"
@@ -76,7 +82,7 @@ func reverseShellKind(line string) string {
 func (r *gl083) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
 	EachScriptLine(doc, file, func(item *yaml.Node, file, job string) {
-		kind := reverseShellKind(item.Value)
+		kind, payload := scanReverseShell(item.Value)
 		if kind == "" {
 			return
 		}
@@ -85,7 +91,7 @@ func (r *gl083) Check(doc *yaml.Node, file string) []finding.Finding {
 			Severity: finding.Error,
 			Message: fmt.Sprintf(
 				"script line opens a shell to a remote host (%s): %q — this is a reverse shell; remove it",
-				kind, truncate(item.Value, 80),
+				kind, truncate(payload, 80),
 			),
 			File: file,
 			Line: item.Line,
@@ -94,4 +100,17 @@ func (r *gl083) Check(doc *yaml.Node, file string) []finding.Finding {
 		})
 	})
 	return findings
+}
+
+// scanReverseShell evaluates each physical line of a script item separately and
+// returns the first pattern found along with the line carrying it. A block
+// scalar arrives here as one item, so splitting is what keeps a match anchored
+// to a single command.
+func scanReverseShell(value string) (kind, payload string) {
+	for _, line := range strings.Split(value, "\n") {
+		if k := reverseShellKind(line); k != "" {
+			return k, strings.TrimSpace(line)
+		}
+	}
+	return "", ""
 }
