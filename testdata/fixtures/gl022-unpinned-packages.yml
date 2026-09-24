@@ -16,6 +16,7 @@ build:
     - npm install lodash
     - npm i markdown-spellcheck -g
     - yarn add left-pad
+    - yarn global add @angular/cli
     - pnpm add chalk
     - bundle add rails
     - npx -y surge dist

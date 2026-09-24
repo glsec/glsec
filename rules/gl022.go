@@ -68,7 +68,7 @@ var (
 		},
 		{
 			manager: "yarn (ad-hoc)",
-			trigger: regexp.MustCompile(`\byarn\s+add` + adhocFirstArg),
+			trigger: regexp.MustCompile(`\byarn\s+(?:global\s+)?add` + adhocFirstArg),
 			pinned:  regexp.MustCompile(`@\d`),
 			skip:    regexp.MustCompile(`\s\.{1,2}/|\sfile:|\slink:`),
 			mask:    true,
