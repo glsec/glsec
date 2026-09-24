@@ -720,3 +720,33 @@ func TestGL022_LauncherVerbsDoNotWidenVarSkip(t *testing.T) {
 		}
 	}
 }
+
+func TestGL022_YarnGlobalAddUnpinned(t *testing.T) {
+	for _, line := range []string{
+		"yarn global add @angular/cli",
+		"yarn global add gulp web-ext @ionic/cli",
+		"yarn global add @triones/tt@beta",
+		"which x >/dev/null || yarn global add @substrate/x",
+	} {
+		if got := checkPMLine(line, "test.yml", 1, 1); got == nil {
+			t.Errorf("expected a finding for %q", line)
+		}
+	}
+}
+
+func TestGL022_YarnGlobal_NoFinding(t *testing.T) {
+	for _, line := range []string{
+		"yarn global add serverless@3.38.0",
+		`yarn global add "serverless@3.38.0"`,
+		"yarn global add $TOOL",
+		"yarn global add",
+		"yarn global remove gulp",
+		"yarn global list",
+		"yarn global bin",
+		"yarn run lint add lodash",
+	} {
+		if got := checkPMLine(line, "test.yml", 1, 1); got != nil {
+			t.Errorf("expected no finding for %q, got %q", line, got.Message)
+		}
+	}
+}
