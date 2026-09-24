@@ -75,7 +75,7 @@ User-controlled inputs and unversioned component references that allow malicious
 | [GL065](rules/GL065.md) | `warn`  | `image:`/`services:` from a registry not in the opt-in `allowed_registries` allowlist |
 | [GL067](rules/GL067.md) | `warn`  | `SECURE_ANALYZERS_PREFIX` (or `*_ANALYZER_IMAGE`) repoints managed security scanners off `registry.gitlab.com` |
 | [GL078](rules/GL078.md) | `warn`  | Invisible / bidirectional Unicode control characters (Trojan Source) — rendered file can differ from what runs |
-| [GL083](rules/GL083.md) | `error` | Reverse shell or backdoor payload in `script:` — connects the runner back to an attacker-controlled host |
+| [GL083](rules/GL083.md) | `error` | Reverse shell, backdoor or credential exfiltration in `script:` — connects the runner back to an attacker-controlled host or sends a credential file or minted token to one |
 | [GL084](rules/GL084.md) | varies  | CI variable interpolation in an `include:` target — the included configuration is picked at pipeline start |
 
 ---

