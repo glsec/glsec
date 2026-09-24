@@ -18,3 +18,7 @@ build:
     - yarn add left-pad
     - pnpm add chalk
     - bundle add rails
+    - npx -y surge dist
+    - pnpm dlx node-gyp rebuild
+    - uvx ruff check
+    - pipx run black --check .

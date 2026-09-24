@@ -25,6 +25,9 @@ type pmInstallCheck struct {
 	// package names mentioned in prose (`echo "run npm install locally"`) are
 	// not read as install commands.
 	mask bool
+	// run marks a launcher that fetches a package and executes it in one step,
+	// so the finding says it runs rather than installs.
+	run bool
 }
 
 // adhocFirstArg matches the first non-flag argument of an install command,
@@ -76,6 +79,34 @@ var (
 			pinned:  regexp.MustCompile(`@\d`),
 			skip:    regexp.MustCompile(`\s\.{1,2}/|\sfile:|\slink:|\sworkspace:`),
 			mask:    true,
+		},
+		{
+			// npx resolves node_modules/.bin first, so a bare `npx eslint` almost
+			// always runs a project devDependency. Only the forms that say the
+			// package comes from the registry are flagged: an explicit -y/--yes
+			// (or npm_config_yes=true), or a dist-tag on the package name.
+			manager: "npx",
+			trigger: regexp.MustCompile(`\bnpm_config_yes=true\s+npx\b|\b(?:npx|npm\s+(?:exec|x))\s+(?:-{1,2}[\w=@./:-]+\s+)*?(?:-y|--yes)\b|\bnpx\s+(?:-{1,2}[\w=@./:-]+\s+)*(?:@[\w.-]+/)?[\w.-]+@[A-Za-z]`),
+			pinned:  regexp.MustCompile(`@\d`),
+			mask:    true,
+			run:     true,
+		},
+		{
+			manager: "pnpm/yarn dlx",
+			trigger: regexp.MustCompile(`\b(?:pnpm|yarn)\s+dlx` + adhocFirstArg),
+			pinned:  regexp.MustCompile(`@\d`),
+			skip:    regexp.MustCompile(`\s\.{1,2}/|\sfile:|\slink:`),
+			mask:    true,
+			run:     true,
+		},
+		{
+			manager: "uvx / pipx run",
+			trigger: regexp.MustCompile(`\b(?:uvx|uv\s+tool\s+run|pipx\s+run)` + adhocFirstArg),
+			pinned:  regexp.MustCompile(`@\d|==\d`),
+			// A local project as the package source: `uvx --from . tool`.
+			skip: regexp.MustCompile(`(?:uvx|run|--from|--spec)(?:\s+|=)\.{1,2}(?:/|\s|$)`),
+			mask: true,
+			run:  true,
 		},
 		{
 			manager: "bundler (ad-hoc)",
@@ -145,7 +176,7 @@ var (
 	// pmVarPkg matches an install whose first non-flag argument is a CI variable
 	// (e.g. `apt-get install -y $PKG`). The version can't be checked statically, so
 	// the line is skipped to avoid false positives.
-	pmVarPkg = regexp.MustCompile(`\b(?:install|add|require|in)\s+(?:-\S+\s+)*["']?\$\{?[A-Za-z_]`)
+	pmVarPkg = regexp.MustCompile(`\b(?:install|add|require|in|npx|npm\s+(?:exec|x)|dlx|uvx|uv\s+tool\s+run|pipx\s+run)\s+(?:-\S+\s+)*["']?\$\{?[A-Za-z_]`)
 
 	pmUpdateChecks = []pmUpdateCheck{
 		{"npm", regexp.MustCompile(`\bnpm\s+update\b`)},
@@ -213,10 +244,14 @@ func checkPMLine(line, file string, lineNum, col int) *finding.Finding {
 		if ic.pinned != nil && ic.pinned.MatchString(line) {
 			continue
 		}
+		msg := fmt.Sprintf("%s install without version pin — use an exact version to make the pipeline reproducible", ic.manager)
+		if ic.run {
+			msg = fmt.Sprintf("%s fetches and runs a package without version pin — use an exact version to make the pipeline reproducible", ic.manager)
+		}
 		f := finding.Finding{
 			RuleID:   "GL022",
 			Severity: finding.Warn,
-			Message:  fmt.Sprintf("%s install without version pin — use an exact version to make the pipeline reproducible", ic.manager),
+			Message:  msg,
 			File:     file,
 			Line:     lineNum,
 			Col:      col,
