@@ -24,3 +24,10 @@ greet-job:
     - echo hi $CI_COMMIT_AUTHOR
     - ./greet.sh $GITLAB_USER_NAME
     - ./mail.sh $GITLAB_USER_EMAIL
+
+eval-job:
+  stage: test
+  image: alpine:3.19
+  script:
+    - eval "echo building $CI_MERGE_REQUEST_TITLE"
+    - bash -c "git checkout $CI_COMMIT_BRANCH"

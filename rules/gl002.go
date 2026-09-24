@@ -51,6 +51,14 @@ var userVarRe = regexp.MustCompile(
 	`\$\{?(` + strings.Join(userControlledVars, "|") + `)\b`,
 )
 
+// evalArgRe matches a command that parses its argument as code, up to and
+// including the opening double quote of that argument. The outer shell
+// expands variables inside the double quotes first, so the command then
+// parses the attacker's value as code: quoting protects nothing here.
+var evalArgRe = regexp.MustCompile(
+	`(?:^|[\s;&|/(` + "`" + `])(eval|(?:ba|z|da|k)?sh[ \t]+(?:-[a-zA-Z]+[ \t]+)*-[a-zA-Z]*c|python[23]?(?:\.\d+)?[ \t]+(?:-[a-zA-Z]+[ \t]+)*-c|node[ \t]+(?:-e|--eval|-p|--print)|(?:perl|ruby)[ \t]+(?:-[a-zA-Z]+[ \t]+)*-[a-zA-Z]*e)[ \t]+"`,
+)
+
 func (r *gl002) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
 	EachScriptBlock(doc, file, func(node *yaml.Node, file, job string) {
@@ -77,12 +85,9 @@ func checkScriptNode(node *yaml.Node, file string) []finding.Finding {
 
 func checkScriptLine(node *yaml.Node, file string) []finding.Finding {
 	masked := maskShellQuotes(node.Value)
-	matches := userVarRe.FindAllStringSubmatchIndex(masked, -1)
-	if len(matches) == 0 {
-		return nil
-	}
 	seen := map[string]bool{}
-	var findings []finding.Finding
+	findings := checkEvaluatedArgs(node, file, masked, seen)
+	matches := userVarRe.FindAllStringSubmatchIndex(masked, -1)
 	for _, loc := range matches {
 		dollarPos := loc[0]
 		varName := masked[loc[2]:loc[3]]
@@ -104,6 +109,47 @@ func checkScriptLine(node *yaml.Node, file string) []finding.Finding {
 			Line: node.Line,
 			Col:  node.Column,
 		})
+	}
+	return findings
+}
+
+// checkEvaluatedArgs reports user-controlled variables inside the
+// double-quoted argument of a command that evaluates it as code (eval, sh -c,
+// python -c, …). masked is maskShellQuotes(node.Value); masking keeps offsets,
+// so the command is located on the masked copy, where a keyword inside a
+// quoted string cannot match, and the argument is read from the raw value.
+func checkEvaluatedArgs(node *yaml.Node, file, masked string, seen map[string]bool) []finding.Finding {
+	var findings []finding.Finding
+	for _, m := range evalArgRe.FindAllStringSubmatchIndex(masked, -1) {
+		open := m[1] - 1
+		end := strings.IndexByte(masked[open+1:], '"')
+		if end < 0 {
+			continue
+		}
+		arg := node.Value[open+1 : open+1+end]
+		cmd := strings.Join(strings.Fields(masked[m[2]:m[3]]), " ")
+		for _, loc := range userVarRe.FindAllStringSubmatchIndex(arg, -1) {
+			// \$VAR inside double quotes is a literal dollar sign.
+			if loc[0] > 0 && arg[loc[0]-1] == '\\' {
+				continue
+			}
+			varName := arg[loc[2]:loc[3]]
+			if seen[varName] {
+				continue
+			}
+			seen[varName] = true
+			findings = append(findings, finding.Finding{
+				RuleID:   "GL002",
+				Severity: finding.Warn,
+				Message: fmt.Sprintf(
+					"user-controlled variable $%s is expanded into code evaluated by `%s` — quoting does not help, a crafted value runs as a command",
+					varName, cmd,
+				),
+				File: file,
+				Line: node.Line,
+				Col:  node.Column,
+			})
+		}
 	}
 	return findings
 }

@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -343,5 +344,91 @@ build:
 `)
 	if len(f) != 0 {
 		t.Errorf("expected no finding for the SHA variant, got %d", len(f))
+	}
+}
+
+// --- variables expanded into code (eval, sh -c, interpreter -c/-e) ---
+
+func TestGL002_EvaluatedQuotedArg(t *testing.T) {
+	cases := map[string]string{
+		`eval "echo building $CI_MERGE_REQUEST_TITLE"`:        "`eval`",
+		`bash -c "echo $CI_COMMIT_MESSAGE"`:                   "`bash -c`",
+		`sh -c "git checkout $CI_COMMIT_BRANCH"`:              "`sh -c`",
+		`bash -ec "make deploy BRANCH=${CI_COMMIT_REF_NAME}"`: "`bash -ec`",
+		`sh -e -c "echo $CI_COMMIT_TITLE"`:                    "`sh -e -c`",
+		`python3 -c "print('$CI_COMMIT_BRANCH')"`:             "`python3 -c`",
+		`node -e "console.log('$CI_MERGE_REQUEST_TITLE')"`:    "`node -e`",
+		`perl -e "print qq($CI_COMMIT_MESSAGE)"`:              "`perl -e`",
+		`docker run alpine sh -c "echo $CI_COMMIT_REF_NAME"`:  "`sh -c`",
+		`/bin/sh -c "echo $CI_COMMIT_MESSAGE"`:                "`sh -c`",
+		`docker run img /bin/bash -c "deploy $CI_COMMIT_TAG"`: "`bash -c`",
+		`test -n "$X" && eval "notify $GITLAB_USER_NAME"`:     "`eval`",
+	}
+	for line, cmd := range cases {
+		f := findings002(t, "job:\n  script:\n    - '"+strings.ReplaceAll(line, "'", "''")+"'\n")
+		if len(f) != 1 {
+			t.Errorf("%s: expected 1 finding, got %d", line, len(f))
+			continue
+		}
+		if !strings.Contains(f[0].Message, "evaluated by "+cmd) {
+			t.Errorf("%s: expected message naming %s, got %q", line, cmd, f[0].Message)
+		}
+	}
+}
+
+func TestGL002_EvaluatedQuotedArg_NoFinding(t *testing.T) {
+	for _, line := range []string{
+		`echo "$CI_COMMIT_MESSAGE"`,
+		`./finish -c "$CI_COMMIT_MESSAGE"`,
+		`git checkout "$CI_COMMIT_BRANCH"`,
+		`eval "$(ssh-agent -s)"`,
+		`bash -c "make build"`,
+		`bash -c 'echo done' "$CI_COMMIT_MESSAGE"`,
+		`eval "echo \$CI_COMMIT_MESSAGE"`,
+		`echo "remember to eval \"$CI_COMMIT_TITLE\" later"`,
+		`python3 -c "import sys; print(sys.argv[1])" "$CI_COMMIT_BRANCH"`,
+	} {
+		f := findings002(t, "job:\n  script:\n    - '"+strings.ReplaceAll(line, "'", "''")+"'\n")
+		if len(f) != 0 {
+			t.Errorf("%s: expected no finding, got %q", line, f[0].Message)
+		}
+	}
+}
+
+func TestGL002_EvalUnquotedKeepsOriginalFinding(t *testing.T) {
+	f := findings002(t, `
+job:
+  script:
+    - eval echo $CI_COMMIT_MESSAGE
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding, got %d", len(f))
+	}
+	if !strings.Contains(f[0].Message, "unquoted user-controlled variable") {
+		t.Errorf("expected the unquoted-variable message, got %q", f[0].Message)
+	}
+}
+
+func TestGL002_EvaluatedAndUnquotedSameVar_OneFinding(t *testing.T) {
+	f := findings002(t, `
+job:
+  script:
+    - bash -c "echo $CI_COMMIT_BRANCH" && echo $CI_COMMIT_BRANCH
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for one variable, got %d", len(f))
+	}
+}
+
+func TestGL002_EvaluatedArgInBlockScalar_DoesNotCrossLines(t *testing.T) {
+	f := findings002(t, `
+job:
+  script:
+    - |
+      bash -c
+      echo "$CI_COMMIT_MESSAGE"
+`)
+	if len(f) != 0 {
+		t.Fatalf("expected no finding when -c and the quoted string are on different lines, got %d", len(f))
 	}
 }
