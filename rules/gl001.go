@@ -145,7 +145,23 @@ func checkRef(ref string, line, col int, file string) []finding.Finding {
 			File:     file, Line: line, Col: col,
 		}}
 	}
+	if isVersionlessTag(tag) {
+		return []finding.Finding{{
+			RuleID:   "GL001",
+			Severity: finding.Warn,
+			Message:  fmt.Sprintf("image %q uses tag %q, which names no version — it moves with every upstream release; pin a versioned variant (<version>-%s) or a digest", ref, tag, tag),
+			File:     file, Line: line, Col: col,
+		}}
+	}
 	return nil
+}
+
+// isVersionlessTag reports whether tag carries no version at all: a variant
+// (dind, alpine, slim) or a release codename (bookworm, jammy) that upstream
+// rebuilds in place, like latest. A tag containing a variable is left alone,
+// since its value is unknown statically.
+func isVersionlessTag(tag string) bool {
+	return !strings.ContainsAny(tag, "0123456789$")
 }
 
 // imageTag extracts the tag from an image reference.

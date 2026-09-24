@@ -24,3 +24,11 @@ docker-job:
     DOCKER_TLS_CERTDIR: /certs
   script:
     - docker build -t myapp .
+
+lint:
+  stage: build
+  image: python:slim
+  services:
+    - docker:27.3.1-dind
+  script:
+    - make lint

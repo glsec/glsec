@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -86,9 +87,9 @@ build:
       alias: db
   script: [npm run build]
 `)
-	// docker:dind is a named variant tag, not in mutableTags; only postgres:latest triggers
-	if len(f) != 1 {
-		t.Fatalf("expected 1 finding (postgres:latest), got %d", len(f))
+	// postgres:latest is an error, docker:dind a version-less variant (warn)
+	if len(f) != 2 {
+		t.Fatalf("expected 2 findings (docker:dind, postgres:latest), got %d", len(f))
 	}
 }
 
@@ -102,9 +103,9 @@ default:
 build:
   script: [make]
 `)
-	// docker:dind is a named variant tag; only ubuntu:latest triggers
-	if len(f) != 1 {
-		t.Fatalf("expected 1 finding from default block (ubuntu:latest), got %d", len(f))
+	// ubuntu:latest is an error, docker:dind a version-less variant (warn)
+	if len(f) != 2 {
+		t.Fatalf("expected 2 findings from default block, got %d", len(f))
 	}
 }
 
@@ -221,5 +222,56 @@ build:
 `)
 	if len(f) != 0 {
 		t.Errorf("expected no findings for node:20-alpine (pinned version), got %d", len(f))
+	}
+}
+
+func TestGL001_VersionlessTags_Warn(t *testing.T) {
+	for _, ref := range []string{
+		"docker:dind",
+		"docker:dind-rootless",
+		"docker:cli",
+		"node:alpine",
+		"python:slim",
+		"debian:bookworm",
+		"registry.example.com:5000/team/builder:ci",
+	} {
+		f := findings(t, "job:\n  image: "+ref+"\n  script: [make]\n")
+		if len(f) != 1 {
+			t.Errorf("%s: expected 1 finding, got %d", ref, len(f))
+			continue
+		}
+		if f[0].Severity != finding.Warn {
+			t.Errorf("%s: expected Warn, got %s", ref, f[0].Severity)
+		}
+		if !strings.Contains(f[0].Message, "names no version") {
+			t.Errorf("%s: unexpected message %q", ref, f[0].Message)
+		}
+	}
+}
+
+func TestGL001_VersionedOrUnknownTags_NoFinding(t *testing.T) {
+	for _, ref := range []string{
+		"docker:27-dind",
+		"docker:27.3.1-dind-rootless",
+		"python:3.11-slim",
+		"node:20.11.0-alpine",
+		"ubuntu:24.04",
+		"alpine@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b",
+		"docker:dind@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b",
+		"$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA",
+		"myimage:${VERSION}",
+		"builder:$TAG-alpine",
+		"$BUILD_IMAGE",
+	} {
+		if f := findings(t, "job:\n  image: \""+ref+"\"\n  script: [make]\n"); len(f) != 0 {
+			t.Errorf("%s: expected no finding, got %q", ref, f[0].Message)
+		}
+	}
+}
+
+func TestGL001_LatestStaysError(t *testing.T) {
+	f := findings(t, "job:\n  image: node:latest\n  script: [make]\n")
+	if len(f) != 1 || f[0].Severity != finding.Error {
+		t.Fatalf("expected 1 error for node:latest, got %+v", f)
 	}
 }
