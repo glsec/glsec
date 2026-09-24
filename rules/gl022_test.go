@@ -646,3 +646,77 @@ func first022Msg(f []finding.Finding) string {
 	}
 	return f[0].Message
 }
+
+// --- fetch-and-run launchers ---
+
+func TestGL022_FetchAndRunUnpinned(t *testing.T) {
+	for _, line := range []string{
+		"npx -y surge dist",
+		`npx --yes qrcode "hi"`,
+		"npx --quiet -y serve build",
+		"npx create-vite@latest app",
+		"npx @angular/cli@next new app",
+		"npm exec --yes -- prettier --check .",
+		"npm x -y cowsay hi",
+		"npm_config_yes=true npx --loglevel verbose --package=netlify-cli netlify deploy",
+		"pnpm dlx node-gyp rebuild",
+		"yarn dlx @redocly/cli lint",
+		"uvx ruff check",
+		"uv tool run black --check .",
+		"pipx run black --check .",
+		"uvx --python 3.12 ruff check",
+	} {
+		got := checkPMLine(line, "test.yml", 1, 1)
+		if got == nil {
+			t.Errorf("expected a finding for %q", line)
+			continue
+		}
+		if !strings.Contains(got.Message, "fetches and runs") {
+			t.Errorf("expected fetch-and-run message for %q, got %q", line, got.Message)
+		}
+	}
+}
+
+func TestGL022_FetchAndRun_NoFinding(t *testing.T) {
+	for _, line := range []string{
+		"npx -y eslint@10 .",
+		"npx --yes @redocly/cli@2.46.0 lint",
+		"npx create-vite@5.2.0 app",
+		"npm exec --yes -- prettier@3.3.3 --check .",
+		"pnpm dlx node-gyp@10.2.0 rebuild",
+		"yarn dlx -p @redocly/cli@1.25.0 redocly lint",
+		"uvx ruff@0.6.9 check",
+		"uvx --from ruff==0.6.9 ruff check",
+		"uvx --from 'ruff==0.6.9' ruff check",
+		"pipx run black==24.8.0 --check .",
+		"pipx run --spec black==24.8.0 black --check .",
+		"npx eslint .",
+		"npx --no-install jest",
+		"npx tsc --noEmit",
+		"npm_config_yes=true npx --package=netlify-cli@17.33.0 netlify deploy",
+		"npx -y $TOOL",
+		"pnpm dlx ${TOOL}",
+		"uvx $LINTER check",
+		`echo "run npx -y foo locally"`,
+		"pnpm dlx",
+		"yarn dlx ./local-tool",
+		"uvx --from . mytool",
+		"uvx --from ./tools/lint lint",
+		"pipx run --spec . mytool",
+	} {
+		if got := checkPMLine(line, "test.yml", 1, 1); got != nil {
+			t.Errorf("expected no finding for %q, got %q", line, got.Message)
+		}
+	}
+}
+
+func TestGL022_LauncherVerbsDoNotWidenVarSkip(t *testing.T) {
+	for _, line := range []string{
+		"pip install ansible && docker run $IMAGE",
+		"apt-get install -y jq && tar -x $ARCHIVE",
+	} {
+		if got := checkPMLine(line, "test.yml", 1, 1); got == nil {
+			t.Errorf("expected a finding for %q: the variable belongs to a different command", line)
+		}
+	}
+}

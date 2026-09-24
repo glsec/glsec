@@ -46,7 +46,7 @@ Mutable references that allow silent substitution of images, templates, or packa
 | [GL003](rules/GL003.md) | `error` | Remote `include:` with mutable or missing `ref` |
 | [GL011](rules/GL011.md) | `error` | Download-and-execute pattern in script (`curl \| bash`, `wget \| sh`) |
 | [GL016](rules/GL016.md) | varies  | Insecure transport — HTTP or `git://` (`include:remote`, scripts, variables) |
-| [GL022](rules/GL022.md) | `warn`  | Package manager install without version pin or explicit update-to-latest in CI |
+| [GL022](rules/GL022.md) | `warn`  | Package manager install or fetch-and-run launcher (`npx -y`, `dlx`, `uvx`) without version pin, or explicit update-to-latest in CI |
 | [GL023](rules/GL023.md) | `warn`  | Lockfile not enforced (`npm install` instead of `npm ci`, `yarn install` without `--frozen-lockfile`, etc.) |
 | [GL046](rules/GL046.md) | `warn`  | `cache: key:` derived from user-controlled variable — attacker can craft a branch name to collide with and poison the cache of a protected pipeline |
 | [GL026](rules/GL026.md) | `warn`  | `git clone`/`checkout` uses a mutable ref (branch or tag) instead of a pinned commit SHA |
