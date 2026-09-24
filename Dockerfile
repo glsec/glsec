@@ -11,10 +11,6 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
     -o glsec ./cmd/glsec
 
 FROM alpine:3.24
-# alpine:3.24 has not been rebuilt since the openssl fix for CVE-2026-14456
-# landed in v3.24/main; drop this once the base image ships 3.5.8-r0.
-# hadolint ignore=DL3017
-RUN apk --no-cache upgrade
 COPY --from=builder /build/glsec /usr/local/bin/glsec
 
 # ARGs do not cross build stages, so re-declare them here for the LABELs
