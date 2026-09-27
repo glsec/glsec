@@ -71,10 +71,12 @@ cosign verify ghcr.io/glsec/glsec:1.18.0 \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 
 # list everything attached to the image (signature, provenance, SBOM)
-cosign tree ghcr.io/glsec/glsec:1.18.0
+cosign tree --experimental-oci11 ghcr.io/glsec/glsec:1.18.0
 ```
 
 The two `--certificate-*` flags are what bind the signature to this repository's GitHub Actions workflow. Without them `cosign verify` accepts a signature from any identity, which defeats the point.
+
+Use cosign v3 or newer. The image is signed in Sigstore's bundle format and the attestations are stored as OCI referrers, so cosign v2 reports `no signatures found`, and `cosign tree` without `--experimental-oci11` shows nothing.
 
 **Checksums** are published as `checksums.txt` next to the archives:
 
@@ -376,7 +378,7 @@ Use the official component from the [GitLab CI Catalog](https://gitlab.com/explo
 
 ```yaml
 include:
-  - component: gitlab.com/glsec-io/glsec/glsec@v1.0.18
+  - component: gitlab.com/glsec-io/glsec/glsec@v1.0.19
 
 stages:
   - test
@@ -386,7 +388,7 @@ For inline findings on merge request diffs, add the `glsec-code-quality` templat
 
 ```yaml
 include:
-  - component: gitlab.com/glsec-io/glsec/glsec-code-quality@v1.0.18
+  - component: gitlab.com/glsec-io/glsec/glsec-code-quality@v1.0.19
 
 stages:
   - test
