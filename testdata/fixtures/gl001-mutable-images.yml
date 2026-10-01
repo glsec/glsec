@@ -32,3 +32,12 @@ lint:
     - docker:27.3.1-dind
   script:
     - make lint
+
+matrix-job:
+  stage: test
+  image: $TEST_IMAGE
+  parallel:
+    matrix:
+      - TEST_IMAGE: ["python:latest", "python:3.12.7"]
+  script:
+    - make test
