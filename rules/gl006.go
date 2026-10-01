@@ -78,6 +78,10 @@ var secretPatterns = []secretPattern{
 	{"Private Packagist token", regexp.MustCompile(`^packagist_[a-z]{3}_[a-f0-9]{68}$`)},
 	{"Adobe client secret", regexp.MustCompile(`^p8e-[a-z0-9]{32}$`)},
 	{"Flutterwave secret key", regexp.MustCompile(`^FLW(?:PUBK|SECK)_TEST-[a-h0-9]{32}-X$`)},
+	// cfut_ (user) and cfat_ (account) tokens end in an 8-hex checksum.
+	{"Cloudflare API token", regexp.MustCompile(`^cf[ua]t_[A-Za-z0-9]{40}[a-f0-9]{8}$`)},
+	{"Cloudflare Origin CA key", regexp.MustCompile(`^v1\.0-[a-f0-9]{24}-[a-f0-9]{146}$`)},
+	{"Bitbucket Data Center token", regexp.MustCompile(`^BBDC-[A-Za-z0-9+/=]{32,}$`)},
 }
 
 func (r *gl006) Check(doc *yaml.Node, file string) []finding.Finding {
