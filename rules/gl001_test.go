@@ -275,3 +275,117 @@ func TestGL001_LatestStaysError(t *testing.T) {
 		t.Fatalf("expected 1 error for node:latest, got %+v", f)
 	}
 }
+
+func TestGL001_ResolvesFileVariables(t *testing.T) {
+	f := findings(t, `
+variables:
+  BASE_IMAGE: node:latest
+  DIND:
+    value: docker:dind
+    description: daemon image
+global:
+  image: $BASE_IMAGE
+  services: [$DIND]
+  script: [echo hi]
+jobvar:
+  variables:
+    JIMG: ruby:latest
+  image: ${JIMG}
+  script: [echo hi]
+matrix:
+  image:
+    name: $IMG
+  parallel:
+    matrix:
+      - IMG: ["golang:latest", "alpine", "golang:1.23"]
+      - IMG: golang:latest
+  script: [echo hi]
+`)
+	want := []string{
+		`"$BASE_IMAGE" (= "node:latest")`,
+		`"$DIND" (= "docker:dind")`,
+		`"${JIMG}" (= "ruby:latest")`,
+		`"$IMG" (= "golang:latest")`,
+		`"$IMG" (= "alpine")`,
+	}
+	if len(f) != len(want) {
+		for _, x := range f {
+			t.Log(x.Message)
+		}
+		t.Fatalf("expected %d findings, got %d", len(want), len(f))
+	}
+	for i, w := range want {
+		if !strings.Contains(f[i].Message, w) {
+			t.Errorf("finding %d: expected %s in %q", i, w, f[i].Message)
+		}
+	}
+}
+
+func TestGL001_ResolutionPrecedence(t *testing.T) {
+	f := findings(t, `
+variables:
+  IMG: node:latest
+job_overrides:
+  variables:
+    IMG: node:22.11.0
+  image: $IMG
+  script: [echo hi]
+matrix_overrides:
+  image: $IMG
+  parallel:
+    matrix:
+      - IMG: node:22.11.0
+  script: [echo hi]
+matrix_partial:
+  image: $IMG
+  parallel:
+    matrix:
+      - IMG: node:22.11.0
+      - OTHER: x
+  script: [echo hi]
+`)
+	if len(f) != 1 || f[0].Job != "matrix_partial" {
+		t.Fatalf("expected only matrix_partial to fall back to the global value, got %v", f)
+	}
+}
+
+func TestGL001_UnresolvedVariables_NoFinding(t *testing.T) {
+	f := findings(t, `
+variables:
+  IMG: node:latest
+  NESTED: $CI_REGISTRY/node
+  PUSH_TARGET: registry.example.com/app:latest
+undefined:
+  image: $NOT_IN_FILE
+  script: [echo hi]
+nested:
+  image: $NESTED
+  script: [echo hi]
+inherit_off:
+  inherit:
+    variables: false
+  image: $IMG
+  script: [echo hi]
+inherit_list:
+  inherit:
+    variables: [OTHER]
+  image: $IMG
+  script: [echo hi]
+extends_job:
+  extends: .base
+  image: $IMG
+  script: [echo hi]
+.template:
+  image: $IMG
+  script: [echo hi]
+push:
+  image: docker:27.3.1
+  script: [docker push $PUSH_TARGET]
+`)
+	if len(f) != 0 {
+		for _, x := range f {
+			t.Log(x.Job, x.Message)
+		}
+		t.Fatalf("expected no findings, got %d", len(f))
+	}
+}
