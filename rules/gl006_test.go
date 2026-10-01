@@ -322,6 +322,10 @@ func TestGL006_AnchoredFormatsExtra(t *testing.T) {
 		"packagist":   {"packagist_" + "uip_" + a(68), "Private Packagist token"},
 		"adobe":       {"p8e-" + a(32), "Adobe client secret"},
 		"flutterwave": {"FLW" + "SECK_TEST-" + a(32) + "-X", "Flutterwave secret key"},
+		"cf user":     {"cfu" + "t_" + strings.Repeat("A", 40) + "0123abcd", "Cloudflare API token"},
+		"cf account":  {"cfa" + "t_" + strings.Repeat("Ab1", 13) + "x" + "0123abcd", "Cloudflare API token"},
+		"cf originca": {"v1.0-" + a(24) + "-" + strings.Repeat("b", 146), "Cloudflare Origin CA key"},
+		"bbdc":        {"BBD" + "C-" + strings.Repeat("Ab+/", 11), "Bitbucket Data Center token"},
 	}
 	for name, tc := range cases {
 		tc := tc
@@ -339,6 +343,29 @@ build:
 				t.Errorf("expected %q in message, got %q", tc.label, f[0].Message)
 			}
 		})
+	}
+}
+
+func TestGL006_CloudflareBitbucketNearMiss_NoFinding(t *testing.T) {
+	values := []string{
+		"cfa" + "t_" + strings.Repeat("A", 40),                             // no checksum
+		"cfa" + "t_" + strings.Repeat("A", 40) + "0123ABCD",                // checksum not lowercase hex
+		"cfx" + "t_" + strings.Repeat("A", 40) + "0123abcd",                // unknown prefix
+		"mycfa" + "t_" + strings.Repeat("A", 40) + "0123abcd",              // prefix inside a word
+		"v1.0-" + strings.Repeat("a", 24) + "-" + strings.Repeat("b", 145), // short
+		"BBD" + "C-" + strings.Repeat("A", 31),                             // short
+		"$CF_API_TOKEN",
+	}
+	for _, v := range values {
+		f := findings006(t, fmt.Sprintf(`
+variables:
+  TOKEN: "%s"
+build:
+  script: [echo ok]
+`, v))
+		if len(f) != 0 {
+			t.Errorf("expected no finding for %q, got %d", v, len(f))
+		}
 	}
 }
 
