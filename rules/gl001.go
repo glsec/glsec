@@ -2,6 +2,7 @@ package rules
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -248,12 +249,16 @@ func isVarRef(ref string) bool {
 	return len(rest) > 0
 }
 
+// gitlabMacOSImage matches the VM images of GitLab-hosted macOS runners
+// (macos-14-xcode-15). They are selected by name and cannot carry a tag.
+var gitlabMacOSImage = regexp.MustCompile(`^macos-[0-9]+-xcode-[0-9]+$`)
+
 // checkRef checks ref; label names the image in the message.
 func checkRef(ref, label string, line, col int, file string) []finding.Finding {
 	if strings.Contains(ref, "@sha256:") {
 		return nil
 	}
-	if isVarRef(ref) {
+	if isVarRef(ref) || gitlabMacOSImage.MatchString(ref) {
 		return nil
 	}
 	tag := imageTag(ref)

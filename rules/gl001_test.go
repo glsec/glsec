@@ -389,3 +389,24 @@ push:
 		t.Fatalf("expected no findings, got %d", len(f))
 	}
 }
+
+func TestGL001_GitLabMacOSImage_NoFinding(t *testing.T) {
+	f := findings(t, `
+variables:
+  MAC_IMAGE: macos-15-xcode-16
+mac:
+  image: macos-14-xcode-15
+  tags: [saas-macos-medium-m1]
+  script: [xcodebuild]
+mac_var:
+  image: $MAC_IMAGE
+  tags: [saas-macos-medium-m1]
+  script: [xcodebuild]
+other:
+  image: macos-builder
+  script: [echo hi]
+`)
+	if len(f) != 1 || f[0].Job != "other" {
+		t.Fatalf("expected only the non-GitLab image to be flagged, got %v", f)
+	}
+}
