@@ -33,25 +33,8 @@ var mutableRefs = map[string]bool{
 
 func (r *gl003) Check(doc *yaml.Node, file string) []finding.Finding {
 	mapping := parser.Unwrap(doc)
-	includeNode := parser.FindKey(mapping, "include")
-	if includeNode == nil {
-		return nil
-	}
-
-	// scalar shorthand (include: '/local/path.yml') is treated as local → safe
-	if includeNode.Kind == yaml.ScalarNode {
-		return nil
-	}
-
-	if includeNode.Kind != yaml.SequenceNode {
-		return nil
-	}
-
 	var findings []finding.Finding
-	for _, item := range includeNode.Content {
-		if item.Kind != yaml.MappingNode {
-			continue
-		}
+	for _, item := range parser.IncludeItems(parser.FindKey(mapping, "include")) {
 		findings = append(findings, checkIncludeItem(item, file)...)
 	}
 	return findings

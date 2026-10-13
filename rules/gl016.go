@@ -103,14 +103,8 @@ func (r *gl016) Check(doc *yaml.Node, file string) []finding.Finding {
 }
 
 func (r *gl016) checkIncludes(node *yaml.Node, file string) []finding.Finding {
-	if node == nil || node.Kind != yaml.SequenceNode {
-		return nil
-	}
 	var findings []finding.Finding
-	for _, item := range node.Content {
-		if item.Kind != yaml.MappingNode {
-			continue
-		}
+	for _, item := range parser.IncludeItems(node) {
 		remote := parser.FindKey(item, "remote")
 		if remote == nil || remote.Kind != yaml.ScalarNode {
 			continue

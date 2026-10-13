@@ -54,35 +54,17 @@ func serverControlled(name string) bool {
 
 func (r *gl084) Check(doc *yaml.Node, file string) []finding.Finding {
 	mapping := parser.Unwrap(doc)
-	includeNode := parser.FindKey(mapping, "include")
-	if includeNode == nil {
-		return nil
-	}
-
 	var findings []finding.Finding
-	switch includeNode.Kind {
-	case yaml.ScalarNode:
-		// include: '$TEMPLATE_PATH' is the local-include shorthand.
-		findings = append(findings, checkIncludeField(includeNode, "local", file)...)
-	case yaml.SequenceNode:
-		for _, item := range includeNode.Content {
-			switch item.Kind {
-			case yaml.ScalarNode:
-				findings = append(findings, checkIncludeField(item, "local", file)...)
-			case yaml.MappingNode:
-				findings = append(findings, checkIncludeVarItem(item, file)...)
-			}
-		}
-	case yaml.MappingNode:
-		findings = append(findings, checkIncludeVarItem(includeNode, file)...)
+	for _, item := range parser.IncludeItems(parser.FindKey(mapping, "include")) {
+		findings = append(findings, checkIncludeVarItem(item, file)...)
 	}
 	return findings
 }
 
 // checkIncludeVarItem inspects the location keys of one include entry.
 //
-// remote: is left to GL003, which already reports every remote include as an
-// error; a second finding on the same line adds nothing. template: names a
+// remote: is left to GL003, which reports every remote include not pinned
+// with integrity:; a second finding on the same line adds nothing. template: names a
 // GitLab-shipped file and takes no variables. inputs: are passed to the
 // included configuration, they do not select it.
 func checkIncludeVarItem(node *yaml.Node, file string) []finding.Finding {

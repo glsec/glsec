@@ -37,16 +37,8 @@ func loadCatalogComponents() []string {
 
 func (r *gl064) Check(doc *yaml.Node, file string) []finding.Finding {
 	mapping := parser.Unwrap(doc)
-	includeNode := parser.FindKey(mapping, "include")
-	if includeNode == nil || includeNode.Kind != yaml.SequenceNode {
-		return nil
-	}
-
 	var findings []finding.Finding
-	for _, item := range includeNode.Content {
-		if item.Kind != yaml.MappingNode {
-			continue
-		}
+	for _, item := range parser.IncludeItems(parser.FindKey(mapping, "include")) {
 		component := parser.FindKey(item, "component")
 		if component == nil || component.Kind != yaml.ScalarNode {
 			continue

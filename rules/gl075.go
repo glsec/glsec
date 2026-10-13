@@ -30,21 +30,9 @@ func (r *gl075) Check(doc *yaml.Node, file string) []finding.Finding {
 	}
 
 	mapping := parser.Unwrap(doc)
-	includeNode := parser.FindKey(mapping, "include")
-	if includeNode == nil {
-		return nil
-	}
-
 	var findings []finding.Finding
-	switch includeNode.Kind {
-	case yaml.SequenceNode:
-		for _, item := range includeNode.Content {
-			if item.Kind == yaml.MappingNode {
-				findings = append(findings, r.checkIncludeItem(item, file)...)
-			}
-		}
-	case yaml.MappingNode:
-		findings = append(findings, r.checkIncludeItem(includeNode, file)...)
+	for _, item := range parser.IncludeItems(parser.FindKey(mapping, "include")) {
+		findings = append(findings, r.checkIncludeItem(item, file)...)
 	}
 	return findings
 }
