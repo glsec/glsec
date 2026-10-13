@@ -196,3 +196,72 @@ build:
 		t.Errorf("expected no findings without include:, got %d", len(f))
 	}
 }
+
+func TestGL075_ServerRelativeComponent(t *testing.T) {
+	allowed := []string{"my-group", "gitlab.com/my-group"}
+	cases := []struct {
+		component string
+		flagged   bool
+	}{
+		{"$CI_SERVER_FQDN/evil/comp/a@1.0.0", true},
+		{"${CI_SERVER_FQDN}/evil/comp/a@1.0.0", true},
+		{"$CI_SERVER_HOST/evil/comp/a@1.0.0", true},
+		{"$CI_SERVER_FQDN/my-group/comp/a@1.0.0", false},
+		{"${CI_SERVER_HOST}/My-Group/sub/comp@1.0.0", false},
+		{"$CI_SERVER_FQDN/my-groupevil/comp@1.0.0", true},
+		{"$CI_SERVER_FQDN/$CI_PROJECT_PATH/my-component@1.0.0", false},
+		{"$CI_SERVER_FQDN/${CI_PROJECT_ROOT_NAMESPACE}/ci/comp@1.0.0", false},
+		{"$CI_SERVER_FQDN/$CI_PROJECT_NAMESPACE/comp@1.0.0", false},
+		{"$CI_SERVER_FQDN/$OTHER_GROUP/comp@1.0.0", false}, // unresolvable
+		{"$CI_SERVER_FQDN/my-group/../evil/comp@1.0.0", true},
+	}
+	for _, tc := range cases {
+		f := findings075(t, "include:\n  - component: "+tc.component+"\n", allowed)
+		if got := len(f) > 0; got != tc.flagged {
+			t.Errorf("%s: flagged=%v, want %v", tc.component, got, tc.flagged)
+		}
+	}
+}
+
+func TestGL075_ServerRelativeEntries(t *testing.T) {
+	src := "include:\n  - component: $CI_SERVER_FQDN/platform/ci/build@2.0.0\n"
+	cases := []struct {
+		entry   string
+		allowed bool
+	}{
+		{"$CI_SERVER_FQDN/platform", true},
+		{"${CI_SERVER_HOST}/platform/ci", true},
+		{"platform/ci", true},
+		{"platform/other", false},
+		{"gitlab.com/platform", false}, // the instance host is unknown statically
+		{"gitlab.com", false},
+	}
+	for _, tc := range cases {
+		f := findings075(t, src, []string{tc.entry})
+		if got := len(f) == 0; got != tc.allowed {
+			t.Errorf("entry %q: allowed=%v, want %v", tc.entry, got, tc.allowed)
+		}
+	}
+}
+
+func TestGL075_DotSegmentsNeverAllowed(t *testing.T) {
+	allowed := []string{"my-group", "gitlab.com/my-group"}
+	for _, item := range []string{
+		"component: gitlab.com/my-group/../evil/comp/a@1.0.0",
+		"component: gitlab.com/my-group/%2e%2e/evil/comp/a@1.0.0",
+		"component: gitlab.com/my-group/%2E./evil/comp/a@1.0.0",
+		"remote: https://gitlab.com/my-group/../evil/raw/a.yml",
+		"project: my-group/../evil/ci\n    ref: 1111111111111111111111111111111111111111\n    file: /a.yml",
+		"project: my-group/./ci\n    ref: 1111111111111111111111111111111111111111\n    file: /a.yml",
+	} {
+		f := findings075(t, "include:\n  - "+item+"\n", allowed)
+		if len(f) != 1 || !strings.Contains(f[0].Message, "path segment") {
+			t.Errorf("%s: expected a dot-segment finding, got %+v", item, f)
+		}
+	}
+	// A dot inside a segment is an ordinary name.
+	f := findings075(t, "include:\n  - project: my-group/ci.templates\n    ref: 1111111111111111111111111111111111111111\n    file: /a.yml\n", allowed)
+	if len(f) != 0 {
+		t.Errorf("expected no finding for a dotted project name, got %d", len(f))
+	}
+}

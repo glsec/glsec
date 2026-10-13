@@ -2,6 +2,7 @@ package rules
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -44,6 +45,9 @@ func (r *gl075) checkIncludeItem(node *yaml.Node, file string) []finding.Finding
 			"remote include %q is from a host not in the allowed_include_sources allowlist")
 	}
 	if component := parser.FindKey(node, "component"); component != nil {
+		if path, ok := serverRelativeComponent(component.Value); ok {
+			return r.flagServerRelative(component, file, path)
+		}
 		host, normalized := componentIncludeSource(component.Value)
 		return r.flagIfDisallowed(component, file, host, normalized,
 			"component include %q is from a source not in the allowed_include_sources allowlist")
@@ -62,17 +66,88 @@ func (r *gl075) flagIfDisallowed(node *yaml.Node, file, host, normalized, msgFmt
 	if host == "" || strings.Contains(normalized, "$") {
 		return nil
 	}
+	if hasDotSegment(normalized) {
+		return gl075Finding(node, file, dotSegmentMessage)
+	}
 	if registryAllowed(host, normalized, r.allowedSources) {
 		return nil
 	}
+	return gl075Finding(node, file, fmt.Sprintf(msgFmt, node.Value))
+}
+
+// flagServerRelative checks a component on the scanning instance
+// ($CI_SERVER_FQDN/<path>). The host is unknown statically, so only allowlist
+// entries that name a namespace, or spell the server variable out, can match.
+func (r *gl075) flagServerRelative(node *yaml.Node, file, path string) []finding.Finding {
+	if ownProjectPrefix.MatchString(path) {
+		return nil
+	}
+	if path == "" || strings.Contains(path, "$") {
+		return nil
+	}
+	if hasDotSegment(path) {
+		return gl075Finding(node, file, dotSegmentMessage)
+	}
+	for _, entry := range r.allowedSources {
+		e := strings.ToLower(strings.TrimSuffix(strings.TrimSpace(entry), "/"))
+		if rest, ok := serverRelativeComponent(e); ok {
+			e = rest
+		} else if strings.ContainsAny(firstPathSegment(e), ".:") {
+			continue // names a host, which may not be this instance
+		}
+		if e != "" && (path == e || strings.HasPrefix(path, e+"/")) {
+			return nil
+		}
+	}
+	return gl075Finding(node, file, fmt.Sprintf("component include %q is from a namespace not in the allowed_include_sources allowlist", node.Value))
+}
+
+const dotSegmentMessage = "include source contains a \".\" or \"..\" path segment — it is never treated as allowlisted; use the canonical path"
+
+func gl075Finding(node *yaml.Node, file, msg string) []finding.Finding {
 	return []finding.Finding{{
 		RuleID:   "GL075",
 		Severity: finding.Warn,
-		Message:  fmt.Sprintf(msgFmt, node.Value),
+		Message:  msg,
 		File:     file,
 		Line:     node.Line,
 		Col:      node.Column,
 	}}
+}
+
+// serverPrefix matches the predefined variables GitLab documents for writing a
+// component reference on the current instance.
+var serverPrefix = regexp.MustCompile(`(?i)^\$(?:\{CI_SERVER_(?:FQDN|HOST)\}|CI_SERVER_(?:FQDN|HOST)\b)/`)
+
+// ownProjectPrefix matches a path that starts in the scanned project's own
+// namespace, as in GitLab's $CI_SERVER_FQDN/$CI_PROJECT_PATH/my-component@1.0.
+var ownProjectPrefix = regexp.MustCompile(`(?i)^\$(?:\{CI_PROJECT_(?:PATH|NAMESPACE|ROOT_NAMESPACE)\}|CI_PROJECT_(?:PATH|NAMESPACE|ROOT_NAMESPACE)\b)(?:/|$)`)
+
+// serverRelativeComponent returns the lower-cased path of a component written
+// as $CI_SERVER_FQDN/<path>[@version].
+func serverRelativeComponent(value string) (string, bool) {
+	loc := serverPrefix.FindStringIndex(value)
+	if loc == nil {
+		return "", false
+	}
+	path := value[loc[1]:]
+	if at := strings.LastIndex(path, "@"); at >= 0 {
+		path = path[:at]
+	}
+	return strings.ToLower(path), true
+}
+
+// hasDotSegment reports whether a path has a "." or ".." segment, also
+// percent-encoded. Prefix matching on such a path says nothing about where it
+// resolves.
+func hasDotSegment(path string) bool {
+	for _, seg := range strings.Split(strings.ToLower(path), "/") {
+		seg = strings.ReplaceAll(seg, "%2e", ".")
+		if seg == "." || seg == ".." {
+			return true
+		}
+	}
+	return false
 }
 
 // projectIncludeSource maps "my-group/sub/project" to (namespace, fullPath).
