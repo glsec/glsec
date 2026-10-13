@@ -1,0 +1,9 @@
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
+ai-review:
+  image: node:24.10.0
+  script:
+    - npm install -g @anthropic-ai/claude-code@2.1.0
+    - 'claude -p "Review this merge request: $CI_MERGE_REQUEST_TITLE" --dangerously-skip-permissions'
