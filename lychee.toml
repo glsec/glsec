@@ -1,0 +1,35 @@
+# Link check configuration for the docs (.github/workflows/links.yml).
+# Exclusions are reviewed like code: each one names why the URL is not a
+# real, checkable page.
+
+max_retries = 3
+
+# Check URLs in code blocks too: install commands live there.
+include_verbatim = true
+timeout = 30
+accept = ["200..=299", "429"]
+
+exclude = [
+  # Illustrative URLs in rule examples and docs.
+  '^https?://([a-z0-9-]+\.)*example(\.[a-z]+)?(/|$)',
+  '\.example(/|:|$)',
+  '^https?://(198\.51\.100|203\.0\.113|192\.0\.2)\.',
+  '^https?://(localhost|127\.0\.0\.1)',
+  '^https?://[^/]*\.internal(/|:|$)',
+  '^https?://(github\.com|gitlab\.com)/org/',
+  '^https://raw\.githubusercontent\.com/org/',
+  '^https://iam\.googleapis\.com/projects/',
+  # Single-label hosts (https://ci/, http://repo/) and URLs with credentials
+  # (https://user:token@host) only appear in examples of what the rules flag.
+  '^https?://[^/.@]+(:[0-9]+)?(/|$)',
+  '^https?://[^/]*@',
+  # Templates and elisions: ${GLSEC_VERSION}, $TOKEN, "…".
+  '\$\{|%7B|\$[A-Za-z_]',
+  '…|%E2%80%A6',
+  # Not pages: the GitHub Actions OIDC issuer, used as a flag value.
+  '^https://token\.actions\.githubusercontent\.com',
+  # Answers 403 to non-browser clients.
+  '^https://wiki\.alpinelinux\.org/',
+]
+
+exclude_path = ["^testdata/"]

@@ -1,0 +1,54 @@
+name: Links
+
+# Checks every link in the Markdown docs with lychee (config: lychee.toml),
+# code blocks included, since install commands live there (#537).
+#
+# On pull requests that touch the docs, a dead link fails the check. External
+# pages also disappear without any change here, so a weekly run checks the
+# whole tree and opens an issue instead of failing unnoticed.
+
+on:
+  pull_request:
+    paths:
+      - "**/*.md"
+      - lychee.toml
+      - .github/workflows/links.yml
+  schedule:
+    - cron: "0 7 * * 1" # 07:00 UTC every Monday
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Check links
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write # weekly run reports dead links as an issue
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check links
+        id: lychee
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
+        with:
+          args: --config lychee.toml --no-progress "**/*.md"
+          output: lychee-report.md
+          fail: ${{ github.event_name == 'pull_request' }}
+
+      - name: Report dead links
+        if: github.event_name != 'pull_request' && steps.lychee.outputs.exit_code != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          title="Dead links in the documentation"
+          if [ "$(gh issue list --state open --search "\"$title\" in:title" --json number --jq 'length')" != "0" ]; then
+            echo "An open issue for dead links already exists; skipping."
+            exit 0
+          fi
+          gh issue create --title "$title" --label docs --body-file lychee-report.md

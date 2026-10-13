@@ -46,10 +46,13 @@ go install github.com/glsec/glsec@latest
 Pre-built binaries for Linux, macOS, and Windows (amd64 + arm64) are available on the [Releases page](https://github.com/glsec/glsec/releases).
 
 ```sh
-# Example: Linux amd64
-curl -sSL https://github.com/glsec/glsec/releases/latest/download/glsec_linux_amd64.tar.gz | tar xz
+# Example: Linux amd64. Archives are named glsec_<version>_<os>_<arch>.tar.gz (.zip on Windows).
+curl -sSLO https://github.com/glsec/glsec/releases/download/v1.19.0/glsec_1.19.0_linux_amd64.tar.gz
+tar xzf glsec_1.19.0_linux_amd64.tar.gz
 ./glsec --version
 ```
+
+To check the download before running it, see [Verifying a release](#verifying-a-release).
 
 Homebrew coming soon.
 
@@ -486,9 +489,11 @@ Severity mapping (glsec → Code Climate): `error` → `critical`, `warn` → `m
 
 ```yaml
 - name: Run glsec
+  env:
+    GLSEC_VERSION: "1.19.0"
   run: |
-    curl -sSLO https://github.com/glsec/glsec/releases/latest/download/glsec_linux_amd64.tar.gz
-    tar xzf glsec_linux_amd64.tar.gz
+    curl -sSLO "https://github.com/glsec/glsec/releases/download/v${GLSEC_VERSION}/glsec_${GLSEC_VERSION}_linux_amd64.tar.gz"
+    tar xzf "glsec_${GLSEC_VERSION}_linux_amd64.tar.gz"
     ./glsec .gitlab-ci.yml
 ```
 
