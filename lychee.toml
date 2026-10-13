@@ -4,6 +4,10 @@
 
 max_retries = 3
 
+# A slow external host is not a dead link. Timeouts are still listed in the
+# report but do not fail the run.
+accept_timeouts = true
+
 # Check URLs in code blocks too: install commands live there.
 include_verbatim = true
 timeout = 30
