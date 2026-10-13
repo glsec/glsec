@@ -66,6 +66,18 @@ Every release is signed and carries build provenance, so you can confirm an arti
 gh attestation verify glsec_1.20.0_linux_amd64.tar.gz --owner glsec
 ```
 
+The same attestation is attached to each release as `glsec_<version>.sigstore.json` (Sigstore bundle) and `glsec_<version>.intoto.jsonl` (its DSSE envelope), so you can also verify without the GitHub API, for example from a mirror:
+
+```sh
+cosign verify-blob-attestation \
+  --bundle glsec_1.20.0.sigstore.json --new-bundle-format --type slsaprovenance1 \
+  --certificate-identity-regexp '^https://github.com/glsec/glsec/\.github/workflows/release\.yml@refs/tags/v' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  glsec_1.20.0_linux_amd64.tar.gz
+```
+
+One bundle covers every archive and `checksums.txt`. Releases before 1.20.0 do not carry these files.
+
 **The container image** is signed with [cosign](https://github.com/sigstore/cosign) and carries provenance plus an SBOM attestation:
 
 ```sh

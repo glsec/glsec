@@ -102,6 +102,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Attest release artifacts
+        id: attest
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           # checksums.txt is attested too: the install docs verify downloads
@@ -110,3 +111,20 @@ jobs:
             dist/*.tar.gz
             dist/*.zip
             dist/checksums.txt
+
+      # The attestation also lives in the GitHub attestations API. Attaching it
+      # to the release lets users verify downloads offline, and is where
+      # OpenSSF Scorecard looks for signatures and provenance (#555).
+      - name: Attach the attestation to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+          BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          cp "$BUNDLE" "glsec_${version}.sigstore.json"
+          jq -c .dsseEnvelope "$BUNDLE" > "glsec_${version}.intoto.jsonl"
+          gh release upload "$TAG" --repo "$REPO" \
+            "glsec_${version}.sigstore.json" "glsec_${version}.intoto.jsonl"
