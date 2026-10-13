@@ -19,6 +19,10 @@ func (r *gl003) ID() string { return "GL003" }
 // shaPattern matches a full or short commit SHA (8–40 hex chars).
 var shaPattern = regexp.MustCompile(`^[0-9a-f]{8,40}$`)
 
+// integrityPattern matches an include:integrity value: a base64-encoded SHA256
+// digest with its algorithm prefix.
+var integrityPattern = regexp.MustCompile(`^sha256-[A-Za-z0-9+/]{43}=$`)
+
 // mutableRefs are branch names that are clearly mutable version pointers.
 var mutableRefs = map[string]bool{
 	"main": true, "master": true, "dev": true, "develop": true,
@@ -59,10 +63,15 @@ func checkIncludeItem(node *yaml.Node, file string) []finding.Finding {
 	}
 
 	if remote := parser.FindKey(node, "remote"); remote != nil {
+		// GitLab refuses the include when the fetched content does not match
+		// the hash, so integrity: pins the content.
+		if integrity := parser.FindKey(node, "integrity"); integrity != nil && integrityPattern.MatchString(integrity.Value) {
+			return nil
+		}
 		return []finding.Finding{{
 			RuleID:   "GL003",
 			Severity: finding.Error,
-			Message:  fmt.Sprintf("remote include %q — URL content is mutable and unverified; use a project include with a pinned ref instead", remote.Value),
+			Message:  fmt.Sprintf("remote include %q — URL content is mutable and unverified; pin it with integrity: sha256-<base64 hash> or use a project include with a pinned ref", remote.Value),
 			File:     file,
 			Line:     remote.Line,
 			Col:      remote.Column,

@@ -58,6 +58,30 @@ include:
 	}
 }
 
+func TestGL003_RemoteIncludeWithIntegrity_NoFinding(t *testing.T) {
+	f := findings003(t, `
+include:
+  - remote: 'https://example.com/templates/security.yml'
+    integrity: 'sha256-L3/GAoKaw0Arw6hDCKeKQlV1QPEgHYxGBHsH4zG1IY8='
+`)
+	if len(f) != 0 {
+		t.Fatalf("expected no finding for a remote include pinned with integrity:, got %d", len(f))
+	}
+}
+
+func TestGL003_RemoteIncludeWithInvalidIntegrity(t *testing.T) {
+	for _, integrity := range []string{"$TEMPLATE_HASH", "sha256-short=", "sha512-L3/GAoKaw0Arw6hDCKeKQlV1QPEgHYxGBHsH4zG1IY8=", "''"} {
+		f := findings003(t, `
+include:
+  - remote: 'https://example.com/templates/security.yml'
+    integrity: `+integrity+`
+`)
+		if len(f) != 1 {
+			t.Errorf("integrity %s: expected 1 finding, got %d", integrity, len(f))
+		}
+	}
+}
+
 func TestGL003_ProjectMissingRef(t *testing.T) {
 	f := findings003(t, `
 include:
