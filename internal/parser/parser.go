@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	"gopkg.in/yaml.v3"
 )
@@ -13,10 +14,14 @@ import (
 type Document struct {
 	Root *yaml.Node
 	File string
+	// Spec is the `spec:` header of a two-document file (input declarations,
+	// then the body), or nil. Root then points at the body.
+	Spec *yaml.Node
 	// ComponentTemplate reports whether the file is a GitLab CI/CD component
-	// template (a `spec:` document, then the template body). Root then points at
-	// the body. Such a file is a fragment, so rules that reason about a whole
-	// pipeline do not apply to it.
+	// template or an included file with a `spec:` header. Such a file is a
+	// fragment, so rules that reason about a whole pipeline do not apply to it.
+	// A root .gitlab-ci.yml with a `spec:` header declares pipeline inputs and
+	// is still a whole pipeline.
 	ComponentTemplate bool
 }
 
@@ -50,19 +55,25 @@ func Parse(data []byte, file string) (*Document, error) {
 		return nil, fmt.Errorf("%s: empty document", file)
 	}
 
-	root := docs[0]
-	component := false
+	doc := &Document{Root: docs[0], File: file}
 	if len(docs) > 1 && hasSpecHeader(docs[0]) {
-		root = docs[1]
-		component = true
+		doc.Spec = docs[0]
+		doc.Root = docs[1]
+		doc.ComponentTemplate = !isRootPipelineFile(file)
 	}
-	ResolveReferences(root)
-	return &Document{Root: root, File: file, ComponentTemplate: component}, nil
+	ResolveReferences(doc.Root)
+	return doc, nil
 }
 
-// hasSpecHeader reports whether a document is a component template's `spec:`
-// header. Only the key matters; its contents are input declarations, not CI
-// configuration, so there is nothing in them for the rules to check.
+// isRootPipelineFile reports whether file is named like a project's root CI
+// configuration, the only place GitLab accepts pipeline-level `spec:inputs`.
+func isRootPipelineFile(file string) bool {
+	base := filepath.Base(file)
+	return base == ".gitlab-ci.yml" || base == ".gitlab-ci.yaml"
+}
+
+// hasSpecHeader reports whether a document is a `spec:` header. Only the key
+// matters; its contents are input declarations, not CI configuration.
 func hasSpecHeader(doc *yaml.Node) bool {
 	mapping := Unwrap(doc)
 	if mapping.Kind != yaml.MappingNode {

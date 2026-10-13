@@ -15,10 +15,16 @@ var GL051 = &gl051{}
 
 func (r *gl051) ID() string { return "GL051" }
 
+// Check handles the single-document form, where spec: sits next to the jobs.
 func (r *gl051) Check(doc *yaml.Node, file string) []finding.Finding {
+	return r.CheckWithSpec(doc, doc, file)
+}
+
+// CheckWithSpec reads the input declarations from spec and their uses from doc.
+func (r *gl051) CheckWithSpec(spec, doc *yaml.Node, file string) []finding.Finding {
 	mapping := parser.Unwrap(doc)
 
-	unconstrained := gl051UnconstrainedInputs(mapping)
+	unconstrained := gl051UnconstrainedInputs(parser.Unwrap(spec))
 	if len(unconstrained) == 0 {
 		return nil
 	}

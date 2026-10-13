@@ -605,7 +605,7 @@ func collectFindings(doc *parser.Document, path string, cfg *config.Config, gitl
 		if doc.ComponentTemplate && !rules.AppliesToComponentTemplate(rule.ID()) {
 			continue
 		}
-		for _, f := range rule.Check(doc.Root, path) {
+		for _, f := range rules.Check(rule, doc, path) {
 			f = cfg.ApplySeverity(f)
 			if !cfg.AboveMinSeverity(f) {
 				continue

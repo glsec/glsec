@@ -93,7 +93,7 @@ func checkFixtureFires(t *testing.T, id string) {
 		}
 		for _, r := range All() {
 			if r.ID() == rule.ID() {
-				totalFindings += len(r.Check(doc.Root, path))
+				totalFindings += len(Check(r, doc, path))
 				break
 			}
 		}

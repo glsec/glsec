@@ -110,8 +110,9 @@ glsec --recursive .
 glsec --recursive --name '*.gitlab-ci.yml' --name 'ci/pipeline.yml' .
 
 # CI/CD Catalog component templates are detected automatically: a `spec:` header
-# followed by the template body. glsec lints the body and skips whole-pipeline
-# rules that a template fragment cannot satisfy.
+# followed by the template body. glsec lints the body, checks the declared inputs,
+# and skips whole-pipeline rules that a template fragment cannot satisfy. A root
+# .gitlab-ci.yml with a `spec:` header (pipeline inputs) is still a full pipeline.
 glsec templates/my-component.yml
 
 # jobs written with `run:` (CI/CD Steps) are scanned too — every script rule and

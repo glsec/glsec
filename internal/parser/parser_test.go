@@ -140,6 +140,32 @@ scan-job:
 	if FindKey(m, "spec") != nil {
 		t.Error("the spec header must not be the linted document")
 	}
+	if doc.Spec == nil || FindKey(Unwrap(doc.Spec), "spec") == nil {
+		t.Error("expected the spec header to be kept on the document")
+	}
+}
+
+func TestParse_RootPipelineWithInputsIsNotComponentTemplate(t *testing.T) {
+	src := []byte("spec:\n  inputs:\n    env:\n      default: dev\n---\nbuild:\n  script: [make]\n")
+	for _, file := range []string{".gitlab-ci.yml", "repo/.gitlab-ci.yaml"} {
+		doc, err := Parse(src, file)
+		if err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		if doc.ComponentTemplate {
+			t.Errorf("%s: a root pipeline with spec:inputs must not be treated as a component template", file)
+		}
+		if doc.Spec == nil || FindKey(doc.MappingNode(), "build") == nil {
+			t.Errorf("%s: expected the spec header kept and the body linted", file)
+		}
+	}
+	doc, err := Parse(src, "ci/deploy.yml")
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if !doc.ComponentTemplate {
+		t.Error("an included file with a spec header is a fragment")
+	}
 }
 
 func TestParse_PlainPipelineIsNotComponentTemplate(t *testing.T) {

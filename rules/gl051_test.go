@@ -13,7 +13,7 @@ func findings051(t *testing.T, yaml string) []finding.Finding {
 	if err != nil {
 		t.Fatalf("parse error: %v", err)
 	}
-	return GL051.Check(doc.Root, "test.yml")
+	return Check(GL051, doc, "test.yml")
 }
 
 func TestGL051_UnconstrainedInputInImage(t *testing.T) {
@@ -22,7 +22,7 @@ spec:
   inputs:
     deploy_image:
       description: "Image to use"
-
+---
 deploy:
   image: $[[ inputs.deploy_image ]]
   script:
@@ -47,7 +47,7 @@ spec:
       options:
         - staging
         - production
-
+---
 deploy:
   image: alpine:3.19
   script:
@@ -64,7 +64,7 @@ spec:
   inputs:
     image_tag:
       regex: '^[a-zA-Z0-9._-]+$'
-
+---
 deploy:
   image: alpine:$[[ inputs.image_tag ]]
   script:
@@ -81,7 +81,7 @@ spec:
   inputs:
     command:
       description: "Command to run"
-
+---
 run:
   script:
     - $[[ inputs.command ]]
@@ -96,7 +96,7 @@ func TestGL051_UnconstrainedInputInBeforeScript(t *testing.T) {
 spec:
   inputs:
     setup_cmd:
-
+---
 run:
   before_script:
     - $[[ inputs.setup_cmd ]]
@@ -113,7 +113,7 @@ func TestGL051_UnconstrainedInputInAfterScript(t *testing.T) {
 spec:
   inputs:
     cleanup_cmd:
-
+---
 run:
   script:
     - ./build.sh
@@ -131,7 +131,7 @@ spec:
   inputs:
     deploy_env:
       description: "Target environment"
-
+---
 deploy:
   script:
     - ./deploy.sh
@@ -148,7 +148,7 @@ func TestGL051_UnconstrainedInputInEnvironmentScalar(t *testing.T) {
 spec:
   inputs:
     deploy_env:
-
+---
 deploy:
   script:
     - ./deploy.sh
@@ -164,7 +164,7 @@ func TestGL051_UnconstrainedInputInServices(t *testing.T) {
 spec:
   inputs:
     svc_image:
-
+---
 test:
   services:
     - $[[ inputs.svc_image ]]
@@ -193,7 +193,7 @@ func TestGL051_ImageMappingForm(t *testing.T) {
 spec:
   inputs:
     runner_image:
-
+---
 build:
   image:
     name: $[[ inputs.runner_image ]]
@@ -212,7 +212,7 @@ spec:
   inputs:
     image_name:
     run_cmd:
-
+---
 job:
   image: $[[ inputs.image_name ]]
   script:
@@ -233,7 +233,7 @@ spec:
       options:
         - staging
         - production
-
+---
 deploy:
   image: myapp:$[[ inputs.version ]]
   script:
@@ -250,7 +250,7 @@ spec:
   inputs:
     deploy_image:
       default: "alpine:3.19"
-
+---
 deploy:
   image: $[[ inputs.deploy_image ]]
   script:
@@ -266,7 +266,7 @@ func TestGL051_WhitespaceVariantsInInterpolation(t *testing.T) {
 spec:
   inputs:
     img:
-
+---
 build:
   image: $[[inputs.img]]
   script:
@@ -274,5 +274,20 @@ build:
 `)
 	if len(f) != 1 {
 		t.Fatalf("expected 1 finding for compact interpolation syntax, got %d", len(f))
+	}
+}
+
+func TestGL051_SingleDocumentForm(t *testing.T) {
+	f := findings051(t, `
+spec:
+  inputs:
+    img:
+deploy:
+  image: $[[ inputs.img ]]
+  script:
+    - ./deploy.sh
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding when spec: shares the document with the jobs, got %d", len(f))
 	}
 }
