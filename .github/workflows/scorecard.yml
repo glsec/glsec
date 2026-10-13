@@ -13,6 +13,7 @@ on:
     - cron: "0 5 * * 1" # 05:00 UTC every Monday
   branch_protection_rule:
   workflow_dispatch:
+  pull_request: # TEMPORARY trial trigger, removed before merge
 
 permissions:
   contents: read
