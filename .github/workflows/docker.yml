@@ -42,12 +42,52 @@ jobs:
       id-token: write # keyless signing of the provenance via Sigstore
       attestations: write # write the attestation to the GitHub attestations API
     steps:
-      # Records every outbound connection of this job, which holds write
-      # tokens. Audit first; after a release, switch to egress-policy: block
-      # with the observed endpoints (#541).
+      # Allows only the hosts this job needs; anything else is blocked, so a
+      # compromised dependency cannot send the job's tokens elsewhere. The list
+      # is what the v1.20.0 release run connected to in audit mode (#541). A
+      # release that needs a new host fails here: add the host, then re-run.
       - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
-          egress-policy: audit
+          egress-policy: block
+          disable-telemetry: true
+          # *.actions.githubusercontent.com and the productionresultssa hosts
+          # (GitHub's job results storage) change from run to run.
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+            raw.githubusercontent.com:443
+            release-assets.githubusercontent.com:443
+            pkg-containers.githubusercontent.com:443
+            *.actions.githubusercontent.com:443
+            ghcr.io:443
+            registry-1.docker.io:443
+            auth.docker.io:443
+            production.cloudfront.docker.com:443
+            proxy.golang.org:443
+            fulcio.sigstore.dev:443
+            rekor.sigstore.dev:443
+            timestamp.sigstore.dev:443
+            tuf-repo-cdn.sigstore.dev:443
+            productionresultssa0.blob.core.windows.net:443
+            productionresultssa1.blob.core.windows.net:443
+            productionresultssa2.blob.core.windows.net:443
+            productionresultssa3.blob.core.windows.net:443
+            productionresultssa4.blob.core.windows.net:443
+            productionresultssa5.blob.core.windows.net:443
+            productionresultssa6.blob.core.windows.net:443
+            productionresultssa7.blob.core.windows.net:443
+            productionresultssa8.blob.core.windows.net:443
+            productionresultssa9.blob.core.windows.net:443
+            productionresultssa10.blob.core.windows.net:443
+            productionresultssa11.blob.core.windows.net:443
+            productionresultssa12.blob.core.windows.net:443
+            productionresultssa13.blob.core.windows.net:443
+            productionresultssa14.blob.core.windows.net:443
+            productionresultssa15.blob.core.windows.net:443
+            productionresultssa16.blob.core.windows.net:443
+            productionresultssa17.blob.core.windows.net:443
+            productionresultssa18.blob.core.windows.net:443
+            productionresultssa19.blob.core.windows.net:443
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
