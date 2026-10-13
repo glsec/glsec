@@ -413,3 +413,79 @@ job:
 		t.Fatalf("an unconstrained input must not match a longer input name, got %d", len(f))
 	}
 }
+
+func TestGL051_JobInputs(t *testing.T) {
+	f := findings051(t, `
+deploy:
+  when: manual
+  inputs:
+    version:
+      default: latest
+    target_env:
+      default: staging
+      options: [staging, production]
+    replicas:
+      type: number
+      default: 3
+    migration:
+      default: ""
+      regex: ^[a-zA-Z0-9_]*$
+    img:
+      default: alpine:3.24
+  image: ${{ job.inputs.img }}
+  script:
+    - ./deploy.sh --env ${{ job.inputs.target_env }} --version ${{ job.inputs.version }}
+    - ./scale.sh ${{ job.inputs.replicas }}
+    - ./migrate.sh '${{ job.inputs.migration }}'
+  artifacts:
+    paths:
+      - reports/${{ job.inputs.version }}/
+`)
+	want := map[string]int{"version": 2, "img": 1}
+	got := map[string]int{}
+	for _, x := range f {
+		if x.Severity != finding.Error {
+			t.Errorf("deploy job: expected error, got %s (%s)", x.Severity, x.Message)
+		}
+		for name := range want {
+			if strings.Contains(x.Message, `job input "`+name+`"`) {
+				got[name]++
+			}
+		}
+	}
+	if len(f) != 3 || got["version"] != 2 || got["img"] != 1 {
+		t.Errorf("expected version in script and artifacts plus img in image, got %+v", f)
+	}
+}
+
+func TestGL051_JobInputsWarnOutsideDeploy(t *testing.T) {
+	f := findings051(t, `
+test:
+  inputs:
+    suite:
+      default: smoke
+  script:
+    - 'make test SUITE=${{ job.inputs.suite | upper }}'
+`)
+	if len(f) != 1 || f[0].Severity != finding.Warn {
+		t.Fatalf("expected one warning for an expression using the input, got %+v", f)
+	}
+}
+
+func TestGL051_JobInputNamePrefix(t *testing.T) {
+	f := findings051(t, `
+test:
+  inputs:
+    tag:
+      default: x
+    tags:
+      default: [a]
+      type: array
+      options: [a, b]
+  script:
+    - 'echo ${{ job.inputs.tags }}'
+`)
+	if len(f) != 0 {
+		t.Fatalf("an unconstrained input must not match a longer input name, got %+v", f)
+	}
+}

@@ -23,6 +23,15 @@ func (r *gl051) Check(doc *yaml.Node, file string) []finding.Finding {
 
 // CheckWithSpec reads the input declarations from spec and their uses from doc.
 func (r *gl051) CheckWithSpec(spec, doc *yaml.Node, file string) []finding.Finding {
+	findings := gl051SpecInputs(spec, doc, file)
+	parser.EachJob(doc, func(name, job *yaml.Node) {
+		findings = append(findings, gl051JobInputs(name.Value, job, file)...)
+	})
+	return findings
+}
+
+// gl051SpecInputs checks spec:inputs interpolated with $[[ inputs.NAME ]].
+func gl051SpecInputs(spec, doc *yaml.Node, file string) []finding.Finding {
 	mapping := parser.Unwrap(doc)
 
 	unconstrained := gl051UnconstrainedInputs(parser.Unwrap(spec))
@@ -197,4 +206,67 @@ func gl051CheckEnvironment(node *yaml.Node, file, job string, patterns map[strin
 		return gl051CheckScalar(parser.FindKey(node, "name"), file, job, "environment:name:", patterns)
 	}
 	return nil
+}
+
+// gl051JobKeywords are the job keywords GitLab interpolates job inputs into.
+var gl051JobKeywords = []string{"script", "before_script", "after_script", "image", "services", "cache", "artifacts"}
+
+// gl051JobInputs checks a job's own inputs:, referenced as ${{ job.inputs.NAME }}.
+// Whoever can run the job manually, or retry it with modified values, sets
+// them, and GitLab substitutes the text before the shell runs, so quoting in
+// the script does not help.
+func gl051JobInputs(jobName string, job *yaml.Node, file string) []finding.Finding {
+	inputs := parser.FindKey(job, "inputs")
+	if inputs == nil || inputs.Kind != yaml.MappingNode {
+		return nil
+	}
+	var names []string
+	patterns := map[string]*regexp.Regexp{}
+	for i := 0; i+1 < len(inputs.Content); i += 2 {
+		if name := inputs.Content[i].Value; !gl051Constrained(inputs.Content[i+1]) {
+			names = append(names, name)
+			patterns[name] = regexp.MustCompile(`\$\{\{[^}]*\bjob\.inputs\.` + regexp.QuoteMeta(name) + `(?:[^A-Za-z0-9_-][^}]*)?\}\}`)
+		}
+	}
+	if len(patterns) == 0 {
+		return nil
+	}
+	severity := finding.Warn
+	if IsDeployLikeJob(jobName, job) {
+		severity = finding.Error
+	}
+	var findings []finding.Finding
+	for _, key := range gl051JobKeywords {
+		eachScalar(parser.FindKey(job, key), func(node *yaml.Node) {
+			for _, name := range names {
+				if !patterns[name].MatchString(node.Value) {
+					continue
+				}
+				findings = append(findings, finding.Finding{
+					RuleID:   "GL051",
+					Severity: severity,
+					Job:      jobName,
+					Message:  fmt.Sprintf("unconstrained job input %q interpolated into %s: — anyone who can run or retry the job sets its value, and GitLab substitutes it before the shell runs; add options:, regex:, or a number/boolean type:", name, key),
+					File:     file,
+					Line:     node.Line,
+					Col:      node.Column,
+				})
+			}
+		})
+	}
+	return findings
+}
+
+// eachScalar calls fn for every scalar under node.
+func eachScalar(node *yaml.Node, fn func(*yaml.Node)) {
+	if node == nil {
+		return
+	}
+	if node.Kind == yaml.ScalarNode {
+		fn(node)
+		return
+	}
+	for _, child := range node.Content {
+		eachScalar(child, fn)
+	}
 }

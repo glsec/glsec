@@ -98,12 +98,18 @@ func checkServicesNode(node *yaml.Node, file string, resolve varResolver) []find
 // checkRefResolved checks ref directly, or, when ref is a bare variable,
 // each value the file assigns to that variable.
 func checkRefResolved(ref string, line, col int, file string, resolve varResolver) []finding.Finding {
-	if !isVarRef(ref) {
+	name := ""
+	switch {
+	case isVarRef(ref):
+		name = varRefName(ref)
+	case jobInputRefRe.MatchString(ref):
+		name = jobInputPrefix + jobInputRefRe.FindStringSubmatch(ref)[1]
+	default:
 		return checkRef(ref, fmt.Sprintf("%q", ref), line, col, file)
 	}
 	var findings []finding.Finding
 	seen := map[string]bool{}
-	for _, v := range resolve(varRefName(ref)) {
+	for _, v := range resolve(name) {
 		// Nested references are not followed.
 		if seen[v] || v == "" || strings.Contains(v, "$") {
 			continue
@@ -123,6 +129,9 @@ func jobVarResolver(jobName string, job, globalVars *yaml.Node) varResolver {
 	jobVars := parser.FindKey(job, "variables")
 	useGlobal := !strings.HasPrefix(jobName, ".") && !inheritsConfig(job)
 	return func(name string) []string {
+		if input, ok := strings.CutPrefix(name, jobInputPrefix); ok {
+			return jobInputValues(job, input)
+		}
 		fallback := varValues(jobVars, name)
 		if fallback == nil && useGlobal && inheritsGlobalVar(job, name) {
 			fallback = varValues(globalVars, name)
@@ -136,6 +145,36 @@ func jobVarResolver(jobName string, job, globalVars *yaml.Node) varResolver {
 		}
 		return matrix
 	}
+}
+
+// jobInputRefRe matches an image given entirely by a job input, as in
+// image: ${{ job.inputs.image }}.
+var jobInputRefRe = regexp.MustCompile(`^\$\{\{\s*job\.inputs\.([A-Za-z0-9_-]+)\s*\}\}$`)
+
+// jobInputPrefix marks a job-input name passed to a varResolver.
+const jobInputPrefix = "job.inputs."
+
+// jobInputValues returns the values a job input can take without an override
+// being rejected: its options:, or else its default.
+func jobInputValues(job *yaml.Node, name string) []string {
+	def := parser.FindKey(job, "inputs")
+	if def != nil {
+		def = parser.FindKey(def, name)
+	}
+	if def == nil || def.Kind != yaml.MappingNode {
+		return nil
+	}
+	if opts := parser.FindKey(def, "options"); opts != nil && opts.Kind == yaml.SequenceNode {
+		var values []string
+		for _, o := range opts.Content {
+			values = append(values, o.Value)
+		}
+		return values
+	}
+	if d := parser.FindKey(def, "default"); d != nil && d.Kind == yaml.ScalarNode {
+		return []string{d.Value}
+	}
+	return nil
 }
 
 // varValues returns the value of name in a variables: mapping, accepting both
@@ -257,7 +296,8 @@ func checkRef(ref, label string, line, col int, file string) []finding.Finding {
 	if strings.Contains(ref, "@sha256:") {
 		return nil
 	}
-	if isVarRef(ref) || gitlabMacOSImage.MatchString(ref) {
+	// A Moa expression (${{ ... }}) is evaluated when the job runs.
+	if isVarRef(ref) || gitlabMacOSImage.MatchString(ref) || strings.Contains(ref, "${{") {
 		return nil
 	}
 	tag := imageTag(ref)

@@ -1,0 +1,21 @@
+workflow:
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+deploy:
+  stage: deploy
+  image: alpine:3.24.2
+  tags: [deploy]
+  resource_group: production
+  when: manual
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  environment: production
+  inputs:
+    version:
+      default: v1.0.0
+    target_env:
+      default: staging
+      options: [staging, production]
+  script:
+    - ./deploy.sh --env ${{ job.inputs.target_env }} --version ${{ job.inputs.version }}

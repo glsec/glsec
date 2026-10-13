@@ -410,3 +410,24 @@ other:
 		t.Fatalf("expected only the non-GitLab image to be flagged, got %v", f)
 	}
 }
+
+func TestGL001_JobInputImage(t *testing.T) {
+	cases := []struct {
+		src  string
+		want int
+	}{
+		{"job:\n  inputs:\n    img:\n      default: node:latest\n  image: ${{ job.inputs.img }}\n  script: [x]\n", 1},
+		{"job:\n  inputs:\n    img:\n      default: node:22.1.0\n      options: [node:22.1.0, node:latest]\n  image: ${{ job.inputs.img }}\n  script: [x]\n", 1},
+		{"job:\n  inputs:\n    img:\n      default: node:22.1.0\n  image: ${{ job.inputs.img }}\n  script: [x]\n", 0},
+		{"job:\n  inputs:\n    v:\n      default: \"22\"\n  image: registry.example.com/node${{ job.inputs.v }}\n  script: [x]\n", 0},
+	}
+	for _, tc := range cases {
+		doc, err := parser.Parse([]byte(tc.src), "test.yml")
+		if err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		if f := GL001.Check(doc.Root, "test.yml"); len(f) != tc.want {
+			t.Errorf("%q: got %d findings, want %d: %+v", tc.src, len(f), tc.want, f)
+		}
+	}
+}
