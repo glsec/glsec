@@ -21,6 +21,18 @@ go test -race ./...             # with race detector (what CI runs)
 go test ./rules/... -v -run GL001  # single rule
 ```
 
+### Fuzzing
+
+glsec reads pipeline files other people wrote, so the parser, the rules and a whole scan have native Go fuzz targets. `go test ./...` replays their seed corpus (the fixtures) like ordinary tests. To fuzz one target:
+
+```sh
+go test ./internal/parser -run '^$' -fuzz '^FuzzParse$' -fuzztime 2m
+go test ./rules           -run '^$' -fuzz '^FuzzRules$' -fuzztime 2m
+go test ./cmd/glsec       -run '^$' -fuzz '^FuzzScan$'  -fuzztime 2m
+```
+
+The `Fuzz` workflow runs each target for 45 s on pull requests and pushes to `main`, and for 10 minutes every week. When a target fails, Go writes the input to `<package>/testdata/fuzz/<Target>/`, and CI uploads it as an artifact. Fix the bug and commit that file with the fix: it then replays on every `go test`.
+
 ## Linting
 
 CI runs [golangci-lint](https://golangci-lint.run/) v2. To run it locally:
@@ -30,7 +42,7 @@ go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 golangci-lint run
 ```
 
-Enabled linters: `errcheck`, `govet`, `staticcheck`, `revive`, `gosec`, `misspell`. The full config is in `.golangci.yml`.
+Enabled linters: `errcheck`, `govet`, `staticcheck`, `revive`, `gosec`, `misspell`, plus the `gofmt` formatter. The full config is in `.golangci.yml`.
 
 ## How to add a rule
 

@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -320,7 +321,7 @@ func scanRoot(file string, opt scanOptions) (findings []finding.Finding, jobCoun
 }
 
 // writeOutput renders findings in the requested format.
-func writeOutput(w *os.File, format output.Format, findings []finding.Finding, jobCount int, colorEnabled, isTTY bool) error {
+func writeOutput(w io.Writer, format output.Format, findings []finding.Finding, jobCount int, colorEnabled, isTTY bool) error {
 	switch format {
 	case output.FormatSARIF:
 		return output.WriteSARIF(w, findings, rules.CWEID, rules.CWEName, rules.OWASPCategories, rules.OWASPCategoryName, rules.ASVSRequirements, rules.ASVSRequirementName)

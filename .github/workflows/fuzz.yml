@@ -1,0 +1,89 @@
+name: Fuzz
+
+# Native Go fuzzing of the code that reads untrusted .gitlab-ci.yml files
+# (#536): the parser and its expansion steps, every rule, and a whole scan
+# through all output formats. Short runs on pull requests and pushes catch
+# regressions; the weekly run digs deeper. The generated corpus is kept in the
+# Actions cache so each run continues where the last one stopped.
+#
+# A crash uploads the failing input. Commit it under
+# <package>/testdata/fuzz/<Target>/ and it replays in every `go test` run.
+
+on:
+  pull_request:
+    paths:
+      - "**.go"
+      - go.mod
+      - go.sum
+      - testdata/fixtures/**
+      - .github/workflows/fuzz.yml
+  push:
+    branches: [main]
+    paths:
+      - "**.go"
+      - go.mod
+      - go.sum
+      - testdata/fixtures/**
+      - .github/workflows/fuzz.yml
+  schedule:
+    - cron: "0 6 * * 1" # 06:00 UTC every Monday
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer push supersedes a running fuzz pass on the same ref.
+concurrency:
+  group: fuzz-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fuzz:
+    name: Fuzz (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - package: ./internal/parser
+            target: FuzzParse
+          - package: ./rules
+            target: FuzzRules
+          - package: ./cmd/glsec
+            target: FuzzScan
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Locate the fuzz corpus
+        id: corpus
+        run: echo "dir=$(go env GOCACHE)/fuzz" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the fuzz corpus
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.corpus.outputs.dir }}
+          key: fuzz-${{ matrix.target }}-${{ github.run_id }}
+          restore-keys: fuzz-${{ matrix.target }}-
+
+      - name: Fuzz
+        env:
+          PACKAGE: ${{ matrix.package }}
+          TARGET: ${{ matrix.target }}
+          FUZZTIME: ${{ github.event_name == 'schedule' && '10m' || '45s' }}
+        # Minimizing each new interesting input may take up to 60 s by
+        # default, which would eat most of a 45 s run.
+        run: go test "$PACKAGE" -run '^$' -fuzz "^${TARGET}\$" -fuzztime "$FUZZTIME" -fuzzminimizetime 10s
+
+      - name: Upload the failing input
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fuzz-crash-${{ matrix.target }}
+          path: ${{ matrix.package }}/testdata/fuzz/
+          if-no-files-found: ignore
