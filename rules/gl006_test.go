@@ -326,6 +326,8 @@ func TestGL006_AnchoredFormatsExtra(t *testing.T) {
 		"cf account":  {"cfa" + "t_" + strings.Repeat("Ab1", 13) + "x" + "0123abcd", "Cloudflare API token"},
 		"cf originca": {"v1.0-" + a(24) + "-" + strings.Repeat("b", 146), "Cloudflare Origin CA key"},
 		"bbdc":        {"BBD" + "C-" + strings.Repeat("Ab+/", 11), "Bitbucket Data Center token"},
+		"nuget":       {"oy" + "2a" + "bcdefghijklmn23" + "q" + "rstuvwxyz234567abcdefghij" + "e", "NuGet API key"},
+		"nuget upper": {"OY" + "2A" + "BCDEFGHIJKLMN23" + "Q" + "RSTUVWXYZ234567ABCDEFGHIJ" + "E", "NuGet API key"},
 	}
 	for name, tc := range cases {
 		tc := tc
@@ -360,6 +362,33 @@ func TestGL006_CloudflareBitbucketNearMiss_NoFinding(t *testing.T) {
 		f := findings006(t, fmt.Sprintf(`
 variables:
   TOKEN: "%s"
+build:
+  script: [echo ok]
+`, v))
+		if len(f) != 0 {
+			t.Errorf("expected no finding for %q, got %d", v, len(f))
+		}
+	}
+}
+
+func TestGL006_NuGetNearMiss_NoFinding(t *testing.T) {
+	const mid = "bcdefghijklmn23"
+	const tail = "rstuvwxyz234567abcdefghij"
+	values := []string{
+		"oy" + "2a" + mid + "q" + tail,                     // 45 chars
+		"oy" + "2a" + mid + "q" + tail + "ea",              // 47 chars
+		"oy" + "2a" + "bcdefghijklmn01" + "q" + tail + "e", // 0/1 are not base32
+		"oy" + "2a" + "bcdefghijklmn89" + "q" + tail + "e", // 8/9 are not base32
+		"oy" + "2z" + mid + "q" + tail + "e",               // 4th char outside [a-p]
+		"oy" + "2a" + mid + "b" + tail + "e",               // 20th char outside [aq]
+		"oy" + "2a" + mid + "q" + tail + "b",               // last char outside [aeimquy4]
+		"x" + "oy" + "2a" + mid + "q" + tail + "e",         // inside a longer token
+		"$NUGET_API_KEY",
+	}
+	for _, v := range values {
+		f := findings006(t, fmt.Sprintf(`
+variables:
+  NUGET_API_KEY: "%s"
 build:
   script: [echo ok]
 `, v))
