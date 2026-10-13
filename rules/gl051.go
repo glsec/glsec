@@ -3,6 +3,7 @@ package rules
 import (
 	"fmt"
 	"regexp"
+	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
 	"github.com/glsec/glsec/internal/parser"
@@ -31,7 +32,7 @@ func (r *gl051) CheckWithSpec(spec, doc *yaml.Node, file string) []finding.Findi
 
 	patterns := make(map[string]*regexp.Regexp, len(unconstrained))
 	for _, name := range unconstrained {
-		patterns[name] = regexp.MustCompile(`\$\[\[\s*inputs\.` + regexp.QuoteMeta(name) + `\s*\]\]`)
+		patterns[name] = regexp.MustCompile(`\$\[\[\s*inputs\.` + regexp.QuoteMeta(name) + gl051Accessors + `\s*(\|[^\]]*)?\]\]`)
 	}
 
 	var findings []finding.Finding
@@ -68,8 +69,12 @@ func (r *gl051) CheckWithSpec(spec, doc *yaml.Node, file string) []finding.Findi
 	return findings
 }
 
-// gl051UnconstrainedInputs returns spec:inputs names that have neither a
-// regex: constraint nor an options: allowlist.
+// gl051Accessors matches array indexing and nested keys after an input name,
+// as in $[[ inputs.servers[0].host ]].
+const gl051Accessors = `(?:\[\d+\]|\.[A-Za-z0-9_-]+)*`
+
+// gl051UnconstrainedInputs returns spec:inputs names whose values a caller can
+// choose freely.
 func gl051UnconstrainedInputs(mapping *yaml.Node) []string {
 	spec := parser.FindKey(mapping, "spec")
 	if spec == nil {
@@ -81,17 +86,37 @@ func gl051UnconstrainedInputs(mapping *yaml.Node) []string {
 	}
 	var unconstrained []string
 	for i := 0; i+1 < len(inputs.Content); i += 2 {
-		name := inputs.Content[i].Value
-		def := inputs.Content[i+1]
-		if def.Kind != yaml.MappingNode {
-			unconstrained = append(unconstrained, name)
-			continue
-		}
-		if parser.FindKey(def, "regex") == nil && parser.FindKey(def, "options") == nil {
-			unconstrained = append(unconstrained, name)
+		if !gl051Constrained(inputs.Content[i+1]) {
+			unconstrained = append(unconstrained, inputs.Content[i].Value)
 		}
 	}
 	return unconstrained
+}
+
+// gl051Constrained reports whether GitLab restricts an input's value: an
+// options: allowlist or a regex:, a number or boolean type, or spec:inputs:rules
+// where every entry carries options:. A rules entry without options: (such as
+// default: null) lets the user type any value.
+func gl051Constrained(def *yaml.Node) bool {
+	if def.Kind != yaml.MappingNode {
+		return false
+	}
+	if parser.FindKey(def, "regex") != nil || parser.FindKey(def, "options") != nil {
+		return true
+	}
+	if t := parser.FindKey(def, "type"); t != nil && (t.Value == "number" || t.Value == "boolean") {
+		return true
+	}
+	rules := parser.FindKey(def, "rules")
+	if rules == nil || rules.Kind != yaml.SequenceNode || len(rules.Content) == 0 {
+		return false
+	}
+	for _, entry := range rules.Content {
+		if entry.Kind != yaml.MappingNode || parser.FindKey(entry, "options") == nil {
+			return false
+		}
+	}
+	return true
 }
 
 func gl051CheckScalar(node *yaml.Node, file, job, keyword string, patterns map[string]*regexp.Regexp) []finding.Finding {
@@ -100,17 +125,23 @@ func gl051CheckScalar(node *yaml.Node, file, job, keyword string, patterns map[s
 	}
 	var findings []finding.Finding
 	for inputName, re := range patterns {
-		if re.MatchString(node.Value) {
-			findings = append(findings, finding.Finding{
-				RuleID:   "GL051",
-				Severity: finding.Warn,
-				Job:      job,
-				Message:  fmt.Sprintf("unconstrained spec:inputs entry %q interpolated into %s — add regex: or options: to restrict caller-supplied values", inputName, keyword),
-				File:     file,
-				Line:     node.Line,
-				Col:      node.Column,
-			})
+		m := re.FindString(node.Value)
+		if m == "" {
+			continue
 		}
+		msg := fmt.Sprintf("unconstrained spec:inputs entry %q interpolated into %s — add regex:, options:, or a number/boolean type: to restrict caller-supplied values", inputName, keyword)
+		if strings.Contains(m, "posix_escape") {
+			msg += " (posix_escape is not a security control for untrusted input)"
+		}
+		findings = append(findings, finding.Finding{
+			RuleID:   "GL051",
+			Severity: finding.Warn,
+			Job:      job,
+			Message:  msg,
+			File:     file,
+			Line:     node.Line,
+			Col:      node.Column,
+		})
 	}
 	return findings
 }
