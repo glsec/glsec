@@ -12,6 +12,8 @@ var GL034 = &gl034{}
 
 func (r *gl034) ID() string { return "GL034" }
 
+const gl034Message = "trigger: job has no strategy: — child/downstream pipeline failures are silently ignored; add strategy: mirror (strategy: depend before GitLab 18.2) to reflect the downstream pipeline status"
+
 func (r *gl034) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
 
@@ -21,13 +23,13 @@ func (r *gl034) Check(doc *yaml.Node, file string) []finding.Finding {
 			return
 		}
 
-		// Scalar trigger (e.g. "trigger: other/project") — cannot carry strategy: depend.
+		// Scalar trigger (e.g. "trigger: other/project") — cannot carry a strategy.
 		if triggerNode.Kind == yaml.ScalarNode {
 			findings = append(findings, finding.Finding{
 				RuleID:   "GL034",
 				Severity: finding.Warn,
 				Job:      name.Value,
-				Message:  "trigger: job has no strategy: depend — child/downstream pipeline failures are silently ignored; add strategy: depend to mirror the child pipeline status",
+				Message:  gl034Message,
 				File:     file,
 				Line:     triggerNode.Line,
 				Col:      triggerNode.Column,
@@ -40,7 +42,8 @@ func (r *gl034) Check(doc *yaml.Node, file string) []finding.Finding {
 		}
 
 		strategyNode := parser.FindKey(triggerNode, "strategy")
-		if strategyNode != nil && strategyNode.Value == "depend" {
+		// mirror (GitLab 18.2+) and the older depend both wait for the downstream status.
+		if strategyNode != nil && (strategyNode.Value == "mirror" || strategyNode.Value == "depend") {
 			return
 		}
 
@@ -48,7 +51,7 @@ func (r *gl034) Check(doc *yaml.Node, file string) []finding.Finding {
 			RuleID:   "GL034",
 			Severity: finding.Warn,
 			Job:      name.Value,
-			Message:  "trigger: job has no strategy: depend — child/downstream pipeline failures are silently ignored; add strategy: depend to mirror the child pipeline status",
+			Message:  gl034Message,
 			File:     file,
 			Line:     triggerNode.Line,
 			Col:      triggerNode.Column,

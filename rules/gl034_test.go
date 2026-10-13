@@ -13,7 +13,7 @@ func TestGL034(t *testing.T) {
 		wantHits int
 	}{
 		{
-			name: "trigger mapping without strategy: depend",
+			name: "trigger mapping without strategy",
 			yaml: `run-security-scan:
   stage: test
   trigger:
@@ -30,6 +30,24 @@ func TestGL034(t *testing.T) {
       - local: .gitlab/ci/security.gitlab-ci.yml
     strategy: depend`,
 			wantHits: 0,
+		},
+		{
+			name: "trigger mapping with strategy: mirror — safe",
+			yaml: `run-security-scan:
+  stage: test
+  trigger:
+    include:
+      - local: .gitlab/ci/security.gitlab-ci.yml
+    strategy: mirror`,
+			wantHits: 0,
+		},
+		{
+			name: "trigger with unknown strategy value",
+			yaml: `downstream:
+  trigger:
+    project: other/project
+    strategy: none`,
+			wantHits: 1,
 		},
 		{
 			name: "scalar trigger without strategy",

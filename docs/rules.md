@@ -101,7 +101,7 @@ Gates bypassed, runners untrusted, or downstream pipelines outside access contro
 | [GL012](rules/GL012.md) | `warn`  | `when: always` on a deploy/release job bypasses upstream quality gates |
 | [GL013](rules/GL013.md) | `warn`  | Production deploy job has no `rules:` or `only:` branch restriction |
 | [GL019](rules/GL019.md) | `warn`  | Deploy/publish job has no `resource_group:` — concurrent runs risk race conditions or partial deploys |
-| [GL034](rules/GL034.md) | `warn`  | `trigger:` job without `strategy: depend` — child pipeline failures are silently ignored |
+| [GL034](rules/GL034.md) | `warn`  | `trigger:` job without `strategy: mirror` / `depend` — child pipeline failures are silently ignored |
 | [GL039](rules/GL039.md) | `warn`  | Security audit tool silenced with `\|\| true` — failures discarded, pipeline always green |
 | [GL009](rules/GL009.md) | `warn`  | Overly broad OIDC `id_tokens` audience (GitLab ≥ 15.7) |
 | [GL017](rules/GL017.md) | `warn`  | Deploy/publish job has no `tags:` — can run on any runner including untrusted self-hosted |
