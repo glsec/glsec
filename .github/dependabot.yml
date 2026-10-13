@@ -29,3 +29,13 @@ updates:
     open-pull-requests-limit: 5
     cooldown:
       default-days: 7
+
+  # CI tools installed with pip (zizmor, check-jsonschema). The .txt files are
+  # pip-compile output with hashes; Dependabot recompiles them on update.
+  - package-ecosystem: pip
+    directory: /.github/requirements
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7

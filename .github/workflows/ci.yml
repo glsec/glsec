@@ -91,7 +91,8 @@ jobs:
         with:
           persist-credentials: false
       - name: Install zizmor
-        run: pip install zizmor==1.30.1
+        # Version and hash pinned in .github/requirements/zizmor.txt (#539).
+        run: pip install --require-hashes --no-deps -r .github/requirements/zizmor.txt
       - name: Run zizmor
         run: zizmor --gh-token "${{ secrets.GITHUB_TOKEN }}" .github/workflows/
 
@@ -145,7 +146,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - run: pip install check-jsonschema
+      # Version and hashes pinned in .github/requirements/check-jsonschema.txt (#539).
+      - run: pip install --require-hashes --no-deps -r .github/requirements/check-jsonschema.txt
       - name: Validate against GitLab CI schema
         run: check-jsonschema --builtin-schema gitlab-ci testdata/fixtures/*.yml
 
