@@ -47,8 +47,8 @@ Pre-built binaries for Linux, macOS, and Windows (amd64 + arm64) are available o
 
 ```sh
 # Example: Linux amd64. Archives are named glsec_<version>_<os>_<arch>.tar.gz (.zip on Windows).
-curl -sSLO https://github.com/glsec/glsec/releases/download/v1.19.0/glsec_1.19.0_linux_amd64.tar.gz
-tar xzf glsec_1.19.0_linux_amd64.tar.gz
+curl -sSLO https://github.com/glsec/glsec/releases/download/v1.20.0/glsec_1.20.0_linux_amd64.tar.gz
+tar xzf glsec_1.20.0_linux_amd64.tar.gz
 ./glsec --version
 ```
 
@@ -63,18 +63,18 @@ Every release is signed and carries build provenance, so you can confirm an arti
 **Release binaries** carry a SLSA provenance attestation. Verify a downloaded archive with the [GitHub CLI](https://cli.github.com/):
 
 ```sh
-gh attestation verify glsec_1.19.0_linux_amd64.tar.gz --owner glsec
+gh attestation verify glsec_1.20.0_linux_amd64.tar.gz --owner glsec
 ```
 
 **The container image** is signed with [cosign](https://github.com/sigstore/cosign) and carries provenance plus an SBOM attestation:
 
 ```sh
-cosign verify ghcr.io/glsec/glsec:1.19.0 \
+cosign verify ghcr.io/glsec/glsec:1.20.0 \
   --certificate-identity-regexp 'https://github.com/glsec/glsec/.*' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 
 # list everything attached to the image (signature, provenance, SBOM)
-cosign tree --experimental-oci11 ghcr.io/glsec/glsec:1.19.0
+cosign tree --experimental-oci11 ghcr.io/glsec/glsec:1.20.0
 ```
 
 The two `--certificate-*` flags are what bind the signature to this repository's GitHub Actions workflow. Without them `cosign verify` accepts a signature from any identity, which defeats the point.
@@ -84,7 +84,7 @@ Use cosign v3 or newer. The image is signed in Sigstore's bundle format and the 
 **Checksums** are published as `checksums.txt` next to the archives:
 
 ```sh
-curl -sSLO https://github.com/glsec/glsec/releases/download/v1.19.0/checksums.txt
+curl -sSLO https://github.com/glsec/glsec/releases/download/v1.20.0/checksums.txt
 sha256sum -c checksums.txt --ignore-missing
 ```
 
@@ -328,7 +328,7 @@ glsec ships a [pre-commit](https://pre-commit.com/) hook so `.gitlab-ci.yml` iss
 ```yaml
 repos:
   - repo: https://github.com/glsec/glsec
-    rev: v1.19.0
+    rev: v1.20.0
     hooks:
       - id: glsec
 ```
@@ -419,13 +419,13 @@ If you need more control than the Catalog component offers, use the pre-built im
 glsec:
   stage: test
   image:
-    name: ghcr.io/glsec/glsec:1.19.0
+    name: ghcr.io/glsec/glsec:1.20.0
     entrypoint: [""]
   script:
     - glsec .gitlab-ci.yml
 ```
 
-The `entrypoint: [""]` override is required: the image sets `ENTRYPOINT ["glsec"]` for `docker run` convenience, which conflicts with GitLab Runner's shell wrapper. Pin to a specific tag (`1.19.0`, not `:latest`) for reproducible pipelines.
+The `entrypoint: [""]` override is required: the image sets `ENTRYPOINT ["glsec"]` for `docker run` convenience, which conflicts with GitLab Runner's shell wrapper. Pin to a specific tag (`1.20.0`, not `:latest`) for reproducible pipelines.
 
 ### GitLab CI — binary download
 
@@ -433,7 +433,7 @@ For pipelines that cannot pull from GHCR:
 
 ```yaml
 variables:
-  GLSEC_VERSION: "1.19.0"
+  GLSEC_VERSION: "1.20.0"
 
 glsec:
   stage: test
@@ -455,7 +455,7 @@ Publish findings to GitLab's Security Dashboard by emitting SARIF and exposing i
 glsec:
   stage: test
   image:
-    name: ghcr.io/glsec/glsec:1.19.0
+    name: ghcr.io/glsec/glsec:1.20.0
     entrypoint: [""]
   script:
     - glsec --format sarif .gitlab-ci.yml > glsec.sarif || true
@@ -474,7 +474,7 @@ Show findings **inline on merge request diffs** using GitLab's Code Quality widg
 glsec:
   stage: test
   image:
-    name: ghcr.io/glsec/glsec:1.19.0
+    name: ghcr.io/glsec/glsec:1.20.0
     entrypoint: [""]
   script:
     - glsec --format codeclimate .gitlab-ci.yml > gl-code-quality.json || true
@@ -490,7 +490,7 @@ Severity mapping (glsec → Code Climate): `error` → `critical`, `warn` → `m
 ```yaml
 - name: Run glsec
   env:
-    GLSEC_VERSION: "1.19.0"
+    GLSEC_VERSION: "1.20.0"
   run: |
     curl -sSLO "https://github.com/glsec/glsec/releases/download/v${GLSEC_VERSION}/glsec_${GLSEC_VERSION}_linux_amd64.tar.gz"
     tar xzf "glsec_${GLSEC_VERSION}_linux_amd64.tar.gz"
