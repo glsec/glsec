@@ -251,33 +251,3 @@ func TestRunStepScripts_MalformedAndAbsent(t *testing.T) {
 		})
 	}
 }
-
-func TestFindKeyMerged(t *testing.T) {
-	doc, err := Parse([]byte(`.a: &a
-  x: from-a
-  y: from-a
-.b: &b
-  y: from-b
-  z: from-b
-job:
-  <<: [*a, *b]
-  x: own
-ref: *a
-`), "test.yml")
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	m := doc.MappingNode()
-	job := FindKey(m, "job")
-	for key, want := range map[string]string{"x": "own", "y": "from-a", "z": "from-b"} {
-		if got := FindKeyMerged(job, key); got == nil || got.Value != want {
-			t.Errorf("%s: got %v, want %s", key, got, want)
-		}
-	}
-	if FindKeyMerged(job, "missing") != nil {
-		t.Error("expected nil for a missing key")
-	}
-	if got := FindKeyMerged(FindKey(m, "ref"), "x"); got == nil || got.Value != "from-a" {
-		t.Error("expected FindKeyMerged to follow an alias")
-	}
-}

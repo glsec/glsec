@@ -100,9 +100,9 @@ func gl080Sensitive(name string, job *yaml.Node) bool {
 }
 
 // inheritsConfig reports whether a job draws configuration from a base via
-// extends: or a YAML merge key (<<:), which glsec does not resolve.
+// extends:, which glsec does not resolve.
 func inheritsConfig(job *yaml.Node) bool {
-	return parser.FindKey(job, "extends") != nil || parser.FindKey(job, "<<") != nil
+	return parser.FindKey(job, "extends") != nil
 }
 
 func jobStageName(job *yaml.Node) string {
@@ -163,12 +163,9 @@ func jobGuardState(job *yaml.Node) guardState {
 		if item.Kind != yaml.MappingNode {
 			continue
 		}
-		// A rules item may pull its condition in from an anchor via a YAML merge
-		// (<<:), which glsec does not resolve — treat that as a real condition.
 		if parser.FindKey(item, "if") != nil ||
 			parser.FindKey(item, "changes") != nil ||
-			parser.FindKey(item, "exists") != nil ||
-			parser.FindKey(item, "<<") != nil {
+			parser.FindKey(item, "exists") != nil {
 			return guardEffective
 		}
 	}

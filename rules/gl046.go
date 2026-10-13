@@ -25,12 +25,12 @@ var cacheKeyVarRe = regexp.MustCompile(
 )
 
 func (r *gl046) Check(doc *yaml.Node, file string) []finding.Finding {
-	var findings, unprotected []finding.Finding
+	var findings []finding.Finding
 	mapping := parser.Unwrap(doc)
 
 	if def := parser.FindKey(mapping, "default"); def != nil {
 		findings = append(findings, checkCacheNode(parser.FindKey(def, "cache"), file, "")...)
-		unprotected = append(unprotected, checkCacheUnprotect(parser.FindKeyMerged(def, "cache"), file, "", finding.Warn)...)
+		findings = append(findings, checkCacheUnprotect(parser.FindKey(def, "cache"), file, "", finding.Warn)...)
 	}
 
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
@@ -50,31 +50,10 @@ func (r *gl046) Check(doc *yaml.Node, file string) []finding.Finding {
 		if IsDeployLikeJob(name.Value, job) || jobHasMRTrigger(job) {
 			severity = finding.Error
 		}
-		unprotected = append(unprotected, checkCacheUnprotect(parser.FindKeyMerged(job, "cache"), file, name.Value, severity)...)
+		findings = append(findings, checkCacheUnprotect(parser.FindKey(job, "cache"), file, name.Value, severity)...)
 	})
 
-	return append(findings, dedupeByLine(unprotected)...)
-}
-
-// dedupeByLine keeps one finding per source position. A cache defined once
-// behind an anchor and used by several jobs is one problem, reported at the
-// anchor with the highest severity any of those jobs gives it.
-func dedupeByLine(findings []finding.Finding) []finding.Finding {
-	index := map[[2]int]int{}
-	var out []finding.Finding
-	for _, f := range findings {
-		pos := [2]int{f.Line, f.Col}
-		i, seen := index[pos]
-		if !seen {
-			index[pos] = len(out)
-			out = append(out, f)
-			continue
-		}
-		if f.Severity == finding.Error && out[i].Severity != finding.Error {
-			out[i] = f
-		}
-	}
-	return out
+	return findings
 }
 
 // checkCacheUnprotect flags cache entries that set unprotect: true and can
@@ -85,11 +64,11 @@ func dedupeByLine(findings []finding.Finding) []finding.Finding {
 func checkCacheUnprotect(node *yaml.Node, file, job string, severity finding.Severity) []finding.Finding {
 	var findings []finding.Finding
 	for _, entry := range cacheEntries(node) {
-		unprotect := parser.FindKeyMerged(entry, "unprotect")
+		unprotect := parser.FindKey(entry, "unprotect")
 		if unprotect == nil || unprotect.Value != "true" {
 			continue
 		}
-		if policy := parser.FindKeyMerged(entry, "policy"); policy != nil && policy.Value == "pull" {
+		if policy := parser.FindKey(entry, "policy"); policy != nil && policy.Value == "pull" {
 			continue
 		}
 		findings = append(findings, finding.Finding{
@@ -106,28 +85,16 @@ func checkCacheUnprotect(node *yaml.Node, file, job string, severity finding.Sev
 }
 
 func checkCacheNode(node *yaml.Node, file, job string) []finding.Finding {
-	if node == nil {
-		return nil
+	var findings []finding.Finding
+	for _, entry := range cacheEntries(node) {
+		findings = append(findings, checkCacheMapping(entry, file, job)...)
 	}
-	switch node.Kind {
-	case yaml.MappingNode:
-		return checkCacheMapping(node, file, job)
-	case yaml.SequenceNode:
-		var findings []finding.Finding
-		for _, item := range node.Content {
-			if item.Kind == yaml.MappingNode {
-				findings = append(findings, checkCacheMapping(item, file, job)...)
-			}
-		}
-		return findings
-	}
-	return nil
+	return findings
 }
 
 // cacheEntries returns the cache mappings of a cache: value, a single mapping
-// or a list, following YAML aliases.
+// or a list.
 func cacheEntries(node *yaml.Node) []*yaml.Node {
-	node = parser.Deref(node)
 	if node == nil {
 		return nil
 	}
@@ -137,7 +104,7 @@ func cacheEntries(node *yaml.Node) []*yaml.Node {
 	}
 	var entries []*yaml.Node
 	for _, item := range items {
-		if item = parser.Deref(item); item != nil && item.Kind == yaml.MappingNode {
+		if item.Kind == yaml.MappingNode {
 			entries = append(entries, item)
 		}
 	}
@@ -203,7 +170,7 @@ var protectedRefCondRe = regexp.MustCompile(
 // on protected refs: every rules entry that can run the job has an if: whose
 // every || branch requires such a ref, or only: lists nothing but main/master.
 func gl046ProtectedOnly(job *yaml.Node) bool {
-	if only := parser.FindKeyMerged(job, "only"); only != nil {
+	if only := parser.FindKey(job, "only"); only != nil {
 		if only.Kind != yaml.SequenceNode || len(only.Content) == 0 {
 			return false
 		}
@@ -214,20 +181,19 @@ func gl046ProtectedOnly(job *yaml.Node) bool {
 		}
 		return true
 	}
-	rules := parser.FindKeyMerged(job, "rules")
+	rules := parser.FindKey(job, "rules")
 	if rules == nil || rules.Kind != yaml.SequenceNode {
 		return false
 	}
 	running := 0
 	for _, item := range rules.Content {
-		item = parser.Deref(item)
-		if item == nil || item.Kind != yaml.MappingNode {
+		if item.Kind != yaml.MappingNode {
 			return false
 		}
-		if when := parser.FindKeyMerged(item, "when"); when != nil && when.Value == "never" {
+		if when := parser.FindKey(item, "when"); when != nil && when.Value == "never" {
 			continue
 		}
-		cond := parser.FindKeyMerged(item, "if")
+		cond := parser.FindKey(item, "if")
 		if cond == nil {
 			return false
 		}

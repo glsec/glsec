@@ -278,7 +278,7 @@ The script-analysis rules (e.g. GL002, GL011, GL024, GL025, GL047, GL048, GL050)
 
 ### Reusable configuration
 
-glsec resolves YAML anchors/aliases (`&anchor` / `*alias`, handled natively by the parser) and GitLab [`!reference` tags](https://docs.gitlab.com/ci/yaml/yaml_optimization/#reference-tags) that point within the same file. Content pulled in via `!reference` is analysed as if it were inlined into the referencing job, so issues hidden in shared `.template` blocks are caught. References that resolve into `include:`d files are not yet expanded.
+glsec resolves YAML anchors, aliases and merge keys (`&anchor` / `*alias` / `<<: *anchor`) and GitLab [`!reference` tags](https://docs.gitlab.com/ci/yaml/yaml_optimization/#reference-tags) that point within the same file. Content pulled in either way is analysed as if it were inlined into the job that uses it, so issues hidden in shared `.template` blocks are caught. A finding in an anchor that several jobs share is reported once, at the anchor. References that resolve into `include:`d files are not yet expanded.
 
 ## ShellCheck integration
 

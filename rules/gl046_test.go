@@ -345,7 +345,7 @@ build:
     paths: [vendor/]
   script: [make]
 `, []finding.Severity{finding.Warn}},
-		{"anchor shared by several jobs is reported once, at the highest severity", `
+		{"anchor shared by several jobs is reported per job at the anchor", `
 .deps-cache: &deps-cache
   key: deps
   unprotect: true
@@ -357,7 +357,7 @@ deploy:
   environment: production
   cache: *deps-cache
   script: [./deploy.sh]
-`, []finding.Severity{finding.Error}},
+`, []finding.Severity{finding.Warn, finding.Error}},
 		{"hidden template job", `
 .cache-push:
   cache:

@@ -171,7 +171,7 @@ deploy-prod:
 	}
 }
 
-func TestGL080_MergeKeySkipped(t *testing.T) {
+func TestGL080_MergeKeyGuardResolved(t *testing.T) {
 	f := findings080(t, `
 .base: &base
   rules:
@@ -184,7 +184,23 @@ deploy-prod:
     - ./deploy.sh
 `)
 	if len(f) != 0 {
-		t.Errorf("expected no finding for a job using a <<: merge (guard may be inherited), got %d", len(f))
+		t.Errorf("expected no finding when the guard is merged in via <<:, got %d", len(f))
+	}
+}
+
+func TestGL080_MergeKeyWithoutGuard(t *testing.T) {
+	f := findings080(t, `
+.base: &base
+  image: alpine:3.24
+
+deploy-prod:
+  <<: *base
+  stage: deploy
+  script:
+    - ./deploy.sh
+`)
+	if len(f) != 1 {
+		t.Errorf("expected a finding when the merged base carries no guard, got %d", len(f))
 	}
 }
 

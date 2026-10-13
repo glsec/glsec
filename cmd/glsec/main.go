@@ -633,7 +633,7 @@ func collectFindings(doc *parser.Document, path string, cfg *config.Config, gitl
 		}
 	}
 
-	return findings, unjustified
+	return finding.Dedupe(findings), unjustified
 }
 
 // reportUnjustified prints every inline suppression that carries no reason and

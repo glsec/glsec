@@ -117,12 +117,11 @@ func checkRefResolved(ref string, line, col int, file string, resolve varResolve
 // jobVarResolver resolves a variable for a job: parallel:matrix values first,
 // then the job's own variables:, then the top-level variables:. Global values
 // are not used for hidden jobs (templates whose users may override them), for
-// jobs that inherit through extends:/<<: (not resolved by glsec), or when
+// jobs that inherit through extends: (not resolved by glsec), or when
 // inherit:variables excludes the name.
 func jobVarResolver(jobName string, job, globalVars *yaml.Node) varResolver {
 	jobVars := parser.FindKey(job, "variables")
-	useGlobal := !strings.HasPrefix(jobName, ".") && !inheritsConfig(job) &&
-		(jobVars == nil || parser.FindKey(jobVars, "<<") == nil)
+	useGlobal := !strings.HasPrefix(jobName, ".") && !inheritsConfig(job)
 	return func(name string) []string {
 		fallback := varValues(jobVars, name)
 		if fallback == nil && useGlobal && inheritsGlobalVar(job, name) {
