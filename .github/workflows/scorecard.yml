@@ -1,0 +1,48 @@
+name: Scorecard
+
+# Runs OpenSSF Scorecard against the repository and uploads its findings to
+# code scanning, so a supply-chain check that regresses shows up as an alert
+# (#542). Results are not published and there is no badge yet: today's score
+# includes zeros that understate the actual state (Signed-Releases despite
+# existing provenance, Code-Review for a single maintainer).
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 5 * * 1" # 05:00 UTC every Monday
+  branch_protection_rule:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: scorecard-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analysis:
+    name: Scorecard analysis
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read # read workflow runs for the CI-Tests and Dangerous-Workflow checks
+      security-events: write # upload the SARIF to code scanning
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run Scorecard
+        uses: ossf/scorecard-action@2d1146689b8cda280b9bc96326124645441f03bc # v2.4.4
+        with:
+          results_file: scorecard.sarif
+          results_format: sarif
+          publish_results: false
+
+      - name: Upload to code scanning
+        uses: github/codeql-action/upload-sarif@e58424170fb0262c8d7ed60a2e84b9bffe205c67 # codeql-bundle-v2.26.1
+        with:
+          sarif_file: scorecard.sarif
+          category: scorecard
