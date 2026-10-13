@@ -432,3 +432,20 @@ job:
 		t.Fatalf("expected no finding when -c and the quoted string are on different lines, got %d", len(f))
 	}
 }
+
+func TestGL002_NewUserControlledVars(t *testing.T) {
+	for _, v := range []string{"CI_CONFIG_REF_URI", "CI_RELEASE_DESCRIPTION", "AI_FLOW_INPUT", "AI_FLOW_CONTEXT"} {
+		f := findings002(t, "job:\n  script:\n    - echo $"+v+"\n    - echo ${"+v+"}\n")
+		if len(f) != 2 {
+			t.Errorf("%s: expected 2 findings for unquoted use, got %d", v, len(f))
+		}
+		if f := findings002(t, "job:\n  script:\n    - echo \"$"+v+"\"\n"); len(f) != 0 {
+			t.Errorf("%s: expected no finding when quoted, got %d", v, len(f))
+		}
+	}
+	for _, v := range []string{"AI_FLOW_EVENT", "AI_FLOW_GOAL", "CI_COMMIT_USER_LOGIN", "CI_PROJECT_TOPICS"} {
+		if f := findings002(t, "job:\n  script:\n    - echo $"+v+"\n"); len(f) != 0 {
+			t.Errorf("%s: not user-controlled, expected no finding, got %d", v, len(f))
+		}
+	}
+}

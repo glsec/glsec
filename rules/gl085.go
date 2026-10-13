@@ -45,11 +45,9 @@ var allowedToolsRe = regexp.MustCompile(`--allowed-?[Tt]ools[=\s]+`)
 
 var bashToolRe = regexp.MustCompile(`\bBash(\([^)]*\))?`)
 
-// agentPromptVars are the GL002 user-controlled variables plus the text of the
-// comment or issue that triggered a GitLab Duo flow.
-var agentPromptVars = append(append([]string{}, userControlledVars...), "AI_FLOW_INPUT", "AI_FLOW_CONTEXT")
-
-var agentPromptVarRe = regexp.MustCompile(`\$\{?(` + strings.Join(agentPromptVars, "|") + `)\b`)
+// agentPromptVarRe matches the GL002 user-controlled variables, which include
+// the comment that triggered a GitLab Duo flow (AI_FLOW_INPUT, AI_FLOW_CONTEXT).
+var agentPromptVarRe = regexp.MustCompile(`\$\{?(` + strings.Join(userControlledVars, "|") + `)\b`)
 
 func (r *gl085) Check(doc *yaml.Node, file string) []finding.Finding {
 	mapping := parser.Unwrap(doc)

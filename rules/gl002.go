@@ -43,6 +43,15 @@ var userControlledVars = []string{
 	"CI_COMMIT_AUTHOR",
 	"GITLAB_USER_NAME",
 	"GITLAB_USER_EMAIL",
+	// Ends in @refs/heads/<branch> (GitLab 19.0), so it carries the branch name
+	// the pusher chose, like CI_COMMIT_REF_NAME.
+	"CI_CONFIG_REF_URI",
+	// Free text on tag pipelines, the same trust as CI_COMMIT_TAG_MESSAGE.
+	"CI_RELEASE_DESCRIPTION",
+	// GitLab Duo flows: the comment that triggered the flow, and the JSON
+	// context of the merge request, issue or epic (diff and comments).
+	"AI_FLOW_INPUT",
+	"AI_FLOW_CONTEXT",
 }
 
 // userVarRe matches any user-controlled variable reference ($VAR or ${VAR})
