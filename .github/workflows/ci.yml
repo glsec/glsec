@@ -47,6 +47,45 @@ jobs:
           cache: true
       - run: go mod verify
       - run: go test -race -coverprofile=coverage.out ./...
+      # Show coverage on the run's summary page and fail when the total drops
+      # below the floor. Raise COVERAGE_FLOOR on purpose, never lower it to
+      # make a change pass (#538).
+      - name: Coverage summary
+        if: matrix.os == 'ubuntu-latest'
+        env:
+          COVERAGE_FLOOR: "83.0"
+        run: |
+          awk '
+            NR > 1 {
+              split($1, loc, ":"); pkg = loc[1]
+              sub(/\/[^\/]*$/, "", pkg); sub(/^github\.com\/glsec\/glsec\/?/, "", pkg)
+              if (pkg == "") pkg = "."
+              stmts[$1] = $2; pkgof[$1] = pkg
+              if ($3 > 0) hit[$1] = 1
+            }
+            END {
+              for (k in stmts) {
+                p = pkgof[k]; total[p] += stmts[k]; all += stmts[k]
+                if (k in hit) { covered[p] += stmts[k]; allcov += stmts[k] }
+              }
+              for (p in total) printf "%s\t%.1f\n", p, 100 * covered[p] / total[p]
+              printf "TOTAL\t%.1f\n", 100 * allcov / all
+            }' coverage.out | sort > coverage.tsv
+
+          total=$(awk -F'\t' '$1 == "TOTAL" { print $2 }' coverage.tsv)
+          {
+            echo "### Test coverage: ${total}% (floor ${COVERAGE_FLOOR}%)"
+            echo
+            echo "| Package | Coverage |"
+            echo "|---|---|"
+            awk -F'\t' '$1 != "TOTAL" { printf "| `%s` | %s%% |\n", $1, $2 }' coverage.tsv
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if ! awk -v t="$total" -v f="$COVERAGE_FLOOR" 'BEGIN { exit !(t + 0 >= f + 0) }'; then
+            echo "::error::test coverage ${total}% is below the floor of ${COVERAGE_FLOOR}%"
+            exit 1
+          fi
+          echo "test coverage ${total}% (floor ${COVERAGE_FLOOR}%)"
       # Upload coverage from one OS only — a shared artifact name collides across
       # matrix legs, and Linux coverage is representative.
       - if: matrix.os == 'ubuntu-latest'
