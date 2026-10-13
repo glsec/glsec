@@ -382,7 +382,7 @@ Use the official component from the [GitLab CI Catalog](https://gitlab.com/explo
 
 ```yaml
 include:
-  - component: gitlab.com/glsec-io/glsec/glsec@v1.0.20
+  - component: gitlab.com/glsec-io/glsec/glsec@v1.0.21
 
 stages:
   - test
@@ -392,7 +392,7 @@ For inline findings on merge request diffs, add the `glsec-code-quality` templat
 
 ```yaml
 include:
-  - component: gitlab.com/glsec-io/glsec/glsec-code-quality@v1.0.20
+  - component: gitlab.com/glsec-io/glsec/glsec-code-quality@v1.0.21
 
 stages:
   - test
