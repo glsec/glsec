@@ -10,3 +10,13 @@ build:
   script:
     - npm ci
     - npm run build
+
+test:
+  stage: build
+  cache:
+    key: deps
+    unprotect: true
+    paths:
+      - vendor/
+  script:
+    - make test

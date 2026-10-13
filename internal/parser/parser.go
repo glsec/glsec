@@ -217,3 +217,42 @@ func EachJob(doc *yaml.Node, fn func(name *yaml.Node, job *yaml.Node)) {
 		fn(key, val)
 	}
 }
+
+// Deref follows a YAML alias (*name) to the node its anchor names.
+func Deref(node *yaml.Node) *yaml.Node {
+	for node != nil && node.Kind == yaml.AliasNode {
+		node = node.Alias
+	}
+	return node
+}
+
+// FindKeyMerged is FindKey for a mapping that may be an alias or pull keys in
+// through YAML merge keys (<<: *anchor or <<: [*a, *b]). A key set directly on
+// the mapping wins over a merged one, and earlier merge sources win over later
+// ones, as in YAML.
+func FindKeyMerged(node *yaml.Node, key string) *yaml.Node {
+	return findKeyMerged(Deref(node), key, 0)
+}
+
+func findKeyMerged(node *yaml.Node, key string, depth int) *yaml.Node {
+	if node == nil || node.Kind != yaml.MappingNode || depth > 16 {
+		return nil
+	}
+	if v := FindKey(node, key); v != nil {
+		return Deref(v)
+	}
+	merge := Deref(FindKey(node, "<<"))
+	if merge == nil {
+		return nil
+	}
+	sources := []*yaml.Node{merge}
+	if merge.Kind == yaml.SequenceNode {
+		sources = merge.Content
+	}
+	for _, src := range sources {
+		if v := findKeyMerged(Deref(src), key, depth+1); v != nil {
+			return v
+		}
+	}
+	return nil
+}

@@ -25,11 +25,12 @@ var cacheKeyVarRe = regexp.MustCompile(
 )
 
 func (r *gl046) Check(doc *yaml.Node, file string) []finding.Finding {
-	var findings []finding.Finding
+	var findings, unprotected []finding.Finding
 	mapping := parser.Unwrap(doc)
 
 	if def := parser.FindKey(mapping, "default"); def != nil {
 		findings = append(findings, checkCacheNode(parser.FindKey(def, "cache"), file, "")...)
+		unprotected = append(unprotected, checkCacheUnprotect(parser.FindKeyMerged(def, "cache"), file, "", finding.Warn)...)
 	}
 
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
@@ -37,8 +38,70 @@ func (r *gl046) Check(doc *yaml.Node, file string) []finding.Finding {
 			f.Job = name.Value
 			findings = append(findings, f)
 		}
+		// A hidden job is a template: the job that extends it decides where it
+		// runs. A job that only runs on protected refs writes the shared cache
+		// from the trusted side, the documented use of unprotect:.
+		if strings.HasPrefix(name.Value, ".") || gl046ProtectedOnly(job) {
+			return
+		}
+		// A deploy job restores the shared cache on a protected branch; an MR job
+		// is the side an outsider controls.
+		severity := finding.Warn
+		if IsDeployLikeJob(name.Value, job) || jobHasMRTrigger(job) {
+			severity = finding.Error
+		}
+		unprotected = append(unprotected, checkCacheUnprotect(parser.FindKeyMerged(job, "cache"), file, name.Value, severity)...)
 	})
 
+	return append(findings, dedupeByLine(unprotected)...)
+}
+
+// dedupeByLine keeps one finding per source position. A cache defined once
+// behind an anchor and used by several jobs is one problem, reported at the
+// anchor with the highest severity any of those jobs gives it.
+func dedupeByLine(findings []finding.Finding) []finding.Finding {
+	index := map[[2]int]int{}
+	var out []finding.Finding
+	for _, f := range findings {
+		pos := [2]int{f.Line, f.Col}
+		i, seen := index[pos]
+		if !seen {
+			index[pos] = len(out)
+			out = append(out, f)
+			continue
+		}
+		if f.Severity == finding.Error && out[i].Severity != finding.Error {
+			out[i] = f
+		}
+	}
+	return out
+}
+
+// checkCacheUnprotect flags cache entries that set unprotect: true and can
+// write the cache. Unprotected caches share their keys with protected
+// branches, so a job on any branch can fill the cache a protected job restores.
+// policy: pull only reads; a policy taken from a variable cannot be resolved
+// and is treated as writing.
+func checkCacheUnprotect(node *yaml.Node, file, job string, severity finding.Severity) []finding.Finding {
+	var findings []finding.Finding
+	for _, entry := range cacheEntries(node) {
+		unprotect := parser.FindKeyMerged(entry, "unprotect")
+		if unprotect == nil || unprotect.Value != "true" {
+			continue
+		}
+		if policy := parser.FindKeyMerged(entry, "policy"); policy != nil && policy.Value == "pull" {
+			continue
+		}
+		findings = append(findings, finding.Finding{
+			RuleID:   "GL046",
+			Severity: severity,
+			Job:      job,
+			Message:  "cache: unprotect: true shares this cache with unprotected branches and the job can write it — anyone who can push a branch can poison the cache a protected pipeline restores; drop unprotect: or set policy: pull",
+			File:     file,
+			Line:     unprotect.Line,
+			Col:      unprotect.Column,
+		})
+	}
 	return findings
 }
 
@@ -59,6 +122,26 @@ func checkCacheNode(node *yaml.Node, file, job string) []finding.Finding {
 		return findings
 	}
 	return nil
+}
+
+// cacheEntries returns the cache mappings of a cache: value, a single mapping
+// or a list, following YAML aliases.
+func cacheEntries(node *yaml.Node) []*yaml.Node {
+	node = parser.Deref(node)
+	if node == nil {
+		return nil
+	}
+	items := []*yaml.Node{node}
+	if node.Kind == yaml.SequenceNode {
+		items = node.Content
+	}
+	var entries []*yaml.Node
+	for _, item := range items {
+		if item = parser.Deref(item); item != nil && item.Kind == yaml.MappingNode {
+			entries = append(entries, item)
+		}
+	}
+	return entries
 }
 
 func checkCacheMapping(node *yaml.Node, file, job string) []finding.Finding {
@@ -103,4 +186,57 @@ func checkCacheMapping(node *yaml.Node, file, job string) []finding.Finding {
 		}
 	}
 	return nil
+}
+
+// protectedRefCondRe matches a rules:if clause that holds only on the default
+// branch or on protected refs.
+var protectedRefCondRe = regexp.MustCompile(
+	`\$\{?CI_COMMIT_BRANCH\}?\s*==\s*\$\{?CI_DEFAULT_BRANCH\b` +
+		`|\$\{?CI_DEFAULT_BRANCH\}?\s*==\s*\$\{?CI_COMMIT_BRANCH\b` +
+		`|\$\{?CI_COMMIT_REF_NAME\}?\s*==\s*\$\{?CI_DEFAULT_BRANCH\b` +
+		`|\$\{?CI_DEFAULT_BRANCH\}?\s*==\s*\$\{?CI_COMMIT_REF_NAME\b` +
+		`|\$\{?CI_COMMIT_(?:BRANCH|REF_NAME)\}?\s*==\s*["'](?:main|master)["']` +
+		`|\$\{?CI_COMMIT_REF_PROTECTED\}?\s*==\s*["']?true\b`,
+)
+
+// gl046ProtectedOnly reports whether a job runs only on the default branch or
+// on protected refs: every rules entry that can run the job has an if: whose
+// every || branch requires such a ref, or only: lists nothing but main/master.
+func gl046ProtectedOnly(job *yaml.Node) bool {
+	if only := parser.FindKeyMerged(job, "only"); only != nil {
+		if only.Kind != yaml.SequenceNode || len(only.Content) == 0 {
+			return false
+		}
+		for _, item := range only.Content {
+			if item.Value != "main" && item.Value != "master" {
+				return false
+			}
+		}
+		return true
+	}
+	rules := parser.FindKeyMerged(job, "rules")
+	if rules == nil || rules.Kind != yaml.SequenceNode {
+		return false
+	}
+	running := 0
+	for _, item := range rules.Content {
+		item = parser.Deref(item)
+		if item == nil || item.Kind != yaml.MappingNode {
+			return false
+		}
+		if when := parser.FindKeyMerged(item, "when"); when != nil && when.Value == "never" {
+			continue
+		}
+		cond := parser.FindKeyMerged(item, "if")
+		if cond == nil {
+			return false
+		}
+		for _, branch := range strings.Split(cond.Value, "||") {
+			if !protectedRefCondRe.MatchString(branch) {
+				return false
+			}
+		}
+		running++
+	}
+	return running > 0
 }

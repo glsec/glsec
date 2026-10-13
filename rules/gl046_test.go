@@ -171,3 +171,223 @@ my-build-job:
 		t.Errorf("expected job name 'my-build-job', got %q", f[0].Job)
 	}
 }
+
+func TestGL046_Unprotect(t *testing.T) {
+	cases := []struct {
+		name string
+		yaml string
+		want []finding.Severity
+	}{
+		{"default policy writes", `
+build:
+  cache:
+    key: deps
+    unprotect: true
+    paths: [vendor/]
+  script: [make]
+`, []finding.Severity{finding.Warn}},
+		{"push policy", `
+warm:
+  cache:
+    key: deps
+    unprotect: true
+    policy: push
+    paths: [vendor/]
+  script: [make]
+`, []finding.Severity{finding.Warn}},
+		{"variable policy", `
+build:
+  cache:
+    key: deps
+    unprotect: true
+    policy: $CACHE_POLICY
+    paths: [vendor/]
+  script: [make]
+`, []finding.Severity{finding.Warn}},
+		{"pull policy only reads", `
+test:
+  cache:
+    key: deps
+    unprotect: true
+    policy: pull
+    paths: [vendor/]
+  script: [make]
+`, nil},
+		{"unprotect false", `
+build:
+  cache:
+    key: deps
+    unprotect: false
+    paths: [vendor/]
+  script: [make]
+`, nil},
+		{"deploy job is error", `
+deploy:
+  environment: production
+  cache:
+    key: deps
+    unprotect: true
+    paths: [vendor/]
+  script: [./deploy.sh]
+`, []finding.Severity{finding.Error}},
+		{"merge request job is error", `
+build:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  cache:
+    key: deps
+    unprotect: true
+    paths: [vendor/]
+  script: [make]
+`, []finding.Severity{finding.Error}},
+		{"cache list flags only the writing entry", `
+build:
+  cache:
+    - key: gems
+      unprotect: true
+      policy: pull
+      paths: [vendor/]
+    - key: node
+      unprotect: true
+      paths: [node_modules/]
+  script: [make]
+`, []finding.Severity{finding.Warn}},
+		{"alias to an anchored cache", `
+.deps-cache: &deps-cache
+  key: deps
+  unprotect: true
+  paths: [vendor/]
+build:
+  cache:
+    - *deps-cache
+  script: [make]
+`, []finding.Severity{finding.Warn}},
+		{"merge key pulls in unprotect", `
+.base-cache: &base-cache
+  key: deps
+  paths: [vendor/]
+.unprotected: &unprotected
+  <<: *base-cache
+  unprotect: true
+build:
+  cache: *unprotected
+  script: [make]
+`, []finding.Severity{finding.Warn}},
+		{"merge key pulls in policy pull", `
+.pull-cache: &pull-cache
+  key: deps
+  policy: pull
+  paths: [vendor/]
+test:
+  cache:
+    <<: *pull-cache
+    unprotect: true
+  script: [make]
+`, nil},
+		{"default-branch-only writer", `
+warm-cache:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+      when: never
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  cache:
+    key: deps
+    unprotect: true
+    paths: [vendor/]
+  script: [make]
+`, nil},
+		{"protected-ref-only writer", `
+warm-cache:
+  rules:
+    - if: $CI_COMMIT_REF_PROTECTED == "true"
+  cache:
+    key: deps
+    unprotect: true
+    paths: [vendor/]
+  script: [make]
+`, nil},
+		{"literal master branch", `
+warm-cache:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master"
+  cache:
+    key: deps
+    unprotect: true
+    paths: [vendor/]
+  script: [make]
+`, nil},
+		{"only main", `
+warm-cache:
+  only: [main]
+  cache:
+    key: deps
+    unprotect: true
+    paths: [vendor/]
+  script: [make]
+`, nil},
+		{"default branch or merge request still writes from MRs", `
+build:
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH || $CI_PIPELINE_SOURCE == "merge_request_event"
+  cache:
+    key: deps
+    unprotect: true
+    paths: [vendor/]
+  script: [make]
+`, []finding.Severity{finding.Error}},
+		{"non-default branches", `
+build:
+  rules:
+    - if: $CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH
+  cache:
+    key: deps
+    unprotect: true
+    paths: [vendor/]
+  script: [make]
+`, []finding.Severity{finding.Warn}},
+		{"anchor shared by several jobs is reported once, at the highest severity", `
+.deps-cache: &deps-cache
+  key: deps
+  unprotect: true
+  paths: [vendor/]
+build:
+  cache: *deps-cache
+  script: [make]
+deploy:
+  environment: production
+  cache: *deps-cache
+  script: [./deploy.sh]
+`, []finding.Severity{finding.Error}},
+		{"hidden template job", `
+.cache-push:
+  cache:
+    key: deps
+    unprotect: true
+    policy: push
+    paths: [vendor/]
+`, nil},
+		{"default section", `
+default:
+  cache:
+    key: deps
+    unprotect: true
+    paths: [vendor/]
+build:
+  script: [make]
+`, []finding.Severity{finding.Warn}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := findings046(t, tc.yaml)
+			if len(f) != len(tc.want) {
+				t.Fatalf("got %d findings, want %d", len(f), len(tc.want))
+			}
+			for i, sev := range tc.want {
+				if f[i].Severity != sev {
+					t.Errorf("finding %d severity = %s, want %s", i, f[i].Severity, sev)
+				}
+			}
+		})
+	}
+}
+
