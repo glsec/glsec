@@ -84,10 +84,10 @@ include:
 
 func TestComponentResourcePath(t *testing.T) {
 	cases := map[string]string{
-		"componets/opentofu/opentofu@1.0.0":            "componets/opentofu",
+		"componets/opentofu/opentofu@1.0.0":             "componets/opentofu",
 		"gitlab.com/components/opentofu/opentofu@1.0.0": "components/opentofu",
-		"a/b/c/d@1.0.0":                                "a/b/c",
-		"foo/bar@1.0.0":                                "", // no component-name segment → too short
+		"a/b/c/d@1.0.0": "a/b/c",
+		"foo/bar@1.0.0": "", // no component-name segment → too short
 	}
 	for in, want := range cases {
 		if got := componentResourcePath(in); got != want {

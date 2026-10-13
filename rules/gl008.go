@@ -18,16 +18,16 @@ func (r *gl008) ID() string { return "GL008" }
 // scan templates are included. Failing these jobs with allow_failure: true
 // causes GitLab to silently skip security result ingestion.
 var securityScanJobs = map[string]bool{
-	"sast":                  true,
-	"sast-iac":              true,
-	"secret_detection":      true,
-	"dast":                  true,
-	"dast_api":              true,
-	"container_scanning":    true,
-	"dependency_scanning":   true,
-	"coverage_fuzzing":      true,
-	"api_fuzzing":           true,
-	"license_scanning":      true,
+	"sast":                true,
+	"sast-iac":            true,
+	"secret_detection":    true,
+	"dast":                true,
+	"dast_api":            true,
+	"container_scanning":  true,
+	"dependency_scanning": true,
+	"coverage_fuzzing":    true,
+	"api_fuzzing":         true,
+	"license_scanning":    true,
 }
 
 func (r *gl008) Check(doc *yaml.Node, file string) []finding.Finding {

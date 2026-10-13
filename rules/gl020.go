@@ -64,4 +64,3 @@ func (r *gl020) Check(doc *yaml.Node, file string) []finding.Finding {
 
 	return findings
 }
-

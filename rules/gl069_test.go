@@ -38,14 +38,14 @@ func TestGL069_Flagged(t *testing.T) {
 
 func TestGL069_NotFlagged(t *testing.T) {
 	clean := []string{
-		"apt-get install -y somepkg",                  // normal install
-		"apk add somepkg",                             // normal apk
-		`echo "deb [signed-by=/k.gpg] https://r/ ./"`, // verified source
-		"apt-key add key.gpg",                         // intentionally out of scope
-		"add-apt-repository ppa:openmw/openmw",        // intentionally out of scope
-		"# apt-get install --allow-unauthenticated x", // comment
-		"gcloud run deploy svc --allow-unauthenticated --region us",   // GCP Cloud Run public access, not apt
-		"apk add curl",                                                // normal apk
+		"apt-get install -y somepkg",                                // normal install
+		"apk add somepkg",                                           // normal apk
+		`echo "deb [signed-by=/k.gpg] https://r/ ./"`,               // verified source
+		"apt-key add key.gpg",                                       // intentionally out of scope
+		"add-apt-repository ppa:openmw/openmw",                      // intentionally out of scope
+		"# apt-get install --allow-unauthenticated x",               // comment
+		"gcloud run deploy svc --allow-unauthenticated --region us", // GCP Cloud Run public access, not apt
+		"apk add curl",                                              // normal apk
 	}
 	for _, line := range clean {
 		if f := findings069(t, "job:\n  script:\n    - '"+escapeSingle(line)+"'\n"); len(f) != 0 {
