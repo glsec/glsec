@@ -22,13 +22,14 @@ updates:
     cooldown:
       default-days: 7
 
+  # The Dockerfile pins its base images by digest. Upstream rebuilds a tag in
+  # place to ship OS security fixes, and the Trivy image gate fails until the
+  # new digest lands, so these updates run daily and skip the cooldown (#539).
   - package-ecosystem: docker
     directory: /
     schedule:
-      interval: weekly
+      interval: daily
     open-pull-requests-limit: 5
-    cooldown:
-      default-days: 7
 
   # CI tools installed with pip (zizmor, check-jsonschema). The .txt files are
   # pip-compile output with hashes; Dependabot recompiles them on update.
