@@ -42,6 +42,12 @@ jobs:
       id-token: write # keyless signing of the provenance via Sigstore
       attestations: write # write the attestation to the GitHub attestations API
     steps:
+      # Records every outbound connection of this job, which holds write
+      # tokens. Audit first; after a release, switch to egress-policy: block
+      # with the observed endpoints (#541).
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
