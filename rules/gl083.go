@@ -83,16 +83,24 @@ func (r *gl083) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
 	EachScriptLine(doc, file, func(item *yaml.Node, file, job string) {
 		kind, payload, exfil := scanReverseShell(item.Value)
-		if kind == "" {
-			return
-		}
+		severity := finding.Error
 		msg := "script line opens a shell to a remote host (%s): %q — this is a reverse shell; remove it"
-		if exfil {
+		switch {
+		case exfil && strings.HasPrefix(kind, "environment"):
+			msg = "script line sends the job environment to a network host (%s): %q — that includes CI_JOB_TOKEN and every masked variable; send only the variables the receiver needs"
+		case exfil:
 			msg = "script line sends a credential to a network host (%s): %q — this exfiltrates secrets from the runner; remove it"
+		case kind == "":
+			kind, payload = scanProcessMemory(item.Value)
+			if kind == "" {
+				return
+			}
+			severity = finding.Warn
+			msg = "script line reads another process's memory (%s): %q — CI jobs have no reason to; this is how injected code scrapes masked secrets from the runner"
 		}
 		findings = append(findings, finding.Finding{
 			RuleID:   "GL083",
-			Severity: finding.Error,
+			Severity: severity,
 			Message:  fmt.Sprintf(msg, kind, truncate(payload, 80)),
 			File:     file,
 			Line:     item.Line,
@@ -165,6 +173,9 @@ func credentialExfilKind(line string) string {
 	if (len(creds) > 0 || tokenMintRe.MatchString(line)) && socketWriteRe.MatchString(line) {
 		return "credential written to a socket"
 	}
+	if k := environmentExfilKind(line); k != "" {
+		return k
+	}
 	if k := pipedCredential(line); k != "" {
 		return k
 	}
@@ -206,4 +217,74 @@ func pipedCredential(line string) string {
 		}
 	}
 	return ""
+}
+
+var (
+	// procSecretRe matches another process's environment or memory under
+	// /proc, by PID, glob, self, or a variable or command substitution.
+	procSecretRe = regexp.MustCompile(`/proc/(?:\d+|self|\*|\$\{?\w+\}?|\$\([^)]*\))/(?:environ|mem)\b`)
+	// procMemRe matches process memory specifically; reading it is suspect
+	// even without a network send.
+	procMemRe = regexp.MustCompile(`/proc/(?:\d+|self|\*|\$\{?\w+\}?|\$\([^)]*\))/mem\b`)
+	// psEnvRe matches BSD-style ps with the e modifier, which prints every
+	// process's environment (ps auxe, ps eww). ps -e only selects processes, and
+	// ps must be the command, not a subcommand such as docker compose ps.
+	psEnvRe = regexp.MustCompile(`(?:^|[;&|(]|\$\()\s*(?:sudo\s+)?ps\s+[a-zA-Z]*e[a-zA-Z]*(?:\s|$)`)
+	// envSubstRe matches $(...) (one level of nested parentheses) and `...`.
+	envSubstRe = regexp.MustCompile("\\$\\(((?:[^()]|\\([^()]*\\))*)\\)|`([^`]*)`")
+	netToolRe  = regexp.MustCompile(`\b(?:curl|wget|nc|ncat|netcat)\b`)
+)
+
+// environmentSource reports whether a command fragment produces the job's
+// environment or another process's: a bare env/printenv, /proc/<pid>/environ
+// or /mem, or ps with the e modifier.
+func environmentSource(s string) bool {
+	return envFullDumpRe.MatchString(s) || procSecretRe.MatchString(s) || psEnvRe.MatchString(s)
+}
+
+// environmentExfilKind reports the job's environment, which holds every CI/CD
+// variable including masked ones, reaching a network send on the same line.
+func environmentExfilKind(line string) string {
+	stages := strings.Split(strings.ReplaceAll(line, "||", "\x00\x00"), "|")
+	for i, st := range stages[:len(stages)-1] {
+		if !environmentSource(st) {
+			continue
+		}
+		for _, sink := range stages[i+1:] {
+			if stdinSinkRe.MatchString(sink) {
+				return "environment piped to a network tool"
+			}
+		}
+	}
+	for _, m := range envSubstRe.FindAllStringSubmatchIndex(line, -1) {
+		inner := ""
+		switch {
+		case m[2] >= 0:
+			inner = line[m[2]:m[3]]
+		case m[4] >= 0:
+			inner = line[m[4]:m[5]]
+		}
+		outside := line[:m[0]] + " " + line[m[1]:]
+		if environmentSource(strings.TrimSpace(inner)) && netToolRe.MatchString(outside) {
+			return "environment sent in a request"
+		}
+	}
+	if socketWriteRe.MatchString(line) {
+		before := line[:socketWriteRe.FindStringIndex(line)[0]]
+		if environmentSource(before) {
+			return "environment written to a socket"
+		}
+	}
+	return ""
+}
+
+// scanProcessMemory returns the first line of value that reads another
+// process's memory through /proc.
+func scanProcessMemory(value string) (kind, payload string) {
+	for _, line := range strings.Split(value, "\n") {
+		if procMemRe.MatchString(line) {
+			return "process memory read", strings.TrimSpace(line)
+		}
+	}
+	return "", ""
 }

