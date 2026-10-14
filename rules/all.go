@@ -2,6 +2,7 @@ package rules
 
 import "github.com/glsec/glsec/internal/rule"
 
+// All returns every built-in rule in ID order.
 func All() []rule.Rule {
 	return []rule.Rule{
 		GL001,
