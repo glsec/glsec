@@ -200,7 +200,8 @@ jobs:
 
       # The Claude Code plugin ships its own version pin and downloads the
       # matching release asset, so a release bump that misses it leaves plugin
-      # users on an old glsec (#441). The GitLab component version
+      # users on an old glsec (#441). The MegaLinter plugin does the same
+      # (#557). The GitLab component version
       # (gitlab.com/glsec-io/...@vX.Y.Z) is released separately and excluded.
       - name: Compare plugin pins against README
         run: |
@@ -212,6 +213,9 @@ jobs:
           found=$(
             {
               grep -oE 'VERSION="[0-9]+\.[0-9]+\.[0-9]+"' bin/glsec |
+                grep -oE '[0-9]+\.[0-9]+\.[0-9]+'
+              grep -oE 'GLSEC_VERSION=[0-9]+\.[0-9]+\.[0-9]+' \
+                mega-linter-plugin-glsec/glsec.megalinter-descriptor.yml |
                 grep -oE '[0-9]+\.[0-9]+\.[0-9]+'
               grep -hoE \
                 -e 'glsec_[0-9]+\.[0-9]+\.[0-9]+_' \

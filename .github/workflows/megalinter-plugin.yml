@@ -1,0 +1,76 @@
+name: MegaLinter plugin
+
+# Loads mega-linter-plugin-glsec into a real MegaLinter image and runs it
+# against a clean and a failing pipeline (#557). This covers what a unit test
+# cannot: the runtime install from the release assets, version detection,
+# the error/warning regexes and SARIF pickup. The plugin installs the released
+# glsec pinned in its descriptor, not the code in this checkout.
+
+on:
+  pull_request:
+    paths:
+      - mega-linter-plugin-glsec/**
+      - testdata/megalinter/**
+      - .github/workflows/megalinter-plugin.yml
+  push:
+    branches: [main]
+    paths:
+      - mega-linter-plugin-glsec/**
+      - testdata/megalinter/**
+      - .github/workflows/megalinter-plugin.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  plugin:
+    name: Run the plugin in MegaLinter
+    runs-on: ubuntu-latest
+    env:
+      # Smallest flavor; plugins load into any flavor.
+      MEGALINTER_IMAGE: ghcr.io/oxsecurity/megalinter-ci_light:v10.1.0@sha256:e40b320afe3152cd0e856019ff9c74a827d179ed45512148e5790871c3d08259
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Lint the clean and the failing pipeline
+        run: |
+          set -euo pipefail
+
+          megalinter() {
+            mkdir -p "reports/$1"
+            chmod 777 "reports/$1"
+            docker run --rm \
+              -v "$PWD:/tmp/lint:ro" \
+              -v "$PWD/reports/$1:/tmp/reports" \
+              -e DEFAULT_WORKSPACE="/tmp/lint/testdata/megalinter/$1" \
+              -e PLUGINS=file:///tmp/lint/mega-linter-plugin-glsec/glsec.megalinter-descriptor.yml \
+              -e ENABLE_LINTERS=GITLAB_GLSEC \
+              -e VALIDATE_ALL_CODEBASE=true \
+              -e REPORT_OUTPUT_FOLDER=/tmp/reports \
+              -e SARIF_REPORTER=true \
+              "$MEGALINTER_IMAGE"
+          }
+
+          echo "::group::good"
+          megalinter good
+          echo "::endgroup::"
+
+          echo "::group::bad"
+          if megalinter bad; then
+            echo "::error::MegaLinter passed on testdata/megalinter/bad, expected glsec to fail it"
+            exit 1
+          fi
+          echo "::endgroup::"
+
+          # The container writes its reports as root.
+          sudo chmod -R a+rX reports
+          sarif=reports/bad/sarif/GITLAB_GLSEC.sarif
+          results=$(jq '[.runs[].results[]] | length' "$sarif")
+          if [ "$results" -eq 0 ]; then
+            echo "::error::$sarif has no results"
+            exit 1
+          fi
+          echo "bad pipeline: $results SARIF results"

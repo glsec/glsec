@@ -497,6 +497,19 @@ Severity mapping (glsec → Code Climate): `error` → `critical`, `warn` → `m
     ./glsec .gitlab-ci.yml
 ```
 
+### MegaLinter
+
+glsec ships a [MegaLinter](https://megalinter.io) plugin. Add it to `.mega-linter.yml`:
+
+```yaml
+PLUGINS:
+  - https://raw.githubusercontent.com/glsec/glsec/main/mega-linter-plugin-glsec/glsec.megalinter-descriptor.yml
+```
+
+The linter key is `GITLAB_GLSEC`. It lints files named `.gitlab-ci.yml` or `*.gitlab-ci.yml` (`.yaml` too); widen that with `GITLAB_GLSEC_FILE_NAMES_REGEX`. Extra flags go in `GITLAB_GLSEC_ARGUMENTS`, or in a `.glsec.yml` at the repository root. With `SARIF_REPORTER: true`, findings are included in MegaLinter's SARIF report.
+
+The plugin downloads the glsec release pinned in its [descriptor](mega-linter-plugin-glsec/glsec.megalinter-descriptor.yml) and verifies it against `checksums.txt` before installing. The `main` URL always installs the latest release; point it at a release tag instead to stay on one version.
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).

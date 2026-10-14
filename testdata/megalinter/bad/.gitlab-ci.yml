@@ -1,0 +1,9 @@
+stages:
+  - test
+
+test:
+  stage: test
+  image: node:latest
+  script:
+    - curl -sSL https://get.example.com/install.sh | bash
+    - echo "$CI_COMMIT_MESSAGE"
