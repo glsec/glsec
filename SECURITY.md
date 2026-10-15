@@ -4,7 +4,7 @@
 
 Please report security issues through [GitHub private vulnerability reporting](https://github.com/glsec/glsec/security/advisories/new). Do not open a public issue for a suspected vulnerability.
 
-If the report is confirmed we will agree a disclosure timeline with you, and credit you in the advisory unless you would rather stay anonymous.
+You will get an initial response within 14 days. If the report is confirmed we will agree a disclosure timeline with you, and credit you in the advisory unless you would rather stay anonymous.
 
 ## Supported versions
 

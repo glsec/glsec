@@ -241,6 +241,7 @@ Add a row to the rules summary table in `README.md` linking to the new docs file
 - **Branch names:** `<type>/issue-<N>-<slug>` — e.g. `feat/issue-13-gl006-rule`.
 - **PR descriptions:** write the context here — what the rule detects, why it matters, how to test it, any edge cases considered.
 - One branch per issue; one PR per branch.
+- **Tests:** new functionality and bug fixes come with tests in the same PR. A new rule needs its fixture and unit tests (see above); a bug fix needs a test that fails without the fix. CI (tests on Linux, macOS and Windows, lint, fuzzing, CodeQL) must pass before merging.
 
 ## Fixture validation
 
