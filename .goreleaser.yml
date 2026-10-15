@@ -1,5 +1,9 @@
 version: 2
 
+# Set explicitly: GoReleaser otherwise derives it from the remote or directory
+# name, which differs between a fork, a mirror and a local rebuild.
+project_name: glsec
+
 before:
   hooks:
     - go mod tidy
@@ -15,16 +19,40 @@ builds:
     goarch:
       - amd64
       - arm64
+    # Reproducible builds (#574): no build paths, and the commit time instead of
+    # the build time, so rebuilding a tag gives the same checksums.
+    flags:
+      - -trimpath
+    mod_timestamp: "{{ .CommitTimestamp }}"
     ldflags:
       - -s -w
       - -X main.version={{.Version}}
       - -X main.commit={{.ShortCommit}}
-      - -X main.date={{.Date}}
+      - -X main.date={{.CommitDate}}
 
 archives:
   - formats:
       - tar.gz
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    # Fixed owner and commit time for every archive entry, instead of the
+    # runner's user and the checkout/build time.
+    builds_info:
+      owner: root
+      group: root
+      mtime: "{{ .CommitDate }}"
+    files:
+      - src: LICENSE
+        info:
+          owner: root
+          group: root
+          mode: 0644
+          mtime: "{{ .CommitDate }}"
+      - src: README.md
+        info:
+          owner: root
+          group: root
+          mode: 0644
+          mtime: "{{ .CommitDate }}"
     format_overrides:
       - goos: windows
         formats:

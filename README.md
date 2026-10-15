@@ -81,7 +81,7 @@ cosign verify-blob-attestation \
   glsec_1.20.0_linux_amd64.tar.gz
 ```
 
-One bundle covers every archive and `checksums.txt`. Releases before 1.20.0 do not carry these files.
+One bundle covers every archive and `checksums.txt`. Releases from 1.11.0 on carry these files; in 1.11.0 the bundle covers the archives but not `checksums.txt`, and older releases have no provenance.
 
 **The container image** is signed with [cosign](https://github.com/sigstore/cosign) and carries provenance plus an SBOM attestation:
 
@@ -110,6 +110,19 @@ sha256sum -c checksums.txt --ignore-missing
 ```sh
 gh attestation verify checksums.txt --owner glsec
 ```
+
+**Reproducing a release**: release builds are reproducible from 1.21.0 on. Check out the tag and build it with the Go version from `go.mod` and the GoReleaser version pinned in `.github/workflows/release.yml`. The archives must match the published `checksums.txt`:
+
+```sh
+VERSION=1.21.0
+git clone https://github.com/glsec/glsec && cd glsec
+git checkout "v${VERSION}"
+goreleaser release --clean --skip=publish,sbom
+curl -sSL "https://github.com/glsec/glsec/releases/download/v${VERSION}/checksums.txt" | grep -v '\.sbom\.json$' > published.txt
+(cd dist && sha256sum -c ../published.txt)
+```
+
+The SBOM files are left out because syft writes timestamps into them; they are not part of the provenance either. CI checks on every change to the build that two builds of the same commit are identical.
 
 **SBOMs**: the container image carries its SBOM as a signed attestation, listed by `cosign tree` above. The per-archive `.sbom.json` files are published as plain release assets rather than attestations, deliberately. Each contains four entries: glsec itself, its single dependency `gopkg.in/yaml.v3`, the Go standard library, and the archive's own digest. That is the same information `go.mod` already makes public, and the archive it describes is covered by provenance, so a swapped SBOM cannot make a tampered archive verify. If you need an SBOM you can trust end to end, use the image attestation or regenerate one from a verified archive with [syft](https://github.com/anchore/syft).
 

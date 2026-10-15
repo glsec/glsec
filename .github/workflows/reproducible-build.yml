@@ -1,0 +1,65 @@
+name: Reproducible build
+
+# Builds the release artifacts twice, from two checkouts in different
+# directories, and fails if the checksums differ (#574). Anything that leaks the
+# build path, the build time or the runner's user into a binary or an archive
+# shows up here before it reaches a release.
+
+on:
+  pull_request:
+    paths:
+      - .goreleaser.yml
+      - go.mod
+      - go.sum
+      - cmd/**
+      - .github/workflows/release.yml
+      - .github/workflows/reproducible-build.yml
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rebuild:
+    name: Build twice and compare
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: first
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: second/elsewhere
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: first/go.mod
+          cache: false
+      - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        with:
+          version: v2.18.3 # same as release.yml
+          install-only: true
+
+      # A throwaway local tag makes this a real release build (version string,
+      # archive names) rather than a snapshot; nothing is pushed or published.
+      - name: Build both checkouts
+        run: |
+          set -euo pipefail
+          for dir in first second/elsewhere; do
+            (cd "$dir" && git tag v0.0.0-repro && goreleaser release --clean --skip=publish,sbom)
+          done
+
+      - name: Compare checksums
+        run: |
+          set -euo pipefail
+          if ! diff -u first/dist/checksums.txt second/elsewhere/dist/checksums.txt; then
+            echo "::error::two builds of the same commit produced different artifacts"
+            exit 1
+          fi
+          echo "identical:"
+          cat first/dist/checksums.txt
