@@ -506,7 +506,7 @@ The plugin downloads the glsec release pinned in its [descriptor](mega-linter-pl
 
 Every release is signed and carries build provenance, so you can confirm an artifact really came from this repository's workflow before trusting it. Signing is keyless through [Sigstore](https://www.sigstore.dev/), so there is no public key to fetch or rotate.
 
-The release binaries and the container image meet [SLSA](https://slsa.dev/spec/v1.0/levels) **Build Level 2**: their provenance is generated and signed by GitHub's hosted build platform, not by a developer machine, and names the exact workflow, commit and tag. Level 3 would additionally isolate provenance generation from the build steps themselves, so that a compromised step could not influence what is attested; that is tracked in [#585](https://github.com/glsec/glsec/issues/585).
+The release binaries and the container image meet [SLSA](https://slsa.dev/spec/v1.0/levels) **Build Level 2**: their provenance is generated and signed by GitHub's hosted build platform, not by a developer machine, and names the exact workflow, commit and tag. **From 1.21.0 on they meet Build Level 3**: the build runs in a reusable workflow (`build-release.yml`, `build-image.yml`) that the triggering release workflow only calls, so the reusable workflow, not the caller, signs the provenance. That is the isolation GitHub documents as [SLSA v1 Build Level 3 for artifact attestations](https://docs.github.com/actions/security-guides/using-artifact-attestations-and-reusable-workflows-to-achieve-slsa-v1-build-level-3). Pass `--signer-workflow` when verifying to require it.
 
 **Release binaries** carry a SLSA provenance attestation. Verify a downloaded archive with the [GitHub CLI](https://cli.github.com/):
 
@@ -514,17 +514,24 @@ The release binaries and the container image meet [SLSA](https://slsa.dev/spec/v
 gh attestation verify glsec_1.20.0_linux_amd64.tar.gz --owner glsec
 ```
 
+From 1.21.0 on, also require that the build workflow signed it (SLSA Build Level 3):
+
+```sh
+gh attestation verify glsec_<version>_linux_amd64.tar.gz --owner glsec \
+  --signer-workflow glsec/glsec/.github/workflows/build-release.yml
+```
+
 The same attestation is attached to each release as `glsec_<version>.sigstore.json` (Sigstore bundle) and `glsec_<version>.intoto.jsonl` (its DSSE envelope), so you can also verify without the GitHub API, for example from a mirror:
 
 ```sh
 cosign verify-blob-attestation \
   --bundle glsec_1.20.0.sigstore.json --new-bundle-format --type slsaprovenance1 \
-  --certificate-identity-regexp '^https://github.com/glsec/glsec/\.github/workflows/release\.yml@refs/tags/v' \
+  --certificate-identity-regexp '^https://github.com/glsec/glsec/\.github/workflows/(build-)?release\.yml@refs/tags/v' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   glsec_1.20.0_linux_amd64.tar.gz
 ```
 
-One bundle covers every archive and `checksums.txt`. Releases from 1.11.0 on carry these files; in 1.11.0 the bundle covers the archives but not `checksums.txt`, and older releases have no provenance.
+One bundle covers every archive and `checksums.txt`. Releases from 1.11.0 on carry these files; in 1.11.0 the bundle covers the archives but not `checksums.txt`, and older releases have no provenance. The identity regex accepts `release.yml`, which signed releases before 1.21.0, and `build-release.yml`, which signs them from 1.21.0 on; use only the latter to require Build Level 3.
 
 **The container image** is signed with [cosign](https://github.com/sigstore/cosign) and carries provenance plus an SBOM attestation:
 
@@ -535,6 +542,13 @@ cosign verify ghcr.io/glsec/glsec:1.20.0 \
 
 # list everything attached to the image (signature, provenance, SBOM)
 cosign tree --experimental-oci11 ghcr.io/glsec/glsec:1.20.0
+```
+
+From 1.21.0 on, the image's provenance is signed by `build-image.yml` (SLSA Build Level 3):
+
+```sh
+gh attestation verify oci://ghcr.io/glsec/glsec:<version> --owner glsec \
+  --signer-workflow glsec/glsec/.github/workflows/build-image.yml
 ```
 
 The two `--certificate-*` flags are what bind the signature to this repository's GitHub Actions workflow. Without them `cosign verify` accepts a signature from any identity, which defeats the point.
@@ -554,7 +568,7 @@ sha256sum -c checksums.txt --ignore-missing
 gh attestation verify checksums.txt --owner glsec
 ```
 
-**Reproducing a release**: release builds are reproducible from 1.21.0 on. Check out the tag and build it with the Go version from `go.mod` and the GoReleaser version pinned in `.github/workflows/release.yml`. The archives must match the published `checksums.txt`:
+**Reproducing a release**: release builds are reproducible from 1.21.0 on. Check out the tag and build it with the Go version from `go.mod` and the GoReleaser version pinned in `.github/workflows/build-release.yml`. The archives must match the published `checksums.txt`:
 
 ```sh
 VERSION=1.21.0

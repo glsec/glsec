@@ -1,0 +1,115 @@
+name: Build release
+
+# Builds the release archives with GoReleaser, attests them and attaches the
+# attestation bundle to the GitHub release.
+# Running the build in a reusable workflow makes this file, not the workflow
+# that triggers it, the signer of the provenance. That isolation is what
+# GitHub documents as SLSA v1 Build Level 3 for artifact attestations (#585):
+# verify with `gh attestation verify --signer-workflow
+# glsec/glsec/.github/workflows/build-release.yml`.
+# Only release.yml calls it, after its green-CI gate.
+
+on:
+  workflow_call:
+
+# Default-deny; the job grants only what it needs.
+permissions: {}
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the GitHub release
+      id-token: write # keyless signing of the provenance via Sigstore
+      attestations: write # write the attestation to the GitHub attestations API
+    steps:
+      # Allows only the hosts this job needs; anything else is blocked, so a
+      # compromised dependency cannot send the job's tokens elsewhere. The list
+      # is what the v1.20.0 release run connected to in audit mode (#541). A
+      # release that needs a new host fails here: add the host, then re-run.
+      - uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: block
+          disable-telemetry: true
+          # *.actions.githubusercontent.com and the productionresultssa hosts
+          # (GitHub's job results storage) change from run to run.
+          allowed-endpoints: >
+            api.github.com:443
+            uploads.github.com:443
+            github.com:443
+            raw.githubusercontent.com:443
+            release-assets.githubusercontent.com:443
+            *.actions.githubusercontent.com:443
+            proxy.golang.org:443
+            goreleaser.com:443
+            toolbox-data.anchore.io:443
+            fulcio.sigstore.dev:443
+            rekor.sigstore.dev:443
+            productionresultssa0.blob.core.windows.net:443
+            productionresultssa1.blob.core.windows.net:443
+            productionresultssa2.blob.core.windows.net:443
+            productionresultssa3.blob.core.windows.net:443
+            productionresultssa4.blob.core.windows.net:443
+            productionresultssa5.blob.core.windows.net:443
+            productionresultssa6.blob.core.windows.net:443
+            productionresultssa7.blob.core.windows.net:443
+            productionresultssa8.blob.core.windows.net:443
+            productionresultssa9.blob.core.windows.net:443
+            productionresultssa10.blob.core.windows.net:443
+            productionresultssa11.blob.core.windows.net:443
+            productionresultssa12.blob.core.windows.net:443
+            productionresultssa13.blob.core.windows.net:443
+            productionresultssa14.blob.core.windows.net:443
+            productionresultssa15.blob.core.windows.net:443
+            productionresultssa16.blob.core.windows.net:443
+            productionresultssa17.blob.core.windows.net:443
+            productionresultssa18.blob.core.windows.net:443
+            productionresultssa19.blob.core.windows.net:443
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Install syft (for SBOM generation)
+        uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+
+      - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        with:
+          # Pinned so a tag can be rebuilt bit for bit (#574). Keep in step with
+          # reproducible-build.yml.
+          version: v2.18.3
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Attest release artifacts
+        id: attest
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          # checksums.txt is attested too: the install docs verify downloads
+          # against it, so it needs its own anchor, not just the archives.
+          subject-path: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/checksums.txt
+
+      # The attestation also lives in the GitHub attestations API. Attaching it
+      # to the release lets users verify downloads offline, and is where
+      # OpenSSF Scorecard looks for signatures and provenance (#555).
+      - name: Attach the attestation to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+          BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          cp "$BUNDLE" "glsec_${version}.sigstore.json"
+          jq -c .dsseEnvelope "$BUNDLE" > "glsec_${version}.intoto.jsonl"
+          gh release upload "$TAG" --repo "$REPO" \
+            "glsec_${version}.sigstore.json" "glsec_${version}.intoto.jsonl"
