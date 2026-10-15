@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io"
 	"os"
 	"testing"
 
@@ -17,7 +18,10 @@ func TestFilterNewOnly_JSONSnapshotBaseline(t *testing.T) {
 		{RuleID: "GL001", File: "a.yml", Line: 7, Message: "old"}, // drifted, in baseline
 		{RuleID: "GL001", File: "a.yml", Line: 9, Message: "new"}, // not in baseline
 	}
-	got := filterNewOnly(findings, snap)
+	got, err := filterNewOnly(io.Discard, findings, snap)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(got) != 1 || got[0].Message != "new" {
 		t.Fatalf("expected only the new finding, got %+v", got)
 	}
@@ -26,7 +30,7 @@ func TestFilterNewOnly_JSONSnapshotBaseline(t *testing.T) {
 func TestFilterNewOnly_MissingDefaultBaselineIsEmpty(t *testing.T) {
 	t.Chdir(t.TempDir()) // no .glsec-ignore here
 	findings := []finding.Finding{{RuleID: "GL001", File: "a.yml", Line: 2, Message: "x"}}
-	if got := filterNewOnly(findings, ""); len(got) != 1 {
+	if got, err := filterNewOnly(io.Discard, findings, ""); err != nil || len(got) != 1 {
 		t.Fatalf("missing default baseline should treat everything as new, got %d", len(got))
 	}
 }

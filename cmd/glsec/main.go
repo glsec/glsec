@@ -34,18 +34,23 @@ var (
 )
 
 func main() {
-	if len(os.Args) >= 2 && os.Args[1] == "list" {
-		runList(os.Args[2:])
-		return
+	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
+}
+
+// run is the whole CLI: it parses args, scans, writes the report to stdout and
+// returns the process exit code instead of exiting, so tests can drive it.
+func run(args []string, stdout, stderr io.Writer) int {
+	if len(args) >= 1 && args[0] == "list" {
+		return runList(args[1:], stdout, stderr)
 	}
-	if len(os.Args) >= 2 && os.Args[1] == "explain" {
-		if len(os.Args) < 3 {
-			fmt.Fprintln(os.Stderr, "usage: glsec explain <RULE-ID>")
-			os.Exit(2)
+	if len(args) >= 1 && args[0] == "explain" {
+		if len(args) < 2 {
+			_, _ = fmt.Fprintln(stderr, "usage: glsec explain <RULE-ID>")
+			return 2
 		}
 		noColor := false
 		ruleID := ""
-		for _, arg := range os.Args[2:] {
+		for _, arg := range args[1:] {
 			switch arg {
 			case "--no-color", "-no-color":
 				noColor = true
@@ -56,80 +61,87 @@ func main() {
 			}
 		}
 		if ruleID == "" {
-			fmt.Fprintln(os.Stderr, "usage: glsec explain <RULE-ID>")
-			os.Exit(2)
+			_, _ = fmt.Fprintln(stderr, "usage: glsec explain <RULE-ID>")
+			return 2
 		}
-		runExplain(ruleID, noColor)
-		return
+		return runExplain(ruleID, noColor, stdout, stderr)
 	}
 
-	formatFlag := flag.String("format", "text", "output format: text, table, json, sarif, codeclimate, junit")
-	configFlag := flag.String("config", config.DefaultFile, "path to .glsec.yml config file")
-	versionFlag := flag.Bool("version", false, "print version and exit")
-	gitlabVersionFlag := flag.String("gitlab-version", "", "target GitLab version, e.g. 16.0 (skips rules not available in that version)")
-	strictFlag := flag.Bool("strict", false, "treat warn findings as errors for the exit code (output severity is unchanged)")
-	noExitCodesFlag := flag.Bool("no-exit-codes", false, "always exit 0 on successful execution, regardless of findings")
-	generateIgnoreFlag := flag.Bool("generate-ignore", false, "write all current findings to .glsec-ignore as a baseline and exit 0")
-	noIgnoresFlag := flag.Bool("no-ignores", false, "audit mode: bypass all glsec suppressions (inline # glsec:ignore directives and the .glsec-ignore baseline) for this run; report every finding")
-	newOnlyFlag := flag.Bool("new-only", false, "report (and fail) only on findings absent from the baseline; defaults to the .glsec-ignore baseline unless --baseline is given")
-	baselineFlag := flag.String("baseline", "", "path to a baseline to diff against in --new-only mode: a glsec JSON snapshot (--format json) or a .glsec-ignore file (implies --new-only)")
-	requireReasonFlag := flag.Bool("require-ignore-reason", false, "treat an inline # glsec:ignore without a \"-- reason\" as a policy violation (exit 2)")
-	noCacheFlag := flag.Bool("no-cache", false, "disable result cache for this run")
-	clearCacheFlag := flag.Bool("clear-cache", false, "remove all cached results and exit")
-	noColorFlag := flag.Bool("no-color", false, "disable colored output")
-	recursiveFlag := flag.Bool("recursive", false, "recursively scan the given directories for .gitlab-ci.yml files")
+	flags := flag.NewFlagSet("glsec", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+
+	formatFlag := flags.String("format", "text", "output format: text, table, json, sarif, codeclimate, junit")
+	configFlag := flags.String("config", config.DefaultFile, "path to .glsec.yml config file")
+	versionFlag := flags.Bool("version", false, "print version and exit")
+	gitlabVersionFlag := flags.String("gitlab-version", "", "target GitLab version, e.g. 16.0 (skips rules not available in that version)")
+	strictFlag := flags.Bool("strict", false, "treat warn findings as errors for the exit code (output severity is unchanged)")
+	noExitCodesFlag := flags.Bool("no-exit-codes", false, "always exit 0 on successful execution, regardless of findings")
+	generateIgnoreFlag := flags.Bool("generate-ignore", false, "write all current findings to .glsec-ignore as a baseline and exit 0")
+	noIgnoresFlag := flags.Bool("no-ignores", false, "audit mode: bypass all glsec suppressions (inline # glsec:ignore directives and the .glsec-ignore baseline) for this run; report every finding")
+	newOnlyFlag := flags.Bool("new-only", false, "report (and fail) only on findings absent from the baseline; defaults to the .glsec-ignore baseline unless --baseline is given")
+	baselineFlag := flags.String("baseline", "", "path to a baseline to diff against in --new-only mode: a glsec JSON snapshot (--format json) or a .glsec-ignore file (implies --new-only)")
+	requireReasonFlag := flags.Bool("require-ignore-reason", false, "treat an inline # glsec:ignore without a \"-- reason\" as a policy violation (exit 2)")
+	noCacheFlag := flags.Bool("no-cache", false, "disable result cache for this run")
+	clearCacheFlag := flags.Bool("clear-cache", false, "remove all cached results and exit")
+	noColorFlag := flags.Bool("no-color", false, "disable colored output")
+	recursiveFlag := flags.Bool("recursive", false, "recursively scan the given directories for .gitlab-ci.yml files")
 	var nameArgs []string
-	flag.Func("name", "additional filename/path glob to treat as a CI config during --recursive walks (may be repeated)", func(s string) error {
+	flags.Func("name", "additional filename/path glob to treat as a CI config during --recursive walks (may be repeated)", func(s string) error {
 		nameArgs = append(nameArgs, s)
 		return nil
 	})
 	var excludeArgs []string
-	flag.Func("exclude", "exclude a file or glob pattern from scanning (may be repeated)", func(s string) error {
+	flags.Func("exclude", "exclude a file or glob pattern from scanning (may be repeated)", func(s string) error {
 		excludeArgs = append(excludeArgs, s)
 		return nil
 	})
 	var onlyArgs, skipArgs []string
-	flag.Func("only", "run only these rule IDs (comma-separated, may be repeated)", func(s string) error {
+	flags.Func("only", "run only these rule IDs (comma-separated, may be repeated)", func(s string) error {
 		onlyArgs = append(onlyArgs, splitRuleIDs(s)...)
 		return nil
 	})
-	flag.Func("skip", "skip these rule IDs (comma-separated, may be repeated)", func(s string) error {
+	flags.Func("skip", "skip these rule IDs (comma-separated, may be repeated)", func(s string) error {
 		skipArgs = append(skipArgs, splitRuleIDs(s)...)
 		return nil
 	})
-	flag.Usage = func() {
-		fmt.Fprintln(os.Stderr, "usage: glsec [flags] [file]")
-		fmt.Fprintln(os.Stderr, "       glsec explain <RULE-ID>")
-		fmt.Fprintln(os.Stderr, "       glsec list [--format text|json] [--owasp CICD-SEC-N]")
-		fmt.Fprintln(os.Stderr, "       If no file is given, glsec looks for .gitlab-ci.yml in the current directory.")
-		flag.PrintDefaults()
+	flags.Usage = func() {
+		_, _ = fmt.Fprintln(stderr, "usage: glsec [flags] [file]")
+		_, _ = fmt.Fprintln(stderr, "       glsec explain <RULE-ID>")
+		_, _ = fmt.Fprintln(stderr, "       glsec list [--format text|json] [--owasp CICD-SEC-N]")
+		_, _ = fmt.Fprintln(stderr, "       If no file is given, glsec looks for .gitlab-ci.yml in the current directory.")
+		flags.PrintDefaults()
 	}
-	flag.Parse()
+	if err := flags.Parse(args); err != nil {
+		if err == flag.ErrHelp {
+			return 0
+		}
+		return 2
+	}
 
 	if *versionFlag {
-		fmt.Printf("glsec %s (commit %s, built %s)\n", resolvedVersion(), commit, date)
-		return
+		_, _ = fmt.Fprintf(stdout, "glsec %s (commit %s, built %s)\n", resolvedVersion(), commit, date)
+		return 0
 	}
 
 	if *clearCacheFlag {
 		if err := cache.Clear(); err != nil {
-			fmt.Fprintf(os.Stderr, "error: --clear-cache: %v\n", err)
-			os.Exit(2)
+			_, _ = fmt.Fprintf(stderr, "error: --clear-cache: %v\n", err)
+			return 2
 		}
-		fmt.Fprintln(os.Stderr, "cache cleared")
-		return
+		_, _ = fmt.Fprintln(stderr, "cache cleared")
+		return 0
 	}
 
 	format, ok := output.ParseFormat(*formatFlag)
 	if !ok {
-		fmt.Fprintf(os.Stderr, "unknown format %q — use text, table, json, sarif, codeclimate, or junit\n", *formatFlag)
-		os.Exit(2)
+		_, _ = fmt.Fprintf(stderr, "unknown format %q — use text, table, json, sarif, codeclimate, or junit\n", *formatFlag)
+		return 2
 	}
 
 	cfg, err := config.Load(*configFlag)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(2)
+		_, _ = fmt.Fprintf(stderr, "error: %v\n", err)
+		return 2
 	}
 
 	// CLI flags take precedence over config file values.
@@ -146,11 +158,11 @@ func main() {
 
 	if len(onlyArgs) > 0 {
 		cfg.Only = ruleIDSet(onlyArgs)
-		warnUnknownRuleIDs("--only", cfg.Only)
+		warnUnknownRuleIDs(stderr, "--only", cfg.Only)
 	}
 	if len(skipArgs) > 0 {
 		cfg.Skip = ruleIDSet(skipArgs)
-		warnUnknownRuleIDs("--skip", cfg.Skip)
+		warnUnknownRuleIDs(stderr, "--skip", cfg.Skip)
 	}
 
 	rules.GL016.SetTrustedHosts(cfg.TrustedHosts)
@@ -164,26 +176,26 @@ func main() {
 	}
 	gitlabVersion, err := gitlabver.Parse(gitlabVersionStr)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: --gitlab-version: %v\n", err)
-		os.Exit(2)
+		_, _ = fmt.Fprintf(stderr, "error: --gitlab-version: %v\n", err)
+		return 2
 	}
 	if !gitlabVersion.IsZero() && !gitlabVersion.AtLeast(gitlabver.Minimum) {
-		fmt.Fprintf(os.Stderr, "warning: gitlab-version %s is below the minimum supported version %s\n", gitlabVersion, gitlabver.Minimum)
+		_, _ = fmt.Fprintf(stderr, "warning: gitlab-version %s is below the minimum supported version %s\n", gitlabVersion, gitlabver.Minimum)
 	}
 
 	recursivePatterns := append(append([]string{}, cfg.RecursivePatterns...), nameArgs...)
 	if len(recursivePatterns) > 0 && !*recursiveFlag {
-		fmt.Fprintln(os.Stderr, "warning: --name / recursive_patterns only apply with --recursive; ignoring")
+		_, _ = fmt.Fprintln(stderr, "warning: --name / recursive_patterns only apply with --recursive; ignoring")
 	}
 
-	targets, err := resolveTargets(flag.Args(), *recursiveFlag, recursivePatterns)
+	targets, err := resolveTargets(flags.Args(), *recursiveFlag, recursivePatterns)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(2)
+		_, _ = fmt.Fprintf(stderr, "error: %v\n", err)
+		return 2
 	}
 
-	colorEnabled := color.IsEnabled(*noColorFlag, os.Stdout)
-	stdoutIsTTY := color.IsTerminal(os.Stdout)
+	colorEnabled := color.IsEnabled(*noColorFlag, stdout)
+	stdoutIsTTY := color.IsTerminal(stdout)
 	newOnly := *newOnlyFlag || *baselineFlag != ""
 	// The reason check runs while collecting findings, so a cache hit would skip
 	// it and silently drop the per-suppression messages. Opt-in policy, so paying
@@ -223,30 +235,34 @@ func main() {
 
 	if *generateIgnoreFlag {
 		if err := writeIgnoreFile(suppress.IgnoreFile, allFindings); err != nil {
-			fmt.Fprintf(os.Stderr, "error: --generate-ignore: %v\n", err)
-			os.Exit(2)
+			_, _ = fmt.Fprintf(stderr, "error: --generate-ignore: %v\n", err)
+			return 2
 		}
-		fmt.Fprintf(os.Stderr, "wrote %d suppression(s) to %s\n", len(allFindings), suppress.IgnoreFile)
-		return // exit 0
+		_, _ = fmt.Fprintf(stderr, "wrote %d suppression(s) to %s\n", len(allFindings), suppress.IgnoreFile)
+		return 0
 	}
 
 	if newOnly {
-		allFindings = filterNewOnly(allFindings, *baselineFlag)
+		var err error
+		if allFindings, err = filterNewOnly(stderr, allFindings, *baselineFlag); err != nil {
+			_, _ = fmt.Fprintf(stderr, "error: --baseline: %v\n", err)
+			return 2
+		}
 	}
 
-	if err := writeOutput(os.Stdout, format, allFindings, totalJobCount, colorEnabled, stdoutIsTTY); err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(2)
+	if err := writeOutput(stdout, format, allFindings, totalJobCount, colorEnabled, stdoutIsTTY); err != nil {
+		_, _ = fmt.Fprintf(stderr, "error: %v\n", err)
+		return 2
 	}
 
 	if hadError {
-		os.Exit(2)
+		return 2
 	}
 	if totalUnjustified > 0 {
-		fmt.Fprintf(os.Stderr, "%d suppression(s) without a reason; require_ignore_reason is enabled\n", totalUnjustified)
-		os.Exit(2)
+		_, _ = fmt.Fprintf(stderr, "%d suppression(s) without a reason; require_ignore_reason is enabled\n", totalUnjustified)
+		return 2
 	}
-	os.Exit(exitCode(allFindings, cfg))
+	return exitCode(allFindings, cfg)
 }
 
 type scanOptions struct {
@@ -382,14 +398,14 @@ func ruleIDSet(ids []string) map[string]bool {
 
 // warnUnknownRuleIDs prints a stderr warning for any ID in set that is not a
 // known rule, so typos (e.g. --only GL01) do not silently match nothing.
-func warnUnknownRuleIDs(flagName string, set map[string]bool) {
+func warnUnknownRuleIDs(w io.Writer, flagName string, set map[string]bool) {
 	known := make(map[string]bool, len(rules.All()))
 	for _, r := range rules.All() {
 		known[r.ID()] = true
 	}
 	for id := range set {
 		if !known[id] {
-			fmt.Fprintf(os.Stderr, "warning: %s: unknown rule ID %q\n", flagName, id)
+			_, _ = fmt.Fprintf(w, "warning: %s: unknown rule ID %q\n", flagName, id)
 		}
 	}
 }
@@ -661,8 +677,8 @@ func reportUnjustified(sm suppress.Map, path string) int {
 // filterNewOnly keeps only findings absent from the baseline. baselinePath is
 // empty for the default .glsec-ignore baseline (a missing default is treated as
 // an empty baseline — everything is new); an explicit --baseline that cannot be
-// read is a fatal error. The number of baselined findings is reported to stderr.
-func filterNewOnly(findings []finding.Finding, baselinePath string) []finding.Finding {
+// read is an error. The number of baselined findings is reported to w.
+func filterNewOnly(w io.Writer, findings []finding.Finding, baselinePath string) ([]finding.Finding, error) {
 	path := baselinePath
 	if path == "" {
 		path = suppress.IgnoreFile
@@ -672,8 +688,7 @@ func filterNewOnly(findings []finding.Finding, baselinePath string) []finding.Fi
 		if baselinePath == "" && os.IsNotExist(err) {
 			bl = baseline.Empty()
 		} else {
-			fmt.Fprintf(os.Stderr, "error: --baseline: %v\n", err)
-			os.Exit(2)
+			return nil, err
 		}
 	}
 
@@ -684,9 +699,9 @@ func filterNewOnly(findings []finding.Finding, baselinePath string) []finding.Fi
 		}
 	}
 	if n := len(findings) - len(newFindings); n > 0 {
-		fmt.Fprintf(os.Stderr, "%d finding(s) matched the baseline and were not reported\n", n)
+		_, _ = fmt.Fprintf(w, "%d finding(s) matched the baseline and were not reported\n", n)
 	}
-	return newFindings
+	return newFindings, nil
 }
 
 // writeIgnoreFile creates or overwrites .glsec-ignore with one entry per finding.

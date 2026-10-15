@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"os"
+	"io"
 	"regexp"
 	"strings"
 
@@ -11,7 +11,7 @@ import (
 	"github.com/glsec/glsec/rules"
 )
 
-func runExplain(ruleID string, noColor bool) {
+func runExplain(ruleID string, noColor bool, stdout, stderr io.Writer) int {
 	id := strings.ToUpper(ruleID)
 
 	found := false
@@ -22,19 +22,20 @@ func runExplain(ruleID string, noColor bool) {
 		}
 	}
 	if !found {
-		fmt.Fprintf(os.Stderr, "error: unknown rule %q\n", id)
-		os.Exit(2)
+		_, _ = fmt.Fprintf(stderr, "error: unknown rule %q\n", id)
+		return 2
 	}
 
 	raw, err := glsecdocs.FS.ReadFile("rules/" + id + ".md")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: no documentation found for %s\n", id)
-		os.Exit(2)
+		_, _ = fmt.Fprintf(stderr, "error: no documentation found for %s\n", id)
+		return 2
 	}
 
 	doc := parseExplainDoc(raw)
-	colorEnabled := color.IsEnabled(noColor, os.Stdout)
-	renderExplainDoc(id, doc, colorEnabled)
+	colorEnabled := color.IsEnabled(noColor, stdout)
+	renderExplainDoc(stdout, id, doc, colorEnabled)
+	return 0
 }
 
 var (
@@ -126,25 +127,25 @@ func parseExplainDoc(content []byte) explainDoc {
 	return doc
 }
 
-func renderExplainDoc(id string, doc explainDoc, colorEnabled bool) {
-	fmt.Printf("%s\n", color.Bold(id+" — "+doc.title, colorEnabled))
-	fmt.Printf("Severity: %s\n", doc.severity)
+func renderExplainDoc(w io.Writer, id string, doc explainDoc, colorEnabled bool) {
+	_, _ = fmt.Fprintf(w, "%s\n", color.Bold(id+" — "+doc.title, colorEnabled))
+	_, _ = fmt.Fprintf(w, "Severity: %s\n", doc.severity)
 	if doc.owasp != "" {
-		fmt.Printf("OWASP:    %s\n", doc.owasp)
+		_, _ = fmt.Fprintf(w, "OWASP:    %s\n", doc.owasp)
 	}
 	if doc.risk != "" {
-		fmt.Printf("\nRisk:\n")
+		_, _ = fmt.Fprintf(w, "\nRisk:\n")
 		for _, line := range wrapWords(doc.risk, 70) {
-			fmt.Printf("  %s\n", line)
+			_, _ = fmt.Fprintf(w, "  %s\n", line)
 		}
 	}
 	if doc.safeAlt != "" {
-		fmt.Printf("\nSafe alternative:\n")
+		_, _ = fmt.Fprintf(w, "\nSafe alternative:\n")
 		for _, line := range strings.Split(strings.TrimRight(doc.safeAlt, "\n"), "\n") {
-			fmt.Printf("  %s\n", line)
+			_, _ = fmt.Fprintf(w, "  %s\n", line)
 		}
 	}
-	fmt.Printf("\nDocs: https://glsec.dev/rules/%s\n", id)
+	_, _ = fmt.Fprintf(w, "\nDocs: https://glsec.dev/rules/%s\n", id)
 }
 
 func wrapWords(text string, width int) []string {

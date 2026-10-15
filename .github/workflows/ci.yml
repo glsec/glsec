@@ -53,7 +53,7 @@ jobs:
       - name: Coverage summary
         if: matrix.os == 'ubuntu-latest'
         env:
-          COVERAGE_FLOOR: "83.0"
+          COVERAGE_FLOOR: "90.0"
         run: |
           awk '
             NR > 1 {

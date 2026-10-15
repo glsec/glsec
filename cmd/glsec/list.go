@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"os"
+	"io"
 	"sort"
 	"strings"
 	"text/tabwriter"
@@ -20,15 +20,21 @@ type ruleInfo struct {
 	Description string   `json:"description"`
 }
 
-func runList(args []string) {
-	fs := flag.NewFlagSet("list", flag.ExitOnError)
+func runList(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("list", flag.ContinueOnError)
+	fs.SetOutput(stderr)
 	format := fs.String("format", "text", "output format: text or json")
 	owaspFilter := fs.String("owasp", "", "filter by OWASP category (e.g. CICD-SEC-4)")
 	fs.Usage = func() {
-		fmt.Fprintln(os.Stderr, "usage: glsec list [--format text|json] [--owasp CICD-SEC-N]")
+		_, _ = fmt.Fprintln(stderr, "usage: glsec list [--format text|json] [--owasp CICD-SEC-N]")
 		fs.PrintDefaults()
 	}
-	_ = fs.Parse(args)
+	if err := fs.Parse(args); err != nil {
+		if err == flag.ErrHelp {
+			return 0
+		}
+		return 2
+	}
 
 	wantOWASP := strings.ToUpper(strings.TrimSpace(*owaspFilter))
 
@@ -51,29 +57,30 @@ func runList(args []string) {
 
 	switch *format {
 	case "json":
-		enc := json.NewEncoder(os.Stdout)
+		enc := json.NewEncoder(stdout)
 		enc.SetIndent("", "  ")
 		if err := enc.Encode(infos); err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
-			os.Exit(2)
+			_, _ = fmt.Fprintf(stderr, "error: %v\n", err)
+			return 2
 		}
 	case "text":
-		printRuleTable(infos)
+		printRuleTable(stdout, infos)
 	default:
-		fmt.Fprintf(os.Stderr, "unknown format %q — use text or json\n", *format)
-		os.Exit(2)
+		_, _ = fmt.Fprintf(stderr, "unknown format %q — use text or json\n", *format)
+		return 2
 	}
+	return 0
 }
 
-func printRuleTable(infos []ruleInfo) {
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+func printRuleTable(out io.Writer, infos []ruleInfo) {
+	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	_, _ = fmt.Fprintln(w, "ID\tSEVERITY\tOWASP\tDESCRIPTION")
 	for _, info := range infos {
 		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
 			info.ID, info.Severity, strings.Join(info.OWASP, ", "), info.Description)
 	}
 	_ = w.Flush()
-	fmt.Printf("\n%d rules total\n", len(infos))
+	_, _ = fmt.Fprintf(out, "\n%d rules total\n", len(infos))
 }
 
 // normalizeSeverity reduces a doc severity line to a compact table value.
