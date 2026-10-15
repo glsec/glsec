@@ -8,6 +8,7 @@
 [![codecov](https://codecov.io/gh/glsec/glsec/graph/badge.svg)](https://app.codecov.io/gh/glsec/glsec)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/glsec/glsec/badge)](https://scorecard.dev/viewer/?uri=github.com/glsec/glsec)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/15508/badge)](https://www.bestpractices.dev/projects/15508)
+[![SLSA Build Level 2](https://slsa.dev/images/gh-badge-level2.svg)](#verifying-a-release)
 
 **glsec** is a security linter for `.gitlab-ci.yml` files. It detects misconfigurations that can lead to supply-chain attacks, secret leakage, and token exfiltration — the same class of issues that [zizmor](https://github.com/zizmorcore/zizmor) and [actionlint](https://github.com/rhysd/actionlint) catch in GitHub Actions, but for GitLab CI.
 
@@ -64,6 +65,8 @@ Homebrew coming soon.
 ## Verifying a release
 
 Every release is signed and carries build provenance, so you can confirm an artifact really came from this repository's workflow before trusting it. Signing is keyless through [Sigstore](https://www.sigstore.dev/), so there is no public key to fetch or rotate.
+
+The release binaries and the container image meet [SLSA](https://slsa.dev/spec/v1.0/levels) **Build Level 2**: their provenance is generated and signed by GitHub's hosted build platform, not by a developer machine, and names the exact workflow, commit and tag. Level 3 would additionally isolate provenance generation from the build steps themselves, so that a compromised step could not influence what is attested; that is tracked in [#585](https://github.com/glsec/glsec/issues/585).
 
 **Release binaries** carry a SLSA provenance attestation. Verify a downloaded archive with the [GitHub CLI](https://cli.github.com/):
 
