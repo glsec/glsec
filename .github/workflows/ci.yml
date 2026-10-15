@@ -288,3 +288,15 @@ jobs:
             exit 1
           fi
           echo "component references agree on ${found#@}"
+
+      # Users embed assets/badge/v1.json through shields.io's endpoint badge
+      # (#592); a broken file breaks every README that shows it.
+      - name: Check the user badge definition
+        run: |
+          set -euo pipefail
+          jq -e '.schemaVersion == 1 and (.label | length > 0) and (.message | length > 0)' assets/badge/v1.json
+          if [ "$(jq -r .logoSvg assets/badge/v1.json)" != "$(tr -d '\n' < assets/badge/glsec-shield.svg)" ]; then
+            echo "::error::assets/badge/v1.json logoSvg differs from assets/badge/glsec-shield.svg"
+            exit 1
+          fi
+          echo "badge definition ok"

@@ -584,6 +584,23 @@ The SBOM files are left out because syft writes timestamps into them; they are n
 
 **SBOMs**: the container image carries its SBOM as a signed attestation, listed by `cosign tree` above. The per-archive `.sbom.json` files are published as plain release assets rather than attestations, deliberately. Each contains four entries: glsec itself, its single dependency `gopkg.in/yaml.v3`, the Go standard library, and the archive's own digest. That is the same information `go.mod` already makes public, and the archive it describes is covered by provenance, so a swapped SBOM cannot make a tampered archive verify. If you need an SBOM you can trust end to end, use the image attestation or regenerate one from a verified archive with [syft](https://github.com/anchore/syft).
 
+## Badge
+
+Using glsec in your pipeline? Show it in your README:
+
+[![CI security: glsec](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/glsec/glsec/main/assets/badge/v1.json)](https://github.com/glsec/glsec)
+
+```markdown
+[![CI security: glsec](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/glsec/glsec/main/assets/badge/v1.json)](https://github.com/glsec/glsec)
+```
+
+To show it on a GitLab project page, add it under **Settings → General → Badges** with:
+
+- **Link**: `https://github.com/glsec/glsec`
+- **Badge image URL**: `https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/glsec/glsec/main/assets/badge/v1.json`
+
+The badge says that a project runs glsec, not that its last pipeline passed; GitLab's own pipeline badge shows that.
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
