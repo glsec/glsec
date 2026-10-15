@@ -6,6 +6,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime/debug"
 	"sort"
@@ -531,6 +532,7 @@ func dedupeStrings(in []string) []string {
 func matchesExclude(file string, patterns []string) bool {
 	clean := filepath.ToSlash(filepath.Clean(file))
 	for _, pat := range patterns {
+		pat = filepath.ToSlash(pat) // a no-op except on Windows, where `vendor\` is a directory too
 		// Directory pattern: "vendor/" or "infra/old/**"
 		if strings.HasSuffix(pat, "/") || strings.HasSuffix(pat, "/**") {
 			dir := filepath.ToSlash(filepath.Clean(strings.TrimSuffix(strings.TrimSuffix(pat, "**"), "/")))
@@ -539,11 +541,10 @@ func matchesExclude(file string, patterns []string) bool {
 			}
 			continue
 		}
-		if ok, _ := filepath.Match(pat, clean); ok {
-			return true
-		}
-		// Also try matching the pattern against the slash-normalised path.
-		if ok, _ := filepath.Match(filepath.ToSlash(pat), clean); ok {
+		// Clean the pattern like the path, so "./legacy/.gitlab-ci.yml" matches
+		// too. Both sides use "/" now, so path.Match keeps * from crossing a
+		// directory on every OS; filepath.Match would on Windows.
+		if ok, _ := path.Match(filepath.ToSlash(filepath.Clean(pat)), clean); ok {
 			return true
 		}
 	}

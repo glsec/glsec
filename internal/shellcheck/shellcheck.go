@@ -155,7 +155,7 @@ func invoke(bin string, lines []scriptLine) ([]scComment, error) {
 
 func resolveBinary(path string) (string, error) {
 	if path != "" {
-		if _, err := os.Stat(path); err != nil {
+		if _, err := os.Stat(path); err != nil { //nolint:gosec // G703: the path is the shellcheck binary set in the user's own .glsec.yml
 			return "", fmt.Errorf("binary not found at %q", path)
 		}
 		return path, nil
