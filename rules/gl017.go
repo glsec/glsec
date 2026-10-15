@@ -25,6 +25,11 @@ func (r *gl017) Check(doc *yaml.Node, file string) []finding.Finding {
 		if !isSensitiveJob(job) {
 			return
 		}
+		// A trigger job starts a downstream pipeline and runs on no runner, so
+		// tags: has nothing to restrict there.
+		if parser.FindKey(job, "trigger") != nil {
+			return
+		}
 		tagsNode := parser.FindKey(job, "tags")
 		if tagsNode != nil && tagsNode.Kind == yaml.SequenceNode && len(tagsNode.Content) > 0 {
 			return

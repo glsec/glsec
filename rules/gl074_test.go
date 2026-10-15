@@ -173,3 +173,34 @@ deploy:
 		t.Errorf("no rules — expected no finding, got %d", len(f))
 	}
 }
+
+func TestGL074_SpecInputComparison_NoFinding(t *testing.T) {
+	f := findings074rule(t, `
+spec:
+  inputs:
+    enabled:
+      default: "true"
+---
+job:
+  rules:
+    - if: "'$[[inputs.enabled]]' != 'true'"
+      when: never
+    - if: '$[[ inputs.enabled ]] == "true"'
+  script: [echo]
+`)
+	if len(f) != 0 {
+		t.Fatalf("comparisons with $[[ inputs ]] are not constant; got %+v", f)
+	}
+}
+
+func TestGL074_ConstantComparisonStillFlagged(t *testing.T) {
+	f := findings074rule(t, `
+job:
+  rules:
+    - if: "'a' != 'b'"
+  script: [echo]
+`)
+	if len(f) != 1 {
+		t.Fatalf("a comparison of two plain literals is still constant; got %d findings", len(f))
+	}
+}

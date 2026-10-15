@@ -92,7 +92,9 @@ func tautologyReason(cond string) string {
 		if op == "true" {
 			return `standalone "true" operand`
 		}
-		if m := gl074TwoLiteralRe.FindStringSubmatch(op); m != nil {
+		// $[[ inputs.x ]] is replaced per caller when the component or template
+		// is included, so a comparison involving it is not constant.
+		if m := gl074TwoLiteralRe.FindStringSubmatch(op); m != nil && !strings.Contains(op, "$[[") {
 			equal := m[1] == m[3]
 			if (m[2] == "==" && equal) || (m[2] == "!=" && !equal) {
 				return "constant comparison " + op

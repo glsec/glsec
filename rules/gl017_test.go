@@ -154,3 +154,16 @@ deploy-prod:
 		t.Error("expected non-zero line number")
 	}
 }
+
+func TestGL017_TriggerJob_NoFinding(t *testing.T) {
+	f := findings017(t, `
+start-release-pipeline:
+  stage: deploy
+  trigger:
+    include: .gitlab/ci/release.yml
+    strategy: depend
+`)
+	if len(f) != 0 {
+		t.Fatalf("a trigger job runs on no runner, tags: doesn't apply; got %+v", f)
+	}
+}
