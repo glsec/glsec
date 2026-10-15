@@ -18,6 +18,11 @@ on:
       - mega-linter-plugin-glsec/**
       - testdata/megalinter/**
       - .github/workflows/megalinter-plugin.yml
+  # A version bump pins a release that doesn't exist until the tag is pushed,
+  # so the bump PR and its push skip the run (see the first step). This tests
+  # the plugin against each release once it is published (#599).
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
@@ -35,7 +40,46 @@ jobs:
         with:
           persist-credentials: false
 
+      # The plugin installs the release pinned in the descriptor. On a version
+      # bump that release doesn't exist yet: skip with a notice instead of
+      # failing on the 404 (#599). When triggered by the release itself, wait
+      # for GoReleaser to finish uploading the assets.
+      - name: Check that the pinned release is published
+        id: release
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          version=$(grep -oE 'GLSEC_VERSION=[0-9]+\.[0-9]+\.[0-9]+' \
+            mega-linter-plugin-glsec/glsec.megalinter-descriptor.yml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+          url="https://github.com/glsec/glsec/releases/download/v${version}/checksums.txt"
+          attempts=1
+          if [ "$EVENT" = "release" ]; then attempts=30; fi
+          for i in $(seq 1 "$attempts"); do
+            code=$(curl -sSIL -o /dev/null -w '%{http_code}' "$url")
+            case "$code" in
+              200)
+                echo "glsec $version is published"
+                echo "published=true" >> "$GITHUB_OUTPUT"
+                exit 0
+                ;;
+              404) ;;
+              *)
+                echo "::error::unexpected HTTP $code for $url"
+                exit 1
+                ;;
+            esac
+            if [ "$i" -lt "$attempts" ]; then sleep 30; fi
+          done
+          if [ "$EVENT" = "release" ]; then
+            echo "::error::glsec $version is still not published after the release event"
+            exit 1
+          fi
+          echo "::notice::glsec $version is not published yet; the plugin is tested once the release exists"
+          echo "published=false" >> "$GITHUB_OUTPUT"
+
       - name: Lint the clean and the failing pipeline
+        if: steps.release.outputs.published == 'true'
         run: |
           set -euo pipefail
 
