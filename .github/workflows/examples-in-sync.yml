@@ -1,0 +1,94 @@
+name: Examples in sync
+
+# The runnable examples linked from the README live in separate repositories
+# on gitlab.com/glsec-io/examples, out of reach of the version-pins check in
+# ci.yml. They fell eight releases behind once without anyone noticing (#594).
+# This compares their pins with this repository weekly and opens an issue on
+# drift. It doesn't fail anything: the examples can only follow a release
+# after it is published, so a red check right after every release would be
+# noise. Not run on pull requests, so this repository's CI doesn't depend on
+# external repositories.
+
+on:
+  schedule:
+    - cron: "0 7 * * 3" # 07:00 UTC every Wednesday
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    name: Compare example pins
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write # report drift as an issue
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Compare versions
+        id: compare
+        run: |
+          set -euo pipefail
+          glsec=$(jq -r .version .claude-plugin/plugin.json)
+          component=$(grep -oE 'gitlab\.com/glsec-io/glsec/[a-z-]+@v[0-9]+\.[0-9]+\.[0-9]+' README.md |
+            grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | sort -u | head -1)
+          echo "expected: glsec $glsec, component $component"
+
+          drift=$(mktemp)
+          for repo in component component-code-quality docker binary; do
+            for file in .gitlab-ci.yml README.md; do
+              url="https://gitlab.com/glsec-io/examples/$repo/-/raw/main/$file"
+              content=$(curl -fsSL --retry 3 "$url") || { echo "- $repo/$file: could not fetch $url" >> "$drift"; continue; }
+
+              # glsec versions: image tag, GLSEC_VERSION, archive name, download URL.
+              # grep finds nothing in some files; || true keeps pipefail quiet.
+              printf '%s\n' "$content" |
+                { grep -noE -e 'ghcr\.io/glsec/glsec:[0-9]+\.[0-9]+\.[0-9]+' \
+                  -e 'GLSEC_VERSION: "[0-9]+\.[0-9]+\.[0-9]+"' \
+                  -e 'glsec_[0-9]+\.[0-9]+\.[0-9]+_' \
+                  -e 'releases/download/v[0-9]+\.[0-9]+\.[0-9]+' || true; } |
+                while IFS=: read -r line match; do
+                  found=$(printf '%s' "$match" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+                  [ "$found" = "$glsec" ] || echo "- $repo/$file:$line: glsec $found, expected $glsec" >> "$drift"
+                done
+
+              printf '%s\n' "$content" |
+                { grep -noE 'gitlab\.com/glsec-io/glsec/[a-z-]+@v[0-9]+\.[0-9]+\.[0-9]+' || true; } |
+                while IFS=: read -r line match; do
+                  found=${match##*@}
+                  [ "$found" = "$component" ] || echo "- $repo/$file:$line: component $found, expected $component" >> "$drift"
+                done
+            done
+          done
+
+          if [ -s "$drift" ]; then
+            echo "::warning::the GitLab examples are out of sync"
+            cat "$drift"
+            {
+              echo "The runnable examples on [gitlab.com/glsec-io/examples](https://gitlab.com/glsec-io/examples) don't match glsec $glsec / component $component:"
+              echo
+              cat "$drift"
+              echo
+              echo "Bump them in each example repository (direct push to \`main\`), then re-run this workflow."
+            } > drift-report.md
+            echo "drift=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "all examples on glsec $glsec / component $component"
+          fi
+
+      - name: Report drift
+        if: steps.compare.outputs.drift == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          title="GitLab examples are out of sync"
+          if [ "$(gh issue list --state open --search "\"$title\" in:title" --json number --jq 'length')" != "0" ]; then
+            echo "An open issue for example drift already exists; skipping."
+            exit 0
+          fi
+          gh issue create --title "$title" --label release --body-file drift-report.md
