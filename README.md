@@ -4,6 +4,7 @@
 
 # glsec
 
+[![GitLab CI/CD Catalog](https://img.shields.io/gitlab/v/release/glsec-io%2Fglsec?logo=gitlab&label=CI%2FCD%20Catalog)](https://gitlab.com/explore/catalog/glsec-io/glsec)
 [![Go Reference](https://pkg.go.dev/badge/github.com/glsec/glsec.svg)](https://pkg.go.dev/github.com/glsec/glsec)
 [![codecov](https://codecov.io/gh/glsec/glsec/graph/badge.svg)](https://app.codecov.io/gh/glsec/glsec)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/glsec/glsec/badge)](https://scorecard.dev/viewer/?uri=github.com/glsec/glsec)
