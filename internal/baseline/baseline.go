@@ -75,12 +75,13 @@ func loadIgnore(data []byte) *Baseline {
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		// format: <file>:<line> <ruleID>
-		parts := strings.SplitN(line, " ", 2)
-		if len(parts) != 2 {
+		// format: <file>:<line> <ruleID> [exp:YYYY-MM-DD], split on any
+		// whitespace like suppress.LoadIgnoreFile, so both read a line alike.
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
 			continue
 		}
-		loc, rule := parts[0], strings.TrimSpace(parts[1])
+		loc, rule := fields[0], fields[1]
 		colon := strings.LastIndex(loc, ":")
 		if colon < 0 {
 			continue
