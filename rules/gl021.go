@@ -118,8 +118,9 @@ func printedSecret(line string) (string, bool) {
 		if right < len(s) && s[right] == '|' {
 			continue
 		}
-		// Inside `$(…)` or `<(…)` command/process substitution: captured, not logged.
-		if left >= 0 && s[left] == '(' && (left == 0 || s[left-1] == '$' || s[left-1] == '<') {
+		// Inside `$(…)` or `<(…)` command/process substitution: captured, not
+		// logged. A bare `(` is a subshell, whose output does reach the log.
+		if left > 0 && s[left] == '(' && (s[left-1] == '$' || s[left-1] == '<') {
 			continue
 		}
 		return s[start:end], true

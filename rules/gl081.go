@@ -162,23 +162,47 @@ func ifAdmitsMR(expr string) bool {
 	return strings.Contains(expr, "merge_request_event") && !strings.Contains(expr, "!=")
 }
 
-var branchEqPat = regexp.MustCompile(`\$CI_COMMIT_(BRANCH|REF_NAME)\s*==\s*['"]`)
+var (
+	// $CI_COMMIT_BRANCH / $CI_COMMIT_REF_NAME equal to the default branch or a
+	// named branch, in either operand order.
+	protDefaultBranchPat = regexp.MustCompile(`^\$CI_COMMIT_(BRANCH|REF_NAME)\s*==\s*\$CI_DEFAULT_BRANCH$|^\$CI_DEFAULT_BRANCH\s*==\s*\$CI_COMMIT_(BRANCH|REF_NAME)$`)
+	protNamedBranchPat   = regexp.MustCompile(`^\$CI_COMMIT_(BRANCH|REF_NAME)\s*==\s*['"][^'"]+['"]$`)
+	// A tag pipeline: the variable alone, a regex match on it, or != null.
+	protTagPat       = regexp.MustCompile(`^\$CI_COMMIT_TAG(\s*=~\s*/.*/[a-z]*|\s*!=\s*null)?$`)
+	protProtectedPat = regexp.MustCompile(`^\$CI_COMMIT_REF_PROTECTED\s*==\s*['"]true['"]$`)
+)
 
 // ifRestrictsToProtected reports whether a rules:if expression confines the job
 // to a protected ref, tag, or a named branch: the default branch, a tag, an
 // explicit CI_COMMIT_REF_PROTECTED == "true", or an explicit branch equality.
+//
+// Every || alternative must restrict, because any one of them admits the
+// pipeline; within an alternative, one restricting && operand is enough.
+// Parentheses are dropped, which can only under-count a restriction such as
+// (a || b) && c, never invent one, so the error is a finding rather than a
+// silenced one.
 func ifRestrictsToProtected(expr string) bool {
-	switch {
-	case strings.Contains(expr, "$CI_DEFAULT_BRANCH"):
-		return true
-	case strings.Contains(expr, "$CI_COMMIT_TAG") && !strings.Contains(expr, "!=") && !strings.Contains(expr, "== null"):
-		return true
-	case strings.Contains(expr, "$CI_COMMIT_REF_PROTECTED") && strings.Contains(expr, "true"):
-		return true
-	case branchEqPat.MatchString(expr):
-		return true
+	expr = strings.NewReplacer("(", " ", ")", " ").Replace(expr)
+	for _, alt := range strings.Split(expr, "||") {
+		restricted := false
+		for _, operand := range strings.Split(alt, "&&") {
+			if operandRestrictsToProtected(strings.TrimSpace(operand)) {
+				restricted = true
+				break
+			}
+		}
+		if !restricted {
+			return false
+		}
 	}
-	return false
+	return true
+}
+
+func operandRestrictsToProtected(op string) bool {
+	return protDefaultBranchPat.MatchString(op) ||
+		protNamedBranchPat.MatchString(op) ||
+		protTagPat.MatchString(op) ||
+		protProtectedPat.MatchString(op)
 }
 
 // workflowRestrictsToProtected reports whether the top-level workflow:rules
