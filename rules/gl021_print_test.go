@@ -35,6 +35,15 @@ func TestPrintedSecret(t *testing.T) {
 		{`[ -n "$DEPLOY_TOKEN" ] && echo set`, false},
 		{`echo ${DEPLOY_TOKEN:+set}`, false},
 		{`echo $USERNAME`, false},
+		{`echo $DEPLOY_TOKENIZER_URL`, false},
+		{`echo $GPG_KEY_ID`, false},
+		{`echo "$DOCKER_PASSWORD_FILE"`, false},
+		{`echo ${VAULT_TOKEN_PATH}`, false},
+		{`echo $AWS_ACCESS_KEY_ID`, false},
+		{`echo $SECRET_KEY_BASE`, true},
+		{`echo $AWS_SECRET_ACCESS_KEY`, true},
+		{`echo $MY_TOKENS`, true},
+		{`echo $GPG_KEY_ID $DEPLOY_TOKEN`, true},
 	}
 	for _, tt := range tests {
 		if _, got := printedSecret(tt.line); got != tt.want {
@@ -58,6 +67,35 @@ func TestSegmentCommandPrints(t *testing.T) {
 	for _, tt := range tests {
 		if got := segmentCommandPrints(tt.head); got != tt.want {
 			t.Errorf("segmentCommandPrints(%q) = %v, want %v", tt.head, got, tt.want)
+		}
+	}
+}
+
+func TestIsSecretName(t *testing.T) {
+	tests := map[string]bool{
+		"DEPLOY_TOKEN":          true,
+		"CI_JOB_TOKEN":          true,
+		"SECRET_KEY_BASE":       true,
+		"DB_PASSWORD":           true,
+		"SSH_PRIVATE_KEY":       true,
+		"TLS_CERT":              true,
+		"GPG_KEY_ID":            false,
+		"DOCKER_PASSWORD_FILE":  false,
+		"DEPLOY_TOKENIZER_URL":  false,
+		"VAULT_TOKEN_PATH":      false,
+		"SERVICE_KEY_NAME":      false,
+		"DOCKER_TLS_CERTDIR":    false,
+		"SSH_KEY_DIR":           false,
+		"TOKEN":                 false, // nothing before the indicator
+		"BYPASS":                false,
+		"API_TOKEN_EXPIRES_AT":  false,
+		"REGISTRY_PASS_USER":    false,
+		"API_KEY_IDENTIFIER":    true, // _IDENTIFIER is not _ID
+		"WEBHOOK_SECRET_HEADER": true,
+	}
+	for name, want := range tests {
+		if got := isSecretName(name); got != want {
+			t.Errorf("isSecretName(%q) = %v, want %v", name, got, want)
 		}
 	}
 }

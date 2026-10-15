@@ -21,8 +21,19 @@ var (
 	// a command without being one.
 	assignRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*=`)
 
-	// secretVarRe matches CI variable references whose names end with a secret-indicating suffix.
-	secretVarRe = regexp.MustCompile(`\$\{?[A-Za-z_][A-Za-z0-9_]*(?:_TOKEN|_SECRET|_PASSWORD|_PASSWD|_PASS|_PWD|_KEY|_CREDENTIAL|_CERT)\}?`)
+	// gl021VarRefRe matches a whole variable reference, $NAME or ${NAME}; whether
+	// it is a secret is decided on the full name by isSecretName.
+	gl021VarRefRe = regexp.MustCompile(`\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?`)
+
+	// secretNameRe matches names carrying a secret indicator after at least one
+	// character, anywhere in the name: SECRET_KEY_BASE and DEPLOY_TOKEN alike.
+	secretNameRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*(?:_TOKEN|_SECRET|_PASSWORD|_PASSWD|_PASS|_PWD|_KEY|_CREDENTIAL|_CERT)`)
+
+	// nonSecretSuffixRe matches a final name segment that names something
+	// about the secret rather than the secret itself: GPG_KEY_ID,
+	// DOCKER_PASSWORD_FILE, DEPLOY_TOKENIZER_URL (#579). DIR also counts
+	// without an underscore, as in DOCKER_TLS_CERTDIR.
+	nonSecretSuffixRe = regexp.MustCompile(`(?:_(?:ID|URL|URI|PATH|FILE|NAME|HOST|USER|USERNAME|TYPE|LENGTH|EXPIRES_AT)|DIR)$`)
 
 	// safeCheckRe matches patterns that reference the variable without printing its value:
 	// length checks (-n "$VAR", test -n "$VAR"), default expansions (${VAR:-}, ${VAR:+}).
@@ -89,7 +100,10 @@ func printedSecret(line string) (string, bool) {
 		return "", false
 	}
 
-	for _, loc := range secretVarRe.FindAllStringIndex(s, -1) {
+	for _, loc := range gl021VarRefRe.FindAllStringSubmatchIndex(s, -1) {
+		if !isSecretName(s[loc[2]:loc[3]]) {
+			continue
+		}
 		start, end := loc[0], loc[1]
 
 		// Find the command segment the secret belongs to (split on shell
@@ -126,6 +140,13 @@ func printedSecret(line string) (string, bool) {
 		return s[start:end], true
 	}
 	return "", false
+}
+
+// isSecretName reports whether a variable name looks like it holds a secret
+// value: it carries a secret indicator and doesn't end in a segment such as
+// _ID or _URL that names something else.
+func isSecretName(name string) bool {
+	return secretNameRe.MatchString(name) && !nonSecretSuffixRe.MatchString(name)
 }
 
 // gl021PrefixTokens are leading tokens that introduce a command without being
