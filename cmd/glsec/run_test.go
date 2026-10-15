@@ -356,3 +356,18 @@ func TestWrapWords(t *testing.T) {
 		t.Errorf("wrapWords on blanks = %q, want none", got)
 	}
 }
+
+func TestParseExplainDoc_CRLF(t *testing.T) {
+	raw, err := os.ReadFile("../../docs/rules/GL001.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lf := parseExplainDoc(raw)
+	crlf := parseExplainDoc([]byte(strings.ReplaceAll(strings.ReplaceAll(string(raw), "\r\n", "\n"), "\n", "\r\n")))
+	if crlf != lf {
+		t.Errorf("CRLF docs parse differently:\nLF:   %+v\nCRLF: %+v", lf, crlf)
+	}
+	if lf.risk == "" || lf.title == "" {
+		t.Errorf("GL001 docs parsed without title or risk: %+v", lf)
+	}
+}

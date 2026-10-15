@@ -53,7 +53,8 @@ type explainDoc struct {
 }
 
 func parseExplainDoc(content []byte) explainDoc {
-	lines := strings.Split(string(content), "\n")
+	// Git on Windows may check the embedded docs out with CRLF line endings.
+	lines := strings.Split(strings.ReplaceAll(string(content), "\r\n", "\n"), "\n")
 	var doc explainDoc
 	var section string
 	var inCode bool
