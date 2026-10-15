@@ -132,3 +132,19 @@ build:
 		t.Errorf("unexpected error: %v", err)
 	}
 }
+
+func TestFile_TriggerJobsOnly(t *testing.T) {
+	// A parent pipeline may consist of nothing but trigger jobs for its
+	// children; trigger jobs have no script: or run:.
+	doc := parse(t, `
+child:
+  trigger:
+    include: ci/child.yml
+downstream:
+  trigger:
+    project: group/other
+`)
+	if _, err := File("test.yml", doc); err != nil {
+		t.Errorf("unexpected error for a trigger-only pipeline: %v", err)
+	}
+}

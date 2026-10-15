@@ -43,6 +43,26 @@ func TestChildPipelinePaths(t *testing.T) {
 			want: []string{"a.yml", "b.yml"},
 		},
 		{
+			name: "single mapping with local key",
+			yaml: "child:\n  trigger:\n    include:\n      local: ci/child.yml\n",
+			want: []string{"ci/child.yml"},
+		},
+		{
+			name: "plain strings in a list",
+			yaml: "child:\n  trigger:\n    include:\n      - ci/a.yml\n      - https://example.com/remote.yml\n",
+			want: []string{"ci/a.yml"},
+		},
+		{
+			name: "artifact, project, template and component entries have no local file",
+			yaml: "child:\n  trigger:\n    include:\n      - artifact: gen.yml\n        job: gen\n      - project: g/p\n        file: x.yml\n      - template: Jobs/Build.gitlab-ci.yml\n      - component: gitlab.com/g/c/x@1.0\n",
+			want: nil,
+		},
+		{
+			name: "empty include",
+			yaml: "child:\n  trigger:\n    include: ''\n",
+			want: nil,
+		},
+		{
 			name: "trigger with string value (not mapping)",
 			yaml: "job:\n  trigger: my-group/my-project\n",
 			want: nil,

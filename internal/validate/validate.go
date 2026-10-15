@@ -46,9 +46,10 @@ var knownKeys = map[string]bool{
 
 // hasGitLabContent returns true if the mapping contains at least one known
 // top-level GitLab CI key or at least one job-like entry (mapping with a
-// "script" or "run" key). run: is the CI/CD Steps alternative to script: and is
-// mutually exclusive with it, so a pipeline built entirely from steps has no
-// script: key anywhere.
+// "script", "run" or "trigger" key). run: is the CI/CD Steps alternative to
+// script: and is mutually exclusive with it, so a pipeline built entirely from
+// steps has no script: key anywhere. A trigger job has neither: a parent
+// pipeline may consist of nothing but triggers for its children.
 func hasGitLabContent(mapping *yaml.Node) bool {
 	for i := 0; i+1 < len(mapping.Content); i += 2 {
 		key := mapping.Content[i].Value
@@ -56,7 +57,7 @@ func hasGitLabContent(mapping *yaml.Node) bool {
 		if knownKeys[key] {
 			return true
 		}
-		if val.Kind == yaml.MappingNode && (hasKey(val, "script") || hasKey(val, "run")) {
+		if val.Kind == yaml.MappingNode && (hasKey(val, "script") || hasKey(val, "run") || hasKey(val, "trigger")) {
 			return true
 		}
 	}

@@ -204,6 +204,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	useCache := !*noCacheFlag && !*generateIgnoreFlag && !*noIgnoresFlag && !newOnly && !cfg.RequireIgnoreReason
 
 	scanOpts := scanOptions{
+		stderr:         stderr,
 		cfg:            cfg,
 		gitlabVersion:  gitlabVersion,
 		versionStr:     gitlabVersionStr,
@@ -267,6 +268,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 }
 
 type scanOptions struct {
+	stderr         io.Writer
 	cfg            *config.Config
 	gitlabVersion  gitlabver.Version
 	versionStr     string
@@ -302,7 +304,9 @@ func scanRoot(file string, opt scanOptions) (findings []finding.Finding, jobCoun
 	if abs, absErr := filepath.Abs(file); absErr == nil {
 		seen[abs] = true
 	}
-	allDocs := collectDocuments(doc, file, opt.cfg.ExcludePaths, seen)
+	// GitLab resolves trigger:include paths from the repository root, taken
+	// here as the directory of the pipeline being scanned.
+	allDocs := collectDocuments(opt.stderr, doc, filepath.Dir(file), opt.cfg.ExcludePaths, seen)
 
 	jobCount = parser.CountJobs(doc.Root)
 	for _, d := range allDocs[1:] {
@@ -553,11 +557,12 @@ func matchesExclude(file string, patterns []string) bool {
 
 // collectDocuments recursively collects all pipeline documents (main + children)
 // without running any rules. The first element is always the root document.
-func collectDocuments(doc *parser.Document, path string, excludePaths []string, seen map[string]bool) []*parser.Document {
+// Child paths are relative to rootDir at every level, as in GitLab; a missing
+// or unparsable child is reported to w and skipped.
+func collectDocuments(w io.Writer, doc *parser.Document, rootDir string, excludePaths []string, seen map[string]bool) []*parser.Document {
 	all := []*parser.Document{doc}
-	baseDir := filepath.Dir(path)
 	for _, child := range parser.ChildPipelinePaths(doc.Root) {
-		childPath := filepath.Join(baseDir, child)
+		childPath := filepath.Join(rootDir, strings.TrimPrefix(child, "/"))
 		if matchesExclude(childPath, excludePaths) {
 			continue
 		}
@@ -568,10 +573,10 @@ func collectDocuments(doc *parser.Document, path string, excludePaths []string, 
 		seen[abs] = true
 		childDoc, err := parser.ParseFile(childPath)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "warning: child pipeline %s: %v\n", childPath, err)
+			_, _ = fmt.Fprintf(w, "warning: child pipeline %s: %v\n", filepath.ToSlash(childPath), err)
 			continue
 		}
-		all = append(all, collectDocuments(childDoc, childPath, excludePaths, seen)...)
+		all = append(all, collectDocuments(w, childDoc, rootDir, excludePaths, seen)...)
 	}
 	return all
 }

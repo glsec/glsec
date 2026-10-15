@@ -59,12 +59,6 @@ type Suppression struct {
 	Line   int
 }
 
-// FromNode extracts all suppressions declared in the comments attached to node.
-// yaml.v3 attaches inline comments (# …) to the node as LineComment.
-func FromNode(node *yaml.Node) []Suppression {
-	return fromComment(node.LineComment, node.Line)
-}
-
 func fromComment(comment string, line int) []Suppression {
 	if comment == "" {
 		return nil

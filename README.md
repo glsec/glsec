@@ -313,6 +313,8 @@ The script-analysis rules (e.g. GL002, GL011, GL024, GL025, GL047, GL048, GL050)
 
 glsec resolves YAML anchors, aliases and merge keys (`&anchor` / `*alias` / `<<: *anchor`) and GitLab [`!reference` tags](https://docs.gitlab.com/ci/yaml/yaml_optimization/#reference-tags) that point within the same file. Content pulled in either way is analysed as if it were inlined into the job that uses it, so issues hidden in shared `.template` blocks are caught. A finding in an anchor that several jobs share is reported once, at the anchor. References that resolve into `include:`d files are not yet expanded.
 
+Local child pipelines are scanned along with their parent: every `trigger: include:` entry that names a local file (a path, `local:`, as a list or a single entry) is followed, recursively, with paths taken from the repository root as GitLab does. The root is the directory of the pipeline file you scan. Remote, `artifact:`, `project:`, `template:` and `component:` includes are not fetched, and a missing child only produces a warning.
+
 ## ShellCheck integration
 
 glsec can optionally pass `script:`, `before_script:`, and `after_script:` blocks to [ShellCheck](https://www.shellcheck.net/) for deeper shell analysis. This is **opt-in** and requires ShellCheck to be installed separately.
