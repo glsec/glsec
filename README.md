@@ -30,6 +30,17 @@ warn[GL002]: unquoted user-controlled variable $CI_COMMIT_REF_NAME in script —
 
 Use `--format table` for a compact one-line-per-finding view when there are many findings.
 
+## Quick start
+
+Add glsec to a GitLab pipeline with the [CI/CD Catalog component](https://gitlab.com/explore/catalog/glsec-io/glsec):
+
+```yaml
+include:
+  - component: gitlab.com/glsec-io/glsec/glsec@v1.0.21
+```
+
+It adds a `glsec` job that runs in the `test` stage (set the `stage` input to change that) and fails on error findings. For findings inline in merge request diffs, Docker, binary or GitHub Actions setups, see [CI integration](#ci-integration). To run it locally, see [Install](#install).
+
 ## Why glsec?
 
 | Tool | Scope |
@@ -39,9 +50,14 @@ Use `--format table` for a compact one-line-per-finding view when there are many
 | [gitlab-ci-lint](https://docs.gitlab.com/api/lint/) | GitLab CI syntax only (requires API access) |
 | **glsec** | GitLab CI security — works offline, no API key needed |
 
+- **85 rules** across the [OWASP Top 10 CI/CD Security Risks](#rules), each mapped to CWE: mutable images, secrets in variables, script injection, token exfiltration, unrestricted OIDC tokens, untrusted includes and more.
+- **Findings where you review code**: SARIF for GitLab SAST, GitLab Code Quality for inline merge request annotations, JUnit, JSON.
+- **Adoptable on existing pipelines**: a baseline file and `--new-only` report only what a change introduces; suppressions carry a reason and an expiry date.
+- **Trustworthy releases**: signed, with SLSA provenance and reproducible builds ([details](#verifying-a-release)).
+
 ## Install
 
-**Go install (requires Go 1.25+):**
+**Go install (requires Go 1.26+):**
 
 ```sh
 go install github.com/glsec/glsec@latest
@@ -58,76 +74,17 @@ tar xzf glsec_1.20.0_linux_amd64.tar.gz
 ./glsec --version
 ```
 
+**Docker:**
+
+```sh
+docker run --rm -v "$PWD:/src:ro" -w /src ghcr.io/glsec/glsec:1.20.0
+```
+
+Without a file argument glsec scans `.gitlab-ci.yml` in the mounted directory.
+
 To check the download before running it, see [Verifying a release](#verifying-a-release).
 
 Homebrew coming soon.
-
-## Verifying a release
-
-Every release is signed and carries build provenance, so you can confirm an artifact really came from this repository's workflow before trusting it. Signing is keyless through [Sigstore](https://www.sigstore.dev/), so there is no public key to fetch or rotate.
-
-The release binaries and the container image meet [SLSA](https://slsa.dev/spec/v1.0/levels) **Build Level 2**: their provenance is generated and signed by GitHub's hosted build platform, not by a developer machine, and names the exact workflow, commit and tag. Level 3 would additionally isolate provenance generation from the build steps themselves, so that a compromised step could not influence what is attested; that is tracked in [#585](https://github.com/glsec/glsec/issues/585).
-
-**Release binaries** carry a SLSA provenance attestation. Verify a downloaded archive with the [GitHub CLI](https://cli.github.com/):
-
-```sh
-gh attestation verify glsec_1.20.0_linux_amd64.tar.gz --owner glsec
-```
-
-The same attestation is attached to each release as `glsec_<version>.sigstore.json` (Sigstore bundle) and `glsec_<version>.intoto.jsonl` (its DSSE envelope), so you can also verify without the GitHub API, for example from a mirror:
-
-```sh
-cosign verify-blob-attestation \
-  --bundle glsec_1.20.0.sigstore.json --new-bundle-format --type slsaprovenance1 \
-  --certificate-identity-regexp '^https://github.com/glsec/glsec/\.github/workflows/release\.yml@refs/tags/v' \
-  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  glsec_1.20.0_linux_amd64.tar.gz
-```
-
-One bundle covers every archive and `checksums.txt`. Releases from 1.11.0 on carry these files; in 1.11.0 the bundle covers the archives but not `checksums.txt`, and older releases have no provenance.
-
-**The container image** is signed with [cosign](https://github.com/sigstore/cosign) and carries provenance plus an SBOM attestation:
-
-```sh
-cosign verify ghcr.io/glsec/glsec:1.20.0 \
-  --certificate-identity-regexp 'https://github.com/glsec/glsec/.*' \
-  --certificate-oidc-issuer https://token.actions.githubusercontent.com
-
-# list everything attached to the image (signature, provenance, SBOM)
-cosign tree --experimental-oci11 ghcr.io/glsec/glsec:1.20.0
-```
-
-The two `--certificate-*` flags are what bind the signature to this repository's GitHub Actions workflow. Without them `cosign verify` accepts a signature from any identity, which defeats the point.
-
-Use cosign v3 or newer. The image is signed in Sigstore's bundle format and the attestations are stored as OCI referrers, so cosign v2 reports `no signatures found`, and `cosign tree` without `--experimental-oci11` shows nothing.
-
-**Checksums** are published as `checksums.txt` next to the archives:
-
-```sh
-curl -sSLO https://github.com/glsec/glsec/releases/download/v1.20.0/checksums.txt
-sha256sum -c checksums.txt --ignore-missing
-```
-
-`checksums.txt` is itself attested, so you can verify the checksums file first and then trust every digest it lists:
-
-```sh
-gh attestation verify checksums.txt --owner glsec
-```
-
-**Reproducing a release**: release builds are reproducible from 1.21.0 on. Check out the tag and build it with the Go version from `go.mod` and the GoReleaser version pinned in `.github/workflows/release.yml`. The archives must match the published `checksums.txt`:
-
-```sh
-VERSION=1.21.0
-git clone https://github.com/glsec/glsec && cd glsec
-git checkout "v${VERSION}"
-goreleaser release --clean --skip=publish,sbom
-curl -sSL "https://github.com/glsec/glsec/releases/download/v${VERSION}/checksums.txt" | grep -v '\.sbom\.json$' > published.txt
-(cd dist && sha256sum -c ../published.txt)
-```
-
-The SBOM files are left out because syft writes timestamps into them; they are not part of the provenance either. CI checks on every change to the build that two builds of the same commit are identical.
-
-**SBOMs**: the container image carries its SBOM as a signed attestation, listed by `cosign tree` above. The per-archive `.sbom.json` files are published as plain release assets rather than attestations, deliberately. Each contains four entries: glsec itself, its single dependency `gopkg.in/yaml.v3`, the Go standard library, and the archive's own digest. That is the same information `go.mod` already makes public, and the archive it describes is covered by provenance, so a swapped SBOM cannot make a tampered archive verify. If you need an SBOM you can trust end to end, use the image attestation or regenerate one from a verified archive with [syft](https://github.com/anchore/syft).
 
 ## Usage
 
@@ -544,6 +501,73 @@ PLUGINS:
 The linter key is `GITLAB_GLSEC`. It lints files named `.gitlab-ci.yml` or `*.gitlab-ci.yml` (`.yaml` too); widen that with `GITLAB_GLSEC_FILE_NAMES_REGEX`. Extra flags go in `GITLAB_GLSEC_ARGUMENTS`, or in a `.glsec.yml` at the repository root. With `SARIF_REPORTER: true`, findings are included in MegaLinter's SARIF report.
 
 The plugin downloads the glsec release pinned in its [descriptor](mega-linter-plugin-glsec/glsec.megalinter-descriptor.yml) and verifies it against `checksums.txt` before installing. The `main` URL always installs the latest release; point it at a release tag instead to stay on one version.
+
+## Verifying a release
+
+Every release is signed and carries build provenance, so you can confirm an artifact really came from this repository's workflow before trusting it. Signing is keyless through [Sigstore](https://www.sigstore.dev/), so there is no public key to fetch or rotate.
+
+The release binaries and the container image meet [SLSA](https://slsa.dev/spec/v1.0/levels) **Build Level 2**: their provenance is generated and signed by GitHub's hosted build platform, not by a developer machine, and names the exact workflow, commit and tag. Level 3 would additionally isolate provenance generation from the build steps themselves, so that a compromised step could not influence what is attested; that is tracked in [#585](https://github.com/glsec/glsec/issues/585).
+
+**Release binaries** carry a SLSA provenance attestation. Verify a downloaded archive with the [GitHub CLI](https://cli.github.com/):
+
+```sh
+gh attestation verify glsec_1.20.0_linux_amd64.tar.gz --owner glsec
+```
+
+The same attestation is attached to each release as `glsec_<version>.sigstore.json` (Sigstore bundle) and `glsec_<version>.intoto.jsonl` (its DSSE envelope), so you can also verify without the GitHub API, for example from a mirror:
+
+```sh
+cosign verify-blob-attestation \
+  --bundle glsec_1.20.0.sigstore.json --new-bundle-format --type slsaprovenance1 \
+  --certificate-identity-regexp '^https://github.com/glsec/glsec/\.github/workflows/release\.yml@refs/tags/v' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  glsec_1.20.0_linux_amd64.tar.gz
+```
+
+One bundle covers every archive and `checksums.txt`. Releases from 1.11.0 on carry these files; in 1.11.0 the bundle covers the archives but not `checksums.txt`, and older releases have no provenance.
+
+**The container image** is signed with [cosign](https://github.com/sigstore/cosign) and carries provenance plus an SBOM attestation:
+
+```sh
+cosign verify ghcr.io/glsec/glsec:1.20.0 \
+  --certificate-identity-regexp 'https://github.com/glsec/glsec/.*' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+
+# list everything attached to the image (signature, provenance, SBOM)
+cosign tree --experimental-oci11 ghcr.io/glsec/glsec:1.20.0
+```
+
+The two `--certificate-*` flags are what bind the signature to this repository's GitHub Actions workflow. Without them `cosign verify` accepts a signature from any identity, which defeats the point.
+
+Use cosign v3 or newer. The image is signed in Sigstore's bundle format and the attestations are stored as OCI referrers, so cosign v2 reports `no signatures found`, and `cosign tree` without `--experimental-oci11` shows nothing.
+
+**Checksums** are published as `checksums.txt` next to the archives:
+
+```sh
+curl -sSLO https://github.com/glsec/glsec/releases/download/v1.20.0/checksums.txt
+sha256sum -c checksums.txt --ignore-missing
+```
+
+`checksums.txt` is itself attested, so you can verify the checksums file first and then trust every digest it lists:
+
+```sh
+gh attestation verify checksums.txt --owner glsec
+```
+
+**Reproducing a release**: release builds are reproducible from 1.21.0 on. Check out the tag and build it with the Go version from `go.mod` and the GoReleaser version pinned in `.github/workflows/release.yml`. The archives must match the published `checksums.txt`:
+
+```sh
+VERSION=1.21.0
+git clone https://github.com/glsec/glsec && cd glsec
+git checkout "v${VERSION}"
+goreleaser release --clean --skip=publish,sbom
+curl -sSL "https://github.com/glsec/glsec/releases/download/v${VERSION}/checksums.txt" | grep -v '\.sbom\.json$' > published.txt
+(cd dist && sha256sum -c ../published.txt)
+```
+
+The SBOM files are left out because syft writes timestamps into them; they are not part of the provenance either. CI checks on every change to the build that two builds of the same commit are identical.
+
+**SBOMs**: the container image carries its SBOM as a signed attestation, listed by `cosign tree` above. The per-archive `.sbom.json` files are published as plain release assets rather than attestations, deliberately. Each contains four entries: glsec itself, its single dependency `gopkg.in/yaml.v3`, the Go standard library, and the archive's own digest. That is the same information `go.mod` already makes public, and the archive it describes is covered by provenance, so a swapped SBOM cannot make a tampered archive verify. If you need an SBOM you can trust end to end, use the image attestation or regenerate one from a verified archive with [syft](https://github.com/anchore/syft).
 
 ## Contributing
 

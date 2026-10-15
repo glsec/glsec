@@ -259,3 +259,32 @@ jobs:
             exit 1
           fi
           echo "all pins agree on $want"
+
+      # "requires Go X.Y+" in the docs must follow the go directive in go.mod
+      # (#587); the docs said 1.25+ while go.mod required 1.26.
+      - name: Compare documented Go version against go.mod
+        run: |
+          set -euo pipefail
+          want=$(awk '$1 == "go" { split($2, v, "."); print v[1] "." v[2]; exit }' go.mod)
+          echo "go.mod: $want"
+          found=$(grep -hoE 'Go [0-9]+\.[0-9]+\+' README.md CONTRIBUTING.md | grep -oE '[0-9]+\.[0-9]+' | sort -u)
+          if [ -z "$found" ] || [ "$found" != "$want" ]; then
+            echo "::error::documented Go version disagrees with go.mod ($want), found:"
+            printf '%s\n' "${found:-<none>}"
+            exit 1
+          fi
+          echo "docs agree on Go $want+"
+
+      # The GitLab component is versioned separately from glsec, but every
+      # reference to it in the README must name the same release (#587).
+      - name: Compare GitLab component references in README
+        run: |
+          set -euo pipefail
+          found=$(grep -oE 'gitlab\.com/glsec-io/glsec/[a-z-]+@v[0-9]+\.[0-9]+\.[0-9]+' README.md |
+            grep -oE '@v[0-9]+\.[0-9]+\.[0-9]+' | sort -u)
+          if [ "$(printf '%s\n' "$found" | grep -c .)" -ne 1 ]; then
+            echo "::error::README references more than one GitLab component version:"
+            printf '%s\n' "$found"
+            exit 1
+          fi
+          echo "component references agree on ${found#@}"
