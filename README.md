@@ -70,15 +70,15 @@ Pre-built binaries for Linux, macOS, and Windows (amd64 + arm64) are available o
 
 ```sh
 # Example: Linux amd64. Archives are named glsec_<version>_<os>_<arch>.tar.gz (.zip on Windows).
-curl -sSLO https://github.com/glsec/glsec/releases/download/v1.20.0/glsec_1.20.0_linux_amd64.tar.gz
-tar xzf glsec_1.20.0_linux_amd64.tar.gz
+curl -sSLO https://github.com/glsec/glsec/releases/download/v1.21.0/glsec_1.21.0_linux_amd64.tar.gz
+tar xzf glsec_1.21.0_linux_amd64.tar.gz
 ./glsec --version
 ```
 
 **Docker:**
 
 ```sh
-docker run --rm -v "$PWD:/src:ro" -w /src ghcr.io/glsec/glsec:1.20.0
+docker run --rm -v "$PWD:/src:ro" -w /src ghcr.io/glsec/glsec:1.21.0
 ```
 
 Without a file argument glsec scans `.gitlab-ci.yml` in the mounted directory.
@@ -321,7 +321,7 @@ glsec ships a [pre-commit](https://pre-commit.com/) hook so `.gitlab-ci.yml` iss
 ```yaml
 repos:
   - repo: https://github.com/glsec/glsec
-    rev: v1.20.0
+    rev: v1.21.0
     hooks:
       - id: glsec
 ```
@@ -412,13 +412,13 @@ If you need more control than the Catalog component offers, use the pre-built im
 glsec:
   stage: test
   image:
-    name: ghcr.io/glsec/glsec:1.20.0
+    name: ghcr.io/glsec/glsec:1.21.0
     entrypoint: [""]
   script:
     - glsec .gitlab-ci.yml
 ```
 
-The `entrypoint: [""]` override is required: the image sets `ENTRYPOINT ["glsec"]` for `docker run` convenience, which conflicts with GitLab Runner's shell wrapper. Pin to a specific tag (`1.20.0`, not `:latest`) for reproducible pipelines.
+The `entrypoint: [""]` override is required: the image sets `ENTRYPOINT ["glsec"]` for `docker run` convenience, which conflicts with GitLab Runner's shell wrapper. Pin to a specific tag (`1.21.0`, not `:latest`) for reproducible pipelines.
 
 ### GitLab CI — binary download
 
@@ -426,7 +426,7 @@ For pipelines that cannot pull from GHCR:
 
 ```yaml
 variables:
-  GLSEC_VERSION: "1.20.0"
+  GLSEC_VERSION: "1.21.0"
 
 glsec:
   stage: test
@@ -448,7 +448,7 @@ Publish findings to GitLab's Security Dashboard by emitting SARIF and exposing i
 glsec:
   stage: test
   image:
-    name: ghcr.io/glsec/glsec:1.20.0
+    name: ghcr.io/glsec/glsec:1.21.0
     entrypoint: [""]
   script:
     - glsec --format sarif .gitlab-ci.yml > glsec.sarif || true
@@ -467,7 +467,7 @@ Show findings **inline on merge request diffs** using GitLab's Code Quality widg
 glsec:
   stage: test
   image:
-    name: ghcr.io/glsec/glsec:1.20.0
+    name: ghcr.io/glsec/glsec:1.21.0
     entrypoint: [""]
   script:
     - glsec --format codeclimate .gitlab-ci.yml > gl-code-quality.json || true
@@ -483,7 +483,7 @@ Severity mapping (glsec → Code Climate): `error` → `critical`, `warn` → `m
 ```yaml
 - name: Run glsec
   env:
-    GLSEC_VERSION: "1.20.0"
+    GLSEC_VERSION: "1.21.0"
   run: |
     curl -sSLO "https://github.com/glsec/glsec/releases/download/v${GLSEC_VERSION}/glsec_${GLSEC_VERSION}_linux_amd64.tar.gz"
     tar xzf "glsec_${GLSEC_VERSION}_linux_amd64.tar.gz"
@@ -512,7 +512,7 @@ The release binaries and the container image meet [SLSA](https://slsa.dev/spec/v
 **Release binaries** carry a SLSA provenance attestation. Verify a downloaded archive with the [GitHub CLI](https://cli.github.com/):
 
 ```sh
-gh attestation verify glsec_1.20.0_linux_amd64.tar.gz --owner glsec
+gh attestation verify glsec_1.21.0_linux_amd64.tar.gz --owner glsec
 ```
 
 From 1.21.0 on, also require that the build workflow signed it (SLSA Build Level 3):
@@ -526,10 +526,10 @@ The same attestation is attached to each release as `glsec_<version>.sigstore.js
 
 ```sh
 cosign verify-blob-attestation \
-  --bundle glsec_1.20.0.sigstore.json --new-bundle-format --type slsaprovenance1 \
+  --bundle glsec_1.21.0.sigstore.json --new-bundle-format --type slsaprovenance1 \
   --certificate-identity-regexp '^https://github.com/glsec/glsec/\.github/workflows/(build-)?release\.yml@refs/tags/v' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  glsec_1.20.0_linux_amd64.tar.gz
+  glsec_1.21.0_linux_amd64.tar.gz
 ```
 
 One bundle covers every archive and `checksums.txt`. Releases from 1.11.0 on carry these files; in 1.11.0 the bundle covers the archives but not `checksums.txt`, and older releases have no provenance. The identity regex accepts `release.yml`, which signed releases before 1.21.0, and `build-release.yml`, which signs them from 1.21.0 on; use only the latter to require Build Level 3.
@@ -537,12 +537,12 @@ One bundle covers every archive and `checksums.txt`. Releases from 1.11.0 on car
 **The container image** is signed with [cosign](https://github.com/sigstore/cosign) and carries provenance plus an SBOM attestation:
 
 ```sh
-cosign verify ghcr.io/glsec/glsec:1.20.0 \
+cosign verify ghcr.io/glsec/glsec:1.21.0 \
   --certificate-identity-regexp 'https://github.com/glsec/glsec/.*' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 
 # list everything attached to the image (signature, provenance, SBOM)
-cosign tree --experimental-oci11 ghcr.io/glsec/glsec:1.20.0
+cosign tree --experimental-oci11 ghcr.io/glsec/glsec:1.21.0
 ```
 
 From 1.21.0 on, the image's provenance is signed by `build-image.yml` (SLSA Build Level 3):
@@ -559,7 +559,7 @@ Use cosign v3 or newer. The image is signed in Sigstore's bundle format and the 
 **Checksums** are published as `checksums.txt` next to the archives:
 
 ```sh
-curl -sSLO https://github.com/glsec/glsec/releases/download/v1.20.0/checksums.txt
+curl -sSLO https://github.com/glsec/glsec/releases/download/v1.21.0/checksums.txt
 sha256sum -c checksums.txt --ignore-missing
 ```
 
