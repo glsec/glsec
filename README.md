@@ -9,7 +9,7 @@
 [![codecov](https://codecov.io/gh/glsec/glsec/graph/badge.svg)](https://app.codecov.io/gh/glsec/glsec)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/glsec/glsec/badge)](https://scorecard.dev/viewer/?uri=github.com/glsec/glsec)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/15508/badge)](https://www.bestpractices.dev/projects/15508)
-[![SLSA Build Level 2](https://slsa.dev/images/gh-badge-level2.svg)](#verifying-a-release)
+[![SLSA Build Level 3](https://slsa.dev/images/gh-badge-level3.svg)](#verifying-a-release)
 
 **glsec** is a security linter for `.gitlab-ci.yml` files. It detects misconfigurations that can lead to supply-chain attacks, secret leakage, and token exfiltration — the same class of issues that [zizmor](https://github.com/zizmorcore/zizmor) and [actionlint](https://github.com/rhysd/actionlint) catch in GitHub Actions, but for GitLab CI.
 
@@ -37,7 +37,7 @@ Add glsec to a GitLab pipeline with the [CI/CD Catalog component](https://gitlab
 
 ```yaml
 include:
-  - component: gitlab.com/glsec-io/glsec/glsec@v1.0.21
+  - component: gitlab.com/glsec-io/glsec/glsec@v1.0.22
 ```
 
 It adds a `glsec` job that runs in the `test` stage (set the `stage` input to change that) and fails on error findings. For findings inline in merge request diffs, Docker, binary or GitHub Actions setups, see [CI integration](#ci-integration). To run it locally, see [Install](#install).
@@ -375,7 +375,7 @@ Use the official component from the [GitLab CI Catalog](https://gitlab.com/explo
 
 ```yaml
 include:
-  - component: gitlab.com/glsec-io/glsec/glsec@v1.0.21
+  - component: gitlab.com/glsec-io/glsec/glsec@v1.0.22
 
 stages:
   - test
@@ -385,7 +385,7 @@ For inline findings on merge request diffs, add the `glsec-code-quality` templat
 
 ```yaml
 include:
-  - component: gitlab.com/glsec-io/glsec/glsec-code-quality@v1.0.21
+  - component: gitlab.com/glsec-io/glsec/glsec-code-quality@v1.0.22
 
 stages:
   - test
@@ -507,20 +507,16 @@ The plugin downloads the glsec release pinned in its [descriptor](mega-linter-pl
 
 Every release is signed and carries build provenance, so you can confirm an artifact really came from this repository's workflow before trusting it. Signing is keyless through [Sigstore](https://www.sigstore.dev/), so there is no public key to fetch or rotate.
 
-The release binaries and the container image meet [SLSA](https://slsa.dev/spec/v1.0/levels) **Build Level 2**: their provenance is generated and signed by GitHub's hosted build platform, not by a developer machine, and names the exact workflow, commit and tag. **From 1.21.0 on they meet Build Level 3**: the build runs in a reusable workflow (`build-release.yml`, `build-image.yml`) that the triggering release workflow only calls, so the reusable workflow, not the caller, signs the provenance. That is the isolation GitHub documents as [SLSA v1 Build Level 3 for artifact attestations](https://docs.github.com/actions/security-guides/using-artifact-attestations-and-reusable-workflows-to-achieve-slsa-v1-build-level-3). Pass `--signer-workflow` when verifying to require it.
+The release binaries and the container image meet [SLSA](https://slsa.dev/spec/v1.0/levels) **Build Level 3** from 1.21.0 on: they are built in reusable workflows (`build-release.yml`, `build-image.yml`) that the release workflow only calls, so the build workflow, not the workflow a tag push triggers, signs the provenance. That is the isolation GitHub documents as [SLSA v1 Build Level 3 for artifact attestations](https://docs.github.com/actions/security-guides/using-artifact-attestations-and-reusable-workflows-to-achieve-slsa-v1-build-level-3). Releases 1.11.0 to 1.20.0 meet Build Level 2: their provenance is signed by GitHub's hosted build platform, but by the release workflow itself.
 
-**Release binaries** carry a SLSA provenance attestation. Verify a downloaded archive with the [GitHub CLI](https://cli.github.com/):
-
-```sh
-gh attestation verify glsec_1.21.0_linux_amd64.tar.gz --owner glsec
-```
-
-From 1.21.0 on, also require that the build workflow signed it (SLSA Build Level 3):
+**Release binaries** carry a SLSA provenance attestation. Verify a downloaded archive with the [GitHub CLI](https://cli.github.com/); `--signer-workflow` requires that the build workflow signed it (Build Level 3):
 
 ```sh
-gh attestation verify glsec_<version>_linux_amd64.tar.gz --owner glsec \
+gh attestation verify glsec_1.21.0_linux_amd64.tar.gz --owner glsec \
   --signer-workflow glsec/glsec/.github/workflows/build-release.yml
 ```
+
+For releases before 1.21.0, drop `--signer-workflow`.
 
 The same attestation is attached to each release as `glsec_<version>.sigstore.json` (Sigstore bundle) and `glsec_<version>.intoto.jsonl` (its DSSE envelope), so you can also verify without the GitHub API, for example from a mirror:
 
@@ -545,10 +541,10 @@ cosign verify ghcr.io/glsec/glsec:1.21.0 \
 cosign tree --experimental-oci11 ghcr.io/glsec/glsec:1.21.0
 ```
 
-From 1.21.0 on, the image's provenance is signed by `build-image.yml` (SLSA Build Level 3):
+To require Build Level 3 provenance for the image (1.21.0 and later):
 
 ```sh
-gh attestation verify oci://ghcr.io/glsec/glsec:<version> --owner glsec \
+gh attestation verify oci://ghcr.io/glsec/glsec:1.21.0 --owner glsec \
   --signer-workflow glsec/glsec/.github/workflows/build-image.yml
 ```
 
@@ -569,7 +565,7 @@ sha256sum -c checksums.txt --ignore-missing
 gh attestation verify checksums.txt --owner glsec
 ```
 
-**Reproducing a release**: release builds are reproducible from 1.21.0 on. Check out the tag and build it with the Go version from `go.mod` and the GoReleaser version pinned in `.github/workflows/build-release.yml`. The archives must match the published `checksums.txt`:
+**Reproducing a release**: release builds are reproducible from 1.21.0 on. Check out the tag and build it with the Go version from `go.mod` and exactly the GoReleaser version pinned in `.github/workflows/build-release.yml` (v2.18.3 for 1.21.0); another GoReleaser version packs the archives differently. The archives must match the published `checksums.txt`:
 
 ```sh
 VERSION=1.21.0
