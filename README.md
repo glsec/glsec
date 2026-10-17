@@ -602,6 +602,8 @@ The badge says that a project runs glsec, not that its last pipeline passed; Git
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). To report a bug, a false positive or a missing rule, see [Reporting a bug](CONTRIBUTING.md#reporting-a-bug).
 
+How glsec works inside, and what it defends against, is described in [ARCHITECTURE.md](ARCHITECTURE.md); who maintains it and who has access to what, in [GOVERNANCE.md](GOVERNANCE.md).
+
 ## Repositories
 
 glsec is developed in this repository. The GitLab integrations live on gitlab.com:

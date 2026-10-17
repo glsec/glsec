@@ -23,6 +23,15 @@ go test ./...
 
 No code generation, no build scripts — `go build` is all you need.
 
+## Dependencies
+
+glsec keeps its dependencies few and checked:
+
+- **Go modules.** `go.mod` lists the direct dependencies (currently only `gopkg.in/yaml.v3`) and `go.sum` pins their hashes; CI runs `go mod verify`. A new dependency needs a reason in the pull request: prefer the standard library, and pick maintained, widely used modules.
+- **Updates.** Dependabot proposes updates for Go modules, GitHub Actions, the CI's Python tools and the Docker base images. Version updates wait 7 days after an upstream release (`cooldown` in `.github/dependabot.yml`), the window in which a compromised release is usually caught; security updates and base images are not delayed. Updates go through the same pull request checks as any change.
+- **Pinning.** GitHub Actions are pinned to commit SHAs, the CI's Python tools (zizmor, check-jsonschema) to versions with hashes (`.github/requirements/`), Docker base images to digests, and GoReleaser to an exact version.
+- **Vulnerabilities.** govulncheck runs on every pull request and push and is a required check; Trivy scans the container image. A known vulnerability that affects glsec blocks the merge until it is fixed.
+
 ## Running tests
 
 ```sh

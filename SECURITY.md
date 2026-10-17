@@ -4,7 +4,17 @@
 
 Please report security issues through [GitHub private vulnerability reporting](https://github.com/glsec/glsec/security/advisories/new). Do not open a public issue for a suspected vulnerability.
 
-You will get an initial response within 14 days. If the report is confirmed we will agree a disclosure timeline with you, and credit you in the advisory unless you would rather stay anonymous.
+You will get an initial response within 14 days. After that:
+
+1. We confirm or rule out the issue and keep you informed while we work on it.
+2. A confirmed vulnerability is fixed in a release within 90 days of the report, sooner for anything severe. If a fix needs longer, we agree a new date with you before the 90 days run out.
+3. We publish the fix and a [GitHub security advisory](https://github.com/glsec/glsec/security/advisories) at the same time, request a CVE for it, and name the advisory in the release notes. You are credited in the advisory unless you would rather stay anonymous.
+
+Please keep the issue private until the advisory is published. If we don't respond within 14 days, you may disclose it after the 90 days.
+
+## Published vulnerabilities
+
+Every confirmed vulnerability in glsec is published as a [security advisory](https://github.com/glsec/glsec/security/advisories) with the affected and fixed versions, and mentioned in the release notes of the fixing release. Vulnerabilities in dependencies that affect glsec are fixed in a release and named in its release notes.
 
 ## Supported versions
 
