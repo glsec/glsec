@@ -30,11 +30,11 @@ glsec's external interfaces are the command line, `.glsec.yml`, `.glsec-ignore`,
 | Actor | Role |
 |---|---|
 | Maintainer | Merges pull requests into `main`, pushes release tags, releases the GitLab component |
-| GitHub Actions | Runs CI on every pull request and push (tests on Linux, macOS and Windows, lint, govulncheck, CodeQL, zizmor, fuzzing, Trivy, hadolint, dockle; a link check for documentation changes); builds releases and images |
+| GitHub Actions | Runs CI on every pull request and push (tests on Linux, macOS and Windows, lint, govulncheck, OSV-Scanner, dependency review, CodeQL, zizmor, fuzzing, Trivy, hadolint, dockle; a link check for documentation changes); builds releases and images |
 | `build-release.yml` / `build-image.yml` | Reusable workflows that build the archives with GoReleaser and the image with Docker, and attest them; they sign the provenance (SLSA Build Level 3) |
 | Sigstore (Fulcio, Rekor) | Issues short-lived signing certificates and records signatures in a transparency log |
 | GitHub Releases, `ghcr.io/glsec/glsec` | Distribute archives, checksums, SBOMs, attestation bundles and the image |
-| GitLab (`glsec-io`) | Hosts the CI/CD Catalog component and the example repositories |
+| GitLab (`glsec-io`) | Hosts the CI/CD Catalog component and the example repositories; `main` is protected there as on GitHub: merge requests only, after a passing pipeline |
 | Dependabot | Proposes dependency updates as pull requests: Go modules, actions and CI tools after a 7-day cooldown, base images daily |
 
 A release starts when the maintainer pushes a `vX.Y.Z` tag. `release.yml` and `docker.yml` refuse to run unless CI passed for that commit, then call the reusable build workflows. Release builds are reproducible: rebuilding a tag with the pinned GoReleaser and Go versions gives the published checksums.
@@ -50,7 +50,7 @@ glsec reads pipeline files that attackers may write (a fork's merge request is a
 | Output that breaks out of its format (SARIF, JSON, JUnit, Code Quality) and injects into the tool that reads it | Misleading or injected content in security dashboards | Every format is produced by Go's `encoding/json` / `encoding/xml` encoders, which escape all values |
 | A false negative hides a real problem | Users trust a pipeline that is unsafe | Unit tests for each rule including where it must stay silent, a pre-release scan of over 1,000 real pipelines, false-negative issue form |
 | A suppression or baseline hides more than intended | Real findings silently dropped | Suppressions match by rule and line; expired suppressions report the finding again; `--no-ignores` audit mode |
-| A compromised dependency or build step | A backdoored binary or image reaches users | One direct Go dependency; actions pinned by SHA; Dependabot with cooldown; govulncheck; harden-runner egress allow lists on the release jobs; signed SLSA Build Level 3 provenance; reproducible builds; Trivy, hadolint and dockle on the image |
+| A compromised dependency or build step | A backdoored binary or image reaches users | One direct Go dependency; actions pinned by SHA; Dependabot with cooldown; govulncheck; OSV-Scanner, including known malicious packages; dependency review with a license allow list; harden-runner egress allow lists on the release jobs; signed SLSA Build Level 3 provenance; reproducible builds; Trivy, hadolint and dockle on the image |
 | A compromised maintainer account | Malicious commits or releases | Two-factor authentication required on the GitHub organization; protected `main` (pull requests and required checks, also for admins); releases only from tags whose CI passed |
 
 Out of scope: an attacker who controls the machine glsec runs on, and misconfigurations that glsec correctly reports in a user's pipeline.

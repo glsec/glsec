@@ -24,7 +24,16 @@ Decisions are made by the maintainer, in the open: in issues and pull requests o
 
 Nobody else has write access to any of these. The GitHub organization requires two-factor authentication for all members.
 
-Releases are signed without long-lived keys: GitHub Actions obtains a short-lived certificate from Sigstore for each run, so there is no signing key to hold or hand over. The workflows use no stored secrets: only the `GITHUB_TOKEN` that GitHub issues per run, and OIDC tokens for Sigstore and Codecov.
+## Secrets and credentials
+
+glsec is built so that there are as few secrets as possible:
+
+- **No stored secrets in CI.** The GitHub workflows use only the `GITHUB_TOKEN` that GitHub issues per run, with the least permissions each job needs, and OIDC tokens for Sigstore and Codecov. Both expire when the run ends. The GitLab projects store no CI/CD variables.
+- **No signing keys.** Releases are signed keylessly: GitHub Actions obtains a short-lived certificate from Sigstore for each run, so there is no key to hold, rotate or hand over.
+- **Personal tokens.** The maintainer's GitLab access tokens, used to release the CI/CD Catalog component, are created for a task with the narrowest scope and an expiry of at most 30 days, kept only on the maintainer's machine with owner-only file permissions, and revoked when the task is done. They are never put in a repository, an issue or a CI variable.
+- **Accounts.** GitHub, GitLab, Codecov and bestpractices.dev are accessed with two-factor authentication; access is listed above.
+
+If a secret is ever needed in CI, it is stored as a GitHub Actions environment secret, readable only by the job that needs it, and rotated at least once a year and whenever someone with access leaves. Any secret that may have leaked is revoked at once, and the leak is handled as a vulnerability under [SECURITY.md](SECURITY.md).
 
 ## Granting access
 

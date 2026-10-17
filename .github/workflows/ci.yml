@@ -147,6 +147,33 @@ jobs:
           cache: true
       - uses: golang/govulncheck-action@032d45514ae346b1db93c04b0c90b841c370344f # v1.1.0
 
+  # The OSV database also carries the OpenSSF malicious-packages feed, which
+  # govulncheck doesn't check (#613).
+  osv-scanner:
+    name: Security (OSV-Scanner)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: google/osv-scanner-action/osv-scanner-action@a345acffa64b0eaede81a3d9aae6141214d9c8fc # v2.6.0
+        with:
+          scan-args: |-
+            --recursive
+            --lockfile=requirements.txt:./.github/requirements/check-jsonschema.txt
+            --lockfile=requirements.txt:./.github/requirements/zizmor.txt
+            ./
+
+  dependency-review:
+    name: Security (dependency review)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: low
+          allow-licenses: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, MPL-2.0, PSF-2.0, Unlicense, 0BSD
+
   zizmor:
     name: Security (zizmor)
     runs-on: ubuntu-latest

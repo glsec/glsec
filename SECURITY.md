@@ -16,6 +16,10 @@ Please keep the issue private until the advisory is published. If we don't respo
 
 Every confirmed vulnerability in glsec is published as a [security advisory](https://github.com/glsec/glsec/security/advisories) with the affected and fixed versions, and mentioned in the release notes of the fixing release. Vulnerabilities in dependencies that affect glsec are fixed in a release and named in its release notes.
 
+## Vulnerabilities that don't affect glsec
+
+Scanners sometimes report a vulnerability in a dependency, the Go standard library or the base image that glsec doesn't reach. When such a report reaches users, for example through a CVE in a scanner's output for the container image, we publish an [OpenVEX](https://openvex.dev) statement saying that glsec is `not_affected`, with the justification (such as `vulnerable_code_not_in_execute_path`). The statements go into `vex/glsec.openvex.json` in this repository and are attached to the next release, so scanners such as Trivy can read them (`trivy image --vex …`). A vulnerability that does affect glsec is fixed in a release instead, as described above.
+
 ## Supported versions
 
 Only the latest release receives security fixes. glsec is a single static binary with no runtime dependencies, so upgrading means replacing the binary or bumping the image tag.

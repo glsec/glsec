@@ -30,7 +30,13 @@ glsec keeps its dependencies few and checked:
 - **Go modules.** `go.mod` lists the direct dependencies (currently only `gopkg.in/yaml.v3`) and `go.sum` pins their hashes; CI runs `go mod verify`. A new dependency needs a reason in the pull request: prefer the standard library, and pick maintained, widely used modules.
 - **Updates.** Dependabot proposes updates for Go modules, GitHub Actions, the CI's Python tools and the Docker base images. Version updates wait 7 days after an upstream release (`cooldown` in `.github/dependabot.yml`), the window in which a compromised release is usually caught; security updates and base images are not delayed. Updates go through the same pull request checks as any change.
 - **Pinning.** GitHub Actions are pinned to commit SHAs, the CI's Python tools (zizmor, check-jsonschema) to versions with hashes (`.github/requirements/`), Docker base images to digests, and GoReleaser to an exact version.
-- **Vulnerabilities.** govulncheck runs on every pull request and push and is a required check; Trivy scans the container image. A known vulnerability that affects glsec blocks the merge until it is fixed.
+- **Checks.** govulncheck and OSV-Scanner run on every pull request and push, and dependency review on every pull request; all three are required checks. OSV-Scanner covers `go.mod` and the CI's Python requirements against known vulnerabilities and known malicious packages. Trivy scans the container image.
+
+What blocks a merge or a release:
+
+- **Vulnerabilities.** Any known vulnerability, of any severity, in a dependency added or changed by a pull request; any vulnerability that govulncheck finds reachable from glsec's code; any OSV finding; any HIGH or CRITICAL finding in the image for which a fix exists. A finding that doesn't affect glsec (for example, unreachable code) may be accepted only with a written reason in the pull request and a VEX statement as described in [SECURITY.md](SECURITY.md#vulnerabilities-that-dont-affect-glsec).
+- **Malicious packages.** Always. The dependency is removed, and if a release contained it, the release is withdrawn and a security advisory is published.
+- **Licenses.** Dependencies must be under a permissive or weak-copyleft license compatible with glsec's MIT license: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, MPL-2.0, PSF-2.0, Unlicense or 0BSD. Dependency review fails on any other license; adding one needs a maintainer decision, recorded in the pull request.
 
 ## Running tests
 
