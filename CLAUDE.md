@@ -3,6 +3,7 @@
 ## Commit messages
 - Keep commit messages brief (one short line)
 - No `Co-Authored-By:` trailer — omit it entirely
+- Sign off every commit (`git commit -s`): the DCO check blocks commits without `Signed-off-by:` (#610)
 - Detailed context belongs in the pull request description, not the commit
 
 ## Pull requests

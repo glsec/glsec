@@ -1,0 +1,6 @@
+# DCO app configuration (#610). Every commit in a pull request needs a
+# Signed-off-by line matching its author; bot and merge commits are skipped by
+# the app itself. Individual remediation lets a contributor fix earlier
+# commits with one extra signed-off commit instead of rewriting history.
+allowRemediationCommits:
+  individual: true

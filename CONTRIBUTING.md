@@ -254,9 +254,25 @@ Create `docs/rules/GLNNN.md` with the full rule documentation (see existing file
 
 Add a row to the rules summary table in `README.md` linking to the new docs file.
 
+## Developer Certificate of Origin
+
+Every commit must be signed off. A sign-off is a line at the end of the commit message:
+
+```
+Signed-off-by: Your Name <you@example.com>
+```
+
+With it you certify the [Developer Certificate of Origin](https://developercertificate.org/): that you wrote the change or otherwise have the right to submit it under the project's license. `git commit -s` adds the line from your `user.name` and `user.email`; the name and email must match the commit's author.
+
+A check on every pull request blocks commits without a sign-off. To fix them:
+
+- the last commit: `git commit --amend -s --no-edit`, then force-push;
+- several commits: `git rebase --signoff main`, then force-push;
+- or, without rewriting history, add one empty commit that signs off the earlier ones, as the check's details page describes.
+
 ## Commit and PR conventions
 
-- **Commit messages:** one short line (`feat: add GL006 rule`, `fix: GL002 false positive on quoted vars`). No body, no `Co-Authored-By` trailers.
+- **Commit messages:** one short line (`feat: add GL006 rule`, `fix: GL002 false positive on quoted vars`), signed off with `-s` (see above). No other body, no `Co-Authored-By` trailers.
 - **Branch names:** `<type>/issue-<N>-<slug>` — e.g. `feat/issue-13-gl006-rule`.
 - **PR descriptions:** write the context here — what the rule detects, why it matters, how to test it, any edge cases considered.
 - One branch per issue; one PR per branch.
