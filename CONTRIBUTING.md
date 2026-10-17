@@ -1,5 +1,15 @@
 # Contributing to glsec
 
+## Reporting a bug
+
+Open an [issue](https://github.com/glsec/glsec/issues/new/choose) and pick the form that fits:
+
+- **Bug**: glsec crashes, errors, or does something its documentation says it doesn't.
+- **False positive**: a finding for something that is actually fine.
+- **False negative or missing rule**: an insecure pattern glsec doesn't report.
+
+Include your glsec version (`glsec --version`), the command or integration you use, and the smallest pipeline snippet that shows the problem, with anything private removed. A vulnerability in glsec itself goes through [private vulnerability reporting](https://github.com/glsec/glsec/security/advisories/new) instead; [SECURITY.md](SECURITY.md) explains what counts.
+
 ## Dev environment
 
 **Requirements:** Go 1.26+

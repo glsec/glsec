@@ -1,0 +1,31 @@
+name: False negative or missing rule
+description: An insecure pattern that glsec doesn't report
+labels: [rule]
+body:
+  - type: input
+    id: rule
+    attributes:
+      label: Rule
+      description: The rule you expected to fire, if any (e.g. GL011). Leave empty for a pattern no rule covers yet.
+  - type: input
+    id: version
+    attributes:
+      label: glsec version
+      description: Output of `glsec --version`.
+    validations:
+      required: true
+  - type: textarea
+    id: pipeline
+    attributes:
+      label: Minimal pipeline
+      description: The smallest snippet with the insecure pattern.
+      render: yaml
+    validations:
+      required: true
+  - type: textarea
+    id: risk
+    attributes:
+      label: Why it is a risk
+      description: What an attacker could do with it, and how it should be fixed.
+    validations:
+      required: true

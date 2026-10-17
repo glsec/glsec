@@ -1,0 +1,41 @@
+name: False positive
+description: glsec reports a finding for something that is actually fine
+labels: [bug, rule]
+body:
+  - type: input
+    id: rule
+    attributes:
+      label: Rule
+      description: Rule ID, e.g. GL001.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: glsec version
+      description: Output of `glsec --version`.
+    validations:
+      required: true
+  - type: textarea
+    id: pipeline
+    attributes:
+      label: Minimal pipeline
+      description: The smallest snippet that triggers the finding.
+      render: yaml
+    validations:
+      required: true
+  - type: textarea
+    id: finding
+    attributes:
+      label: Finding
+      description: The finding as glsec prints it.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why this is fine
+      description: What makes this safe in your case. If it is only safe in your environment, an inline `# glsec:ignore <RULE> -- reason` may be the better fix.
+    validations:
+      required: true

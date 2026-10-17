@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/glsec/glsec/security/advisories/new
+    about: Report vulnerabilities in glsec itself privately, not as an issue. See SECURITY.md for what counts.

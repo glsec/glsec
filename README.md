@@ -599,7 +599,20 @@ The badge says that a project runs glsec, not that its last pipeline passed; Git
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md). To report a bug, a false positive or a missing rule, see [Reporting a bug](CONTRIBUTING.md#reporting-a-bug).
+
+## Repositories
+
+glsec is developed in this repository. The GitLab integrations live on gitlab.com:
+
+| Repository | Contents |
+|---|---|
+| [github.com/glsec/glsec](https://github.com/glsec/glsec) | The scanner, its rules and documentation, releases, the container image, the pre-commit hook, the Claude Code and MegaLinter plugins |
+| [gitlab.com/glsec-io/glsec](https://gitlab.com/glsec-io/glsec) | The GitLab CI/CD Catalog component (`glsec` and `glsec-code-quality` templates) |
+| [gitlab.com/glsec-io/examples/component](https://gitlab.com/glsec-io/examples/component) | Example: the Catalog component |
+| [gitlab.com/glsec-io/examples/component-code-quality](https://gitlab.com/glsec-io/examples/component-code-quality) | Example: the component with Code Quality annotations in merge requests |
+| [gitlab.com/glsec-io/examples/docker](https://gitlab.com/glsec-io/examples/docker) | Example: the container image |
+| [gitlab.com/glsec-io/examples/binary](https://gitlab.com/glsec-io/examples/binary) | Example: the release binary |
 
 ## Security
 
