@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/parser"
@@ -36,6 +37,101 @@ func IsDeployLikeJob(jobName string, job *yaml.Node) bool {
 		}
 	}
 	return false
+}
+
+// windowsTagRe matches runner tags that select a Windows runner, such as
+// windows, saas-windows-medium-amd64 or shared-windows.
+var windowsTagRe = regexp.MustCompile(`(?i)\bwindows\b`)
+
+// RunsOnWindows reports whether the job's runner tags select a Windows runner,
+// where scripts run in PowerShell rather than a POSIX shell.
+func RunsOnWindows(doc, job *yaml.Node) bool {
+	tags := InheritedKey(doc, job, "tags")
+	if tags == nil || tags.Kind != yaml.SequenceNode {
+		return false
+	}
+	for _, t := range tags.Content {
+		if t.Kind == yaml.ScalarNode && windowsTagRe.MatchString(t.Value) {
+			return true
+		}
+	}
+	return false
+}
+
+// InheritedKey returns the value of key that applies to job: its own, else
+// from the jobs it extends in the same file (later entries of an extends: list
+// override earlier ones), else from default:, else from the top-level
+// before_script:/after_script:. Jobs in included files are not followed.
+func InheritedKey(doc, job *yaml.Node, key string) *yaml.Node {
+	mapping := doc
+	if doc.Kind == yaml.DocumentNode && len(doc.Content) > 0 {
+		mapping = doc.Content[0]
+	}
+	if v := extendedKey(mapping, job, key, map[*yaml.Node]bool{}); v != nil {
+		return v
+	}
+	if inheritsDefault(job, key) {
+		if def := parser.FindKey(mapping, "default"); def != nil {
+			if v := parser.FindKey(def, key); v != nil {
+				return v
+			}
+		}
+		if key == "before_script" || key == "after_script" {
+			return parser.FindKey(mapping, key)
+		}
+	}
+	return nil
+}
+
+func extendedKey(mapping, job *yaml.Node, key string, seen map[*yaml.Node]bool) *yaml.Node {
+	if job == nil || job.Kind != yaml.MappingNode || seen[job] {
+		return nil
+	}
+	seen[job] = true
+	if v := parser.FindKey(job, key); v != nil {
+		return v
+	}
+	ext := parser.FindKey(job, "extends")
+	if ext == nil {
+		return nil
+	}
+	parents := []*yaml.Node{ext}
+	if ext.Kind == yaml.SequenceNode {
+		parents = ext.Content
+	}
+	for i := len(parents) - 1; i >= 0; i-- {
+		if parents[i].Kind != yaml.ScalarNode {
+			continue
+		}
+		if v := extendedKey(mapping, parser.FindKey(mapping, parents[i].Value), key, seen); v != nil {
+			return v
+		}
+	}
+	return nil
+}
+
+// inheritsDefault reports whether the job takes key from default:.
+// inherit: default: false opts out of all keys, a list opts in to the keys it names.
+func inheritsDefault(job *yaml.Node, key string) bool {
+	inherit := parser.FindKey(job, "inherit")
+	if inherit == nil {
+		return true
+	}
+	d := parser.FindKey(inherit, "default")
+	switch {
+	case d == nil:
+		return true
+	case d.Kind == yaml.ScalarNode:
+		return d.Value != "false"
+	case d.Kind == yaml.SequenceNode:
+		for _, k := range d.Content {
+			if k.Value == key {
+				return true
+			}
+		}
+		return false
+	}
+	return true
 }
 
 // hookScriptNode returns the hooks:pre_get_sources_script sequence node for a

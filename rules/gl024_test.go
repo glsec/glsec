@@ -154,3 +154,222 @@ build:
 		t.Error("expected non-zero line number")
 	}
 }
+
+func TestGL024_WindowsRunner_NoFinding(t *testing.T) {
+	cases := map[string]string{
+		"job tags": `
+win:
+  tags: [windows]
+  script:
+    - Get-ChildItem | Select-Object Name
+`,
+		"hosted runner tag": `
+win:
+  tags: [saas-windows-medium-amd64]
+  script:
+    - Get-ChildItem | Select-Object Name
+`,
+		"extends string": `
+.win:
+  tags: [Shared-Windows]
+win:
+  extends: .win
+  script:
+    - Get-ChildItem | Select-Object Name
+`,
+		"extends list, last wins": `
+.linux:
+  tags: [docker]
+.win:
+  tags: [windows-1809]
+win:
+  extends: [.linux, .win]
+  script:
+    - Get-ChildItem | Select-Object Name
+`,
+		"nested extends": `
+.base:
+  tags: [windows]
+.mid:
+  extends: .base
+win:
+  extends: .mid
+  script:
+    - Get-ChildItem | Select-Object Name
+`,
+		"default tags": `
+default:
+  tags: [windows]
+win:
+  script:
+    - Get-ChildItem | Select-Object Name
+`,
+	}
+	for name, src := range cases {
+		t.Run(name, func(t *testing.T) {
+			if f := findings024(t, src); len(f) != 0 {
+				t.Errorf("expected no finding on a Windows runner, got %d", len(f))
+			}
+		})
+	}
+}
+
+func TestGL024_NonWindowsRunner_StillReported(t *testing.T) {
+	cases := map[string]string{
+		"linux tags": `
+build:
+  tags: [docker, linux]
+  script:
+    - generate-config | tee config.yml
+`,
+		"job tags override windows default": `
+default:
+  tags: [windows]
+build:
+  tags: [docker]
+  script:
+    - generate-config | tee config.yml
+`,
+		"extends list, linux last": `
+.win:
+  tags: [windows]
+.linux:
+  tags: [docker]
+build:
+  extends: [.win, .linux]
+  script:
+    - generate-config | tee config.yml
+`,
+		"word inside another word": `
+build:
+  tags: [nowindowsrunner]
+  script:
+    - generate-config | tee config.yml
+`,
+		"cyclic extends": `
+.a:
+  extends: .b
+.b:
+  extends: .a
+build:
+  extends: .a
+  script:
+    - generate-config | tee config.yml
+`,
+	}
+	for name, src := range cases {
+		t.Run(name, func(t *testing.T) {
+			if f := findings024(t, src); len(f) != 1 {
+				t.Errorf("expected 1 finding, got %d", len(f))
+			}
+		})
+	}
+}
+
+func TestGL024_InheritedPipefail_NoFinding(t *testing.T) {
+	cases := map[string]string{
+		"extends before_script": `
+.base:
+  before_script:
+    - set -o pipefail
+build:
+  extends: .base
+  script:
+    - generate-config | tee config.yml
+`,
+		"nested extends": `
+.base:
+  before_script:
+    - set -euo pipefail
+.mid:
+  extends: .base
+build:
+  extends: [.other, .mid]
+  script:
+    - generate-config | tee config.yml
+`,
+		"default before_script": `
+default:
+  before_script:
+    - set -o pipefail
+build:
+  script:
+    - generate-config | tee config.yml
+`,
+		"inherit default list with before_script": `
+default:
+  before_script:
+    - set -o pipefail
+build:
+  inherit:
+    default: [before_script]
+  script:
+    - generate-config | tee config.yml
+`,
+		"top-level before_script": `
+before_script:
+  - set -o pipefail
+build:
+  script:
+    - generate-config | tee config.yml
+`,
+	}
+	for name, src := range cases {
+		t.Run(name, func(t *testing.T) {
+			if f := findings024(t, src); len(f) != 0 {
+				t.Errorf("expected no finding, got %d", len(f))
+			}
+		})
+	}
+}
+
+func TestGL024_InheritedPipefail_NotApplied(t *testing.T) {
+	cases := map[string]string{
+		"job overrides before_script": `
+default:
+  before_script:
+    - set -o pipefail
+build:
+  before_script:
+    - echo start
+  script:
+    - generate-config | tee config.yml
+`,
+		"inherit default false": `
+default:
+  before_script:
+    - set -o pipefail
+build:
+  inherit:
+    default: false
+  script:
+    - generate-config | tee config.yml
+`,
+		"inherit default list without before_script": `
+default:
+  before_script:
+    - set -o pipefail
+build:
+  inherit:
+    default: [image]
+  script:
+    - generate-config | tee config.yml
+`,
+		"after_script runs in its own shell": `
+.base:
+  after_script:
+    - set -o pipefail
+build:
+  extends: .base
+  script:
+    - generate-config | tee config.yml
+`,
+	}
+	for name, src := range cases {
+		t.Run(name, func(t *testing.T) {
+			if f := findings024(t, src); len(f) != 1 {
+				t.Errorf("expected 1 finding, got %d", len(f))
+			}
+		})
+	}
+}

@@ -31,11 +31,29 @@ func (r *gl024) Check(doc *yaml.Node, file string) []finding.Finding {
 		if len(lines) == 0 {
 			return
 		}
+		// Windows runners run PowerShell, which has no pipefail (#615).
+		if RunsOnWindows(doc, job) {
+			return
+		}
 
-		// Check if pipefail is set anywhere in the job's script.
+		// Check if pipefail is set anywhere in the job's script, including the
+		// before_script/script it inherits through extends: or default: (#615).
+		// An inherited after_script runs in a separate shell, so it doesn't count.
 		for _, l := range lines {
 			if pipefailRe.MatchString(l.Value) {
 				return
+			}
+		}
+		for _, key := range []string{"before_script", "script"} {
+			if parser.FindKey(job, key) != nil {
+				continue
+			}
+			if seq := InheritedKey(doc, job, key); seq != nil && seq.Kind == yaml.SequenceNode {
+				for _, l := range seq.Content {
+					if l.Kind == yaml.ScalarNode && pipefailRe.MatchString(l.Value) {
+						return
+					}
+				}
 			}
 		}
 
