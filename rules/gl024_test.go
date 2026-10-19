@@ -306,6 +306,45 @@ build:
   script:
     - generate-config | tee config.yml
 `,
+		"inherit without default": `
+default:
+  before_script:
+    - set -o pipefail
+build:
+  inherit:
+    variables: false
+  script:
+    - generate-config | tee config.yml
+`,
+		"inherit default true": `
+default:
+  before_script:
+    - set -o pipefail
+build:
+  inherit:
+    default: true
+  script:
+    - generate-config | tee config.yml
+`,
+		"inherit default of unknown shape": `
+default:
+  before_script:
+    - set -o pipefail
+build:
+  inherit:
+    default: {before_script: true}
+  script:
+    - generate-config | tee config.yml
+`,
+		"non-string extends entry skipped": `
+.base:
+  before_script:
+    - set -o pipefail
+build:
+  extends: [.base, {bad: entry}]
+  script:
+    - generate-config | tee config.yml
+`,
 		"top-level before_script": `
 before_script:
   - set -o pipefail
