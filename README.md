@@ -602,7 +602,7 @@ The badge says that a project runs glsec, not that its last pipeline passed; Git
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). To report a bug, a false positive or a missing rule, see [Reporting a bug](CONTRIBUTING.md#reporting-a-bug).
 
-How glsec works inside, and what it defends against, is described in [ARCHITECTURE.md](ARCHITECTURE.md); who maintains it and who has access to what, in [GOVERNANCE.md](GOVERNANCE.md).
+How glsec works inside, what it defends against and why its design holds up, is described in [ARCHITECTURE.md](ARCHITECTURE.md); who maintains it and who has access to what, in [GOVERNANCE.md](GOVERNANCE.md); where it is heading, in [ROADMAP.md](ROADMAP.md). Everyone taking part is expected to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Repositories
 

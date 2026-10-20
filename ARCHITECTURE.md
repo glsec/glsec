@@ -54,3 +54,36 @@ glsec reads pipeline files that attackers may write (a fork's merge request is a
 | A compromised maintainer account | Malicious commits or releases | Two-factor authentication required on the GitHub organization; protected `main` (pull requests and required checks, also for admins); releases only from tags whose CI passed |
 
 Out of scope: an attacker who controls the machine glsec runs on, and misconfigurations that glsec correctly reports in a user's pipeline.
+
+## Assurance case
+
+The claim: glsec can scan pipeline files written by an attacker, inside the attacker's merge request pipeline, without being made to do anything but report findings. The argument has four parts.
+
+**1. The threats are known.** The threat model above lists what an attacker can try against glsec and against its supply chain, and [SECURITY.md](SECURITY.md#trust-boundary) draws the trust boundary: pipeline files are untrusted input, the user who runs glsec and the machine it runs on are trusted.
+
+**2. The design follows secure-design principles** ([Saltzer and Schroeder](https://doi.org/10.1109/PROC.1975.9939)):
+
+| Principle | How glsec applies it |
+|---|---|
+| Economy of mechanism | One static binary, one direct Go dependency (`gopkg.in/yaml.v3`), no plugins, no embedded interpreter. The whole scan is the pipeline in [A scan](#a-scan) |
+| Fail-safe defaults | Input that isn't a valid GitLab CI file stops the scan with exit 2 instead of passing silently. Child pipeline paths that leave the repository are skipped. Remote includes are never fetched |
+| Complete mediation | Every file, including child pipelines, goes through the same parser, alias budget and validation before any rule sees it |
+| Least privilege | No network access, no shell, no writes except the result cache (directory `0700`, files `0600`) and files the user asks for. The container image runs as a non-root user. Release workflows get only the token permissions each job needs |
+| Least common mechanism | ShellCheck, when enabled, runs as a separate process with its arguments as a list; the script goes to a temporary file, never onto a command line |
+| Open design | Source, rules, threat model and build are public; releases are reproducible, so anyone can check that a binary comes from the tagged source |
+| Psychological acceptability | Safe behaviour needs no configuration. Suppressions are visible in the file, can expire, and can be required to carry a reason |
+
+**3. Common weaknesses are countered** where they apply to a tool like glsec:
+
+| Weakness | Countermeasure |
+|---|---|
+| [CWE-22](https://cwe.mitre.org/data/definitions/22.html) Path traversal | Child pipeline paths are resolved from the repository root, including symbolic links, and paths outside it are skipped. This was a vulnerability before 1.21.1 ([GHSA-7vgh-xjjq-3wgv](https://github.com/glsec/glsec/security/advisories/GHSA-7vgh-xjjq-3wgv)); a test now covers `..`, absolute and symlinked paths |
+| [CWE-78](https://cwe.mitre.org/data/definitions/78.html) OS command injection | glsec never starts a shell and never evaluates pipeline content. The only external process, ShellCheck, gets fixed arguments |
+| [CWE-400](https://cwe.mitre.org/data/definitions/400.html) / [CWE-776](https://cwe.mitre.org/data/definitions/776.html) Resource exhaustion, recursive entity expansion | YAML alias expansion stops at a fixed node budget; `extends:` and child pipeline chains are followed with cycle detection |
+| [CWE-1333](https://cwe.mitre.org/data/definitions/1333.html) Inefficient regular expressions | All rules use Go's RE2-based `regexp`, which runs in linear time |
+| [CWE-116](https://cwe.mitre.org/data/definitions/116.html) Improper output encoding | JSON, SARIF, Code Quality and JUnit output is produced by Go's `encoding/json` and `encoding/xml`, which escape every value |
+| [CWE-377](https://cwe.mitre.org/data/definitions/377.html) Insecure temporary files | Temporary files are created with `os.CreateTemp` (unique name, owner-only permissions) and removed after use |
+| [CWE-494](https://cwe.mitre.org/data/definitions/494.html) / [CWE-829](https://cwe.mitre.org/data/definitions/829.html) Untrusted downloads and inclusions | glsec downloads and includes nothing at runtime. Its own releases are signed with SLSA Build Level 3 provenance and can be verified and rebuilt ([Verifying a release](README.md#verifying-a-release)) |
+| [CWE-1395](https://cwe.mitre.org/data/definitions/1395.html) Vulnerable third-party components | govulncheck, OSV-Scanner and dependency review run on every change and block merges; Dependabot keeps dependencies current |
+
+**4. The evidence is checked continuously.** Unit tests cover every rule, including where it must stay silent. Native Go fuzzing runs the parser, the rules and whole scans on every change and for 10 minutes every week. golangci-lint with gosec, zizmor for the workflows, and Trivy, hadolint and dockle for the image are required checks; CodeQL runs on every change as well. Before each release, new and changed rules are run against over 1,000 real pipelines to find false positives.
