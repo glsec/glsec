@@ -379,8 +379,12 @@ func scanRoot(file string, opt scanOptions) (findings []finding.Finding, jobCoun
 		jobCount += parser.CountJobs(d.Root)
 	}
 
+	// A cache inside the repository being scanned is under that repository's
+	// control: it could ship an entry that makes glsec report nothing.
+	useCache := opt.useCache && cache.Dir() != "" && !withinRoot(filepath.Dir(file), cache.Dir())
+
 	var cacheKey string
-	if opt.useCache {
+	if useCache {
 		filePaths := make([]string, len(allDocs))
 		for i, d := range allDocs {
 			filePaths[i] = d.File
@@ -400,7 +404,7 @@ func scanRoot(file string, opt scanOptions) (findings []finding.Finding, jobCoun
 		unjustified += u
 	}
 
-	if opt.useCache && cacheKey != "" {
+	if useCache && cacheKey != "" {
 		cache.Store(cacheKey, &cache.Entry{Findings: findings, JobCount: jobCount})
 	}
 

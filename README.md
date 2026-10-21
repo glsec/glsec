@@ -266,6 +266,12 @@ glsec --no-repo-config --no-ignores --config /policies/glsec.yml .gitlab-ci.yml 
 
 `--no-repo-config` ignores a `.glsec.yml` in the working directory (glsec says so on stderr); a file passed with `--config` is still read. `--no-ignores` drops all suppressions. Neither is needed when a project scans its own merge requests in its own pipeline, since the author can change the pipeline itself there.
 
+### Result cache
+
+glsec caches results in `$XDG_CACHE_HOME/glsec` (`~/.cache/glsec` by default), keyed on the glsec version, the date, the scanned files, the config and the suppressions, so an unchanged pipeline is not scanned twice on the same day. `--no-cache` skips it for one run; `--clear-cache` empties it.
+
+A cached result decides what glsec reports, so glsec only uses a cache directory that belongs to the current user and that nobody else can write to, reads only regular files from it, and never uses a cache that lies inside the directory of the pipeline being scanned (as with `XDG_CACHE_HOME=$CI_PROJECT_DIR/.cache`), where the repository could ship entries of its own.
+
 ## Rules
 
 85 rules across 8 [OWASP CI/CD security categories](https://owasp.org/www-project-top-10-ci-cd-security-risks/):

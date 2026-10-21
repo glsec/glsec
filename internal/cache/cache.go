@@ -116,13 +116,26 @@ func hashFile(h io.Writer, path string) error {
 	return nil
 }
 
+// usableDir reports whether dir is a directory that only the current user can
+// write to. A cache entry decides what glsec reports, so one that someone else
+// could plant or replace must not be read.
+func usableDir(dir string) bool {
+	fi, err := os.Stat(dir)
+	return err == nil && fi.IsDir() && ownedByCurrentUser(fi)
+}
+
 // Load reads a cached entry by key. Returns nil, false on miss or error.
+// Only a regular file counts as an entry, not a symbolic link to one.
 func Load(key string) (*Entry, bool) {
 	dir := Dir()
-	if dir == "" {
+	if dir == "" || !usableDir(dir) {
 		return nil, false
 	}
-	data, err := os.ReadFile(filepath.Join(dir, key+".json")) //nolint:gosec
+	path := filepath.Join(dir, key+".json")
+	if fi, err := os.Lstat(path); err != nil || !fi.Mode().IsRegular() {
+		return nil, false
+	}
+	data, err := os.ReadFile(path) //nolint:gosec
 	if err != nil {
 		return nil, false
 	}
@@ -134,12 +147,15 @@ func Load(key string) (*Entry, bool) {
 }
 
 // Store writes an entry to the cache. Silently ignores write errors.
+// The entry is written to a temporary file and renamed into place, so a
+// symbolic link planted under the entry's name is replaced, not written
+// through.
 func Store(key string, entry *Entry) {
 	dir := Dir()
 	if dir == "" {
 		return
 	}
-	if err := os.MkdirAll(dir, 0700); err != nil {
+	if err := os.MkdirAll(dir, 0700); err != nil || !usableDir(dir) {
 		return
 	}
 	entry.CachedAt = time.Now()
@@ -147,7 +163,15 @@ func Store(key string, entry *Entry) {
 	if err != nil {
 		return
 	}
-	_ = os.WriteFile(filepath.Join(dir, key+".json"), data, 0600) //nolint:gosec
+	tmp, err := os.CreateTemp(dir, key+".*.tmp")
+	if err != nil {
+		return
+	}
+	_, werr := tmp.Write(data)
+	cerr := tmp.Close()
+	if werr != nil || cerr != nil || os.Rename(tmp.Name(), filepath.Join(dir, key+".json")) != nil {
+		_ = os.Remove(tmp.Name())
+	}
 }
 
 // Clear removes all cached entries.
