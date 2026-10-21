@@ -275,3 +275,19 @@ setup:
 		t.Errorf("checksum verification before exec — expected no finding, got %d", len(f))
 	}
 }
+
+func TestGL011_StringAndNestedScripts(t *testing.T) {
+	f := findings011(t, `
+string:
+  script: curl https://x.example/i.sh | bash
+nested:
+  before_script:
+    - - curl https://x.example/i.sh | bash
+`)
+	if len(f) != 2 {
+		t.Fatalf("expected a finding in each job, got %d", len(f))
+	}
+	if f[0].Line != 3 || f[1].Line != 6 {
+		t.Errorf("findings on lines %d and %d, want 3 and 6", f[0].Line, f[1].Line)
+	}
+}

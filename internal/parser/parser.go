@@ -67,6 +67,7 @@ func Parse(data []byte, file string) (*Document, error) {
 	ExpandAliases(doc.Root)
 	ExpandAliases(doc.Spec)
 	ResolveReferences(doc.Root)
+	NormalizeScripts(doc.Root)
 	return doc, nil
 }
 
