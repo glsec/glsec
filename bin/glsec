@@ -66,9 +66,11 @@ version_at_least() {
 found=$(
 	IFS=:
 	for d in $PATH; do
+		# The leading ( keeps the bash 3.2 that is macOS's /bin/sh from reading
+		# the pattern's ) as the end of the $( ) around this loop.
 		case "$d" in
-			/*) ;;
-			*) continue ;;
+			(/*) ;;
+			(*) continue ;;
 		esac
 		cand="$d/glsec"
 		[ -x "$cand" ] || continue
