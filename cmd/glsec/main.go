@@ -154,6 +154,23 @@ func run(args []string, stdout, stderr io.Writer) int {
 		}
 		configPath = ""
 	}
+	// .glsec.yml and .glsec-ignore in the working directory come from the
+	// repository being scanned. A symbolic link out of it would make glsec read
+	// another file, or with --generate-ignore overwrite it.
+	repoFiles := []struct {
+		path string
+		used bool
+	}{
+		{config.DefaultFile, configPath == config.DefaultFile && !flagSet(flags, "config")},
+		{suppress.IgnoreFile, !*noIgnoresFlag || *generateIgnoreFlag},
+	}
+	for _, f := range repoFiles {
+		if f.used && !withinRoot(".", f.path) {
+			_, _ = fmt.Fprintf(stderr, "error: %s: symbolic link to a file outside the working directory\n", f.path)
+			return 2
+		}
+	}
+
 	cfg := config.Default()
 	if configPath != "" {
 		var err error
