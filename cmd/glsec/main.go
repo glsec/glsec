@@ -236,10 +236,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 	totalJobCount := 0
 	totalUnjustified := 0
 	hadError := false
+	scanned := 0
 	for _, file := range targets {
 		if matchesExclude(file, cfg.ExcludePaths) {
 			continue
 		}
+		scanned++
 		findings, jobCount, unjustified, ok := scanRoot(file, scanOpts)
 		if !ok {
 			hadError = true
@@ -248,6 +250,17 @@ func run(args []string, stdout, stderr io.Writer) int {
 		allFindings = append(allFindings, findings...)
 		totalJobCount += jobCount
 		totalUnjustified += unjustified
+	}
+
+	// Excluding every file looks exactly like a clean scan, and the exclusions
+	// usually come from the repository being scanned.
+	if len(targets) > 0 && scanned == 0 {
+		severity := "warning"
+		if cfg.Strict {
+			severity = "error"
+			hadError = true
+		}
+		_, _ = fmt.Fprintf(stderr, "%s: every file to scan matches exclude_paths or --exclude; nothing was scanned\n", severity)
 	}
 
 	if *generateIgnoreFlag {

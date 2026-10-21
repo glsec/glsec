@@ -172,7 +172,7 @@ glsec --new-only --baseline main.json .gitlab-ci.yml  # diff against a saved JSO
 |------|---------|
 | 0 | No `error`-severity findings (warn-only findings exit 0 by default) |
 | 1 | One or more `error` findings; or any finding when `--strict` is set |
-| 2 | Usage error, file could not be parsed, or a suppression policy violation |
+| 2 | Usage error, file could not be parsed, a suppression policy violation, or with `--strict`, every file excluded |
 
 Use `--strict` to treat `warn` findings as hard failures (exit 1). Use `--no-exit-codes` to always exit 0 regardless of findings (advisory/informational mode). All flags can also be set in `.glsec.yml`:
 
@@ -189,6 +189,8 @@ recursive_patterns:    # extra CI-config names/paths for --recursive (default: .
   - '*.gitlab-ci.yml'   # no "/" → matched against the basename
   - ci/pipeline.yml     # contains "/" → matched against the path relative to each scanned dir
 ```
+
+If the exclusions cover every file glsec was asked to scan, it says so on stderr instead of finishing silently; with `--strict` that is an error (exit 2).
 
 ### Baseline diff (`--new-only`)
 
