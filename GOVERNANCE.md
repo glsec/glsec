@@ -22,7 +22,7 @@ Decisions are made by the maintainer, in the open: in issues and pull requests o
 |---|---|
 | Nicolai Ehrhardt ([@predictor2718](https://github.com/predictor2718)) | Owner of the GitHub organization `glsec`: repository admin, branch protection, releases, GitHub Actions settings, the container image on `ghcr.io/glsec/glsec`, security advisories. Owner of the GitLab group `glsec-io`: the CI/CD Catalog component and the example repositories. Account owner for Codecov and the OpenSSF Best Practices entry. |
 
-Nobody else has write access to any of these. The GitHub organization requires two-factor authentication for all members.
+Nobody else has write access to any of these. The GitHub organization requires two-factor authentication for all members and allows only secure methods: an authenticator app (TOTP), a security key or passkey, or GitHub Mobile. SMS is not accepted.
 
 ## Secrets and credentials
 
