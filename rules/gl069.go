@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
+	"github.com/glsec/glsec/internal/parser"
 	"gopkg.in/yaml.v3"
 )
 
@@ -45,10 +46,83 @@ var pkgAuthChecks = []pkgAuthCheck{
 		re:  regexp.MustCompile(`\bapk\b[^\n]*--allow-untrusted\b`),
 		msg: `apk "--allow-untrusted" disables package signature verification — an unsigned or tampered package would install without error; add the repository's signing key to /etc/apk/keys instead`,
 	},
+	{
+		re:  regexp.MustCompile(`\bGOSUMDB=(?:"off"|'off'|off)(?:\s|$)`),
+		msg: `GOSUMDB=off disables the Go checksum database — modules are fetched without being verified against sum.golang.org, so a tampered dependency installs silently; keep the default and scope private modules with GOPRIVATE/GONOSUMDB instead`,
+	},
+	{
+		// A specific host such as GONOSUMDB=gitlab.example.com/* is the normal
+		// private-module setup, so only a bare wildcard is a bypass.
+		re:  regexp.MustCompile(`\b(?:GONOSUMDB|GOINSECURE)=(?:"\*"|'\*'|\*)(?:\s|$)`),
+		msg: `GONOSUMDB=* or GOINSECURE=* disables module checksum or TLS verification for every host, not just the private ones it was meant for — list your own module hosts instead of a wildcard`,
+	},
+}
+
+// goModuleVerificationOff maps the Go settings that switch off module
+// verification to the value that does it. A specific host such as
+// GONOSUMDB=gitlab.example.com/* is the normal private-module setup and must
+// stay quiet, so only "off" and a bare "*" count.
+var goModuleVerificationOff = map[string]string{
+	"GOSUMDB":    "off",
+	"GONOSUMDB":  "*",
+	"GOINSECURE": "*",
+}
+
+func goModuleVerificationMessage(name string) string {
+	if name == "GOSUMDB" {
+		return `GOSUMDB=off disables the Go checksum database — modules are fetched without being verified against sum.golang.org, so a tampered dependency installs silently; keep the default and scope private modules with GOPRIVATE/GONOSUMDB instead`
+	}
+	return `GONOSUMDB=* or GOINSECURE=* disables module checksum or TLS verification for every host, not just the private ones it was meant for — list your own module hosts instead of a wildcard`
+}
+
+// checkGoModuleVariables reports Go verification switched off through a
+// variables block, which EachScriptLine does not reach.
+func checkGoModuleVariables(node *yaml.Node, file, job string) []finding.Finding {
+	if node == nil || node.Kind != yaml.MappingNode {
+		return nil
+	}
+	var findings []finding.Finding
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		off, ok := goModuleVerificationOff[node.Content[i].Value]
+		if !ok {
+			continue
+		}
+		value := node.Content[i+1]
+		if value.Kind == yaml.MappingNode {
+			value = parser.FindKey(value, "value")
+		}
+		if value == nil || value.Kind != yaml.ScalarNode || value.Value != off {
+			continue
+		}
+		findings = append(findings, finding.Finding{
+			RuleID:   "GL069",
+			Severity: finding.Warn,
+			Job:      job,
+			Message:  goModuleVerificationMessage(node.Content[i].Value),
+			File:     file,
+			Line:     value.Line,
+			Col:      value.Column,
+		})
+	}
+	return findings
 }
 
 func (r *gl069) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
+	mapping := parser.Unwrap(doc)
+
+	findings = append(findings, checkGoModuleVariables(parser.FindKey(mapping, "variables"), file, "")...)
+
+	if def := parser.FindKey(mapping, "default"); def != nil {
+		findings = append(findings, checkGoModuleVariables(parser.FindKey(def, "variables"), file, "")...)
+	}
+
+	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
+		for _, f := range checkGoModuleVariables(parser.FindKey(job, "variables"), file, name.Value) {
+			findings = append(findings, f)
+		}
+	})
+
 	EachScriptLine(doc, file, func(line *yaml.Node, file, job string) {
 		if strings.HasPrefix(strings.TrimSpace(line.Value), "#") {
 			return

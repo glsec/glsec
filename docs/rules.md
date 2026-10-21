@@ -51,7 +51,7 @@ Mutable references that allow silent substitution of images, templates, or packa
 | [GL046](rules/GL046.md) | varies  | Cache poisoning across the protected-branch boundary — `cache: key:` from a user-controlled variable, or `cache: unprotect: true` on a job that writes the cache |
 | [GL026](rules/GL026.md) | `warn`  | `git clone`/`checkout` uses a mutable ref (branch or tag) instead of a pinned commit SHA |
 | [GL064](rules/GL064.md) | `warn`  | `include: component:` path is one edit from a popular component under a different namespace (typosquat) |
-| [GL069](rules/GL069.md) | `warn`  | Package signature/auth verification bypassed (`apt --allow-unauthenticated`, `[trusted=yes]`, `apk --allow-untrusted`) |
+| [GL069](rules/GL069.md) | `warn`  | Package signature/auth verification bypassed (`apt --allow-unauthenticated`, `[trusted=yes]`, `apk --allow-untrusted`, `GOSUMDB=off`) |
 | [GL072](rules/GL072.md) | `warn`  | `needs:project` cross-project artifact download with a mutable branch or variable `ref:` — the consumed artifacts can be poisoned |
 | [GL075](rules/GL075.md) | `warn`  | `include:` source (project / component / remote) not on the opt-in `allowed_include_sources` allowlist — provenance check complementing GL003's pinning |
 | [GL079](rules/GL079.md) | `warn`  | `pip install --extra-index-url` adds a public index alongside the default — highest version wins across indexes, enabling dependency confusion |
