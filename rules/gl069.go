@@ -118,9 +118,7 @@ func (r *gl069) Check(doc *yaml.Node, file string) []finding.Finding {
 	}
 
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
-		for _, f := range checkGoModuleVariables(parser.FindKey(job, "variables"), file, name.Value) {
-			findings = append(findings, f)
-		}
+		findings = append(findings, checkGoModuleVariables(parser.FindKey(job, "variables"), file, name.Value)...)
 	})
 
 	EachScriptLine(doc, file, func(line *yaml.Node, file, job string) {
