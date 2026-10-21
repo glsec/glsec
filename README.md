@@ -379,7 +379,13 @@ This adds:
 - **`/glsec:scan`** — a command that runs glsec over the project and has Claude explain and remediate each finding.
 - **An edit hook** — after Claude writes or edits a `.gitlab-ci.yml` (or a `.gitlab/*.yml`) file, glsec scans it automatically and surfaces any findings.
 
-No Go toolchain is required: the plugin bundles a small POSIX wrapper that resolves a `glsec` binary in order of preference — an existing one on your `PATH`, a cached download, or the prebuilt release asset (downloaded and **verified against `checksums.txt`**, then cached). Supported on **Linux and macOS** (amd64/arm64); the wrapper needs `curl` or `wget`, and the edit hook needs `jq`. On other platforms it prints an install hint instead.
+No Go toolchain is required: the plugin bundles a small POSIX wrapper that resolves a `glsec` binary in order of preference:
+
+1. an existing one on your `PATH`, if it is at least the version the plugin pins. Empty and relative `PATH` entries are skipped, since the hook runs inside whatever project is open;
+2. a cached download;
+3. the prebuilt release asset, downloaded, **verified against `checksums.txt`** and, if [cosign](https://github.com/sigstore/cosign) or an authenticated [GitHub CLI](https://cli.github.com/) with `gh attestation` is installed, **against its signed build provenance** (see [Verifying a release](#verifying-a-release)), then cached. Without either tool it says on stderr that only the checksum was checked.
+
+Supported on **Linux and macOS** (amd64/arm64); the wrapper needs `curl` or `wget`, and the edit hook needs `jq`. On other platforms it prints an install hint instead.
 
 ---
 

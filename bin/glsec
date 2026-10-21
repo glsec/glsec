@@ -5,11 +5,13 @@
 #
 # Resolves a real glsec binary WITHOUT requiring a Go toolchain, in order of
 # preference:
-#   1. an existing glsec already on PATH (Homebrew / go install / manual),
-#      skipping this wrapper itself to avoid self-recursion;
+#   1. an existing glsec already on PATH (Homebrew / go install / manual) that
+#      is at least VERSION, skipping this wrapper itself and any relative PATH
+#      entry;
 #   2. a previously downloaded copy in the cache;
 #   3. the prebuilt release asset from GitHub Releases, verified against
-#      checksums.txt, extracted, cached, then exec'd.
+#      checksums.txt and, when cosign or an authenticated gh is installed,
+#      against its signed build provenance; then extracted, cached and exec'd.
 #
 # Supports linux + darwin only. VERSION is kept in lockstep with the release.
 set -eu
@@ -38,15 +40,41 @@ abspath() {
 
 self=$(abspath "$0" 2>/dev/null || printf '%s\n' "$0")
 
-# 1) An existing glsec elsewhere on PATH (not this wrapper). The lookup runs in
-# a subshell (so the local IFS change is contained) and prints the first match.
+# version_at_least reports whether version $1 (X.Y.Z, optionally with a leading
+# v or a -suffix) is at least $2.
+version_at_least() {
+	case "${1#v}" in
+		[0-9]*.[0-9]*.[0-9]*) ;;
+		*) return 1 ;;
+	esac
+	awk -v a="${1#v}" -v b="$2" 'BEGIN {
+		split(a, x, "."); split(b, y, ".")
+		for (i = 1; i <= 3; i++) {
+			if (x[i] + 0 > y[i] + 0) exit 0
+			if (x[i] + 0 < y[i] + 0) exit 1
+		}
+		exit 0
+	}'
+}
+
+# 1) An existing glsec elsewhere on PATH (not this wrapper). The plugin runs in
+# whatever project is open, so an empty or relative PATH entry, which means
+# that project's directory, is skipped: it could hold a glsec of its own. An
+# older glsec is skipped too, since it may lack fixes this release has. The
+# lookup runs in a subshell (so the local IFS change is contained) and prints
+# the first match.
 found=$(
 	IFS=:
 	for d in $PATH; do
-		[ -n "$d" ] || d=.
+		case "$d" in
+			/*) ;;
+			*) continue ;;
+		esac
 		cand="$d/glsec"
 		[ -x "$cand" ] || continue
 		[ "$(abspath "$cand" 2>/dev/null || true)" = "$self" ] && continue
+		v=$("$cand" --version 2>/dev/null | awk '{print $2}') || continue
+		version_at_least "$v" "$VERSION" || continue
 		printf '%s\n' "$cand"
 		break
 	done
@@ -108,6 +136,24 @@ want=$(awk -v f="$asset" '$2 == f {print $1}' "$tmp/checksums.txt")
 [ -n "$want" ] || hint "no checksum for $asset in checksums.txt"
 got=$(sha256 "$tmp/$asset")
 [ "$want" = "$got" ] || hint "checksum mismatch for $asset (expected $want, got $got)"
+
+# checksums.txt comes from the same place as the archive, so it catches a broken
+# download but not a replaced release. The signed provenance does: it proves
+# the archive was built by glsec's release build workflow.
+signer="glsec/glsec/.github/workflows/build-release.yml"
+if command -v cosign >/dev/null 2>&1; then
+	bundle="glsec_${VERSION}.sigstore.json"
+	dl "$base/$bundle" "$tmp/$bundle" || hint "failed to download $bundle from $base"
+	cosign verify-blob-attestation --bundle "$tmp/$bundle" --new-bundle-format --type slsaprovenance1 \
+		--certificate-identity-regexp "^https://github.com/$signer@refs/tags/v" \
+		--certificate-oidc-issuer https://token.actions.githubusercontent.com \
+		"$tmp/$asset" >/dev/null 2>&1 || hint "provenance verification with cosign failed for $asset"
+elif command -v gh >/dev/null 2>&1 && gh attestation --help >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+	gh attestation verify "$tmp/$asset" --owner glsec --signer-workflow "$signer" >/dev/null 2>&1 ||
+		hint "provenance verification with gh failed for $asset"
+else
+	echo "glsec: verified $asset against checksums.txt only; install cosign or the GitHub CLI to verify its build provenance too" >&2
+fi
 
 tar -xzf "$tmp/$asset" -C "$tmp" || hint "failed to extract $asset"
 [ -f "$tmp/glsec" ] || hint "glsec binary not found inside $asset"
