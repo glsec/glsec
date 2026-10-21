@@ -486,8 +486,11 @@ func severityToCodeClimate(s finding.Severity) string {
 // codeClimateFingerprint returns a stable one-way ID for GitLab Code Quality's
 // required fingerprint field. The SHA256 is a content hash over finding
 // metadata, not password hashing — no secret is stored or verified against it.
+// The fields are hashed as a JSON array: joined with a separator, a job name or
+// message containing it could make two findings hash alike (#647).
 func codeClimateFingerprint(f finding.Finding) string {
-	h := sha256.Sum256([]byte(f.RuleID + "|" + f.File + "|" + f.Job + "|" + f.Message + "|" + fmt.Sprintf("%d", f.Line)))
+	fields, _ := json.Marshal([]any{f.RuleID, f.File, f.Job, f.Message, f.Line}) // strings and an int always marshal
+	h := sha256.Sum256(fields)
 	return hex.EncodeToString(h[:])
 }
 

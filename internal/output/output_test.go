@@ -620,3 +620,11 @@ func TestWriteText_OutOfRangeLineDegrades(t *testing.T) {
 		t.Errorf("header should still be printed: %q", buf.String())
 	}
 }
+
+func TestCodeClimateFingerprint_SeparatorInFields(t *testing.T) {
+	a := finding.Finding{RuleID: "GL001", File: "ci.yml", Job: "a|b", Message: "c", Line: 1}
+	b := finding.Finding{RuleID: "GL001", File: "ci.yml", Job: "a", Message: "b|c", Line: 1}
+	if codeClimateFingerprint(a) == codeClimateFingerprint(b) {
+		t.Error("findings that differ only in where a | sits got the same fingerprint")
+	}
+}
