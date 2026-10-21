@@ -81,6 +81,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	strictFlag := flags.Bool("strict", false, "treat warn findings as errors for the exit code (output severity is unchanged)")
 	noExitCodesFlag := flags.Bool("no-exit-codes", false, "always exit 0 on successful execution, regardless of findings")
 	generateIgnoreFlag := flags.Bool("generate-ignore", false, "write all current findings to .glsec-ignore as a baseline and exit 0")
+	noRepoConfigFlag := flags.Bool("no-repo-config", false, "ignore a .glsec.yml in the working directory; only a file passed with --config is read")
 	noIgnoresFlag := flags.Bool("no-ignores", false, "audit mode: bypass all glsec suppressions (inline # glsec:ignore directives and the .glsec-ignore baseline) for this run; report every finding")
 	newOnlyFlag := flags.Bool("new-only", false, "report (and fail) only on findings absent from the baseline; defaults to the .glsec-ignore baseline unless --baseline is given")
 	baselineFlag := flags.String("baseline", "", "path to a baseline to diff against in --new-only mode: a glsec JSON snapshot (--format json) or a .glsec-ignore file (implies --new-only)")
@@ -143,10 +144,23 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	cfg, err := config.Load(*configFlag)
-	if err != nil {
-		_, _ = fmt.Fprintf(stderr, "error: %v\n", err)
-		return 2
+	// A .glsec.yml in the working directory usually comes from the repository
+	// being scanned. When that repository is untrusted, its config must not
+	// decide which rules run or what counts as a failure.
+	configPath := *configFlag
+	if *noRepoConfigFlag && !flagSet(flags, "config") {
+		if _, err := os.Stat(config.DefaultFile); err == nil {
+			_, _ = fmt.Fprintf(stderr, "note: %s is ignored (--no-repo-config)\n", config.DefaultFile)
+		}
+		configPath = ""
+	}
+	cfg := config.Default()
+	if configPath != "" {
+		var err error
+		if cfg, err = config.Load(configPath); err != nil {
+			_, _ = fmt.Fprintf(stderr, "error: %v\n", err)
+			return 2
+		}
 	}
 
 	// CLI flags take precedence over config file values.
@@ -223,7 +237,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		cfg:            cfg,
 		gitlabVersion:  gitlabVersion,
 		versionStr:     gitlabVersionStr,
-		configPath:     *configFlag,
+		configPath:     configPath,
 		only:           onlyArgs,
 		skip:           skipArgs,
 		useCache:       useCache,

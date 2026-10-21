@@ -161,6 +161,9 @@ glsec .gitlab-ci.yml  # now exits 0; new violations will be caught
 # audit mode: report everything, bypassing all glsec suppressions
 glsec --no-ignores .gitlab-ci.yml  # ignores inline # glsec:ignore and the .glsec-ignore baseline
 
+# scan a repository you don't trust: its .glsec.yml and suppressions don't apply
+glsec --no-repo-config --no-ignores .gitlab-ci.yml
+
 # gate MRs on "don't make it worse": fail only on findings not in the baseline
 glsec --new-only .gitlab-ci.yml                       # diff against .glsec-ignore
 glsec --new-only --baseline main.json .gitlab-ci.yml  # diff against a saved JSON snapshot
@@ -249,6 +252,17 @@ require_ignore_reason: true
 ```
 
 Any inline `# glsec:ignore` without a `-- reason` is then reported with its file and line, and glsec exits 2. Off by default, so existing suppressions keep working. The `.glsec-ignore` baseline is exempt because its format has no reason column. Note that enabling this disables the result cache: the check runs while findings are collected, so a cache hit would skip it.
+
+### Scanning repositories you don't trust
+
+`.glsec.yml`, `.glsec-ignore` and inline `# glsec:ignore` comments normally live in the repository being scanned. That is what you want when a project checks itself, but not when the check is meant to hold a repository to a standard it can't change: a pipeline execution or compliance policy, a central job that scans other projects, or a reviewer checking out a fork. There the repository could turn rules off, exclude files or suppress findings.
+
+```sh
+glsec --no-repo-config --no-ignores .gitlab-ci.yml
+glsec --no-repo-config --no-ignores --config /policies/glsec.yml .gitlab-ci.yml  # your own settings
+```
+
+`--no-repo-config` ignores a `.glsec.yml` in the working directory (glsec says so on stderr); a file passed with `--config` is still read. `--no-ignores` drops all suppressions. Neither is needed when a project scans its own merge requests in its own pipeline, since the author can change the pipeline itself there.
 
 ## Rules
 
