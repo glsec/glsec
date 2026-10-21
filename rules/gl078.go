@@ -42,6 +42,18 @@ var dangerousRunes = map[rune]string{
 	0x00AD: "SOFT HYPHEN",
 }
 
+// lineBreakRunes are characters the YAML parser treats as line breaks but most
+// editors, diffs and GitLab's file view don't. A file containing them parses
+// into different lines than a reviewer sees, and findings after them point at
+// shifted line numbers. A carriage return is only reported on its own: CRLF
+// line endings are fine.
+var lineBreakRunes = map[rune]string{
+	'\r':   "CARRIAGE RETURN without a following line feed",
+	0x0085: "NEXT LINE",
+	0x2028: "LINE SEPARATOR",
+	0x2029: "PARAGRAPH SEPARATOR",
+}
+
 // Check scans the raw file bytes (not the parsed YAML tree) because these
 // control characters are invisible in the node values a tree walk would see.
 func (r *gl078) Check(_ *yaml.Node, file string) []finding.Finding {
@@ -63,6 +75,20 @@ func (r *gl078) Check(_ *yaml.Node, file string) []finding.Finding {
 			if i == 0 {
 				continue
 			}
+		}
+		crlf := ch == '\r' && i+1 < len(data) && data[i+1] == '\n'
+		if name, ok := lineBreakRunes[ch]; ok && !crlf {
+			findings = append(findings, finding.Finding{
+				RuleID:   "GL078",
+				Severity: finding.Warn,
+				Message: fmt.Sprintf(
+					"Unicode line break U+%04X (%s) at column %d — YAML starts a new line here but editors and diffs mostly don't, so the file is parsed differently from how it reads and later findings point at shifted lines; remove it",
+					ch, name, col,
+				),
+				File: file,
+				Line: line,
+				Col:  col,
+			})
 		}
 		if name, ok := dangerousRunes[ch]; ok {
 			findings = append(findings, finding.Finding{

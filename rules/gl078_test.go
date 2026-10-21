@@ -4,8 +4,10 @@
 package rules
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -95,5 +97,37 @@ func TestGL078_Column(t *testing.T) {
 func TestGL078_MissingFile(t *testing.T) {
 	if f := GL078.Check(nil, filepath.Join(t.TempDir(), "does-not-exist.yml")); f != nil {
 		t.Errorf("expected nil for unreadable file, got %d findings", len(f))
+	}
+}
+
+func TestGL078_LineBreakCharacters(t *testing.T) {
+	tests := []struct {
+		name, content string
+		code          rune
+	}{
+		{"lone CR", "build:\n  script:\n    - echo hi\r    - echo hidden\n", '\r'},
+		{"NEL", "build:\n  script:\n    - echo hi\u0085\n", 0x0085},
+		{"line separator", "build:\n  script:\n    - echo hi\u2028\n", 0x2028},
+		{"paragraph separator", "build:\n  script:\n    - echo hi\u2029\n", 0x2029},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := findings078(t, tt.content)
+			if len(f) != 1 {
+				t.Fatalf("expected 1 finding, got %d", len(f))
+			}
+			if f[0].Line != 3 || f[0].Col != 14 {
+				t.Errorf("finding at %d:%d, want 3:14", f[0].Line, f[0].Col)
+			}
+			if want := fmt.Sprintf("U+%04X", tt.code); !strings.Contains(f[0].Message, want) {
+				t.Errorf("message %q does not name %s", f[0].Message, want)
+			}
+		})
+	}
+}
+
+func TestGL078_CRLFAllowed(t *testing.T) {
+	if f := findings078(t, "build:\r\n  script:\r\n    - echo hi\r\n"); len(f) != 0 {
+		t.Errorf("CRLF line endings: expected no finding, got %d", len(f))
 	}
 }
