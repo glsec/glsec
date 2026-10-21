@@ -37,12 +37,13 @@ jobs:
         uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
         with:
           # Pull requests skip this repository's release downloads and raw
-          # files on main: a version bump points the README at assets that only
-          # exist once the tag is pushed, and a new file only exists on main
-          # once the pull request is merged. The weekly run checks them.
+          # files on main or a release tag: a version bump points the README at
+          # assets and tagged files that only exist once the tag is pushed, and
+          # a new file only exists on main once the pull request is merged. The
+          # weekly run checks them.
           args: >-
             --config lychee.toml --no-progress
-            ${{ github.event_name == 'pull_request' && '--exclude ^https://github.com/glsec/glsec/releases/download/ --exclude ^https://raw.githubusercontent.com/glsec/glsec/main/' || '' }}
+            ${{ github.event_name == 'pull_request' && '--exclude ^https://github.com/glsec/glsec/releases/download/ --exclude ^https://raw.githubusercontent.com/glsec/glsec/main/ --exclude ^https://raw.githubusercontent.com/glsec/glsec/v[0-9]' || '' }}
             "**/*.md"
           output: lychee-report.md
           fail: ${{ github.event_name == 'pull_request' }}

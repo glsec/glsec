@@ -3,7 +3,10 @@
 # Use it from .mega-linter.yml:
 #
 #   PLUGINS:
-#     - https://raw.githubusercontent.com/glsec/glsec/main/mega-linter-plugin-glsec/glsec.megalinter-descriptor.yml
+#     - https://raw.githubusercontent.com/glsec/glsec/vX.Y.Z/mega-linter-plugin-glsec/glsec.megalinter-descriptor.yml
+#
+# with vX.Y.Z a release tag, so the descriptor (and with it the glsec version)
+# only changes when you change the URL.
 #
 # MegaLinter runs plugin installs at startup, and only `RUN` lines, so the
 # install below downloads the release archive and verifies it against
