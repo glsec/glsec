@@ -1,3 +1,6 @@
+// Copyright The glsec Authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Command glsec is a security linter for GitLab CI/CD configuration files
 // (.gitlab-ci.yml). It reports misconfigurations that can lead to supply-chain
 // attacks, secret leakage and token exfiltration.

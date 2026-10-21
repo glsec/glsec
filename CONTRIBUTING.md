@@ -36,7 +36,7 @@ What blocks a merge or a release:
 
 - **Vulnerabilities.** Any known vulnerability, of any severity, in a dependency added or changed by a pull request; any vulnerability that govulncheck finds reachable from glsec's code; any OSV finding; any HIGH or CRITICAL finding in the image for which a fix exists. A finding that doesn't affect glsec (for example, unreachable code) may be accepted only with a written reason in the pull request and a VEX statement as described in [SECURITY.md](SECURITY.md#vulnerabilities-that-dont-affect-glsec).
 - **Malicious packages.** Always. The dependency is removed, and if a release contained it, the release is withdrawn and a security advisory is published.
-- **Licenses.** Dependencies must be under a permissive or weak-copyleft license compatible with glsec's MIT license: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, MPL-2.0, PSF-2.0, Unlicense or 0BSD. Dependency review fails on any other license; adding one needs a maintainer decision, recorded in the pull request.
+- **Licenses.** Dependencies must be under a permissive or weak-copyleft license compatible with glsec's Apache-2.0 license: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, MPL-2.0, PSF-2.0, Unlicense or 0BSD. Dependency review fails on any other license; adding one needs a maintainer decision, recorded in the pull request.
 
 ## Running tests
 
@@ -45,6 +45,17 @@ go test ./...                   # all packages
 go test -race ./...             # with race detector (what CI runs)
 go test ./rules/... -v -run GL001  # single rule
 ```
+
+### Coverage
+
+CI fails when statement coverage (`go test -cover`) drops below 92 % or branch coverage below 85 %. Branch coverage is measured with [gobco](https://github.com/rillig/gobco), one package at a time:
+
+```sh
+go install github.com/rillig/gobco@v1.3.4
+gobco -branch ./rules
+```
+
+gobco lists every branch the tests never take. Both totals are on the summary page of each CI run.
 
 ### Fuzzing
 
@@ -275,6 +286,30 @@ A check on every pull request blocks commits without a sign-off. To fix them:
 - the last commit: `git commit --amend -s --no-edit`, then force-push;
 - several commits: `git rebase --signoff main`, then force-push;
 - or, without rewriting history, add one empty commit that signs off the earlier ones, as the check's details page describes.
+
+## License headers
+
+Every source file starts with a copyright and license line, so the license stays with a file that is copied out of the repository on its own:
+
+```go
+// Copyright The glsec Authors
+// SPDX-License-Identifier: Apache-2.0
+```
+
+Shell scripts, the `Dockerfile` and the `Makefile` use `#` instead of `//`; in a script the lines go right after the `#!` line. "The glsec Authors" are everyone who has contributed to glsec; the Git history records who wrote what. A CI check fails on any `.go` file, `Dockerfile`, `Makefile` or `bin/glsec` without the SPDX line.
+
+## Code review
+
+Every change to `main` goes through a pull request. Before it is merged, the reviewer checks the following. Today the reviewer is the maintainer ([GOVERNANCE.md](GOVERNANCE.md#roles)), who applies the same checks to their own pull requests.
+
+- **Correctness.** The change does what the issue asks, and the tests cover it: a new rule has flagged, clean and edge-case tests and a fixture; a bug fix has a test that fails without the fix. CI is green, including the coverage floors.
+- **False positives.** A new or changed rule has been run against real pipelines, and the pull request says how many findings it adds or removes (see [Avoiding false positives](#avoiding-false-positives)).
+- **Security.** glsec reads untrusted pipeline files: input is never executed, paths stay inside the scanned repository, regular expressions are RE2, and error and log output does not print more of a file than a finding needs. [ARCHITECTURE.md](ARCHITECTURE.md) has the threat model; a change that touches one of its boundaries says so in the pull request.
+- **Dependencies.** A new or updated dependency meets the [dependency rules](#dependencies).
+- **Docs.** User-visible behaviour is documented in the same pull request: README, `docs/rules/GLNNN.md`, and the rule table.
+- **Conventions.** Branch name, signed-off commits and a pull request description that says what changed, why, and how to test it.
+
+The reviewer leaves comments on anything that needs to change; a pull request is merged only when none are open.
 
 ## Commit and PR conventions
 

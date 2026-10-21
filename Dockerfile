@@ -1,3 +1,6 @@
+# Copyright The glsec Authors
+# SPDX-License-Identifier: Apache-2.0
+
 # Base images are pinned by digest; Dependabot (docker ecosystem, daily) moves
 # the digest when upstream rebuilds the tag (#539).
 FROM golang:1.27-alpine@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d AS builder

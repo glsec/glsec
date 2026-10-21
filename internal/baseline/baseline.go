@@ -1,3 +1,6 @@
+// Copyright The glsec Authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package baseline compares scan findings against an accepted set so that only
 // newly introduced findings are reported. The accepted set is loaded from
 // either a glsec JSON snapshot (the output of --format json) or a .glsec-ignore

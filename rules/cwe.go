@@ -1,3 +1,6 @@
+// Copyright The glsec Authors
+// SPDX-License-Identifier: Apache-2.0
+
 package rules
 
 // cweIDs maps each rule ID to its CWE identifier.

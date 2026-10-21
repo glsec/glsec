@@ -134,6 +134,64 @@ jobs:
         with:
           version: latest
 
+  # go test -cover counts statements only; gobco counts each branch, so an
+  # untested else or early return shows up here (#625). Same rule as the
+  # statement floor: raise BRANCH_FLOOR on purpose, never lower it.
+  branch-coverage:
+    name: Branch coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go install github.com/rillig/gobco@v1.3.4
+      - name: Branch coverage
+        env:
+          BRANCH_FLOOR: "85.0"
+        run: |
+          for dir in $(go list -f '{{.Dir}}' ./...); do
+            pkg=${dir#"$PWD"}; pkg=${pkg#/}; [ -n "$pkg" ] || pkg=.
+            out=$(gobco -branch "./$pkg") || { echo "$out"; exit 1; }
+            echo "$out" | sed -n "s|^Branch coverage: \([0-9]*\)/\([0-9]*\)$|$pkg\t\1\t\2|p"
+          done > branches.tsv
+
+          read -r covered total < <(awk -F'\t' '{ c += $2; t += $3 } END { print c, t }' branches.tsv)
+          pct=$(awk -v c="$covered" -v t="$total" 'BEGIN { printf "%.1f", 100 * c / t }')
+          {
+            echo "### Branch coverage: ${pct}% (${covered}/${total}, floor ${BRANCH_FLOOR}%)"
+            echo
+            echo "| Package | Branches covered |"
+            echo "|---|---|"
+            awk -F'\t' '$3 > 0 { printf "| `%s` | %d/%d (%.1f%%) |\n", $1, $2, $3, 100 * $2 / $3 }' branches.tsv
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if ! awk -v p="$pct" -v f="$BRANCH_FLOOR" 'BEGIN { exit !(p + 0 >= f + 0) }'; then
+            echo "::error::branch coverage ${pct}% is below the floor of ${BRANCH_FLOOR}%"
+            exit 1
+          fi
+          echo "branch coverage ${pct}% (floor ${BRANCH_FLOOR}%)"
+
+  license-headers:
+    name: License headers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Every source file carries the SPDX license line
+        run: |
+          missing=$(git ls-files '*.go' Dockerfile Makefile bin/glsec \
+            | xargs grep -L -E '^(//|#) SPDX-License-Identifier: Apache-2\.0$' || true)
+          if [ -n "$missing" ]; then
+            echo "::error::files without a license header (see CONTRIBUTING.md#license-headers):"
+            echo "$missing"
+            exit 1
+          fi
+
   security:
     name: Security (govulncheck)
     runs-on: ubuntu-latest

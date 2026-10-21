@@ -1,3 +1,6 @@
+// Copyright The glsec Authors
+// SPDX-License-Identifier: Apache-2.0
+
 package rules
 
 // ASVSVersion is the OWASP ASVS release the V14 (Build and Deploy) mappings

@@ -1,3 +1,6 @@
+// Copyright The glsec Authors
+// SPDX-License-Identifier: Apache-2.0
+
 package rules
 
 // owaspCategories maps each rule ID to the OWASP CI/CD security categories it

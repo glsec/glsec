@@ -1,4 +1,6 @@
 #!/bin/sh
+# Copyright The glsec Authors
+# SPDX-License-Identifier: Apache-2.0
 # glsec Claude Code plugin wrapper.
 #
 # Resolves a real glsec binary WITHOUT requiring a Go toolchain, in order of

@@ -1,3 +1,6 @@
+// Copyright The glsec Authors
+// SPDX-License-Identifier: Apache-2.0
+
 package rules
 
 import "github.com/glsec/glsec/internal/version"
