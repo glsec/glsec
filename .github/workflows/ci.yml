@@ -203,13 +203,18 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      # The action sets up its own Go, by default the newest stable release.
-      # Use the toolchain from go.mod instead, which the release is built
-      # with, so an outdated toolchain fails here (#664).
+      # The action sets up its own Go, by default the newest stable release,
+      # and its setup-go ignores the toolchain line in go.mod. Pass that
+      # toolchain explicitly: the release is built with it, so an outdated
+      # toolchain must fail here (#664).
+      - name: Read the Go toolchain from go.mod
+        id: toolchain
+        run: |
+          version=$(go mod edit -json | jq -r '.Toolchain // ("go" + .Go)')
+          echo "version=${version#go}" >> "$GITHUB_OUTPUT"
       - uses: golang/govulncheck-action@032d45514ae346b1db93c04b0c90b841c370344f # v1.1.0
         with:
-          go-version-input: ""
-          go-version-file: go.mod
+          go-version-input: ${{ steps.toolchain.outputs.version }}
 
   # The OSV database also carries the OpenSSF malicious-packages feed, which
   # govulncheck doesn't check (#613).
