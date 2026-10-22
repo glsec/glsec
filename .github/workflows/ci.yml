@@ -203,7 +203,13 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      # The action sets up its own Go, by default the newest stable release.
+      # Use the toolchain from go.mod instead, which the release is built
+      # with, so an outdated toolchain fails here (#664).
       - uses: golang/govulncheck-action@032d45514ae346b1db93c04b0c90b841c370344f # v1.1.0
+        with:
+          go-version-input: ""
+          go-version-file: go.mod
 
   # The OSV database also carries the OpenSSF malicious-packages feed, which
   # govulncheck doesn't check (#613).

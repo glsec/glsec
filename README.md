@@ -595,7 +595,7 @@ sha256sum -c checksums.txt --ignore-missing
 gh attestation verify checksums.txt --owner glsec
 ```
 
-**Reproducing a release**: release builds are reproducible from 1.21.0 on. Check out the tag and build it with the Go version from `go.mod` and exactly the GoReleaser version pinned in `.github/workflows/build-release.yml` (v2.18.3 for 1.21.0); another GoReleaser version packs the archives differently. The archives must match the published `checksums.txt`:
+**Reproducing a release**: release builds are reproducible from 1.21.0 on. Check out the tag and build it with the Go version from `go.mod` (the `toolchain` line from 1.23.0 on, before that the `go` line) and exactly the GoReleaser version pinned in `.github/workflows/build-release.yml` (v2.18.3 for 1.21.0); another GoReleaser version packs the archives differently. The archives must match the published `checksums.txt`:
 
 ```sh
 VERSION=1.22.0
