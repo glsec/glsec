@@ -27,7 +27,7 @@ No code generation, no build scripts — `go build` is all you need.
 
 glsec keeps its dependencies few and checked:
 
-- **Go modules.** `go.mod` lists the direct dependencies (currently only `gopkg.in/yaml.v3`) and `go.sum` pins their hashes; CI runs `go mod verify`. A new dependency needs a reason in the pull request: prefer the standard library, and pick maintained, widely used modules.
+- **Go modules.** `go.mod` lists the direct dependencies (currently only `gopkg.in/yaml.v3`) and `go.sum` pins their hashes; CI runs `go mod verify` and fails if `go mod tidy` would change either file. A new dependency needs a reason in the pull request: prefer the standard library, and pick maintained, widely used modules.
 - **Updates.** Dependabot proposes updates for Go modules, GitHub Actions, the CI's Python tools and the Docker base images. Version updates wait 7 days after an upstream release (`cooldown` in `.github/dependabot.yml`), the window in which a compromised release is usually caught; security updates and base images are not delayed. Updates go through the same pull request checks as any change.
 - **Pinning.** GitHub Actions are pinned to commit SHAs, the CI's Python tools (zizmor, check-jsonschema) to versions with hashes (`.github/requirements/`), Docker base images to digests, and GoReleaser to an exact version.
 - **Checks.** govulncheck and OSV-Scanner run on every pull request and push, and dependency review on every pull request; all three are required checks. OSV-Scanner covers `go.mod` and the CI's Python requirements against known vulnerabilities and known malicious packages. Trivy scans the container image.
@@ -318,6 +318,18 @@ The reviewer leaves comments on anything that needs to change; a pull request is
 - **PR descriptions:** write the context here — what the rule detects, why it matters, how to test it, any edge cases considered.
 - One branch per issue; one PR per branch.
 - **Tests:** new functionality and bug fixes come with tests in the same PR. A new rule needs its fixture and unit tests (see above); a bug fix needs a test that fails without the fix. CI (tests on Linux, macOS and Windows, lint, fuzzing, CodeQL) must pass before merging.
+
+## AI-assisted contributions
+
+You're welcome to use AI tools. What counts is the change itself and that you stand behind it:
+
+- Say in the pull request that you used one and what it did. The template has a field for it.
+- Read and understand every line before you open the pull request, and be ready to explain a change and answer review questions yourself.
+- Check what the tool tells you about GitLab. Job names, keyword behaviour and template defaults are easy to get wrong; link the documentation or template you checked against.
+- Run the checks described here locally where you can, and say which ones you couldn't run.
+- Keep a pull request to one issue. Pull requests that look generated in bulk, with many unrelated changes or a description that doesn't match the code, will be closed.
+
+The sign-off works the same way: with it you certify that you have the right to submit the change, however it was written.
 
 ## Fixture validation
 

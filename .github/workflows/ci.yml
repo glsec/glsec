@@ -22,6 +22,8 @@ jobs:
           go-version-file: go.mod
           cache: true
       - run: go mod verify
+      # Fails when go.mod or go.sum don't match what the code imports (#681).
+      - run: go mod tidy -diff
       - run: go build ./...
 
   test:
