@@ -20,27 +20,102 @@ func (r *gl008) ID() string { return "GL008" }
 // securityScanJobs are the GitLab-defined job names created when security
 // scan templates are included. Failing these jobs with allow_failure: true
 // causes GitLab to silently skip security result ingestion.
+// The analyzer jobs the SAST and Dependency Scanning templates create are
+// included too: they are the jobs that actually scan, and disabling one goes
+// unnoticed today. Names taken from the current templates on gitlab.com
+// (gitlab-org/gitlab, lib/gitlab/ci/templates/Jobs, fetched 2026-10-23);
+// analyzers deprecated in GitLab 16.8 are not listed.
+// The two configuration-only base jobs are listed here too: they are job
+// names the templates create, and this map is the rule's vocabulary. They are
+// excluded from every check, see configurationOnlyJobs.
 var securityScanJobs = map[string]bool{
+	"sast":                                 true,
+	"secret_detection":                     true,
+	"dast":                                 true,
+	"dast_api":                             true,
+	"container_scanning":                   true,
+	"dependency_scanning":                  true,
+	"coverage_fuzzing":                     true,
+	"api_fuzzing":                          true,
+	"license_scanning":                     true,
+	"iac-sast":                             true,
+	"kics-iac-sast":                        true,
+	"gitlab-advanced-sast":                 true,
+	"gitlab-advanced-sast-cpp":             true,
+	"gitlab-advanced-sast-ext":             true,
+	"gosec-sast":                           true,
+	"spotbugs-sast":                        true,
+	"bandit-sast":                          true,
+	"eslint-sast":                          true,
+	"kubesec-sast":                         true,
+	"pmd-apex-sast":                        true,
+	"security-code-scan-sast":              true,
+	"semgrep-sast":                         true,
+	"sobelow-sast":                         true,
+	"gemnasium-dependency_scanning":        true,
+	"gemnasium-maven-dependency_scanning":  true,
+	"gemnasium-python-dependency_scanning": true,
+}
+
+// templateAllowFailureJobs are the scan jobs whose template already sets
+// allow_failure: true — .sast-analyzer and .ds-analyzer do, and so do
+// .secret-analyzer, container_scanning and iac-sast. Setting it again changes
+// nothing, so reporting it is misleading; for these jobs only the checks for a
+// job that is disabled or made manual still apply. The base jobs (sast,
+// dependency_scanning) set no allow_failure, so a user-added one there is
+// still a finding.
+//
+// The two configuration-only base jobs are deliberately absent from this map:
+// they are not checked at all, which is a stronger statement than an
+// exemption from one check.
+var templateAllowFailureJobs = map[string]bool{
+	"secret_detection":                     true,
+	"container_scanning":                   true,
+	"iac-sast":                             true,
+	"kics-iac-sast":                        true,
+	"semgrep-sast":                         true,
+	"gitlab-advanced-sast":                 true,
+	"gitlab-advanced-sast-cpp":             true,
+	"gitlab-advanced-sast-ext":             true,
+	"gosec-sast":                           true,
+	"spotbugs-sast":                        true,
+	"bandit-sast":                          true,
+	"eslint-sast":                          true,
+	"kubesec-sast":                         true,
+	"pmd-apex-sast":                        true,
+	"security-code-scan-sast":              true,
+	"sobelow-sast":                         true,
+	"gemnasium-dependency_scanning":        true,
+	"gemnasium-maven-dependency_scanning":  true,
+	"gemnasium-python-dependency_scanning": true,
+}
+
+// configurationOnlyJobs are the two base jobs the SAST and Dependency
+// Scanning templates create. Neither of them runs: in the current templates
+// both carry `rules: - when: never` and a script that just exits 1, and the
+// analyzers inherit from them through .sast-analyzer / .ds-analyzer, which
+// set allow_failure: true themselves. So neither an allow_failure nor a
+// disabling rule on them changes anything -- a `sast: allow_failure: true`
+// is a no-op, and a `sast: rules: [when: never]` is already the template
+// default and switches no analyzer off, since every analyzer carries its own
+// rules:. GL008 therefore reports neither on them. Switching a scan off is
+// covered by the analyzer jobs above and by SAST_DISABLED and friends
+// (GL082).
+var configurationOnlyJobs = map[string]bool{
 	"sast":                true,
-	"sast-iac":            true,
-	"secret_detection":    true,
-	"dast":                true,
-	"dast_api":            true,
-	"container_scanning":  true,
 	"dependency_scanning": true,
-	"coverage_fuzzing":    true,
-	"api_fuzzing":         true,
-	"license_scanning":    true,
 }
 
 func (r *gl008) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
 
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
-		if !securityScanJobs[name.Value] {
+		if !securityScanJobs[name.Value] || configurationOnlyJobs[name.Value] {
 			return
 		}
-		findings = append(findings, r.checkAllowFailure(name, job, file)...)
+		if !templateAllowFailureJobs[name.Value] {
+			findings = append(findings, r.checkAllowFailure(name, job, file)...)
+		}
 		findings = append(findings, r.checkNeverRuns(name, job, file)...)
 	})
 

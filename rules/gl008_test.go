@@ -20,12 +20,12 @@ func findings008(t *testing.T, yaml string) []finding.Finding {
 	return GL008.Check(doc.Root, "test.yml")
 }
 
-func TestGL008_SAST_AllowFailure(t *testing.T) {
+func TestGL008_AllowFailure_Warn(t *testing.T) {
 	f := findings008(t, `
-sast:
+dast:
   allow_failure: true
   variables:
-    SAST_EXCLUDED_PATHS: "spec"
+    DAST_WEBSITE: "https://example.com"
 `)
 	if len(f) != 1 {
 		t.Fatalf("expected 1 finding, got %d", len(f))
@@ -35,29 +35,125 @@ sast:
 	}
 }
 
-func TestGL008_SecretDetection_AllowFailure(t *testing.T) {
-	f := findings008(t, `
-secret_detection:
-  allow_failure: true
-`)
-	if len(f) != 1 {
-		t.Fatalf("expected 1 finding for secret_detection, got %d", len(f))
+// The templates already set allow_failure: true on these jobs, so a pipeline
+// that repeats it is not doing anything new and must not be reported.
+func TestGL008_TemplateAllowFailure_NoFinding(t *testing.T) {
+	for _, job := range []string{
+		"secret_detection",
+		"container_scanning",
+		"iac-sast",
+		"kics-iac-sast",
+		"semgrep-sast",
+		"gitlab-advanced-sast",
+		"gosec-sast",
+		"spotbugs-sast",
+		"gemnasium-dependency_scanning",
+	} {
+		f := findings008(t, job+":\n  allow_failure: true\n")
+		if len(f) != 0 {
+			t.Errorf("%s: expected no finding for template-defaulted allow_failure, got %d", job, len(f))
+		}
 	}
 }
 
-func TestGL008_ContainerScanning_AllowFailure(t *testing.T) {
+// sast and dependency_scanning are configuration-only: the templates give them
+// `rules: - when: never` and a script that exits 1, and the analyzers inherit
+// from them through .sast-analyzer / .ds-analyzer. Neither an allow_failure
+// nor a disabling rule on them changes anything, so neither is reported.
+func TestGL008_ConfigurationOnlyJobs_NoFinding(t *testing.T) {
+	cases := []struct {
+		job  string
+		yaml string
+	}{
+		{"sast", "sast:\n  allow_failure: true\n"},
+		{"dependency_scanning", "dependency_scanning:\n  allow_failure: true\n"},
+		{"sast", "sast:\n  rules:\n    - when: never\n"},
+		{"dependency_scanning", "dependency_scanning:\n  rules:\n    - when: never\n"},
+		{"sast", "sast:\n  rules:\n    - when: manual\n"},
+		{"dependency_scanning", "dependency_scanning:\n  rules:\n    - when: manual\n"},
+		{"sast", "sast:\n  when: manual\n"},
+		{"dependency_scanning", "dependency_scanning:\n  when: manual\n"},
+	}
+	for _, c := range cases {
+		f := findings008(t, c.yaml)
+		if len(f) != 0 {
+			t.Errorf("%s: expected no finding on a configuration-only job, got %d", c.job, len(f))
+		}
+	}
+}
+
+// The exemption must not silently drop every check for a job that does run.
+func TestGL008_ConfigurationOnlyJobsAreScanJobs(t *testing.T) {
+	for job := range configurationOnlyJobs {
+		if !securityScanJobs[job] {
+			t.Errorf("%s is treated as configuration-only but is not a scan job", job)
+		}
+		if templateAllowFailureJobs[job] {
+			t.Errorf("%s is treated as configuration-only but is also exempted from the allow_failure check", job)
+		}
+	}
+}
+
+// The analyzer jobs are the ones that actually scan; switching one off goes
+// unnoticed without this.
+func TestGL008_AnalyzerJobDisabled_Warn(t *testing.T) {
+	cases := []struct {
+		job  string
+		yaml string
+	}{
+		{"semgrep-sast", "semgrep-sast:\n  rules:\n    - when: never\n"},
+		{"gitlab-advanced-sast", "gitlab-advanced-sast:\n  rules:\n    - when: never\n"},
+		{"gosec-sast", "gosec-sast:\n  rules:\n    - when: manual\n"},
+		{"spotbugs-sast", "spotbugs-sast:\n  when: manual\n"},
+		{"gemnasium-dependency_scanning", "gemnasium-dependency_scanning:\n  rules:\n    - when: never\n"},
+		{"iac-sast", "iac-sast:\n  rules:\n    - when: never\n"},
+		{"kics-iac-sast", "kics-iac-sast:\n  when: manual\n"},
+	}
+	for _, c := range cases {
+		f := findings008(t, c.yaml)
+		if len(f) != 1 {
+			t.Errorf("%s: expected 1 finding, got %d", c.job, len(f))
+			continue
+		}
+		if f[0].Job != c.job {
+			t.Errorf("expected job attribution %q, got %q", c.job, f[0].Job)
+		}
+	}
+}
+
+// sast-iac is the template file, not a job; the jobs it creates are iac-sast
+// and kics-iac-sast.
+func TestGL008_SastIacIsNotAJob_NoFinding(t *testing.T) {
 	f := findings008(t, `
-container_scanning:
+sast-iac:
   allow_failure: true
 `)
-	if len(f) != 1 {
-		t.Fatalf("expected 1 finding for container_scanning, got %d", len(f))
+	if len(f) != 0 {
+		t.Errorf("expected no finding for sast-iac, got %d", len(f))
+	}
+	f = findings008(t, `
+sast-iac:
+  rules:
+    - when: never
+`)
+	if len(f) != 0 {
+		t.Errorf("expected no finding for a disabled sast-iac, got %d", len(f))
+	}
+}
+
+// An exempted job must stay a scan job, or the exemption would silently drop
+// every check for it.
+func TestGL008_TemplateAllowFailureJobsAreScanJobs(t *testing.T) {
+	for job := range templateAllowFailureJobs {
+		if !securityScanJobs[job] {
+			t.Errorf("%s is exempted from the allow_failure check but is not a scan job", job)
+		}
 	}
 }
 
 func TestGL008_AllowFailureFalse_NoFinding(t *testing.T) {
 	f := findings008(t, `
-sast:
+dast:
   allow_failure: false
 `)
 	if len(f) != 0 {
@@ -67,9 +163,9 @@ sast:
 
 func TestGL008_NoAllowFailure_NoFinding(t *testing.T) {
 	f := findings008(t, `
-sast:
+dast:
   variables:
-    SAST_EXCLUDED_PATHS: "spec"
+    DAST_WEBSITE: "https://example.com"
 `)
 	if len(f) != 0 {
 		t.Errorf("expected no finding when allow_failure is absent, got %d", len(f))
@@ -90,7 +186,7 @@ build:
 func TestGL008_AllowFailureExitCodes_NoFinding(t *testing.T) {
 	// allow_failure: {exit_codes: [...]} is intentional and not the same as allow_failure: true
 	f := findings008(t, `
-sast:
+dast:
   allow_failure:
     exit_codes: [1]
 `)
@@ -101,10 +197,10 @@ sast:
 
 func TestGL008_MultipleJobs(t *testing.T) {
 	f := findings008(t, `
-sast:
+dast:
   allow_failure: true
 
-dependency_scanning:
+api_fuzzing:
   allow_failure: true
 
 build:
@@ -112,13 +208,13 @@ build:
   script: [make]
 `)
 	if len(f) != 2 {
-		t.Fatalf("expected 2 findings (sast + dependency_scanning), got %d", len(f))
+		t.Fatalf("expected 2 findings (dast + api_fuzzing), got %d", len(f))
 	}
 }
 
 func TestGL008_LineNumber(t *testing.T) {
 	f := findings008(t, `
-sast:
+dast:
   allow_failure: true
 `)
 	if len(f) != 1 {
@@ -131,7 +227,7 @@ sast:
 
 func TestGL008_WhenManual_Warn(t *testing.T) {
 	f := findings008(t, `
-sast:
+dast:
   when: manual
 `)
 	if len(f) != 1 {
@@ -140,14 +236,14 @@ sast:
 	if f[0].Severity != finding.Warn {
 		t.Errorf("expected Warn severity, got %s", f[0].Severity)
 	}
-	if f[0].Job != "sast" {
-		t.Errorf("expected job attribution %q, got %q", "sast", f[0].Job)
+	if f[0].Job != "dast" {
+		t.Errorf("expected job attribution %q, got %q", "dast", f[0].Job)
 	}
 }
 
 func TestGL008_WhenOnSuccess_NoFinding(t *testing.T) {
 	f := findings008(t, `
-sast:
+dast:
   when: on_success
 `)
 	if len(f) != 0 {
@@ -198,7 +294,7 @@ secret_detection:
 // "Run on merge requests, otherwise don't" is scoping, not disabling.
 func TestGL008_TrailingNeverCatchAll_NoFinding(t *testing.T) {
 	f := findings008(t, `
-sast:
+dast:
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - when: never
@@ -213,7 +309,7 @@ func TestGL008_SoleRuleWithChangesOrExists_NoFinding(t *testing.T) {
 		"changes: [\"**/*.go\"]",
 		"exists: [\"go.mod\"]",
 	} {
-		f := findings008(t, "sast:\n  rules:\n    - "+cond+"\n      when: never\n")
+		f := findings008(t, "dast:\n  rules:\n    - "+cond+"\n      when: never\n")
 		if len(f) != 0 {
 			t.Errorf("expected no finding for a rule gated on %s, got %d", cond, len(f))
 		}
@@ -234,7 +330,7 @@ deploy:
 
 func TestGL008_AllowFailureAndManual_BothReported(t *testing.T) {
 	f := findings008(t, `
-sast:
+dast:
   allow_failure: true
   when: manual
 `)

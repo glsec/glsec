@@ -1,6 +1,8 @@
 include:
   - template: Security/SAST.gitlab-ci.yml
+  - template: Security/SAST-IaC.gitlab-ci.yml
   - template: Security/Secret-Detection.gitlab-ci.yml
+  - template: Security/DAST.gitlab-ci.yml
 
 stages:
   - test
@@ -13,8 +15,17 @@ build:
     - npm ci
     - npm test
 
-sast:
+dast:
   allow_failure: true
 
 secret_detection:
+  rules:
+    - when: never
+
+semgrep-sast:
+  rules:
+    - when: never
+
+# the template already sets allow_failure: true here, so this is not reported
+iac-sast:
   allow_failure: true
