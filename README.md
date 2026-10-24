@@ -39,7 +39,7 @@ Add glsec to a GitLab pipeline with the [CI/CD Catalog component](https://gitlab
 
 ```yaml
 include:
-  - component: gitlab.com/glsec-io/glsec/glsec@v1.0.24
+  - component: gitlab.com/glsec-io/glsec/glsec@v1.0.25
 ```
 
 It adds a `glsec` job that runs in the `test` stage (set the `stage` input to change that) and fails on error findings. For findings inline in merge request diffs, Docker, binary or GitHub Actions setups, see [CI integration](#ci-integration). To run it locally, see [Install](#install).
@@ -273,6 +273,8 @@ glsec --no-repo-config --no-ignores --config /policies/glsec.yml .gitlab-ci.yml 
 
 `--no-repo-config` ignores a `.glsec.yml` in the working directory (glsec says so on stderr); a file passed with `--config` is still read. `--no-ignores` drops all suppressions. Neither is needed when a project scans its own merge requests in its own pipeline, since the author can change the pipeline itself there.
 
+With the GitLab component, set the inputs `no_repo_config: true` and `no_ignores: true` (component v1.0.25 or later).
+
 ### Result cache
 
 glsec caches results in `$XDG_CACHE_HOME/glsec` (`~/.cache/glsec` by default), keyed on the glsec version, the date, the scanned files, the config and the suppressions, so an unchanged pipeline is not scanned twice on the same day. `--no-cache` skips it for one run; `--clear-cache` empties it.
@@ -414,7 +416,7 @@ Use the official component from the [GitLab CI Catalog](https://gitlab.com/explo
 
 ```yaml
 include:
-  - component: gitlab.com/glsec-io/glsec/glsec@v1.0.24
+  - component: gitlab.com/glsec-io/glsec/glsec@v1.0.25
 
 stages:
   - test
@@ -424,7 +426,7 @@ For inline findings on merge request diffs, add the `glsec-code-quality` templat
 
 ```yaml
 include:
-  - component: gitlab.com/glsec-io/glsec/glsec-code-quality@v1.0.24
+  - component: gitlab.com/glsec-io/glsec/glsec-code-quality@v1.0.25
 
 stages:
   - test
