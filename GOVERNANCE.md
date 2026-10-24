@@ -9,7 +9,7 @@ glsec is maintained by one person. This document says who decides what, who can 
 - reviews and merges pull requests into `main`;
 - triages issues and answers reports of false positives, false negatives and bugs;
 - handles vulnerability reports as described in [SECURITY.md](SECURITY.md), including advisories and fixes;
-- cuts releases (tag, release notes) and releases the GitLab CI/CD Catalog component afterwards;
+- cuts releases (tag, release notes), then points the Claude Code plugin at the new tag and releases the GitLab CI/CD Catalog component;
 - keeps the project's security settings in place: branch protection, required checks, two-factor authentication, signed releases.
 
 **Contributor.** Anyone who opens an issue or a pull request. Contributors don't need any access; how to contribute is in [CONTRIBUTING.md](CONTRIBUTING.md).

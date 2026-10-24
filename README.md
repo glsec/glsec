@@ -380,6 +380,8 @@ glsec ships as a [Claude Code](https://claude.com/claude-code) plugin so Claude 
 /plugin install glsec@glsec
 ```
 
+The marketplace installs the plugin from the commit of the latest release tag, not from `main`, so changes merged after a release reach you only with the next one.
+
 This adds:
 
 - **`/glsec:scan`** — a command that runs glsec over the project and has Claude explain and remediate each finding.

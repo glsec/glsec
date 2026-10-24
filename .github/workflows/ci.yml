@@ -350,6 +350,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
 
       # The Claude Code plugin ships its own version pin and downloads the
       # matching release asset, so a release bump that misses it leaves plugin
@@ -389,6 +390,21 @@ jobs:
             exit 1
           fi
           echo "all pins agree on $want"
+
+      # The marketplace installs the plugin from a release commit (#694). The
+      # pin lags plugin.json between a release bump and the follow-up after
+      # tagging, so only check that sha is the commit of the tag in ref.
+      - name: Check the plugin source pins a release tag
+        run: |
+          set -euo pipefail
+          ref=$(jq -r '.plugins[0].source.ref' .claude-plugin/marketplace.json)
+          sha=$(jq -r '.plugins[0].source.sha' .claude-plugin/marketplace.json)
+          tagged=$(git rev-parse --verify --quiet "refs/tags/$ref^{commit}" || true)
+          if [ "$tagged" != "$sha" ]; then
+            echo "::error::marketplace.json pins $ref at $sha, but that tag is ${tagged:-missing}"
+            exit 1
+          fi
+          echo "plugin pinned to $ref ($sha)"
 
       # "requires Go X.Y+" in the docs must follow the go directive in go.mod
       # (#587); the docs said 1.25+ while go.mod required 1.26.

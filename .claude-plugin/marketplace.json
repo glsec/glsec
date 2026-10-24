@@ -7,7 +7,12 @@
   "plugins": [
     {
       "name": "glsec",
-      "source": "./",
+      "source": {
+        "source": "github",
+        "repo": "glsec/glsec",
+        "ref": "v1.22.0",
+        "sha": "7acc6b2d841124f130c5d1f0349de92c510fc743"
+      },
       "description": "Static security scanner for GitLab CI/CD pipelines"
     }
   ]

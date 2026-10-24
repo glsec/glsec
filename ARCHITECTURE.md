@@ -29,7 +29,7 @@ glsec's external interfaces are the command line, `.glsec.yml`, `.glsec-ignore`,
 
 | Actor | Role |
 |---|---|
-| Maintainer | Merges pull requests into `main`, pushes release tags, releases the GitLab component |
+| Maintainer | Merges pull requests into `main`, pushes release tags, points the Claude Code plugin at the new tag, releases the GitLab component |
 | GitHub Actions | Runs CI on every pull request and push (tests on Linux, macOS and Windows, lint, govulncheck, OSV-Scanner, dependency review, CodeQL, zizmor, fuzzing, Trivy, hadolint, dockle; a link check for documentation changes); builds releases and images |
 | `build-release.yml` / `build-image.yml` | Reusable workflows that build the archives with GoReleaser and the image with Docker, and attest them; they sign the provenance (SLSA Build Level 3) |
 | Sigstore (Fulcio, Rekor) | Issues short-lived signing certificates and records signatures in a transparency log |
@@ -38,6 +38,8 @@ glsec's external interfaces are the command line, `.glsec.yml`, `.glsec-ignore`,
 | Dependabot | Proposes dependency updates as pull requests: Go modules, actions and CI tools after a 7-day cooldown, base images daily |
 
 A release starts when the maintainer pushes a `vX.Y.Z` tag. `release.yml` and `docker.yml` refuse to run unless CI passed for that commit, then call the reusable build workflows. Release builds are reproducible: rebuilding a tag with the pinned GoReleaser and Go versions gives the published checksums.
+
+The Claude Code plugin is installed from the marketplace in `.claude-plugin/marketplace.json`, which pins the plugin to the commit of a release tag (`ref` and `sha`). The release commit can't name its own SHA, so after tagging the maintainer moves the pin to the new tag in a follow-up pull request. Until then plugin users stay on the previous release.
 
 ## Threat model
 
