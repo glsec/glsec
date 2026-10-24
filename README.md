@@ -11,6 +11,7 @@
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/15508/badge)](https://www.bestpractices.dev/projects/15508)
 [![OpenSSF Baseline](https://www.bestpractices.dev/projects/15508/baseline)](https://www.bestpractices.dev/projects/15508)
 [![SLSA Build Level 3](https://slsa.dev/images/gh-badge-level3.svg)](#verifying-a-release)
+[![agent security: cfgaudit](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/cfgaudit/cfgaudit/main/assets/badge/v1.json)](https://github.com/cfgaudit/cfgaudit)
 
 **glsec** is a security linter for `.gitlab-ci.yml` files. It detects misconfigurations that can lead to supply-chain attacks, secret leakage, and token exfiltration — the same class of issues that [zizmor](https://github.com/zizmorcore/zizmor) and [actionlint](https://github.com/rhysd/actionlint) catch in GitHub Actions, but for GitLab CI.
 
