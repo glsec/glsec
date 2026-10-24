@@ -4,6 +4,7 @@
 package rules
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -163,5 +164,24 @@ build:
 `)
 	if len(f) != 0 {
 		t.Fatalf("expected no findings when no rules block, got %d", len(f))
+	}
+}
+
+func TestGL043_EscapedSlash(t *testing.T) {
+	doc := `
+deploy:
+  rules:
+    - if: $CI_COMMIT_BRANCH =~ /^release\/\d+\.\d+$/
+    - if: $CI_COMMIT_REF_NAME =~ /^feature\/x$/i
+    - if: $CI_COMMIT_BRANCH =~ /^staging\//
+  script:
+    - ./deploy.sh
+`
+	f := findings043(t, doc)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding (only the unanchored staging pattern), got %d: %v", len(f), f)
+	}
+	if !strings.Contains(f[0].Message, `/^staging\//`) || !strings.Contains(f[0].Message, `"staging/"`) {
+		t.Errorf("message should quote the whole pattern and the plain prefix: %s", f[0].Message)
 	}
 }

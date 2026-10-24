@@ -30,8 +30,9 @@ var gl043Vars = []string{
 
 // gl043Re matches "$VAR =~ /pattern/" in a rules:if condition string.
 // Group 1: variable name, Group 2: regex pattern content (between slashes).
+// An escaped slash (\/) is part of the pattern, not its end (#700).
 var gl043Re = regexp.MustCompile(
-	`\$\{?(` + strings.Join(gl043Vars, "|") + `)\}?\s*=~\s*/([^/]*)/`,
+	`\$\{?(` + strings.Join(gl043Vars, "|") + `)\}?\s*=~\s*/((?:[^/\\]|\\.)*)/`,
 )
 
 func (r *gl043) Check(doc *yaml.Node, file string) []finding.Finding {
@@ -93,13 +94,13 @@ func checkIfCondition(node *yaml.Node, file string) []finding.Finding {
 		var msg string
 		if hasStart {
 			msg = fmt.Sprintf(
-				"rules:if uses $%s =~ /%s/ — no trailing $ anchor; a value prefixed with %q also matches",
-				varName, pattern, strings.TrimPrefix(pattern, "^"),
+				"rules:if uses $%s =~ /%s/ — no trailing $ anchor; a value starting with \"%s\" also matches",
+				varName, pattern, strings.ReplaceAll(strings.TrimPrefix(pattern, "^"), `\/`, "/"),
 			)
 		} else {
 			msg = fmt.Sprintf(
-				"rules:if uses $%s =~ /%s/ — no ^ or $ anchors; any value containing %q matches",
-				varName, pattern, pattern,
+				"rules:if uses $%s =~ /%s/ — no ^ or $ anchors; any value containing \"%s\" matches",
+				varName, pattern, strings.ReplaceAll(pattern, `\/`, "/"),
 			)
 		}
 
