@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "label": "CI security",
+  "label": "CI/CD security",
   "message": "glsec",
   "color": "ff6403",
   "labelColor": "28333e",
