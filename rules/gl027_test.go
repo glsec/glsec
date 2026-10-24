@@ -52,7 +52,7 @@ variables:
 }
 
 func TestGL027_NoLiteralValue_NoFinding(t *testing.T) {
-	for name, src := range map[string]string{
+	for name, src := range map[string]string{ //nolint:gosec // G101: test inputs for the rule, not real secrets
 		"description only": `
 variables:
   DEPLOY_TOKEN:
