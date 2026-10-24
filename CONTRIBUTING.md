@@ -298,6 +298,8 @@ Every source file starts with a copyright and license line, so the license stays
 
 Shell scripts, the `Dockerfile` and the `Makefile` use `#` instead of `//`; in a script the lines go right after the `#!` line. "The glsec Authors" are everyone who has contributed to glsec; the Git history records who wrote what. A CI check fails on any `.go` file, `Dockerfile`, `Makefile` or `bin/glsec` without the SPDX line.
 
+All other files, such as Markdown, fixtures and images, get the same license from `REUSE.toml`, so the repository follows the [REUSE specification](https://reuse.software/). That rule assumes everything here was written for glsec: a file copied from another project keeps its own license and needs its own entry in `REUSE.toml`, with the license text in `LICENSES/`. `reuse lint` checks the whole repository.
+
 ## Code review
 
 Every change to `main` goes through a pull request. Before it is merged, the reviewer checks the following. Today the reviewer is the maintainer ([GOVERNANCE.md](GOVERNANCE.md#roles)), who applies the same checks to their own pull requests.

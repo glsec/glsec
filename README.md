@@ -652,4 +652,4 @@ To report a vulnerability in glsec, see [SECURITY.md](SECURITY.md). It also docu
 
 ## License
 
-Apache 2.0
+Apache 2.0. The repository follows the [REUSE specification](https://reuse.software/): every file carries or is assigned its copyright and license, and `reuse lint` passes.

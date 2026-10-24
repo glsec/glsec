@@ -1,0 +1,9 @@
+version = 1
+
+# Files without their own header (Markdown, YAML fixtures, JSON, images) share
+# the project license. A header in the file itself takes precedence.
+[[annotations]]
+path = "**"
+precedence = "closest"
+SPDX-FileCopyrightText = "The glsec Authors"
+SPDX-License-Identifier = "Apache-2.0"

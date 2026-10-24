@@ -17,3 +17,6 @@ coverage.tsv
 
 # Playwright MCP artifacts
 .playwright-mcp/
+
+# Per-user Claude Code settings
+.claude/settings.local.json
