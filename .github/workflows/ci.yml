@@ -277,16 +277,23 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # An empty config written after checkout, so a .cfgaudit.yml in the pull
-      # request can't turn rules off (#688). rm -f drops a file or symlink the
-      # pull request put at this path. Move it to $RUNNER_TEMP once a cfgaudit
-      # release mounts configs from outside the workspace.
-      - run: rm -f .cfgaudit-ci.yml && touch .cfgaudit-ci.yml
-      - name: Scan agent instructions, settings and the plugin package
-        uses: cfgaudit/cfgaudit@ce428d4b49264a46bc4f62cebb6d16ac95d30298 # v1.17.1
+      # The config lives outside the workspace, so a .cfgaudit.yml in the pull
+      # request can't turn rules off (#688); the action mounts it read-only.
+      # content-paths scans the Markdown docs for hidden content (#708).
+      - name: Write the scan config
+        run: |
+          cat > "$RUNNER_TEMP/cfgaudit.yml" <<'YAML'
+          content-paths:
+            - "*.md"
+            - "docs/**/*.md"
+            - ".github/**/*.md"
+          YAML
+      - name: Scan agent instructions, settings, the plugin package and docs
+        uses: cfgaudit/cfgaudit@d490362f1889e84c2704ae304a0e6bb1863697fa # v1.18.1
         with:
           plugins: .
-          config: .cfgaudit-ci.yml
+          config: ${{ runner.temp }}/cfgaudit.yml
+          strict: "true"
 
   trivy:
     name: Security (Trivy image)
