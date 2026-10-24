@@ -60,7 +60,7 @@ func checkSSHKeyEcho(node *yaml.Node, file, job string) []finding.Finding {
 				RuleID:   "GL032",
 				Severity: finding.Warn,
 				Job:      job,
-				Message:  "private key written via echo — its value appears in the job log when debug tracing (set -x / CI_DEBUG_TRACE) is active; feed it through stdin instead, e.g. echo \"$KEY\" | ssh-add -",
+				Message:  "private key written via echo — its value appears in the job log when debug tracing (set -x / CI_DEBUG_TRACE) is active; use a file-type variable or a here-string instead, e.g. ssh-add - <<< \"$KEY\"",
 				File:     file,
 				Line:     item.Line,
 				Col:      item.Column,

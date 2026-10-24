@@ -342,6 +342,12 @@ jobs:
       - run: pip install --require-hashes --no-deps -r .github/requirements/check-jsonschema.txt
       - name: Validate against GitLab CI schema
         run: check-jsonschema --builtin-schema gitlab-ci testdata/fixtures/*.yml
+      # The trigger and safe examples in docs/rules have to be valid pipelines
+      # too, or readers copy something GitLab rejects (#696).
+      - name: Validate the rule doc examples against GitLab CI schema
+        run: |
+          python3 .github/scripts/doc-examples.py "$RUNNER_TEMP/doc-examples"
+          check-jsonschema --builtin-schema gitlab-ci "$RUNNER_TEMP"/doc-examples/*.yml
 
   version-pins:
     name: Check version pins agree

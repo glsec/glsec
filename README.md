@@ -138,6 +138,12 @@ glsec --strict .gitlab-ci.yml
 # advisory mode: always exit 0, even with findings
 glsec --no-exit-codes .gitlab-ci.yml
 
+# skip rules for keywords your GitLab version doesn't have yet
+glsec --gitlab-version 16.0 .gitlab-ci.yml
+
+# no ANSI colours (also when NO_COLOR is set)
+glsec --no-color .gitlab-ci.yml
+
 # exclude a file or directory from scanning
 glsec --exclude vendor/ .gitlab-ci.yml
 

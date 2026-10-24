@@ -7,8 +7,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"encoding/xml"
+	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -372,5 +374,24 @@ func TestParseExplainDoc_CRLF(t *testing.T) {
 	}
 	if lf.risk == "" || lf.title == "" {
 		t.Errorf("GL001 docs parsed without title or risk: %+v", lf)
+	}
+}
+
+// Every flag glsec accepts is documented in the README (#696).
+func TestReadmeDocumentsEveryFlag(t *testing.T) {
+	var stderr bytes.Buffer
+	run([]string{"-h"}, io.Discard, &stderr)
+	readme, err := os.ReadFile(filepath.Join("..", "..", "README.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	flags := regexp.MustCompile(`(?m)^\s+-([a-z][a-z-]*)`).FindAllStringSubmatch(stderr.String(), -1)
+	if len(flags) < 10 {
+		t.Fatalf("found only %d flags in the usage text:\n%s", len(flags), stderr.String())
+	}
+	for _, m := range flags {
+		if !regexp.MustCompile(`--` + m[1] + `(?:[^a-z-]|$)`).Match(readme) {
+			t.Errorf("--%s is not mentioned in README.md", m[1])
+		}
 	}
 }

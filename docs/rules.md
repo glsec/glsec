@@ -10,7 +10,7 @@ Secrets hardcoded, leaked through logs, or forwarded to unintended consumers.
 
 | ID | Severity | Description |
 |----|----------|-------------|
-| [GL005](rules/GL005.md) | `warn`  | Sensitive file patterns in `artifacts:` paths |
+| [GL005](rules/GL005.md) | `error`/`warn` | Sensitive file patterns in `artifacts:` paths |
 | [GL027](rules/GL027.md) | `warn`  | Secret-like variable defined without `masked: true` |
 | [GL004](rules/GL004.md) | `warn`  | `CI_JOB_TOKEN` forwarded to a non-GitLab host |
 | [GL006](rules/GL006.md) | `error` | Hardcoded secret in `variables:` block |
@@ -42,13 +42,13 @@ Mutable references that allow silent substitution of images, templates, or packa
 
 | ID | Severity | Description |
 |----|----------|-------------|
-| [GL001](rules/GL001.md) | `error` | Mutable image tag (`latest`, no tag, non-digest pin); version-less variant tags such as `docker:dind` as `warn` |
+| [GL001](rules/GL001.md) | `error`/`warn` | Mutable image tag (`latest`, no tag, non-digest pin); version-less variant tags such as `docker:dind` as `warn` |
 | [GL003](rules/GL003.md) | `error` | Remote `include:` with mutable or missing `ref` |
 | [GL011](rules/GL011.md) | `error` | Download-and-execute pattern in script (`curl \| bash`, `wget \| sh`) |
 | [GL016](rules/GL016.md) | varies  | Insecure transport — HTTP or `git://` (`include:remote`, scripts, variables) |
 | [GL022](rules/GL022.md) | `warn`  | Package manager install or fetch-and-run launcher (`npx -y`, `dlx`, `uvx`) without version pin, or explicit update-to-latest in CI |
 | [GL023](rules/GL023.md) | `warn`  | Lockfile not enforced (`npm install` instead of `npm ci`, `yarn install` without `--frozen-lockfile`, etc.) |
-| [GL046](rules/GL046.md) | varies  | Cache poisoning across the protected-branch boundary — `cache: key:` from a user-controlled variable, or `cache: unprotect: true` on a job that writes the cache |
+| [GL046](rules/GL046.md) | `error`/`warn` | Cache poisoning across the protected-branch boundary — `cache: key:` from a user-controlled variable, or `cache: unprotect: true` on a job that writes the cache |
 | [GL026](rules/GL026.md) | `warn`  | `git clone`/`checkout` uses a mutable ref (branch or tag) instead of a pinned commit SHA |
 | [GL064](rules/GL064.md) | `warn`  | `include: component:` path is one edit from a popular component under a different namespace (typosquat) |
 | [GL069](rules/GL069.md) | `warn`  | Package signature/auth verification bypassed (`apt --allow-unauthenticated`, `[trusted=yes]`, `apk --allow-untrusted`, `GOSUMDB=off`) |
@@ -70,14 +70,14 @@ User-controlled inputs and unversioned component references that allow malicious
 | [GL025](rules/GL025.md) | `warn`  | `curl`/`wget` uses a user-controlled CI variable — attacker can redirect the request to an arbitrary host |
 | [GL041](rules/GL041.md) | `warn`  | `include: component:` without a pinned semver tag or commit SHA |
 | [GL044](rules/GL044.md) | `warn`  | MR-triggered job checks out `$CI_MERGE_REQUEST_SOURCE_BRANCH_SHA` — executes attacker-controlled code with `$CI_JOB_TOKEN` access |
-| [GL051](rules/GL051.md) | varies  | Unconstrained `spec:inputs` or job `inputs:` entry interpolated into `image:`, `script:` and similar keywords — caller can supply arbitrary values |
+| [GL051](rules/GL051.md) | `error`/`warn` | Unconstrained `spec:inputs` or job `inputs:` entry interpolated into `image:`, `script:` and similar keywords — caller can supply arbitrary values |
 | [GL053](rules/GL053.md) | `warn`  | Missing or unrestricted `workflow:rules` — pipelines run for every event, including untrusted fork merge requests |
 | [GL065](rules/GL065.md) | `warn`  | `image:`/`services:` from a registry not in the opt-in `allowed_registries` allowlist |
 | [GL067](rules/GL067.md) | `warn`  | `SECURE_ANALYZERS_PREFIX` (or `*_ANALYZER_IMAGE`) repoints managed security scanners off `registry.gitlab.com` |
 | [GL078](rules/GL078.md) | `warn`  | Invisible / bidirectional Unicode control characters (Trojan Source) and line breaks only YAML sees — rendered file can differ from what runs |
-| [GL083](rules/GL083.md) | varies  | Reverse shell, backdoor or credential exfiltration in `script:` — connects the runner back to an attacker-controlled host, or sends a credential file, minted token, or the job environment to one |
-| [GL084](rules/GL084.md) | varies  | CI variable interpolation in an `include:` target — the included configuration is picked at pipeline start |
-| [GL085](rules/GL085.md) | varies  | AI coding agent (Claude Code, Codex, Gemini CLI, Copilot CLI) run with approvals disabled, or with user-controlled text in its prompt |
+| [GL083](rules/GL083.md) | `error`/`warn` | Reverse shell, backdoor or credential exfiltration in `script:` — connects the runner back to an attacker-controlled host, or sends a credential file, minted token, or the job environment to one |
+| [GL084](rules/GL084.md) | `error`/`warn` | CI variable interpolation in an `include:` target — the included configuration is picked at pipeline start |
+| [GL085](rules/GL085.md) | `error`/`warn` | AI coding agent (Claude Code, Codex, Gemini CLI, Copilot CLI) run with approvals disabled, or with user-controlled text in its prompt |
 
 ---
 
