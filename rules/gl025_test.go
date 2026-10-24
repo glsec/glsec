@@ -4,6 +4,7 @@
 package rules
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -178,5 +179,65 @@ notify:
 `)
 	if len(f) != 1 {
 		t.Fatalf("expected 1 finding for CI_COMMIT_TAG, got %d", len(f))
+	}
+}
+
+func TestGL025_SanitisedOnEarlierLine_NoFinding(t *testing.T) {
+	f := findings025(t, `
+notify:
+  script:
+    - |
+      BRANCH=$(printf '%s' "$CI_COMMIT_REF_NAME" | tr -cd '[:alnum:]-_.')
+      curl "https://hooks.example.com/notify?branch=${BRANCH}"
+`)
+	if len(f) != 0 {
+		t.Fatalf("expected no finding for a sanitised value, got %d", len(f))
+	}
+}
+
+func TestGL025_UnsanitisedAssignment(t *testing.T) {
+	f := findings025(t, `
+notify:
+  script:
+    - |
+      B=$CI_COMMIT_REF_NAME
+      C="x-$B"
+      curl "https://hooks.example.com/notify?branch=$C"
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding through the assignments, got %d", len(f))
+	}
+	if !strings.Contains(f[0].Message, "CI_COMMIT_REF_NAME") {
+		t.Errorf("message should name the source variable: %s", f[0].Message)
+	}
+}
+
+func TestGL025_DataURLEncode_NoFinding(t *testing.T) {
+	for _, src := range []string{`
+notify:
+  script:
+    - curl -X POST https://hooks.example.com/notify \
+        --data-urlencode "branch=$CI_COMMIT_REF_NAME"
+`, `
+notify:
+  script:
+    - |
+      curl -X POST https://hooks.example.com/notify \
+        --data-urlencode "branch=$CI_COMMIT_REF_NAME"
+`} {
+		if f := findings025(t, src); len(f) != 0 {
+			t.Errorf("expected no finding for --data-urlencode, got %d", len(f))
+		}
+	}
+}
+
+func TestGL025_DataURLEncodeAndRawValue(t *testing.T) {
+	f := findings025(t, `
+notify:
+  script:
+    - curl -G https://hooks.example.com --data-urlencode "b=$CI_COMMIT_REF_NAME" -d "t=$CI_COMMIT_TITLE"
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for the raw value next to the encoded one, got %d", len(f))
 	}
 }
