@@ -31,7 +31,7 @@ updates:
       interval: daily
     open-pull-requests-limit: 5
 
-  # CI tools installed with pip (zizmor, check-jsonschema). The .txt files are
+  # CI tools installed with pip (zizmor, check-jsonschema, reuse). The .txt files are
   # pip-compile output with hashes; Dependabot recompiles them on update.
   - package-ecosystem: pip
     directory: /.github/requirements

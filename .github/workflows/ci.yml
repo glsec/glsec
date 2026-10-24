@@ -193,6 +193,11 @@ jobs:
             echo "$missing"
             exit 1
           fi
+      - name: Install reuse
+        # Version and hash pinned in .github/requirements/reuse.txt (#684).
+        run: pip install --require-hashes --no-deps -r .github/requirements/reuse.txt
+      # Every file has a license, the license texts are in LICENSES/ (#684).
+      - run: reuse lint
 
   security:
     name: Security (govulncheck)
@@ -233,6 +238,7 @@ jobs:
             --recursive
             --lockfile=requirements.txt:./.github/requirements/check-jsonschema.txt
             --lockfile=requirements.txt:./.github/requirements/zizmor.txt
+            --lockfile=requirements.txt:./.github/requirements/reuse.txt
             ./
 
   dependency-review:

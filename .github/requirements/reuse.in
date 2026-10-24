@@ -1,0 +1,3 @@
+# reuse for the "License headers" job in ci.yml.
+# Regenerate the hashed .txt with the pip-compile command in its header.
+reuse==5.0.2
