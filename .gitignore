@@ -20,3 +20,5 @@ coverage.tsv
 
 # Per-user Claude Code settings
 .claude/settings.local.json
+
+# Test for #691, not to be merged
