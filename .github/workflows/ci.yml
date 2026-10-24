@@ -250,6 +250,9 @@ jobs:
         with:
           fail-on-severity: low
           allow-licenses: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, MPL-2.0, PSF-2.0, Unlicense, 0BSD
+          # reuse (GPL-3.0) and its dependency python-debian (GPL-2.0) only run in
+          # the license headers job; nothing from them ships with glsec (#684).
+          allow-dependencies-licenses: pkg:pypi/reuse, pkg:pypi/python-debian
 
   zizmor:
     name: Security (zizmor)
