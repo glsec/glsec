@@ -184,6 +184,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # The pattern below is not a license expression for reuse lint.
+      # REUSE-IgnoreStart
       - name: Every source file carries the SPDX license line
         run: |
           missing=$(git ls-files '*.go' Dockerfile Makefile bin/glsec \
@@ -193,6 +195,7 @@ jobs:
             echo "$missing"
             exit 1
           fi
+      # REUSE-IgnoreEnd
       - name: Install reuse
         # Version and hash pinned in .github/requirements/reuse.txt (#684).
         run: pip install --require-hashes --no-deps -r .github/requirements/reuse.txt
