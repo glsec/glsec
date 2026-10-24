@@ -11,7 +11,7 @@ Secrets hardcoded, leaked through logs, or forwarded to unintended consumers.
 | ID | Severity | Description |
 |----|----------|-------------|
 | [GL005](rules/GL005.md) | `error`/`warn` | Sensitive file patterns in `artifacts:` paths |
-| [GL027](rules/GL027.md) | `warn`  | Secret-like variable defined without `masked: true` |
+| [GL027](rules/GL027.md) | `warn`  | Secret-like variable with a value committed in the pipeline file (long form, pre-fills the Run pipeline form) |
 | [GL004](rules/GL004.md) | `warn`  | `CI_JOB_TOKEN` forwarded to a non-GitLab host |
 | [GL006](rules/GL006.md) | `error` | Hardcoded secret in `variables:` block |
 | [GL066](rules/GL066.md) | `error` | Inline registry credentials in `DOCKER_AUTH_CONFIG` instead of a masked CI/CD variable |

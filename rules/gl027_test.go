@@ -4,6 +4,7 @@
 package rules
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -19,12 +20,12 @@ func findings027(t *testing.T, yaml string) []finding.Finding {
 	return GL027.Check(doc.Root, "test.yml")
 }
 
-func TestGL027_MissingMasked(t *testing.T) {
+func TestGL027_LongFormValue(t *testing.T) {
 	f := findings027(t, `
 variables:
-  DEPLOY_TOKEN:
-    value: "glpat-xxxx"
-    description: "deploy token"
+  DEPLOY_PASSWORD:
+    value: "staging-pw-2024"
+    description: "Password for the staging deploy user"
 `)
 	if len(f) != 1 {
 		t.Fatalf("expected 1 finding, got %d", len(f))
@@ -32,39 +33,66 @@ variables:
 	if f[0].Severity != finding.Warn {
 		t.Errorf("expected Warn, got %s", f[0].Severity)
 	}
-}
-
-func TestGL027_MaskedFalse(t *testing.T) {
-	f := findings027(t, `
-variables:
-  DEPLOY_TOKEN:
-    value: "glpat-xxxx"
-    masked: false
-`)
-	if len(f) != 1 {
-		t.Fatalf("expected 1 finding for masked: false, got %d", len(f))
+	if strings.Contains(f[0].Message, "masked: true") {
+		t.Errorf("message must not recommend masked: true: %s", f[0].Message)
 	}
 }
 
-func TestGL027_MaskedTrue_NoFinding(t *testing.T) {
+// masked: is not a .gitlab-ci.yml keyword (#698), so it changes nothing.
+func TestGL027_MaskedKeyDoesNotHelp(t *testing.T) {
 	f := findings027(t, `
 variables:
-  DEPLOY_TOKEN:
-    value: "glpat-xxxx"
+  DEPLOY_PASSWORD:
+    value: "staging-pw-2024"
     masked: true
 `)
-	if len(f) != 0 {
-		t.Errorf("expected no finding when masked: true, got %d", len(f))
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding despite masked: true, got %d", len(f))
+	}
+}
+
+func TestGL027_NoLiteralValue_NoFinding(t *testing.T) {
+	for name, src := range map[string]string{
+		"description only": `
+variables:
+  DEPLOY_TOKEN:
+    description: "Paste a deploy token when you run the pipeline"
+`,
+		"empty value": `
+variables:
+  DEPLOY_TOKEN:
+    value: ""
+    description: "Paste a deploy token"
+`,
+		"variable reference": `
+variables:
+  DEPLOY_TOKEN:
+    value: $PROJECT_DEPLOY_TOKEN
+`,
+		"placeholder": `
+variables:
+  DEPLOY_TOKEN:
+    value: "changeme"
+`,
+		"known token format, reported by GL006": `
+variables:
+  DEPLOY_TOKEN:
+    value: "glpat-abcdefghijklmnopqrstuvwxyz"
+`,
+	} {
+		if f := findings027(t, src); len(f) != 0 {
+			t.Errorf("%s: expected no finding, got %d", name, len(f))
+		}
 	}
 }
 
 func TestGL027_ScalarForm_NoFinding(t *testing.T) {
 	f := findings027(t, `
 variables:
-  DEPLOY_TOKEN: "glpat-xxxx"
+  POSTGRES_PASSWORD: postgres
 `)
 	if len(f) != 0 {
-		t.Errorf("scalar form cannot carry masked: true — expected no finding, got %d", len(f))
+		t.Fatalf("expected no finding for scalar form, got %d", len(f))
 	}
 }
 
@@ -72,10 +100,11 @@ func TestGL027_NonSecretName_NoFinding(t *testing.T) {
 	f := findings027(t, `
 variables:
   DEPLOY_ENV:
-    value: "production"
+    value: "staging"
+    description: "Environment"
 `)
 	if len(f) != 0 {
-		t.Errorf("non-secret name should not be flagged, got %d", len(f))
+		t.Fatalf("expected no finding for non-secret name, got %d", len(f))
 	}
 }
 
@@ -122,8 +151,7 @@ variables:
   API_TOKEN:
     value: "secret"
   DB_PASSWORD:
-    value: "pw"
-    masked: true
+    value: $DB_PASSWORD_FROM_SETTINGS
   SSH_KEY:
     value: "key"
 `)

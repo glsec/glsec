@@ -5,6 +5,7 @@ package rules
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
 	"github.com/glsec/glsec/internal/parser"
@@ -21,20 +22,20 @@ func (r *gl027) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
 	mapping := parser.Unwrap(doc)
 
-	findings = append(findings, checkMaskedVariables(parser.FindKey(mapping, "variables"), file, "")...)
+	findings = append(findings, checkCommittedSecretVariables(parser.FindKey(mapping, "variables"), file, "")...)
 
 	if def := parser.FindKey(mapping, "default"); def != nil {
-		findings = append(findings, checkMaskedVariables(parser.FindKey(def, "variables"), file, "")...)
+		findings = append(findings, checkCommittedSecretVariables(parser.FindKey(def, "variables"), file, "")...)
 	}
 
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
-		findings = append(findings, checkMaskedVariables(parser.FindKey(job, "variables"), file, name.Value)...)
+		findings = append(findings, checkCommittedSecretVariables(parser.FindKey(job, "variables"), file, name.Value)...)
 	})
 
 	return findings
 }
 
-func checkMaskedVariables(node *yaml.Node, file, job string) []finding.Finding {
+func checkCommittedSecretVariables(node *yaml.Node, file, job string) []finding.Finding {
 	if node == nil || node.Kind != yaml.MappingNode {
 		return nil
 	}
@@ -43,32 +44,44 @@ func checkMaskedVariables(node *yaml.Node, file, job string) []finding.Finding {
 		varName := node.Content[i].Value
 		val := node.Content[i+1]
 
-		// Only flag the long-form mapping — scalar form cannot carry masked: true.
-		if val.Kind != yaml.MappingNode {
+		// The long form (value: + description:) is what pre-fills the Run
+		// pipeline form. Short-form secret-like names are mostly throwaway
+		// passwords for service containers and are left to GL006's formats.
+		if val.Kind != yaml.MappingNode || !hasSecretSuffix(varName) {
 			continue
 		}
-		if !hasSecretSuffix(varName) {
+		v := parser.FindKey(val, "value")
+		if v == nil || v.Kind != yaml.ScalarNode || !committedSecretValue(v.Value) {
 			continue
 		}
 
-		maskedNode := parser.FindKey(val, "masked")
-		if maskedNode != nil && maskedNode.Value == "true" {
-			continue
-		}
-
-		f := finding.Finding{
+		findings = append(findings, finding.Finding{
 			RuleID:   "GL027",
 			Severity: finding.Warn,
 			Job:      job,
 			Message: fmt.Sprintf(
-				"variable %q has a secret-like name but is missing \"masked: true\" — its value will appear in CI job logs",
+				"variable %q has a secret-like name and a value committed in the pipeline file — everyone who can read the repository or open the Run pipeline form sees it, and .gitlab-ci.yml has no masked: setting; store it as a masked CI/CD variable in Settings → CI/CD → Variables and keep only the description here",
 				varName,
 			),
 			File: file,
 			Line: node.Content[i].Line,
 			Col:  node.Content[i].Column,
-		}
-		findings = append(findings, f)
+		})
 	}
 	return findings
+}
+
+// committedSecretValue reports whether v is a literal value worth reporting:
+// not empty, not a reference to another variable (GL018), not a placeholder,
+// and not a known token format, which GL006 already reports as an error.
+func committedSecretValue(v string) bool {
+	if v == "" || strings.HasPrefix(v, "$") || looksLikePlaceholder(v) {
+		return false
+	}
+	for _, pat := range secretPatterns {
+		if pat.re.MatchString(v) {
+			return false
+		}
+	}
+	return true
 }
