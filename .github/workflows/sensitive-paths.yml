@@ -1,0 +1,79 @@
+name: Sensitive paths
+
+# Fails while a pull request changes a file that reaches plugin users, the
+# release build or a maintainer's agent setup, until a maintainer sets the
+# sensitive-paths-reviewed label. A new push removes the label again (#691).
+#
+# pull_request_target runs this file from main, so a pull request can't change
+# the check it is measured by. That is only safe because the job never checks
+# out or runs code from the pull request: it reads the changed files and the
+# labels through the API.
+
+on:
+  pull_request_target: # zizmor: ignore[dangerous-triggers] no checkout, API reads only (see above)
+    types: [opened, reopened, synchronize, labeled, unlabeled]
+
+permissions: {}
+
+concurrency:
+  group: sensitive-paths-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  LABEL: sensitive-paths-reviewed
+
+jobs:
+  check:
+    name: Sensitive paths
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write # remove the label after a new push
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PR: ${{ github.event.pull_request.number }}
+      REPO: ${{ github.repository }}
+    steps:
+      - name: Remove the review label after a new push
+        if: github.event.action == 'synchronize' && contains(github.event.pull_request.labels.*.name, 'sensitive-paths-reviewed')
+        run: |
+          if ! gh api -X DELETE "repos/$REPO/issues/$PR/labels/$LABEL" > /dev/null; then
+            echo "::error::new commits after the review, but the $LABEL label could not be removed; remove it, review again and set it again"
+            exit 1
+          fi
+      - name: Check the changed files
+        run: |
+          # Renames count with their old path too, so moving a file out of
+          # hooks/ needs the label as well.
+          files=$(gh api --paginate "repos/$REPO/pulls/$PR/files" \
+            --jq '.[] | .filename, (.previous_filename // empty)')
+          hits=$(printf '%s\n' "$files" | grep -E \
+            -e '^(hooks|bin|skills|\.claude-plugin)/' \
+            -e '^\.github/(workflows|actions|instructions|agents|skills)/' \
+            -e '^(\.goreleaser\.ya?ml|Dockerfile)$' \
+            -e '(^|/)(CLAUDE|CLAUDE\.local|AGENTS|AGENT|GEMINI)\.md$' \
+            -e '^(\.claude|\.agents|\.cursor|\.vscode|\.devcontainer)/' \
+            -e '^(\.mcp\.json|\.envrc|\.cursorrules|\.github/copilot-instructions\.md)$' \
+            -e '^(\.gitignore|REUSE\.toml|\.github/dependabot\.yml|(\.github/|docs/)?CODEOWNERS)$' \
+            | sort -u || true)
+
+          if [ -z "$hits" ]; then
+            echo "No sensitive paths changed."
+            exit 0
+          fi
+
+          # File names come from the pull request: every line is indented, so
+          # none can start a workflow command such as ::error::.
+          {
+            echo "### Sensitive paths changed"
+            echo
+            printf '%s\n' "$hits" | sed 's/^/    /'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if gh api "repos/$REPO/issues/$PR/labels" --jq '.[].name' | grep -qx "$LABEL"; then
+            echo "Changed sensitive paths, reviewed ($LABEL is set):"
+            printf '%s\n' "$hits" | sed 's/^/  /'
+            exit 0
+          fi
+          echo "::error::this pull request changes sensitive paths; a maintainer has to review them and set the $LABEL label"
+          printf '%s\n' "$hits" | sed 's/^/  /'
+          exit 1
