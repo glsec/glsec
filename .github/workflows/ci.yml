@@ -267,6 +267,22 @@ jobs:
       - name: Run zizmor
         run: zizmor --gh-token "${{ secrets.GITHUB_TOKEN }}" .github/workflows/
 
+  cfgaudit:
+    name: Security (cfgaudit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # An empty config outside the workspace, so a .cfgaudit.yml in the pull
+      # request can't turn rules off (#688).
+      - run: ': > "$RUNNER_TEMP/cfgaudit.yml"'
+      - name: Scan agent instructions, settings and the plugin package
+        uses: cfgaudit/cfgaudit@ce428d4b49264a46bc4f62cebb6d16ac95d30298 # v1.17.1
+        with:
+          plugins: .
+          config: ${{ runner.temp }}/cfgaudit.yml
+
   trivy:
     name: Security (Trivy image)
     runs-on: ubuntu-latest
