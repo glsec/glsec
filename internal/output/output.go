@@ -226,7 +226,8 @@ func writeJSON(w io.Writer, findings []finding.Finding, owasp, asvs func(string)
 	return enc.Encode(out)
 }
 
-// SARIF 2.1.0 types — minimal subset for Code Scanning / GitLab SAST.
+// SARIF 2.1.0 types — minimal subset for GitHub Code Scanning. GitLab reads
+// security reports only in its own schema, not SARIF.
 type sarifLog struct {
 	Schema  string     `json:"$schema"`
 	Version string     `json:"version"`

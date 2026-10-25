@@ -56,7 +56,7 @@ It adds a `glsec` job that runs in the `test` stage (set the `stage` input to ch
 | **glsec** | GitLab CI security — works offline, no API key needed |
 
 - **85 rules** across the [OWASP Top 10 CI/CD Security Risks](#rules), each mapped to CWE: mutable images, secrets in variables, script injection, token exfiltration, unrestricted OIDC tokens, untrusted includes and more.
-- **Findings where you review code**: SARIF for GitLab SAST, GitLab Code Quality reports in merge requests, JUnit, JSON.
+- **Findings where you review code**: GitLab Code Quality reports in merge requests, JUnit, SARIF for GitHub Code Scanning, JSON.
 - **Adoptable on existing pipelines**: a baseline file and `--new-only` report only what a change introduces; suppressions carry a reason and an expiry date.
 - **Trustworthy releases**: signed, with SLSA provenance and reproducible builds ([details](#verifying-a-release)).
 
@@ -124,7 +124,7 @@ glsec --format table .gitlab-ci.yml
 # JSON output for machine consumption
 glsec --format json .gitlab-ci.yml
 
-# SARIF output for GitHub Code Scanning / GitLab SAST
+# SARIF output for GitHub Code Scanning
 glsec --format sarif .gitlab-ci.yml > gl.sarif
 
 # JSON carries the OWASP CICD-SEC and ASVS V14 mappings per finding, SARIF also CWE;
@@ -485,25 +485,6 @@ glsec:
     - ./glsec .gitlab-ci.yml
 ```
 
-### GitLab SAST integration
-
-Publish findings to GitLab's Security Dashboard by emitting SARIF and exposing it as a SAST report artifact:
-
-```yaml
-glsec:
-  stage: test
-  image:
-    name: ghcr.io/glsec/glsec:1.23.0
-    entrypoint: [""]
-  script:
-    - glsec --format sarif .gitlab-ci.yml > glsec.sarif || true
-  artifacts:
-    reports:
-      sast: glsec.sarif
-```
-
-Findings appear in the pipeline Security tab and the project Security Dashboard. Use `|| true` to prevent the glsec job itself from blocking the pipeline — the SAST report is uploaded regardless.
-
 ### GitLab Code Quality integration
 
 Show findings in the merge request's **Code Quality report**, on all GitLab tiers. With Ultimate they also appear inline in the diff, and Premium adds a Code Quality tab to the pipeline ([GitLab's tier overview](https://docs.gitlab.com/ci/testing/code_quality/)). The easiest path is the `glsec-code-quality` template from the [Catalog component](#gitlab-ci-catalog-component-recommended) above. The equivalent manual setup:
@@ -522,6 +503,8 @@ glsec:
 ```
 
 Severity mapping (glsec → Code Climate): `error` → `critical`, `warn` → `major`, `info` → `info`.
+
+glsec doesn't write GitLab's security report schema, so `artifacts:reports:sast` can't read its output: GitLab expects its own JSON format there, not SARIF. Code Quality is the way to see glsec's findings in a GitLab merge request.
 
 ### GitHub Actions
 
