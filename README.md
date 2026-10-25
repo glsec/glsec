@@ -125,7 +125,8 @@ glsec --format json .gitlab-ci.yml
 # SARIF output for GitHub Code Scanning / GitLab SAST
 glsec --format sarif .gitlab-ci.yml > gl.sarif
 
-# JSON/SARIF carry OWASP CICD-SEC, CWE, and OWASP ASVS V14 mappings per finding
+# JSON/SARIF carry OWASP CICD-SEC, CWE, and OWASP ASVS V14 mappings per finding;
+# each SARIF rule links to its page on glsec.github.io (helpUri)
 
 # Code Climate output for GitLab Code Quality (inline MR findings, works on all tiers)
 glsec --format codeclimate .gitlab-ci.yml > gl-code-quality.json
@@ -294,7 +295,7 @@ A cached result decides what glsec reports, so glsec only uses a cache directory
 | Pipeline Flow & Access Control | CICD-SEC-1, CICD-SEC-5 | GL008, GL009, GL012, GL013, GL017, GL019, GL034, GL039, GL043, GL055, GL071, GL074, GL080, GL081, GL082 |
 | Insecure Configuration | CICD-SEC-7 | GL024, GL028, GL030, GL031, GL042, GL047, GL048, GL049, GL050, GL054, GL056, GL057, GL058, GL060, GL061, GL063, GL076, GL077 |
 
-→ **[Full rule reference with descriptions and examples](docs/rules.md)**
+→ **[Full rule reference with descriptions and examples](https://glsec.github.io/rules/)** on glsec.github.io, built from [docs/rules.md](docs/rules.md) at each release
 
 **Not covered:** [CICD-SEC-2](https://owasp.org/www-project-top-10-ci-cd-security-risks/CICD-SEC-02-Inadequate-Identity-And-Access-Management) (Identity & Access Management) and [CICD-SEC-10](https://owasp.org/www-project-top-10-ci-cd-security-risks/CICD-SEC-10-Insufficient-Logging-And-Visibility) (Insufficient Logging & Visibility) are not detectable from static `.gitlab-ci.yml` analysis — they require platform-level context such as GitLab group/project settings, audit logs, or API access.
 

@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"text/tabwriter"
@@ -250,6 +251,7 @@ type sarifDriver struct {
 
 type sarifRule struct {
 	ID            string              `json:"id"`
+	HelpURI       string              `json:"helpUri,omitempty"`
 	Relationships []sarifRelationship `json:"relationships,omitempty"`
 }
 
@@ -318,6 +320,26 @@ func severityToSARIFLevel(s finding.Severity) string {
 	}
 }
 
+// SiteURL is glsec's website; every rule has a page at RuleURL (#718).
+const SiteURL = "https://glsec.github.io"
+
+var (
+	glsecRuleRe      = regexp.MustCompile(`^GL[0-9]{3}$`)
+	shellcheckRuleRe = regexp.MustCompile(`^SC[0-9]{4}$`)
+)
+
+// RuleURL returns the documentation page of a rule: glsec's own rules on the
+// website, ShellCheck's on its wiki, and "" for anything else.
+func RuleURL(id string) string {
+	switch {
+	case glsecRuleRe.MatchString(id):
+		return SiteURL + "/rules/" + id + "/"
+	case shellcheckRuleRe.MatchString(id):
+		return "https://www.shellcheck.net/wiki/" + id
+	}
+	return ""
+}
+
 // WriteSARIF writes SARIF output enriched with CWE and OWASP metadata.
 // cweID maps a rule ID to its CWE identifier (e.g. "CWE-798").
 // cweName maps a CWE identifier to its human-readable name.
@@ -355,7 +377,7 @@ func writeSARIF(w io.Writer, findings []finding.Finding,
 	run := sarifRun{
 		Tool: sarifTool{Driver: sarifDriver{
 			Name:           "glsec",
-			InformationURI: "https://github.com/glsec/glsec",
+			InformationURI: SiteURL,
 		}},
 		Results: results,
 	}
@@ -403,9 +425,10 @@ func writeSARIF(w io.Writer, findings []finding.Finding,
 			}
 		}
 
-		if len(rels) > 0 {
+		help := RuleURL(f.RuleID)
+		if help != "" || len(rels) > 0 {
 			run.Tool.Driver.Rules = append(run.Tool.Driver.Rules, sarifRule{
-				ID: f.RuleID, Relationships: rels,
+				ID: f.RuleID, HelpURI: help, Relationships: rels,
 			})
 		}
 	}

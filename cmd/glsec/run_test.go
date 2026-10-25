@@ -14,6 +14,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/glsec/glsec/internal/output"
 	"github.com/glsec/glsec/rules"
 )
 
@@ -410,6 +411,20 @@ func TestReadmeGoInstallPath(t *testing.T) {
 	for _, m := range paths {
 		if got := string(m[1]); got != "github.com/glsec/glsec/cmd/glsec" {
 			t.Errorf("README.md installs %s, but the main package is github.com/glsec/glsec/cmd/glsec", got)
+		}
+	}
+}
+
+// TestEveryRuleHasAPage checks that every rule's SARIF helpUri is its page on
+// the website, which is built from docs/rules/<ID>.md (#718).
+func TestEveryRuleHasAPage(t *testing.T) {
+	for _, r := range rules.All() {
+		id := r.ID()
+		if got, want := output.RuleURL(id), "https://glsec.github.io/rules/"+id+"/"; got != want {
+			t.Errorf("RuleURL(%s) = %q, want %q", id, got, want)
+		}
+		if _, err := os.Stat(filepath.Join("..", "..", "docs", "rules", id+".md")); err != nil {
+			t.Errorf("%s has no docs/rules/%s.md to build its page from", id, id)
 		}
 	}
 }

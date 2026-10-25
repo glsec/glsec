@@ -297,8 +297,9 @@ func TestWriteSARIF_WithCWE(t *testing.T) {
 
 	run := log.Runs[0]
 
-	if len(run.Tool.Driver.Rules) != 1 {
-		t.Fatalf("expected 1 rule descriptor (GL001 has CWE, GL002 does not), got %d", len(run.Tool.Driver.Rules))
+	// Every rule gets a descriptor for its helpUri; only GL001 has a CWE.
+	if len(run.Tool.Driver.Rules) != 2 || len(run.Tool.Driver.Rules[1].Relationships) != 0 {
+		t.Fatalf("expected descriptors for GL001 and GL002, relationships only on GL001, got %+v", run.Tool.Driver.Rules)
 	}
 	rule := run.Tool.Driver.Rules[0]
 	if rule.ID != "GL001" {
@@ -325,8 +326,10 @@ func TestWriteSARIF_NoCWE(t *testing.T) {
 	if err := json.Unmarshal(buf.Bytes(), &log); err != nil {
 		t.Fatalf("invalid SARIF JSON: %v", err)
 	}
-	if len(log.Runs[0].Tool.Driver.Rules) != 0 {
-		t.Error("expected no rule descriptors when CWE lookup is nil")
+	for _, r := range log.Runs[0].Tool.Driver.Rules {
+		if len(r.Relationships) != 0 {
+			t.Errorf("%s: expected no relationships when CWE lookup is nil, got %+v", r.ID, r.Relationships)
+		}
 	}
 	if len(log.Runs[0].Taxonomies) != 0 {
 		t.Error("expected no taxonomies when CWE lookup is nil")
@@ -482,8 +485,8 @@ func TestWriteSARIF_WithOWASP(t *testing.T) {
 		t.Fatalf("invalid SARIF JSON: %v", err)
 	}
 	run := log.Runs[0]
-	if len(run.Tool.Driver.Rules) != 1 {
-		t.Fatalf("expected 1 rule descriptor (GL001 has OWASP, GL002 does not), got %d", len(run.Tool.Driver.Rules))
+	if len(run.Tool.Driver.Rules) != 2 || len(run.Tool.Driver.Rules[1].Relationships) != 0 {
+		t.Fatalf("expected descriptors for GL001 and GL002, relationships only on GL001, got %+v", run.Tool.Driver.Rules)
 	}
 	rule := run.Tool.Driver.Rules[0]
 	if rule.ID != "GL001" {
@@ -626,5 +629,54 @@ func TestCodeClimateFingerprint_SeparatorInFields(t *testing.T) {
 	b := finding.Finding{RuleID: "GL001", File: "ci.yml", Job: "a", Message: "b|c", Line: 1}
 	if codeClimateFingerprint(a) == codeClimateFingerprint(b) {
 		t.Error("findings that differ only in where a | sits got the same fingerprint")
+	}
+}
+
+func TestRuleURL(t *testing.T) {
+	for id, want := range map[string]string{
+		"GL001":  "https://glsec.github.io/rules/GL001/",
+		"GL085":  "https://glsec.github.io/rules/GL085/",
+		"SC2086": "https://www.shellcheck.net/wiki/SC2086",
+		"GL1":    "",
+		"gl001":  "",
+		"SC86":   "",
+		"":       "",
+	} {
+		if got := RuleURL(id); got != want {
+			t.Errorf("RuleURL(%q) = %q, want %q", id, got, want)
+		}
+	}
+}
+
+// TestWriteSARIF_HelpURI checks that every rule descriptor links to its page
+// and the tool to the website (#718).
+func TestWriteSARIF_HelpURI(t *testing.T) {
+	findings := append([]finding.Finding{{RuleID: "SC2086", Severity: finding.Warn, File: "ci.yml", Line: 3, Message: "quote it"}}, testFindings...)
+	var buf bytes.Buffer
+	if err := WriteSARIF(&buf, findings, nil, nil, nil, nil, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	var log sarifLog
+	if err := json.Unmarshal(buf.Bytes(), &log); err != nil {
+		t.Fatalf("invalid SARIF JSON: %v", err)
+	}
+	driver := log.Runs[0].Tool.Driver
+	if driver.InformationURI != "https://glsec.github.io" {
+		t.Errorf("informationUri = %q", driver.InformationURI)
+	}
+	seen := map[string]bool{}
+	for _, r := range driver.Rules {
+		if seen[r.ID] {
+			t.Errorf("%s has two descriptors", r.ID)
+		}
+		seen[r.ID] = true
+		if r.HelpURI != RuleURL(r.ID) || r.HelpURI == "" {
+			t.Errorf("%s: helpUri = %q", r.ID, r.HelpURI)
+		}
+	}
+	for _, f := range findings {
+		if !seen[f.RuleID] {
+			t.Errorf("%s has no descriptor", f.RuleID)
+		}
 	}
 }
