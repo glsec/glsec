@@ -62,6 +62,14 @@ It adds a `glsec` job that runs in the `test` stage (set the `stage` input to ch
 
 ## Install
 
+**Homebrew (macOS and Linux):**
+
+```sh
+brew install glsec/tap/glsec
+```
+
+The [tap](https://github.com/glsec/homebrew-tap) takes each release only after its archives pass the provenance check described under [Verifying a release](#verifying-a-release).
+
 **Go install (requires Go 1.26+):**
 
 ```sh
@@ -88,8 +96,6 @@ docker run --rm -v "$PWD:/src:ro" -w /src ghcr.io/glsec/glsec:1.23.0
 Without a file argument glsec scans `.gitlab-ci.yml` in the mounted directory.
 
 To check the download before running it, see [Verifying a release](#verifying-a-release).
-
-Homebrew coming soon.
 
 ## Usage
 
