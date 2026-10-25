@@ -15,6 +15,8 @@
 
 **glsec** is a security linter for `.gitlab-ci.yml` files. It detects misconfigurations that can lead to supply-chain attacks, secret leakage, and token exfiltration — the same class of issues that [zizmor](https://github.com/zizmorcore/zizmor) and [actionlint](https://github.com/rhysd/actionlint) catch in GitHub Actions, but for GitLab CI.
 
+**Website and rule reference: [glsec.github.io](https://glsec.github.io)**
+
 ```
 $ glsec .gitlab-ci.yml
 
