@@ -44,7 +44,7 @@ include:
   - component: gitlab.com/glsec-io/glsec/glsec@v1.0.25
 ```
 
-It adds a `glsec` job that runs in the `test` stage (set the `stage` input to change that) and fails on error findings. For findings inline in merge request diffs, Docker, binary or GitHub Actions setups, see [CI integration](#ci-integration). To run it locally, see [Install](#install).
+It adds a `glsec` job that runs in the `test` stage (set the `stage` input to change that) and fails on error findings. For findings in merge requests, Docker, binary or GitHub Actions setups, see [CI integration](#ci-integration). To run it locally, see [Install](#install).
 
 ## Why glsec?
 
@@ -56,7 +56,7 @@ It adds a `glsec` job that runs in the `test` stage (set the `stage` input to ch
 | **glsec** | GitLab CI security — works offline, no API key needed |
 
 - **85 rules** across the [OWASP Top 10 CI/CD Security Risks](#rules), each mapped to CWE: mutable images, secrets in variables, script injection, token exfiltration, unrestricted OIDC tokens, untrusted includes and more.
-- **Findings where you review code**: SARIF for GitLab SAST, GitLab Code Quality for inline merge request annotations, JUnit, JSON.
+- **Findings where you review code**: SARIF for GitLab SAST, GitLab Code Quality reports in merge requests, JUnit, JSON.
 - **Adoptable on existing pipelines**: a baseline file and `--new-only` report only what a change introduces; suppressions carry a reason and an expiry date.
 - **Trustworthy releases**: signed, with SLSA provenance and reproducible builds ([details](#verifying-a-release)).
 
@@ -130,7 +130,8 @@ glsec --format sarif .gitlab-ci.yml > gl.sarif
 # JSON/SARIF carry OWASP CICD-SEC, CWE, and OWASP ASVS V14 mappings per finding;
 # each SARIF rule links to its page on glsec.github.io (helpUri)
 
-# Code Climate output for GitLab Code Quality (inline MR findings, works on all tiers)
+# Code Climate output for GitLab Code Quality (merge request report on all tiers,
+# inline in the diff with Ultimate)
 glsec --format codeclimate .gitlab-ci.yml > gl-code-quality.json
 
 # JUnit output for the pipeline Tests tab / MR test widget (works on all tiers)
@@ -425,7 +426,7 @@ stages:
   - test
 ```
 
-For inline findings on merge request diffs, add the `glsec-code-quality` template — works on **all GitLab tiers**, no Ultimate required:
+To see findings in merge requests, add the `glsec-code-quality` template. The merge request's Code Quality report works on **all GitLab tiers**; with Ultimate the findings also appear inline in the diff:
 
 ```yaml
 include:
@@ -505,7 +506,7 @@ Findings appear in the pipeline Security tab and the project Security Dashboard.
 
 ### GitLab Code Quality integration
 
-Show findings **inline on merge request diffs** using GitLab's Code Quality widget — works on all GitLab tiers (no Ultimate required, unlike SAST). The easiest path is the `glsec-code-quality` template from the [Catalog component](#gitlab-ci-catalog-component-recommended) above. The equivalent manual setup:
+Show findings in the merge request's **Code Quality report**, on all GitLab tiers. With Ultimate they also appear inline in the diff, and Premium adds a Code Quality tab to the pipeline ([GitLab's tier overview](https://docs.gitlab.com/ci/testing/code_quality/)). The easiest path is the `glsec-code-quality` template from the [Catalog component](#gitlab-ci-catalog-component-recommended) above. The equivalent manual setup:
 
 ```yaml
 glsec:
