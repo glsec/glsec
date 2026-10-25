@@ -395,3 +395,21 @@ func TestReadmeDocumentsEveryFlag(t *testing.T) {
 		}
 	}
 }
+
+// TestReadmeGoInstallPath checks that every go install command in the README
+// names this package (#716).
+func TestReadmeGoInstallPath(t *testing.T) {
+	readme, err := os.ReadFile(filepath.Join("..", "..", "README.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := regexp.MustCompile(`go install (github\.com/glsec/glsec\S*)@`).FindAllSubmatch(readme, -1)
+	if len(paths) == 0 {
+		t.Fatal("README.md has no go install command")
+	}
+	for _, m := range paths {
+		if got := string(m[1]); got != "github.com/glsec/glsec/cmd/glsec" {
+			t.Errorf("README.md installs %s, but the main package is github.com/glsec/glsec/cmd/glsec", got)
+		}
+	}
+}

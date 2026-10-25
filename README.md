@@ -63,7 +63,7 @@ It adds a `glsec` job that runs in the `test` stage (set the `stage` input to ch
 **Go install (requires Go 1.26+):**
 
 ```sh
-go install github.com/glsec/glsec@latest
+go install github.com/glsec/glsec/cmd/glsec@latest
 ```
 
 **Binary download:**
