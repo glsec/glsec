@@ -143,16 +143,28 @@ func Unwrap(node *yaml.Node) *yaml.Node {
 	return node
 }
 
-// ScalarContentLine returns the source line of the i-th line of a scalar
-// node's value. For block scalars (literal "|" or folded ">"), node.Line points
-// at the indicator line and the content begins on the next line, so the offset
-// is shifted by one; for plain or quoted scalars node.Line is the content line
-// itself. Use this when reporting findings located within a multi-line scalar.
+// ScalarContentLine returns the source line to report for the i-th line of a
+// scalar node's value. Only a literal block ("|") keeps its lines one to one,
+// starting on the line after the indicator. A folded block (">") and a plain or
+// quoted scalar join source lines and turn blank lines into line breaks, so a
+// value line can't be traced back to its source line from the node (#753);
+// every line is reported where the content starts: the line after ">", or the
+// scalar's own line. Use ScalarLineExact to tell the two apart.
 func ScalarContentLine(node *yaml.Node, i int) int {
-	if node.Style&(yaml.LiteralStyle|yaml.FoldedStyle) != 0 {
+	switch {
+	case node.Style&yaml.LiteralStyle != 0:
 		return node.Line + 1 + i
+	case node.Style&yaml.FoldedStyle != 0:
+		return node.Line + 1
 	}
-	return node.Line + i
+	return node.Line
+}
+
+// ScalarLineExact reports whether ScalarContentLine gives the exact source line
+// of the i-th value line: always for a literal block, and for the first line
+// of any other scalar.
+func ScalarLineExact(node *yaml.Node, i int) bool {
+	return i == 0 || node.Style&yaml.LiteralStyle != 0
 }
 
 // reservedKeys are top-level GitLab CI keys that are configuration, not job definitions.

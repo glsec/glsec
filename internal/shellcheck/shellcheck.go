@@ -30,6 +30,9 @@ type scOutput struct {
 type scriptLine struct {
 	content  string
 	yamlLine int
+	// approximate is set when yamlLine is where the scalar's content starts,
+	// not the line itself; ShellCheck's column then belongs to another line.
+	approximate bool
 }
 
 type scriptBlock struct {
@@ -106,6 +109,10 @@ func Run(doc *yaml.Node, file string, binPath string) []finding.Finding {
 			if idx < 0 || idx >= len(block.lines) {
 				continue
 			}
+			col := c.Column
+			if block.lines[idx].approximate {
+				col = 0
+			}
 			findings = append(findings, finding.Finding{
 				RuleID:   fmt.Sprintf("SC%d", c.Code),
 				Severity: mapSeverity(c.Level),
@@ -113,7 +120,7 @@ func Run(doc *yaml.Node, file string, binPath string) []finding.Finding {
 				Message:  c.Message,
 				File:     file,
 				Line:     block.lines[idx].yamlLine,
-				Col:      c.Column,
+				Col:      col,
 			})
 		}
 	}
@@ -209,17 +216,16 @@ func extractLines(seqNode *yaml.Node) []scriptLine {
 			lines = append(lines, scriptLine{content: val, yamlLine: item.Line})
 			continue
 		}
-		// Multi-line scalar: block scalars (| or >) start content one line after the indicator.
-		startLine := item.Line
-		if item.Style == yaml.LiteralStyle || item.Style == yaml.FoldedStyle {
-			startLine++
-		}
 		parts := strings.Split(val, "\n")
 		for i, part := range parts {
 			if part == "" && i == len(parts)-1 {
 				continue // trailing newline from block scalar
 			}
-			lines = append(lines, scriptLine{content: part, yamlLine: startLine + i})
+			lines = append(lines, scriptLine{
+				content:     part,
+				yamlLine:    parser.ScalarContentLine(item, i),
+				approximate: !parser.ScalarLineExact(item, i),
+			})
 		}
 	}
 	return lines

@@ -378,6 +378,14 @@ func TestScalarContentLine(t *testing.T) {
       echo c
     - >
       echo d
+
+      echo e
+    - echo f
+
+      echo g
+    - "echo h
+
+      echo i"
 `), "test.yml")
 	if err != nil {
 		t.Fatal(err)
@@ -385,14 +393,26 @@ func TestScalarContentLine(t *testing.T) {
 	items := FindKey(FindKey(doc.MappingNode(), "build"), "script").Content
 	for _, tc := range []struct {
 		item, i, want int
+		exact         bool
 	}{
-		{0, 0, 3}, // plain/quoted: the content is on the node's own line
-		{1, 0, 5}, // literal block: content starts one line after "|"
-		{1, 1, 6},
-		{2, 0, 8}, // folded block: one line after ">"
+		{0, 0, 3, true},   // quoted: the content is on the node's own line
+		{1, 0, 5, true},   // literal block: content starts one line after "|"
+		{1, 1, 6, true},   // and keeps its lines one to one
+		{2, 0, 8, true},   // folded block: content starts one line after ">"
+		{2, 1, 8, false},  // its second value line ("echo e", line 10) can't be traced
+		{3, 0, 11, true},  // plain scalar: its own line
+		{3, 1, 11, false}, // "echo g" is on line 13, reported where the scalar starts
+		{4, 1, 14, false}, // the same for a quoted scalar ("echo i" is on line 16)
 	} {
+		value := strings.Split(items[tc.item].Value, "\n")
+		if tc.i >= len(value) {
+			t.Fatalf("item %d has %d value lines, test wants line %d", tc.item, len(value), tc.i)
+		}
 		if got := ScalarContentLine(items[tc.item], tc.i); got != tc.want {
-			t.Errorf("item %d line %d: got %d, want %d", tc.item, tc.i, got, tc.want)
+			t.Errorf("item %d line %d (%q): got %d, want %d", tc.item, tc.i, value[tc.i], got, tc.want)
+		}
+		if got := ScalarLineExact(items[tc.item], tc.i); got != tc.exact {
+			t.Errorf("item %d line %d: exact = %v, want %v", tc.item, tc.i, got, tc.exact)
 		}
 	}
 }

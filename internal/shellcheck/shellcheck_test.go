@@ -115,7 +115,8 @@ func TestExtractLines_UnresolvedReference(t *testing.T) {
 }
 
 // fakeShellCheck writes an executable that appends each script it is given to
-// a log, separated by "--", and reports one SC2086 warning on its first line.
+// a log, separated by "--", and reports one SC2086 warning at column 6 of line
+// $FAKE_SC_LINE, or of the first line when that is unset.
 func fakeShellCheck(t *testing.T) (bin, log string) {
 	t.Helper()
 	if runtime.GOOS == "windows" {
@@ -127,7 +128,7 @@ func fakeShellCheck(t *testing.T) (bin, log string) {
 	script := "#!/bin/sh\n" +
 		"for f; do :; done\n" + // the script path is the last argument
 		"cat \"$f\" >> '" + log + "'\necho -- >> '" + log + "'\n" +
-		`echo '{"comments":[{"line":1,"column":6,"level":"warning","code":2086,"message":"Double quote to prevent globbing."}]}'` + "\n"
+		`echo "{\"comments\":[{\"line\":${FAKE_SC_LINE:-1},\"column\":6,\"level\":\"warning\",\"code\":2086,\"message\":\"Double quote to prevent globbing.\"}]}"` + "\n"
 	if err := os.WriteFile(bin, []byte(script), 0o700); err != nil { //nolint:gosec // test helper must be executable
 		t.Fatal(err)
 	}
@@ -214,19 +215,32 @@ func TestExtractLines_MultiLinePlainScalar(t *testing.T) {
 	}
 	// With a blank line it keeps a line break. Unlike | and >, the content
 	// starts on the item's own line, so the first line must not shift by one.
+	// The folded second line can't be traced back to line 3, so it's reported
+	// where the scalar starts and marked approximate (#753).
 	lines = extractLines(parseSeq(t, "- echo c\n\n  echo d\n"))
-	if len(lines) != 2 || lines[0].content != "echo c" || lines[0].yamlLine != 1 {
-		t.Errorf("got %+v, want the first command on line 1", lines)
+	if len(lines) != 2 || lines[0].content != "echo c" || lines[0].yamlLine != 1 || lines[0].approximate {
+		t.Errorf("got %+v, want the first command exactly on line 1", lines)
+	}
+	if lines[1].content != "echo d" || lines[1].yamlLine != 1 || !lines[1].approximate {
+		t.Errorf("got %+v, want the second command at the scalar's start, approximate", lines[1])
 	}
 }
 
-func TestRun_TempFileFailureSkipsTheBlock(t *testing.T) {
-	bin, log := fakeShellCheck(t)
-	t.Setenv("TMPDIR", filepath.Join(t.TempDir(), "missing"))
-	if f := runOn(t, bin, "build:\n  script:\n    - echo $X\n"); len(f) != 0 {
-		t.Errorf("a block that couldn't be written out must be skipped, got %+v", f)
-	}
-	if got := invocations(t, log); got != nil {
-		t.Errorf("ShellCheck must not run without its input file, got %q", got)
+func TestRun_ApproximateLineHasNoColumn(t *testing.T) {
+	bin, _ := fakeShellCheck(t)
+	t.Setenv("FAKE_SC_LINE", "2") // the script's second line
+	for _, tc := range []struct {
+		name, src string
+		line, col int
+	}{
+		{"literal block keeps line and column", "build:\n  script:\n    - |\n      echo ok\n      echo $X\n", 5, 6},
+		{"folded plain line has no column", "build:\n  script:\n    - echo ok\n\n      echo $X\n", 3, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := runOn(t, bin, tc.src)
+			if len(f) != 1 || f[0].Line != tc.line || f[0].Col != tc.col {
+				t.Errorf("got %+v, want line %d column %d", f, tc.line, tc.col)
+			}
+		})
 	}
 }

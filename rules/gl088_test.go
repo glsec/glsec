@@ -140,3 +140,20 @@ func TestGL088_AllFormats(t *testing.T) {
 		})
 	}
 }
+
+// A plain scalar folds its lines; the token's own line can't be traced back,
+// so the finding is reported where the scalar starts, not a line too early
+// or too late (#753).
+func TestGL088_FoldedScalarLine(t *testing.T) {
+	f := findings088(t, fmt.Sprintf(`
+build:
+  script:
+    - echo start
+
+
+      sonar-scanner -Dsonar.token=%s
+`, sonarToken))
+	if len(f) != 1 || f[0].Line != 4 {
+		t.Fatalf("expected 1 finding at the scalar's start on line 4, got %+v", f)
+	}
+}
