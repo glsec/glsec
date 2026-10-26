@@ -140,13 +140,31 @@ Every `finding.Finding` needs `RuleID`, `Severity`, `Message`, `File`, `Line`. S
 
 Severities: `finding.Error` (must fix), `finding.Warn` (should fix), `finding.Info` (informational).
 
-Shared helpers live in `rules/helpers.go`. Check there before writing a new helper function:
+Shared helpers live in `rules/helpers.go` and `rules/shell.go`. Check there before writing a new helper function. Most bugs fixed in 1.24.0 came from rules that skipped one of these:
+
+**Jobs and inheritance.** GitLab merges keys from `extends:` and `default:` into a job, and never runs hidden jobs (names starting with `.`).
 
 | Helper | What it does |
 |--------|-------------|
-| `CollectJobScriptLines(job)` | Returns all scalar script lines across `before_script`, `script`, `after_script` for a single job |
-| `EachScriptLine(doc, file, fn)` | Calls `fn` for every script line in the whole document — global sections, `default:`, and all jobs. Use this for rules that scan script content across the entire file |
-| `IsDeployLikeJob(jobName, job)` | Returns true when the job name, stage, or `environment:` key indicates deployment or release activity |
+| `NewInheritance(doc)` | Indexes the file once; build it at the start of `Check` |
+| `in.Key(job, "key")` | The value of a key that applies to the job: its own, else from the jobs it extends in this file, else from `default:` |
+| `in.Chain(job, "key")` | The values of a key along the `extends:` chain, for keys GitLab deep-merges (`artifacts:`, `trigger:`) |
+| `in.ExtendsResolved(job)` | Whether every template the job extends is in this file, so `Key` sees everything it inherits |
+| `runsInheritedJob(in, name, job)` | Not a hidden template and `ExtendsResolved`: the usual guard for job-level rules that read inherited keys |
+| `IsDeployLikeJob(jobName, job)` | Whether the job name, stage or `environment:` indicates deployment or release activity (the job's own keys only) |
+
+**Scripts.** Read a script one command at a time, not as one block of text: a `|` inside quotes is not a pipe, and a word in a here-document is not a command.
+
+| Helper | What it does |
+|--------|-------------|
+| `EachScriptBlock(doc, file, fn)` | Calls `fn` for every script sequence: global and `default:` sections, each job's scripts, hooks and `run:` steps. A sequence shared through a YAML anchor is visited once |
+| `EachScriptBlockPerJob` / `EachScriptLinePerJob` | The same, visiting a shared sequence once per job, for rules whose result depends on the job; cache per-line work with `nodeMemo` |
+| `EachScriptLine(doc, file, fn)` | Calls `fn` for every script line in the document |
+| `CollectJobScriptLines(job)` | All scalar script lines of a single job |
+| `shellCommands(item)` | Splits a script item into simple commands, respecting quotes, escapes, comments and here-documents |
+| `commandWords(text)` / `commandName(words)` | The words of a command without keywords, assignments, `env` and quotes, and the base name of the program it runs |
+| `logicalLines(item)` | The lines of an item, joining backslash continuations, with the index of the line each starts on |
+| `parser.ScalarContentLine(item, i)` | The source line of the item's `i`-th line, so a finding inside a `\|` block points at the line that triggers it |
 
 If you find that two or more rules need the same detection logic, extract it into `helpers.go` rather than duplicating it. Use unexported names for helpers that are only used within the `rules` package.
 
@@ -160,17 +178,21 @@ func All() []rule.Rule {
 }
 ```
 
-### Step 4 — satisfy the consistency test
+### Step 4 — satisfy the consistency tests
 
-`rules/consistency_test.go` runs automatically as part of `go test ./rules/` and enforces three invariants for every rule returned by `All()`:
+`rules/consistency_test.go` and `rules/docexamples_test.go` run as part of `go test ./rules/` and check every rule returned by `All()`:
 
 | Check | Requirement |
 |-------|-------------|
-| ID format | Must match `GL\d{3}` (e.g. `GL006`) |
-| Docs file | `docs/rules/GLNNN.md` must exist and contain at least one `CICD-SEC-N` or `OWASP` reference |
-| Fixture | At least one `testdata/fixtures/glnnn-*.yml` file must exist (lowercase rule ID as prefix) |
+| ID format | Matches `GL\d{3}` (e.g. `GL006`) and is not registered twice |
+| Fixture | At least one `testdata/fixtures/glnnn-*.yml` (lowercase rule ID as prefix), and the fixtures produce at least one finding for the rule |
+| OWASP | An entry in `rules/owasp.go`, and a `**OWASP:**` line in `docs/rules/GLNNN.md` naming the same categories |
+| CWE | An entry in `rules/cwe.go`, with the CWE's name in `cweNames` |
+| Rules overview | A `[GLNNN](rules/GLNNN.md)` link in `docs/rules.md`, under the `##` section of the rule's OWASP category |
+| README | The "N rules across …" count equals the number of registered rules, and the rule's ID appears once, in the row of the README category table for its OWASP category |
+| Doc examples | Every YAML block under `## Trigger example(s)` in the rule doc produces a finding for the rule; every block under `## Safe alternative(s)` produces none. Each block must be a pipeline glsec accepts, without a script line YAML reads as a mapping (GL086) or a duplicate key (GL087) |
 
-All three must be in place before the test suite passes.
+Steps 6 and 7 add the fixture, docs and README entries these checks look for.
 
 ### Step 5 — write unit tests
 
@@ -259,17 +281,22 @@ build:
 
 Create `testdata/fixtures/glNNN-short-name.yml` with a realistic example that exercises the rule. The fixture must be valid GitLab CI YAML — CI validates all fixtures against the GitLab CI JSON schema via `check-jsonschema`. Only a rule that reports something the schema itself rejects may skip this: start its fixture with a `# schema: skip` comment that says why, and put `<!-- schema: skip … -->` before the trigger example in its docs file.
 
-### Step 7 — update the README and add a docs file
+### Step 7 — add a docs file and update the overviews
 
 Create `docs/rules/GLNNN.md` with the full rule documentation (see existing files for structure). Required sections:
 
-- Rule ID, severity, OWASP reference (`CICD-SEC-N`), zizmor analogue if applicable
-- Risk explanation
-- Trigger example (flagged YAML)
-- Safe alternative
-- Detection notes
+- `# GLNNN — title`, then the `**Severity:**` and `**OWASP:**` lines (and `**CWE:**`, as in the newer docs)
+- `## Risk` or `## What glsec checks`: why the pattern is dangerous and what exactly is reported
+- `## Trigger example` (or `examples`): YAML the rule flags
+- `## Safe alternative` (or `alternatives`): YAML it doesn't flag
+- Notes on what is deliberately not reported, where it helps
 
-Add a row to the rules summary table in `README.md` linking to the new docs file.
+`glsec explain` and the SARIF rule metadata (GitHub code scanning shows it as the rule's help) read the `Risk` / `What glsec checks` and `Safe alternative(s)` sections by name, so keep those headings exactly.
+
+Then:
+
+- add a row ``| [GLNNN](rules/GLNNN.md) | `warn` | one-line description |`` to the table of the rule's OWASP category in `docs/rules.md`
+- add the rule ID to the matching row of the category table in `README.md` and raise the "N rules across …" count
 
 ## Developer Certificate of Origin
 
