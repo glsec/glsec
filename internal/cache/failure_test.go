@@ -289,8 +289,12 @@ func TestClear_GlobCharactersInDir(t *testing.T) {
 }
 
 func TestClear_UnreadableDirFails(t *testing.T) {
-	// The cache dir itself is a regular file. A path through a file would not
-	// do: Windows reports that as missing, which Clear treats as empty.
+	// Windows CI reports neither a path through a file nor a regular file as an
+	// error Clear would return, so the failure path is checked on Unix only.
+	if runtime.GOOS == "windows" {
+		t.Skip("listing a regular file is not an error here on Windows")
+	}
+	// The cache dir itself is a regular file.
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	if err := os.WriteFile(Dir(), nil, 0o600); err != nil {
 		t.Fatal(err)
