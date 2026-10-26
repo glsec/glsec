@@ -250,13 +250,27 @@ func CollectJobScriptLines(job *yaml.Node) []*yaml.Node {
 	return lines
 }
 
-// EachScriptBlock visits every script *sequence node* in the document: global
-// before/after_script, default: before/after_script + hooks:pre_get_sources_script,
-// and each job's script/before_script/after_script + hooks:pre_get_sources_script.
-// fn receives the sequence node, the file path, and the job name (empty for
-// global and default: blocks). hooks: is not a valid top-level keyword, so it is
-// only visited under default: and jobs.
+// EachScriptBlock calls fn for every script sequence of the file: the
+// top-level and default: before_script/after_script, each job's script,
+// before_script, after_script and hooks, and run: step scripts. A sequence
+// shared by several jobs through a YAML anchor is visited once, for the first
+// job that uses it: a rule's result for it doesn't depend on the job, and the
+// findings of the other jobs would only be merged by finding.Dedupe (#766).
+// Rules whose result depends on the job use EachScriptBlockPerJob.
 func EachScriptBlock(doc *yaml.Node, file string, fn func(node *yaml.Node, file, job string)) {
+	seen := map[*yaml.Node]bool{}
+	EachScriptBlockPerJob(doc, file, func(node *yaml.Node, file, job string) {
+		if seen[node] {
+			return
+		}
+		seen[node] = true
+		fn(node, file, job)
+	})
+}
+
+// EachScriptBlockPerJob is EachScriptBlock without the sharing shortcut: a
+// sequence used by several jobs is visited once per job.
+func EachScriptBlockPerJob(doc *yaml.Node, file string, fn func(node *yaml.Node, file, job string)) {
 	mapping := parser.Unwrap(doc)
 
 	visit := func(node *yaml.Node, job string) {
@@ -294,6 +308,18 @@ func EachScriptBlock(doc *yaml.Node, file string, fn func(node *yaml.Node, file,
 // global and default: sections).
 func EachScriptLine(doc *yaml.Node, file string, fn func(line *yaml.Node, file, job string)) {
 	EachScriptBlock(doc, file, func(node *yaml.Node, file, job string) {
+		for _, item := range node.Content {
+			if item.Kind == yaml.ScalarNode {
+				fn(item, file, job)
+			}
+		}
+	})
+}
+
+// EachScriptLinePerJob is EachScriptLine with every job visited, for rules
+// whose result depends on the job.
+func EachScriptLinePerJob(doc *yaml.Node, file string, fn func(line *yaml.Node, file, job string)) {
+	EachScriptBlockPerJob(doc, file, func(node *yaml.Node, file, job string) {
 		for _, item := range node.Content {
 			if item.Kind == yaml.ScalarNode {
 				fn(item, file, job)

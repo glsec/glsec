@@ -74,14 +74,14 @@ func (r *gl070) Check(doc *yaml.Node, file string) []finding.Finding {
 	// Jobs that get their AWS credentials from STS: the AWS_SECRET_ACCESS_KEY
 	// they set is short-lived, the flow this rule recommends.
 	sts := map[string]bool{}
-	EachScriptLine(doc, file, func(line *yaml.Node, file, job string) {
+	EachScriptLinePerJob(doc, file, func(line *yaml.Node, file, job string) {
 		if awsSTSRe.MatchString(line.Value) {
 			sts[job] = true
 		}
 	})
 
 	var findings []finding.Finding
-	EachScriptLine(doc, file, func(line *yaml.Node, file, job string) {
+	EachScriptLinePerJob(doc, file, func(line *yaml.Node, file, job string) {
 		if strings.HasPrefix(strings.TrimSpace(line.Value), "#") {
 			return
 		}

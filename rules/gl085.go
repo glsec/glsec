@@ -56,7 +56,7 @@ func (r *gl085) Check(doc *yaml.Node, file string) []finding.Finding {
 	mapping := parser.Unwrap(doc)
 	workflowMR := workflowAllowsMR(mapping)
 	var findings []finding.Finding
-	EachScriptLine(doc, file, func(item *yaml.Node, file, job string) {
+	EachScriptLinePerJob(doc, file, func(item *yaml.Node, file, job string) {
 		text := strings.ReplaceAll(item.Value, "\\\n", " ")
 		for _, line := range strings.Split(text, "\n") {
 			f, ok := checkAgentLine(line)

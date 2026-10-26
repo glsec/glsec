@@ -206,9 +206,16 @@ var (
 func (r *gl022) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
 
+	// A script line shared by several jobs through an anchor is checked
+	// once; the other jobs' findings would be merged by finding.Dedupe.
+	seen := map[*yaml.Node]bool{}
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
 		lines := CollectJobScriptLines(job)
 		for _, l := range lines {
+			if seen[l] {
+				continue
+			}
+			seen[l] = true
 			if f := checkPMLine(l.Value, file, l.Line, l.Column); f != nil {
 				f.Job = name.Value
 				findings = append(findings, *f)
