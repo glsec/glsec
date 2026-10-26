@@ -4,8 +4,14 @@
 package shellcheck
 
 import (
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 
+	"github.com/glsec/glsec/internal/finding"
+	"github.com/glsec/glsec/internal/parser"
 	"gopkg.in/yaml.v3"
 )
 
@@ -105,5 +111,122 @@ func TestExtractLines_UnresolvedReference(t *testing.T) {
 	}
 	if lines := extractLines(ref); lines != nil {
 		t.Errorf("an unresolved !reference holds a path, not commands, got %v", lines)
+	}
+}
+
+// fakeShellCheck writes an executable that appends each script it is given to
+// a log, separated by "--", and reports one SC2086 warning on its first line.
+func fakeShellCheck(t *testing.T) (bin, log string) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("the fake ShellCheck is a shell script")
+	}
+	dir := t.TempDir()
+	log = filepath.Join(dir, "log")
+	bin = filepath.Join(dir, "sc")
+	script := "#!/bin/sh\n" +
+		"for f; do :; done\n" + // the script path is the last argument
+		"cat \"$f\" >> '" + log + "'\necho -- >> '" + log + "'\n" +
+		`echo '{"comments":[{"line":1,"column":6,"level":"warning","code":2086,"message":"Double quote to prevent globbing."}]}'` + "\n"
+	if err := os.WriteFile(bin, []byte(script), 0o700); err != nil { //nolint:gosec // test helper must be executable
+		t.Fatal(err)
+	}
+	return bin, log
+}
+
+// invocations returns the scripts the fake ShellCheck was run on.
+func invocations(t *testing.T, log string) []string {
+	t.Helper()
+	data, err := os.ReadFile(log) //nolint:gosec // the test's own temp file
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	parts := strings.Split(string(data), "--\n")
+	return parts[:len(parts)-1]
+}
+
+func runOn(t *testing.T, bin, src string) []finding.Finding {
+	t.Helper()
+	doc, err := parser.Parse([]byte(src), "test.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return Run(doc.Root, "test.yml", bin)
+}
+
+func TestRun_JobHooks(t *testing.T) {
+	bin, log := fakeShellCheck(t)
+	f := runOn(t, bin, `build:
+  hooks:
+    pre_get_sources_script:
+      - echo $GIT_STRATEGY
+  script: []
+`)
+	if len(f) != 1 || f[0].RuleID != "SC2086" || f[0].Job != "build" || f[0].Line != 4 || f[0].Severity != finding.Warn {
+		t.Fatalf("expected one SC2086 on the hook line of job build, got %+v", f)
+	}
+	if got := invocations(t, log); len(got) != 1 || got[0] != "echo $GIT_STRATEGY\n" {
+		t.Errorf("expected ShellCheck to see only the hook, got %q", got)
+	}
+}
+
+func TestRun_EmptySectionsAreNotChecked(t *testing.T) {
+	bin, log := fakeShellCheck(t)
+	f := runOn(t, bin, `before_script: []
+default:
+  after_script: []
+  hooks:
+    pre_get_sources_script: []
+build:
+  before_script: []
+  script:
+    - echo $X
+  after_script: []
+steps:
+  run:
+    - name: noop
+      func: registry.example.com/fn:1
+`)
+	if got := invocations(t, log); len(got) != 1 || got[0] != "echo $X\n" {
+		t.Errorf("expected exactly one ShellCheck run, on the one non-empty section, got %q", got)
+	}
+	if len(f) != 1 || f[0].Line != 9 {
+		t.Errorf("expected one finding on line 9, got %+v", f)
+	}
+}
+
+func TestExtractLines_NonStringItems(t *testing.T) {
+	seq := parseSeq(t, "- echo a\n- key: value\n- [nested]\n- echo b\n")
+	lines := extractLines(seq)
+	if len(lines) != 2 || lines[0].content != "echo a" || lines[1].content != "echo b" || lines[1].yamlLine != 4 {
+		t.Errorf("non-string items must be skipped, got %+v", lines)
+	}
+}
+
+func TestExtractLines_MultiLinePlainScalar(t *testing.T) {
+	// A plain scalar over several lines folds into one command.
+	lines := extractLines(parseSeq(t, "- echo a\n  echo b\n"))
+	if len(lines) != 1 || lines[0].content != "echo a echo b" || lines[0].yamlLine != 1 {
+		t.Errorf("got %+v, want one folded command on line 1", lines)
+	}
+	// With a blank line it keeps a line break. Unlike | and >, the content
+	// starts on the item's own line, so the first line must not shift by one.
+	lines = extractLines(parseSeq(t, "- echo c\n\n  echo d\n"))
+	if len(lines) != 2 || lines[0].content != "echo c" || lines[0].yamlLine != 1 {
+		t.Errorf("got %+v, want the first command on line 1", lines)
+	}
+}
+
+func TestRun_TempFileFailureSkipsTheBlock(t *testing.T) {
+	bin, log := fakeShellCheck(t)
+	t.Setenv("TMPDIR", filepath.Join(t.TempDir(), "missing"))
+	if f := runOn(t, bin, "build:\n  script:\n    - echo $X\n"); len(f) != 0 {
+		t.Errorf("a block that couldn't be written out must be skipped, got %+v", f)
+	}
+	if got := invocations(t, log); got != nil {
+		t.Errorf("ShellCheck must not run without its input file, got %q", got)
 	}
 }
