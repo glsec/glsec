@@ -40,6 +40,7 @@ var secretPatterns = []secretPattern{
 	{"GitHub App installation token", regexp.MustCompile(`^ghs_[A-Za-z0-9_.-]{36,}$`)},
 	{"GitHub OAuth/user/refresh token", regexp.MustCompile(`^gh[uor]_[A-Za-z0-9]{36,}$`)},
 	{"Slack token", regexp.MustCompile(`^xox[baprs]-[A-Za-z0-9-]{10,}$`)},
+	{"Docker Hub access token", regexp.MustCompile(`^dckr_(?:pat|oat)_[A-Za-z0-9_-]{20,}$`)},
 	// Anthropic and OpenRouter reuse the sk- prefix but carry no OpenAI
 	// watermark; match them by their specific prefixes so they are labelled
 	// correctly instead of being reported as OpenAI keys.

@@ -50,6 +50,13 @@ var credChecks = []credCheck{
 		msg:  "script passes hardcoded credential via --password flag — use a masked CI variable instead",
 	},
 	{
+		// A literal after -p/--password; $VAR, "$VAR", \$VAR (in a heredoc
+		// for a remote shell), --password-stdin and another flag are not.
+		tool: "docker login",
+		re:   regexp.MustCompile(`\b(?:docker|podman)\s+login\b[^;&|\n]*\s(?:-p|--password)(?:\s+|=)["']?[^$"'\s\\-]`),
+		msg:  "script passes a hardcoded password to docker login — anyone who can read the repository can use it; store it in a masked CI/CD variable and pipe it to --password-stdin",
+	},
+	{
 		tool: "sed",
 		re:   regexp.MustCompile(`\bsed\b.+s/[^/]+/[^/:]*:[^$][^@]*@/`),
 		msg:  "script rewrites URL with hardcoded password literal via sed — use a masked CI variable instead",

@@ -17,7 +17,7 @@ var GL029 = &gl029{}
 func (r *gl029) ID() string { return "GL029" }
 
 // dockerLoginPasswordRe matches "docker login" with the short -p flag (not --password-stdin).
-var dockerLoginPasswordRe = regexp.MustCompile(`\bdocker\s+login\b.*\s-p\s`)
+var dockerLoginPasswordRe = regexp.MustCompile(`\b(?:docker|podman)\s+login\b[^;&|\n]*\s(?:-p|--password)(?:\s|=)`)
 
 func (r *gl029) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
@@ -41,7 +41,7 @@ func checkDockerLoginPassword(node *yaml.Node, file, job string) []finding.Findi
 				RuleID:   "GL029",
 				Severity: finding.Warn,
 				Job:      job,
-				Message:  "docker login uses -p flag — password is visible in the process table; use --password-stdin instead: echo \"$PASSWORD\" | docker login --password-stdin",
+				Message:  "docker login passes the password with -p or --password — it is visible in the process table; use --password-stdin instead: echo \"$PASSWORD\" | docker login --password-stdin",
 				File:     file,
 				Line:     item.Line,
 				Col:      item.Column,
