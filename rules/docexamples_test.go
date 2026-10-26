@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/glsec/glsec/internal/parser"
+	"github.com/glsec/glsec/internal/rule"
 	"github.com/glsec/glsec/internal/validate"
 )
 
@@ -85,6 +86,16 @@ func TestDocExamples(t *testing.T) {
 				if err != nil {
 					t.Errorf("docs/rules/%s.md:%d: glsec rejects the example: %v", id, ex.line, err)
 					continue
+				}
+				// A script line read as a mapping or a duplicate key is a slip in
+				// any example except the trigger examples of the rules about them.
+				for _, s := range []rule.Rule{GL086, GL087} {
+					if s.ID() == id {
+						continue
+					}
+					for _, f := range Check(s, doc, ".gitlab-ci.yml") {
+						t.Errorf("docs/rules/%s.md:%d: example trips %s: %s", id, ex.line+f.Line, s.ID(), f.Message)
+					}
 				}
 				// Inline suppressions are applied by the CLI, not by Check.
 				if strings.Contains(ex.src, "glsec:ignore "+id) {
