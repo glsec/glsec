@@ -325,6 +325,11 @@ func checkRef(ref, label string, line, col int, file string) []finding.Finding {
 	}
 	tag := imageTag(ref)
 	if tag == "" {
+		// A digest or tag that comes from a variable (name@${DIGEST},
+		// ${PREFIX}${IMAGE}, img$TAG_SUFFIX) is unknown statically.
+		if at := strings.Index(ref, "@"); at >= 0 && strings.Contains(ref[at:], "$") || strings.Contains(lastPathSegment(ref), "$") {
+			return nil
+		}
 		return []finding.Finding{{
 			RuleID:   "GL001",
 			Severity: finding.Error,
@@ -357,6 +362,14 @@ func checkRef(ref, label string, line, col int, file string) []finding.Finding {
 // since its value is unknown statically.
 func isVersionlessTag(tag string) bool {
 	return !strings.ContainsAny(tag, "0123456789$")
+}
+
+// lastPathSegment returns what follows the last / of an image reference.
+func lastPathSegment(ref string) string {
+	if i := strings.LastIndex(ref, "/"); i >= 0 {
+		return ref[i+1:]
+	}
+	return ref
 }
 
 // imageTag extracts the tag from an image reference.

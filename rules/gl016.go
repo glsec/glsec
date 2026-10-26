@@ -281,6 +281,10 @@ func isLoopback(host string) bool {
 	if host == "localhost" || host == "127.0.0.1" || host == "::1" {
 		return true
 	}
+	// RFC 6761: every name under .localhost is loopback.
+	if strings.HasSuffix(strings.ToLower(host), ".localhost") {
+		return true
+	}
 	if ip := net.ParseIP(host); ip != nil {
 		return ip.IsLoopback()
 	}
@@ -295,6 +299,11 @@ func isPrivateOrInternal(host string) bool {
 			}
 		}
 		return false
+	}
+	// A name without a dot only resolves inside the job's network: a service
+	// container (http://docker:2375, http://postgres:5432) or a compose alias.
+	if host != "" && !strings.Contains(host, ".") {
+		return true
 	}
 	lower := strings.ToLower(host)
 	for _, tld := range internalTLDs {
