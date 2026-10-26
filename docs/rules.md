@@ -114,6 +114,7 @@ Gates bypassed, runners untrusted, or downstream pipelines outside access contro
 | [GL080](rules/GL080.md) | `warn`  | Sensitive/deploy job with no pipeline-source guard (no `rules:`/`only:` or a `rules:` with no `if:`) — runs on every source including fork MRs |
 | [GL081](rules/GL081.md) | `warn`  | Job issues an OIDC `id_tokens:` credential on an unrestricted pipeline source — any branch or merge request can mint a cloud-federating token (GitLab ≥ 15.7) |
 | [GL082](rules/GL082.md) | `warn`  | Managed security scan switched off by CI/CD variable (`SAST_DISABLED`, `SECRET_DETECTION_DISABLED`, …) — the template's jobs never run |
+| [GL089](rules/GL089.md) | `warn`  | Renovate runs with autodiscovery and no filter — the bot works on every project its token can reach |
 
 ---
 

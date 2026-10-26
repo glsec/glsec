@@ -1,0 +1,13 @@
+stages:
+  - deps
+
+renovate:
+  stage: deps
+  image: renovate/renovate:39.42.4
+  variables:
+    RENOVATE_PLATFORM: gitlab
+    RENOVATE_AUTODISCOVER: "true"
+  script:
+    - renovate
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
