@@ -347,8 +347,12 @@ jobs:
           persist-credentials: false
       # Version and hashes pinned in .github/requirements/check-jsonschema.txt (#539).
       - run: pip install --require-hashes --no-deps -r .github/requirements/check-jsonschema.txt
+      # A fixture whose rule reports something the schema rejects starts with
+      # a "# schema: skip" comment that says why (#727).
       - name: Validate against GitLab CI schema
-        run: check-jsonschema --builtin-schema gitlab-ci testdata/fixtures/*.yml
+        run: |
+          mapfile -t fixtures < <(grep -L '^# schema: skip' testdata/fixtures/*.yml)
+          check-jsonschema --builtin-schema gitlab-ci "${fixtures[@]}"
       # The trigger and safe examples in docs/rules have to be valid pipelines
       # too, or readers copy something GitLab rejects (#696).
       - name: Validate the rule doc examples against GitLab CI schema

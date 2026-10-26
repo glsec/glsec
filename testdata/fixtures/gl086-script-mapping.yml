@@ -1,0 +1,6 @@
+# schema: skip — a script item that YAML reads as a mapping is what GL086
+# reports, and the GitLab CI schema rejects it for the same reason.
+deploy:
+  stage: deploy
+  script:
+    - curl -H "Authorization: Bearer $DEPLOY_TOKEN" "https://hooks.example.com/deploy?branch=$CI_COMMIT_REF_NAME"

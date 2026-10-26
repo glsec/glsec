@@ -257,7 +257,7 @@ build:
 
 ### Step 6 — add a fixture
 
-Create `testdata/fixtures/glNNN-short-name.yml` with a realistic example that exercises the rule. The fixture must be valid GitLab CI YAML — CI validates all fixtures against the GitLab CI JSON schema via `check-jsonschema`.
+Create `testdata/fixtures/glNNN-short-name.yml` with a realistic example that exercises the rule. The fixture must be valid GitLab CI YAML — CI validates all fixtures against the GitLab CI JSON schema via `check-jsonschema`. Only a rule that reports something the schema itself rejects may skip this: start its fixture with a `# schema: skip` comment that says why, and put `<!-- schema: skip … -->` before the trigger example in its docs file.
 
 ### Step 7 — update the README and add a docs file
 

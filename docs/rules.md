@@ -140,6 +140,7 @@ Misconfigured CI settings that expand the attack surface or leak build context.
 | [GL076](rules/GL076.md) | `warn`  | `docker run --security-opt seccomp=unconfined` / `apparmor=unconfined` disables kernel-level confinement — widens the escape surface without `--privileged` |
 | [GL077](rules/GL077.md) | `warn`  | `docker run --ipc host` shares the host IPC namespace — container can read host shared memory and signal host processes |
 | [GL063](rules/GL063.md) | `warn`  | `chmod` grants world-writable permissions (`777`, `a+w`, `o+w`) — TOCTOU risk on shared runners |
+| [GL086](rules/GL086.md) | `error` | Script line that YAML parses as a mapping (unquoted `: `) — GitLab rejects the pipeline and the command is never checked |
 
 ---
 
