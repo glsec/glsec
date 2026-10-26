@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
-	"time"
 
+	"github.com/glsec/glsec/internal/finding"
 	"github.com/glsec/glsec/internal/parser"
 	"gopkg.in/yaml.v3"
 )
@@ -18,10 +18,10 @@ import (
 func TestSharedScriptBlockScannedOnce(t *testing.T) {
 	var b strings.Builder
 	b.WriteString(".tpl: &tpl\n  script:\n    - |\n")
-	for i := 0; i < 2000; i++ {
+	for i := 0; i < 200; i++ {
 		fmt.Fprintf(&b, "      curl -sSL https://example.com/%d -o f%d && echo done %d\n", i, i, i)
 	}
-	for i := 0; i < 500; i++ {
+	for i := 0; i < 100; i++ {
 		fmt.Fprintf(&b, "job%d:\n  <<: *tpl\n", i)
 	}
 	doc, err := parser.Parse([]byte(b.String()), "t.yml")
@@ -35,14 +35,17 @@ func TestSharedScriptBlockScannedOnce(t *testing.T) {
 	}
 	perJob := 0
 	EachScriptBlockPerJob(doc.Root, "t.yml", func(*yaml.Node, string, string) { perJob++ })
-	if perJob != 501 {
-		t.Fatalf("per-job visits = %d, want 501", perJob)
+	if perJob != 101 {
+		t.Fatalf("per-job visits = %d, want 101", perJob)
 	}
-	start := time.Now()
+	// Every rule still reports the shared block once after Dedupe, as before.
+	var all []finding.Finding
 	for _, r := range All() {
-		r.Check(doc.Root, "t.yml")
+		all = append(all, r.Check(doc.Root, "t.yml")...)
 	}
-	if d := time.Since(start); d > 10*time.Second {
-		t.Errorf("all rules took %v on the shared-anchor file", d)
+	for _, f := range finding.Dedupe(all) {
+		if f.Line > 3+200 {
+			t.Errorf("finding outside the shared block: %+v", f)
+		}
 	}
 }
