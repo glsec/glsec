@@ -84,8 +84,11 @@ func checkIfCondition(node *yaml.Node, file string) []finding.Finding {
 		varName := m[1]
 		pattern := m[2]
 
-		hasStart := strings.HasPrefix(pattern, "^")
-		hasEnd := strings.HasSuffix(pattern, "$")
+		// \A and \z are anchors too, and a trailing .* already runs to the end
+		// of the value, so it needs no $.
+		hasStart := strings.HasPrefix(pattern, "^") || strings.HasPrefix(pattern, `\A`)
+		hasEnd := strings.HasSuffix(pattern, "$") || strings.HasSuffix(pattern, `\z`) ||
+			strings.HasSuffix(pattern, ".*") && !strings.HasSuffix(pattern, `\.*`)
 
 		if hasEnd {
 			continue
@@ -95,7 +98,7 @@ func checkIfCondition(node *yaml.Node, file string) []finding.Finding {
 		if hasStart {
 			msg = fmt.Sprintf(
 				"rules:if uses $%s =~ /%s/ — no trailing $ anchor; a value starting with \"%s\" also matches",
-				varName, pattern, strings.ReplaceAll(strings.TrimPrefix(pattern, "^"), `\/`, "/"),
+				varName, pattern, strings.ReplaceAll(strings.TrimPrefix(strings.TrimPrefix(pattern, "^"), `\A`), `\/`, "/"),
 			)
 		} else {
 			msg = fmt.Sprintf(

@@ -89,7 +89,8 @@ func checkArtifactPaths(node *yaml.Node, file string) []finding.Finding {
 			if item.Kind != yaml.ScalarNode {
 				continue
 			}
-			findings = append(findings, checkArtifactPath(item, file)...)
+			// Excluding a sensitive file is the fix, not the problem.
+			findings = append(findings, checkArtifactPath(item, file, section == "paths")...)
 		}
 	}
 
@@ -100,14 +101,14 @@ func missingExpireIn(node *yaml.Node, file string) finding.Finding {
 	return finding.Finding{
 		RuleID:   "GL005",
 		Severity: finding.Warn,
-		Message:  "artifacts block has no \"expire_in\" — artifacts are stored indefinitely, increasing the exposure window for any sensitive content",
+		Message:  "artifacts block has no \"expire_in\" — artifacts are kept as long as the instance default allows (30 days on GitLab.com, possibly forever on a self-managed instance), increasing the exposure window for any sensitive content",
 		File:     file,
 		Line:     node.Line,
 		Col:      node.Column,
 	}
 }
 
-func checkArtifactPath(item *yaml.Node, file string) []finding.Finding {
+func checkArtifactPath(item *yaml.Node, file string, sensitive bool) []finding.Finding {
 	var findings []finding.Finding
 	path := item.Value
 
@@ -130,7 +131,7 @@ func checkArtifactPath(item *yaml.Node, file string) []finding.Finding {
 			Line:     item.Line,
 			Col:      item.Column,
 		})
-	default:
+	case sensitive:
 		if pat := matchesSensitivePattern(path); pat != "" {
 			findings = append(findings, finding.Finding{
 				RuleID:   "GL005",

@@ -89,3 +89,21 @@ build:
 		}
 	}
 }
+
+func TestGL087_AnchoredDuplicate(t *testing.T) {
+	doc, err := parser.Parse([]byte(`.tpl: &a
+  only: [tags]
+.tpl: &b
+  only: [main]
+job:
+  <<: *a
+  script: [x]
+`), "t.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := GL087.CheckDocument(doc, "t.yml")
+	if len(f) != 1 || !strings.Contains(f[0].Message, "still used through the anchor &a") {
+		t.Fatalf("unexpected findings: %v", f)
+	}
+}

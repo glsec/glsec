@@ -5,6 +5,7 @@ package rules
 
 import (
 	"regexp"
+	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
 	"github.com/glsec/glsec/internal/parser"
@@ -31,6 +32,13 @@ func (r *gl053) Check(doc *yaml.Node, file string) []finding.Finding {
 	}
 
 	keyNode, workflowNode := parser.FindKeyNode(mapping, "workflow")
+	if workflowNode == nil && includesWorkflowTemplate(parser.FindKey(mapping, "include")) {
+		return nil
+	}
+	// workflow: !reference [...] pulls the rules from a job glsec may not see.
+	if workflowNode != nil && workflowNode.Tag == "!reference" {
+		return nil
+	}
 	if workflowNode == nil {
 		return []finding.Finding{{
 			RuleID:   "GL053",
@@ -54,7 +62,7 @@ func (r *gl053) Check(doc *yaml.Node, file string) []finding.Finding {
 		}}
 	}
 
-	if workflowRulesRestrictSource(rulesNode) {
+	if rulesNode.Tag == "!reference" || workflowRulesRestrictSource(rulesNode) || onlyNever(rulesNode) {
 		return nil
 	}
 
@@ -70,6 +78,40 @@ func (r *gl053) Check(doc *yaml.Node, file string) []finding.Finding {
 
 // workflowRulesRestrictSource reports whether any rule item gates on a
 // trusted pipeline source or branch via its if: condition.
+// includesWorkflowTemplate reports whether include: pulls in one of GitLab's
+// Workflows/ templates (Branch-Pipelines, MergeRequest-Pipelines), which
+// define workflow:rules gated on the pipeline source.
+func includesWorkflowTemplate(include *yaml.Node) bool {
+	if include == nil {
+		return false
+	}
+	items := []*yaml.Node{include}
+	if include.Kind == yaml.SequenceNode {
+		items = include.Content
+	}
+	for _, it := range items {
+		if it.Kind != yaml.MappingNode {
+			continue
+		}
+		if t := parser.FindKey(it, "template"); t != nil && t.Kind == yaml.ScalarNode && strings.HasPrefix(t.Value, "Workflows/") {
+			return true
+		}
+	}
+	return false
+}
+
+// onlyNever reports whether every workflow rule is when: never, so no
+// pipeline runs at all.
+func onlyNever(rulesNode *yaml.Node) bool {
+	for _, item := range rulesNode.Content {
+		w := parser.FindKey(item, "when")
+		if item.Kind != yaml.MappingNode || w == nil || w.Value != "never" {
+			return false
+		}
+	}
+	return len(rulesNode.Content) > 0
+}
+
 func workflowRulesRestrictSource(rulesNode *yaml.Node) bool {
 	for _, item := range rulesNode.Content {
 		if item.Kind != yaml.MappingNode {

@@ -57,6 +57,66 @@ func (r *gl017) Check(doc *yaml.Node, file string) []finding.Finding {
 
 // isSensitiveJob returns true for jobs that deploy to an environment or
 // whose stage name suggests deployment/release activity.
+// envActionNoDeploy reports an environment: whose action deploys nothing:
+// prepare, verify and access only use the environment.
+func envActionNoDeploy(env *yaml.Node) bool {
+	if env.Kind != yaml.MappingNode {
+		return false
+	}
+	a := parser.FindKey(env, "action")
+	return a != nil && (a.Value == "prepare" || a.Value == "verify" || a.Value == "access")
+}
+
+// checkOnlyKeywords mark a job or stage that tests or checks rather than
+// deploys, whatever else its name says: "deployment test", "check
+// migrations", "release/gitleaks-scan".
+var checkOnlyKeywords = []string{"test", "lint", "check", "coverage", "validate", "audit", "scan", "note", "cleanup"}
+
+// buildKeywords mark a build. They outweigh the weaker deploy words
+// (release-build, assembleRelease, build-migrations), not push, publish or
+// deploy: build-and-push still publishes.
+var buildKeywords = []string{"build", "compile", "assemble"}
+
+// strongDeployKeywords name the act of shipping something.
+var strongDeployKeywords = []string{"deploy", "publish", "push", "upload", "rollout", "ship"}
+
+// deployLikeName reports whether a job or stage name (lower case) says it
+// deploys, given the keywords that count for the caller.
+func deployLikeName(lower string, keywords []string) bool {
+	if hasWordPrefix(lower, checkOnlyKeywords) {
+		return false
+	}
+	if !containsAny(lower, keywords) {
+		return false
+	}
+	return containsAny(lower, strongDeployKeywords) || !containsAny(lower, buildKeywords)
+}
+
+// hasWordPrefix reports whether a word of s (split at anything that is not a
+// letter or digit) starts with one of words: "k8s-test" and "linting" match
+// test and lint, "latest" doesn't.
+func hasWordPrefix(s string, words []string) bool {
+	for _, tok := range strings.FieldsFunc(s, func(r rune) bool {
+		return (r < 'a' || r > 'z') && (r < '0' || r > '9')
+	}) {
+		for _, w := range words {
+			if strings.HasPrefix(tok, w) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func containsAny(s string, words []string) bool {
+	for _, w := range words {
+		if strings.Contains(s, w) {
+			return true
+		}
+	}
+	return false
+}
+
 // runsInheritedJob reports whether a job is one GitLab runs and whose
 // inherited keys are all visible here: not a hidden template, and not
 // extending a template from another file.
@@ -65,17 +125,14 @@ func runsInheritedJob(in *Inheritance, name, job *yaml.Node) bool {
 }
 
 func isSensitiveJob(in *Inheritance, job *yaml.Node) bool {
-	if in.Key(job, "environment") != nil {
+	// An environment: deploys unless its action only uses the environment;
+	// then the stage still decides.
+	if env := in.Key(job, "environment"); env != nil && !envActionNoDeploy(env) {
 		return true
 	}
 	stageNode := in.Key(job, "stage")
 	if stageNode != nil && stageNode.Kind == yaml.ScalarNode {
-		lower := strings.ToLower(stageNode.Value)
-		for _, kw := range deployStageKeywords {
-			if strings.Contains(lower, kw) {
-				return true
-			}
-		}
+		return deployLikeName(strings.ToLower(stageNode.Value), deployStageKeywords)
 	}
 	return false
 }

@@ -22,22 +22,14 @@ var deployLikeKeywords = []string{
 // an environment: key indicates deployment, release, or artifact publishing.
 // Used by rules that need to identify jobs that mutate external state.
 func IsDeployLikeJob(jobName string, job *yaml.Node) bool {
-	lower := strings.ToLower(jobName)
-	for _, kw := range deployLikeKeywords {
-		if strings.Contains(lower, kw) {
-			return true
-		}
+	if env := parser.FindKey(job, "environment"); env != nil && !envActionNoDeploy(env) {
+		return true
 	}
-	if parser.FindKey(job, "environment") != nil {
+	if deployLikeName(strings.ToLower(jobName), deployLikeKeywords) {
 		return true
 	}
 	if stageNode := parser.FindKey(job, "stage"); stageNode != nil && stageNode.Kind == yaml.ScalarNode {
-		stageLower := strings.ToLower(stageNode.Value)
-		for _, kw := range deployLikeKeywords {
-			if strings.Contains(stageLower, kw) {
-				return true
-			}
-		}
+		return deployLikeName(strings.ToLower(stageNode.Value), deployLikeKeywords)
 	}
 	return false
 }

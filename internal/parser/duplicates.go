@@ -16,6 +16,9 @@ type DuplicateKey struct {
 	// Job is the top-level key the duplicate sits under, or the duplicated
 	// top-level key itself; empty for reserved keys such as variables:.
 	Job string
+	// Anchor is the anchor on the ignored value, if any. Aliases of it still
+	// use the value, so only the key is dead.
+	Anchor string
 }
 
 // CollapseDuplicateKeys removes every key that appears again later in the
@@ -29,12 +32,12 @@ func CollapseDuplicateKeys(doc *yaml.Node) []DuplicateKey {
 		return nil
 	}
 	var dups []DuplicateKey
-	under := func(job string) func(key, winner *yaml.Node) {
+	under := func(job string) func(key, value, winner *yaml.Node) {
 		if reservedKeys[job] {
 			job = ""
 		}
-		return func(key, winner *yaml.Node) {
-			dups = append(dups, DuplicateKey{Key: key, Winner: winner, Job: job})
+		return func(key, value, winner *yaml.Node) {
+			dups = append(dups, DuplicateKey{Key: key, Winner: winner, Job: job, Anchor: value.Anchor})
 		}
 	}
 	top := Unwrap(doc)
@@ -42,7 +45,7 @@ func CollapseDuplicateKeys(doc *yaml.Node) []DuplicateKey {
 		walkCollapse(top, under(""))
 		return dups
 	}
-	collapse(top, func(key, winner *yaml.Node) { under(key.Value)(key, winner) })
+	collapse(top, func(key, value, winner *yaml.Node) { under(key.Value)(key, value, winner) })
 	for i := 0; i+1 < len(top.Content); i += 2 {
 		walkCollapse(top.Content[i+1], under(top.Content[i].Value))
 	}
@@ -51,7 +54,7 @@ func CollapseDuplicateKeys(doc *yaml.Node) []DuplicateKey {
 
 // walkCollapse collapses node and everything below it. Alias nodes are not
 // followed: their anchor is collapsed where it is defined.
-func walkCollapse(node *yaml.Node, report func(key, winner *yaml.Node)) {
+func walkCollapse(node *yaml.Node, report func(key, value, winner *yaml.Node)) {
 	if node == nil {
 		return
 	}
@@ -62,7 +65,7 @@ func walkCollapse(node *yaml.Node, report func(key, winner *yaml.Node)) {
 }
 
 // collapse removes the duplicate keys of a single mapping.
-func collapse(m *yaml.Node, report func(key, winner *yaml.Node)) {
+func collapse(m *yaml.Node, report func(key, value, winner *yaml.Node)) {
 	if m.Kind != yaml.MappingNode {
 		return
 	}
@@ -79,7 +82,7 @@ func collapse(m *yaml.Node, report func(key, winner *yaml.Node)) {
 	for i := 0; i+1 < len(m.Content); i += 2 {
 		key, value := m.Content[i], m.Content[i+1]
 		if id, ok := keyID(key); ok && last[id] != i {
-			report(key, m.Content[last[id]])
+			report(key, value, m.Content[last[id]])
 			continue
 		}
 		out = append(out, key, value)
