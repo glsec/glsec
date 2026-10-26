@@ -5,7 +5,6 @@ package rules
 
 import (
 	"github.com/glsec/glsec/internal/finding"
-	"github.com/glsec/glsec/internal/parser"
 	"gopkg.in/yaml.v3"
 )
 
@@ -17,16 +16,8 @@ func (r *gl033) ID() string { return "GL033" }
 
 func (r *gl033) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
-	mapping := parser.Unwrap(doc)
-
-	findings = append(findings, checkDebugVars(parser.FindKey(mapping, "variables"), file, "")...)
-
-	if def := parser.FindKey(mapping, "default"); def != nil {
-		findings = append(findings, checkDebugVars(parser.FindKey(def, "variables"), file, "")...)
-	}
-
-	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
-		findings = append(findings, checkDebugVars(parser.FindKey(job, "variables"), file, name.Value)...)
+	eachVariablesBlock(doc, func(vars *yaml.Node, job string, _ *yaml.Node) {
+		findings = append(findings, checkDebugVars(vars, file, job)...)
 	})
 
 	return findings

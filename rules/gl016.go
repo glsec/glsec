@@ -51,8 +51,13 @@ func (r *gl016) Check(doc *yaml.Node, file string) []finding.Finding {
 	// include: remote: http://...
 	findings = append(findings, r.checkIncludes(parser.FindKey(mapping, "include"), file)...)
 
-	// variables: values
-	findings = append(findings, r.checkVariablesHTTP(parser.FindKey(mapping, "variables"), file)...)
+	// variables: values, wherever GitLab can apply them
+	eachVariablesBlock(doc, func(vars *yaml.Node, job string, _ *yaml.Node) {
+		for _, f := range r.checkVariablesHTTP(vars, file) {
+			f.Job = job
+			findings = append(findings, f)
+		}
+	})
 
 	// top-level before_script / after_script
 	for _, key := range []string{"before_script", "after_script"} {
@@ -61,9 +66,8 @@ func (r *gl016) Check(doc *yaml.Node, file string) []finding.Finding {
 		}
 	}
 
-	// default: variables / before_script / after_script / hooks
+	// default: before_script / after_script / hooks
 	if def := parser.FindKey(mapping, "default"); def != nil {
-		findings = append(findings, r.checkVariablesHTTP(parser.FindKey(def, "variables"), file)...)
 		for _, key := range []string{"before_script", "after_script"} {
 			if node := parser.FindKey(def, key); node != nil {
 				findings = append(findings, r.checkScriptHTTP(node, file)...)
@@ -76,10 +80,6 @@ func (r *gl016) Check(doc *yaml.Node, file string) []finding.Finding {
 
 	// per-job
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
-		for _, f := range r.checkVariablesHTTP(parser.FindKey(job, "variables"), file) {
-			f.Job = name.Value
-			findings = append(findings, f)
-		}
 		jobScripts := []*yaml.Node{
 			parser.FindKey(job, "script"),
 			parser.FindKey(job, "before_script"),

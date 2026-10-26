@@ -29,20 +29,14 @@ var secretNameSuffixes = []string{
 var varRefRe = regexp.MustCompile(`^\$\{?[A-Za-z_][A-Za-z0-9_]*\}?`)
 
 func (r *gl018) Check(doc *yaml.Node, file string) []finding.Finding {
-	mapping := parser.Unwrap(doc)
-
 	var findings []finding.Finding
-
-	if varsNode := parser.FindKey(mapping, "variables"); varsNode != nil && varsNode.Kind == yaml.MappingNode {
-		findings = append(findings, checkSecretReexport(varsNode, file)...)
-	}
-
-	if def := parser.FindKey(mapping, "default"); def != nil {
-		if varsNode := parser.FindKey(def, "variables"); varsNode != nil && varsNode.Kind == yaml.MappingNode {
-			findings = append(findings, checkSecretReexport(varsNode, file)...)
+	// Only pipeline-level blocks: top-level, default: and workflow:rules,
+	// whose variables apply to every job.
+	eachVariablesBlock(doc, func(vars *yaml.Node, job string, _ *yaml.Node) {
+		if job == "" && vars != nil && vars.Kind == yaml.MappingNode {
+			findings = append(findings, checkSecretReexport(vars, file)...)
 		}
-	}
-
+	})
 	return findings
 }
 

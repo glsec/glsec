@@ -29,8 +29,11 @@ func (r *gl054) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
 	mapping := parser.Unwrap(doc)
 
-	findings = append(findings, checkDinD(
-		parser.FindKey(mapping, "services"), parser.FindKey(mapping, "variables"), file, "")...)
+	global := checkDinD(parser.FindKey(mapping, "services"), parser.FindKey(mapping, "variables"), file, "")
+	if workflow := parser.FindKey(mapping, "workflow"); len(global) == 0 && workflow != nil {
+		global = checkRuleDockerHost(workflow, file, "")
+	}
+	findings = append(findings, global...)
 
 	if def := parser.FindKey(mapping, "default"); def != nil {
 		findings = append(findings, checkDinD(
@@ -38,8 +41,11 @@ func (r *gl054) Check(doc *yaml.Node, file string) []finding.Finding {
 	}
 
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
-		findings = append(findings, checkDinD(
-			parser.FindKey(job, "services"), parser.FindKey(job, "variables"), file, name.Value)...)
+		f := checkDinD(parser.FindKey(job, "services"), parser.FindKey(job, "variables"), file, name.Value)
+		if len(f) == 0 {
+			f = checkRuleDockerHost(job, file, name.Value)
+		}
+		findings = append(findings, f...)
 	})
 
 	return findings
@@ -84,4 +90,17 @@ func checkDinD(servicesNode, varsNode *yaml.Node, file, job string) []finding.Fi
 	}
 
 	return nil
+}
+
+// checkRuleDockerHost reports the first DOCKER_HOST pointing at a dind daemon
+// in the rules: entries of a job or of workflow:, for a scope where neither a
+// dind service nor its own variables: already did.
+func checkRuleDockerHost(container *yaml.Node, file, job string) []finding.Finding {
+	var found []finding.Finding
+	eachRuleVariables(container, func(vars, _ *yaml.Node) {
+		if found == nil {
+			found = checkDinD(nil, vars, file, job)
+		}
+	})
+	return found
 }

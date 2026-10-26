@@ -24,7 +24,10 @@ func (r *gl001) Check(doc *yaml.Node, file string) []finding.Finding {
 	mapping := parser.Unwrap(doc)
 
 	globalVars := parser.FindKey(mapping, "variables")
-	resolveGlobal := func(name string) []string { return varValues(globalVars, name) }
+	workflow := parser.FindKey(mapping, "workflow")
+	resolveGlobal := func(name string) []string {
+		return append(ruleVarValues(workflow, name), varValues(globalVars, name)...)
+	}
 
 	findings = append(findings, checkImageNode(parser.FindKey(mapping, "image"), file, resolveGlobal)...)
 	findings = append(findings, checkServicesNode(parser.FindKey(mapping, "services"), file, resolveGlobal)...)
@@ -35,7 +38,7 @@ func (r *gl001) Check(doc *yaml.Node, file string) []finding.Finding {
 	}
 
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
-		resolve := jobVarResolver(name.Value, job, globalVars)
+		resolve := jobVarResolver(name.Value, job, resolveGlobal)
 		for _, f := range checkImageNode(parser.FindKey(job, "image"), file, resolve) {
 			f.Job = name.Value
 			findings = append(findings, f)
@@ -124,11 +127,12 @@ func checkRefResolved(ref string, line, col int, file string, resolve varResolve
 }
 
 // jobVarResolver resolves a variable for a job: parallel:matrix values first,
-// then the job's own variables:, then the top-level variables:. Global values
-// are not used for hidden jobs (templates whose users may override them), for
-// jobs that inherit through extends: (not resolved by glsec), or when
-// inherit:variables excludes the name.
-func jobVarResolver(jobName string, job, globalVars *yaml.Node) varResolver {
+// then the values its rules: entries set together with the job's own
+// variables:, then the pipeline-level values (top-level variables: and
+// workflow:rules). Pipeline-level values are not used for hidden jobs
+// (templates whose users may override them), for jobs that inherit through
+// extends: (not resolved by glsec), or when inherit:variables excludes the name.
+func jobVarResolver(jobName string, job *yaml.Node, resolveGlobal varResolver) varResolver {
 	jobVars := parser.FindKey(job, "variables")
 	useGlobal := !strings.HasPrefix(jobName, ".") && !inheritsConfig(job)
 	return func(name string) []string {
@@ -137,8 +141,11 @@ func jobVarResolver(jobName string, job, globalVars *yaml.Node) varResolver {
 		}
 		fallback := varValues(jobVars, name)
 		if fallback == nil && useGlobal && inheritsGlobalVar(job, name) {
-			fallback = varValues(globalVars, name)
+			fallback = resolveGlobal(name)
 		}
+		// A matching rule overrides the other values, so each value a rule
+		// sets is one the job can run with.
+		fallback = append(ruleVarValues(job, name), fallback...)
 		matrix, complete := matrixValues(job, name)
 		if matrix == nil {
 			return fallback
@@ -194,6 +201,19 @@ func varValues(vars *yaml.Node, name string) []string {
 		return nil
 	}
 	return []string{v.Value}
+}
+
+// ruleVarValues returns the values the rules: entries of a job or of
+// workflow: set for name.
+func ruleVarValues(container *yaml.Node, name string) []string {
+	if container == nil {
+		return nil
+	}
+	var values []string
+	eachRuleVariables(container, func(vars, _ *yaml.Node) {
+		values = append(values, varValues(vars, name)...)
+	})
+	return values
 }
 
 // matrixValues collects every value name takes across the job's

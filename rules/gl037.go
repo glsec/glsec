@@ -16,10 +16,13 @@ var GL037 = &gl037{}
 func (r *gl037) ID() string { return "GL037" }
 
 func (r *gl037) Check(doc *yaml.Node, file string) []finding.Finding {
-	mapping := parser.Unwrap(doc)
-
-	// Only flag when top-level variables: has at least one secret-like name.
-	if !topLevelHasSecretVars(parser.FindKey(mapping, "variables")) {
+	// Only flag when a pipeline-level block (top-level variables: or a
+	// workflow:rules entry) has at least one secret-like name.
+	secrets := false
+	eachVariablesBlock(doc, func(vars *yaml.Node, job string, _ *yaml.Node) {
+		secrets = secrets || job == "" && topLevelHasSecretVars(vars)
+	})
+	if !secrets {
 		return nil
 	}
 

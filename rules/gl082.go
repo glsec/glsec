@@ -5,6 +5,7 @@ package rules
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -40,22 +41,28 @@ const dastDefaultBranchVar = "DAST_DISABLED_FOR_DEFAULT_BRANCH"
 
 func (r *gl082) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
-	mapping := parser.Unwrap(doc)
-
-	findings = append(findings, r.checkVariables(parser.FindKey(mapping, "variables"), file)...)
-
-	if def := parser.FindKey(mapping, "default"); def != nil {
-		findings = append(findings, r.checkVariables(parser.FindKey(def, "variables"), file)...)
-	}
-
-	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
-		for _, f := range r.checkVariables(parser.FindKey(job, "variables"), file) {
-			f.Job = name.Value
+	eachVariablesBlock(doc, func(vars *yaml.Node, job string, rule *yaml.Node) {
+		if rule != nil && onlySchedules(rule) {
+			return
+		}
+		for _, f := range r.checkVariables(vars, file) {
+			f.Job = job
 			findings = append(findings, f)
 		}
 	})
-
 	return findings
+}
+
+// scheduleOnlyRe matches a rules:if that requires a scheduled pipeline.
+var scheduleOnlyRe = regexp.MustCompile(`\$CI_PIPELINE_SOURCE\s*==\s*["']schedule["']`)
+
+// onlySchedules reports whether a rule applies to scheduled pipelines only.
+// Turning a scan off for nightly builds is a common, deliberate choice, unlike
+// turning it off for the pipelines that test changes. A condition with || may
+// match other sources too, so it doesn't count.
+func onlySchedules(rule *yaml.Node) bool {
+	cond := parser.FindKey(rule, "if")
+	return cond != nil && scheduleOnlyRe.MatchString(cond.Value) && !strings.Contains(cond.Value, "||")
 }
 
 func (r *gl082) checkVariables(node *yaml.Node, file string) []finding.Finding {

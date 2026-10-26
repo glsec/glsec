@@ -243,3 +243,41 @@ func EachScriptLine(doc *yaml.Node, file string, fn func(line *yaml.Node, file, 
 		}
 	})
 }
+
+// eachVariablesBlock visits every variables: mapping whose values GitLab can
+// apply: top-level, default:, each workflow:rules entry, and per job its own
+// variables: and each of its rules: entries (#672). A value moved from
+// variables: into a rule is committed in the file all the same. fn receives the
+// block, the job name (empty for pipeline-level blocks) and the rules: entry
+// the block belongs to (nil for plain variables:).
+func eachVariablesBlock(doc *yaml.Node, fn func(vars *yaml.Node, job string, rule *yaml.Node)) {
+	mapping := parser.Unwrap(doc)
+	fn(parser.FindKey(mapping, "variables"), "", nil)
+	if def := parser.FindKey(mapping, "default"); def != nil {
+		fn(parser.FindKey(def, "variables"), "", nil)
+	}
+	if workflow := parser.FindKey(mapping, "workflow"); workflow != nil {
+		eachRuleVariables(workflow, func(vars, rule *yaml.Node) { fn(vars, "", rule) })
+	}
+	parser.EachJob(doc, func(name, job *yaml.Node) {
+		fn(parser.FindKey(job, "variables"), name.Value, nil)
+		eachRuleVariables(job, func(vars, rule *yaml.Node) { fn(vars, name.Value, rule) })
+	})
+}
+
+// eachRuleVariables calls fn for the variables: of each rules: entry of a job
+// or of workflow:.
+func eachRuleVariables(container *yaml.Node, fn func(vars, rule *yaml.Node)) {
+	rules := parser.FindKey(container, "rules")
+	if rules == nil || rules.Kind != yaml.SequenceNode {
+		return
+	}
+	for _, rule := range rules.Content {
+		if rule.Kind != yaml.MappingNode {
+			continue
+		}
+		if vars := parser.FindKey(rule, "variables"); vars != nil {
+			fn(vars, rule)
+		}
+	}
+}

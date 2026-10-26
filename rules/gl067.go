@@ -34,17 +34,9 @@ var analyzerImageVars = map[string]bool{
 
 func (r *gl067) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
-	mapping := parser.Unwrap(doc)
-
-	findings = append(findings, r.checkVariables(parser.FindKey(mapping, "variables"), file)...)
-
-	if def := parser.FindKey(mapping, "default"); def != nil {
-		findings = append(findings, r.checkVariables(parser.FindKey(def, "variables"), file)...)
-	}
-
-	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
-		for _, f := range r.checkVariables(parser.FindKey(job, "variables"), file) {
-			f.Job = name.Value
+	eachVariablesBlock(doc, func(vars *yaml.Node, job string, _ *yaml.Node) {
+		for _, f := range r.checkVariables(vars, file) {
+			f.Job = job
 			findings = append(findings, f)
 		}
 	})

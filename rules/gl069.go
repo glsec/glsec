@@ -109,16 +109,8 @@ func checkGoModuleVariables(node *yaml.Node, file, job string) []finding.Finding
 
 func (r *gl069) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
-	mapping := parser.Unwrap(doc)
-
-	findings = append(findings, checkGoModuleVariables(parser.FindKey(mapping, "variables"), file, "")...)
-
-	if def := parser.FindKey(mapping, "default"); def != nil {
-		findings = append(findings, checkGoModuleVariables(parser.FindKey(def, "variables"), file, "")...)
-	}
-
-	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
-		findings = append(findings, checkGoModuleVariables(parser.FindKey(job, "variables"), file, name.Value)...)
+	eachVariablesBlock(doc, func(vars *yaml.Node, job string, _ *yaml.Node) {
+		findings = append(findings, checkGoModuleVariables(vars, file, job)...)
 	})
 
 	EachScriptLine(doc, file, func(line *yaml.Node, file, job string) {

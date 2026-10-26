@@ -94,17 +94,9 @@ var secretPatterns = []secretPattern{
 
 func (r *gl006) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
-	mapping := parser.Unwrap(doc)
-
-	findings = append(findings, checkVariablesNode(parser.FindKey(mapping, "variables"), file)...)
-
-	if def := parser.FindKey(mapping, "default"); def != nil {
-		findings = append(findings, checkVariablesNode(parser.FindKey(def, "variables"), file)...)
-	}
-
-	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
-		for _, f := range checkVariablesNode(parser.FindKey(job, "variables"), file) {
-			f.Job = name.Value
+	eachVariablesBlock(doc, func(vars *yaml.Node, job string, _ *yaml.Node) {
+		for _, f := range checkVariablesNode(vars, file) {
+			f.Job = job
 			findings = append(findings, f)
 		}
 	})

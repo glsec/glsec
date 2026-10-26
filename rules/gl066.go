@@ -24,17 +24,9 @@ var dockerAuthKeyRe = regexp.MustCompile(`"auths?"\s*:`)
 
 func (r *gl066) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
-	mapping := parser.Unwrap(doc)
-
-	findings = append(findings, checkDockerAuthConfig(parser.FindKey(mapping, "variables"), file)...)
-
-	if def := parser.FindKey(mapping, "default"); def != nil {
-		findings = append(findings, checkDockerAuthConfig(parser.FindKey(def, "variables"), file)...)
-	}
-
-	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
-		for _, f := range checkDockerAuthConfig(parser.FindKey(job, "variables"), file) {
-			f.Job = name.Value
+	eachVariablesBlock(doc, func(vars *yaml.Node, job string, _ *yaml.Node) {
+		for _, f := range checkDockerAuthConfig(vars, file) {
+			f.Job = job
 			findings = append(findings, f)
 		}
 	})

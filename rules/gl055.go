@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
-	"github.com/glsec/glsec/internal/parser"
 	"gopkg.in/yaml.v3"
 )
 
@@ -21,20 +20,8 @@ const dockerSocketPath = "/var/run/docker.sock"
 
 func (r *gl055) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
-	mapping := parser.Unwrap(doc)
-
-	if f := checkDockerSocketVars(parser.FindKey(mapping, "variables"), file, ""); f != nil {
-		findings = append(findings, *f)
-	}
-
-	if def := parser.FindKey(mapping, "default"); def != nil {
-		if f := checkDockerSocketVars(parser.FindKey(def, "variables"), file, ""); f != nil {
-			findings = append(findings, *f)
-		}
-	}
-
-	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
-		if f := checkDockerSocketVars(parser.FindKey(job, "variables"), file, name.Value); f != nil {
+	eachVariablesBlock(doc, func(vars *yaml.Node, job string, _ *yaml.Node) {
+		if f := checkDockerSocketVars(vars, file, job); f != nil {
 			findings = append(findings, *f)
 		}
 	})

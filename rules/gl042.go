@@ -64,10 +64,11 @@ func (r *gl042) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
 	mapping := parser.Unwrap(doc)
 
-	// Check GIT_SSL_NO_VERIFY in top-level variables block
-	if vars := parser.FindKey(mapping, "variables"); vars != nil {
-		findings = append(findings, checkGitSSLNoVerifyVars(vars, file, "")...)
-	}
+	eachVariablesBlock(doc, func(vars *yaml.Node, job string, _ *yaml.Node) {
+		if vars != nil {
+			findings = append(findings, checkGitSSLNoVerifyVars(vars, file, job)...)
+		}
+	})
 
 	for _, key := range []string{"before_script", "after_script"} {
 		if node := parser.FindKey(mapping, key); node != nil {
@@ -86,9 +87,6 @@ func (r *gl042) Check(doc *yaml.Node, file string) []finding.Finding {
 	}
 
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
-		if vars := parser.FindKey(job, "variables"); vars != nil {
-			findings = append(findings, checkGitSSLNoVerifyVars(vars, file, name.Value)...)
-		}
 		jobScripts := []*yaml.Node{
 			parser.FindKey(job, "script"),
 			parser.FindKey(job, "before_script"),
