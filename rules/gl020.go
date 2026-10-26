@@ -90,6 +90,9 @@ func firstSavedDownload(script string) int {
 // readiness probe, is not a saved download.
 func savesDownload(words []string) bool {
 	words = withoutWrapper(words)
+	if sendsData(words) {
+		return false
+	}
 	switch commandName(words) {
 	case "curl":
 		return curlSaves(words[1:])
@@ -100,8 +103,35 @@ func savesDownload(words []string) bool {
 }
 
 func isDownload(words []string) bool {
+	if sendsData(withoutWrapper(words)) {
+		return false
+	}
 	name := commandName(withoutWrapper(words))
 	return name == "curl" || name == "wget"
+}
+
+// sendsData reports a curl call that sends data or uses a write method: an
+// API request whose response it may save, not a file it downloads to use.
+func sendsData(words []string) bool {
+	if commandName(words) != "curl" {
+		return false
+	}
+	for i, a := range words[1:] {
+		switch {
+		case a == "-d" || a == "-F" || a == "-T" || a == "--form" || a == "--upload-file" ||
+			strings.HasPrefix(a, "--data") || strings.HasPrefix(a, "--json") || strings.HasPrefix(a, "--form="):
+			return true
+		case (a == "-X" || a == "--request") && i+2 < len(words):
+			if m := strings.ToUpper(words[i+2]); m != "GET" && m != "HEAD" {
+				return true
+			}
+		case strings.HasPrefix(a, "-X") && len(a) > 2:
+			if m := strings.ToUpper(a[2:]); m != "GET" && m != "HEAD" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // wrappers run the command given after their own options and numbers:

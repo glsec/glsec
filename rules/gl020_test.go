@@ -256,3 +256,19 @@ func TestGL020_Wrappers(t *testing.T) {
 		}
 	}
 }
+
+func TestGL020_APICalls(t *testing.T) {
+	for _, tc := range []struct {
+		script string
+		want   int
+	}{
+		{`curl -s -X POST -H "Content-Type: application/json" -d @req.json https://api.example.com/v1/apps > resp.json`, 0},
+		{`curl --data-binary @payload https://api.example.com -o resp.json`, 0},
+		{`curl -XPUT https://api.example.com/x -o out.json`, 0},
+		{`curl -X GET https://example.com/tool.tgz -o tool.tgz`, 1},
+	} {
+		if f := findings020(t, "job:\n  script:\n    - '"+strings.ReplaceAll(tc.script, "'", "''")+"'\n"); len(f) != tc.want {
+			t.Errorf("%s: expected %d, got %d", tc.script, tc.want, len(f))
+		}
+	}
+}

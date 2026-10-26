@@ -70,7 +70,7 @@ func envActionNoDeploy(env *yaml.Node) bool {
 // checkOnlyKeywords mark a job or stage that tests or checks rather than
 // deploys, whatever else its name says: "deployment test", "check
 // migrations", "release/gitleaks-scan".
-var checkOnlyKeywords = []string{"test", "lint", "check", "coverage", "validate", "audit", "scan", "note", "cleanup"}
+var checkOnlyKeywords = []string{"test", "lint", "check", "coverage", "validate", "audit", "scan", "note", "changelog", "cleanup"}
 
 // buildKeywords mark a build. They outweigh the weaker deploy words
 // (release-build, assembleRelease, build-migrations), not push, publish or

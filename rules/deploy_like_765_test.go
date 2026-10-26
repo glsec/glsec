@@ -26,6 +26,8 @@ func TestDeployLikeName(t *testing.T) {
 		{"deployment test", false},
 		{"postdeploy_test", false},
 		{"lint", false},
+		{"release/changelog-generate", false},
+		{"release/gradle-publish [java]", true},
 	} {
 		if got := deployLikeName(tc.name, deployLikeKeywords); got != tc.want {
 			t.Errorf("deployLikeName(%q) = %v, want %v", tc.name, got, tc.want)
