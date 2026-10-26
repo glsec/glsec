@@ -25,8 +25,9 @@ var secretNameSuffixes = []string{
 	"_KEY", "_CREDENTIAL", "_CERT",
 }
 
-// varRefRe matches a value that is (or starts with) a CI variable reference.
-var varRefRe = regexp.MustCompile(`^\$\{?[A-Za-z_][A-Za-z0-9_]*\}?`)
+// varRefRe matches a value that is exactly one variable reference, $VAR or
+// ${VAR}; group 1 is the name.
+var varRefRe = regexp.MustCompile(`^\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?$`)
 
 func (r *gl018) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
@@ -52,7 +53,14 @@ func checkSecretReexport(varsNode *yaml.Node, file string) []finding.Finding {
 
 		// Resolve value: scalar or extended {value: ..., description: ...} form.
 		scalar := resolveScalar(valNode)
-		if scalar == nil || !varRefRe.MatchString(scalar.Value) {
+		if scalar == nil {
+			continue
+		}
+		// A predefined variable (CI_JOB_TOKEN, CI_REGISTRY_PASSWORD,
+		// CI_COMMIT_REF_SLUG) is in every job anyway; re-exporting it adds no
+		// exposure.
+		m := varRefRe.FindStringSubmatch(strings.TrimSpace(scalar.Value))
+		if m == nil || isPredefinedVar(m[1]) {
 			continue
 		}
 

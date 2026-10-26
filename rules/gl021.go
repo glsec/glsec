@@ -36,7 +36,7 @@ var (
 	// about the secret rather than the secret itself: GPG_KEY_ID,
 	// DOCKER_PASSWORD_FILE, DEPLOY_TOKENIZER_URL (#579). DIR also counts
 	// without an underscore, as in DOCKER_TLS_CERTDIR.
-	nonSecretSuffixRe = regexp.MustCompile(`(?:_(?:ID|URL|URI|PATH|FILE|NAME|HOST|USER|USERNAME|TYPE|LENGTH|EXPIRES_AT)|DIR)$`)
+	nonSecretSuffixRe = regexp.MustCompile(`(?:_(?:ID|URL|URI|PATH|FILE|NAME|HOST|USER|USERNAME|TYPE|LENGTH|EXPIRES_AT|VERSION|PACKAGE|ENDPOINT|DOMAIN|PORT|REGION|ENABLED|MODE)|DIR)$`)
 
 	// safeCheckRe matches patterns that reference the variable without printing its value:
 	// length checks (-n "$VAR", test -n "$VAR"), default expansions (${VAR:-}, ${VAR:+}).
@@ -151,7 +151,29 @@ func printedSecret(line string) (string, bool) {
 // value: it carries a secret indicator and doesn't end in a segment such as
 // _ID or _URL that names something else.
 func isSecretName(name string) bool {
-	return secretNameRe.MatchString(name) && !nonSecretSuffixRe.MatchString(name)
+	return secretNameRe.MatchString(name) && !nonSecretSuffixRe.MatchString(name) && !nonSecretPredefined[name]
+}
+
+// nonSecretPredefined are predefined variables whose names look secret but
+// whose values are not: CI_RUNNER_SHORT_TOKEN is documented as an identifier.
+var nonSecretPredefined = map[string]bool{"CI_RUNNER_SHORT_TOKEN": true}
+
+// predefinedSecrets are GitLab's predefined credentials, which every job gets
+// anyway.
+var predefinedSecrets = map[string]bool{
+	"CI_JOB_TOKEN": true, "CI_REGISTRY_PASSWORD": true, "CI_DEPENDENCY_PROXY_PASSWORD": true,
+	"CI_DEPLOY_PASSWORD": true, "CI_JOB_JWT": true, "CI_JOB_JWT_V1": true, "CI_JOB_JWT_V2": true,
+}
+
+// isPredefinedVar reports whether name is a predefined variable that every
+// job gets anyway: a predefined credential, or a CI_/GITLAB_ name that doesn't
+// look secret. A secret-looking CI_ name such as CI_API_TOKEN is a project
+// setting, not predefined.
+func isPredefinedVar(name string) bool {
+	if predefinedSecrets[name] {
+		return true
+	}
+	return (strings.HasPrefix(name, "CI_") || strings.HasPrefix(name, "GITLAB_")) && !secretNameRe.MatchString(name)
 }
 
 // gl021PrefixTokens are leading tokens that introduce a command without being

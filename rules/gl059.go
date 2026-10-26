@@ -39,7 +39,8 @@ func (r *gl059) Check(doc *yaml.Node, file string) []finding.Finding {
 		}
 		for _, m := range buildArgRe.FindAllStringSubmatch(v, -1) {
 			name := m[1]
-			if !secretArgNameRe.MatchString(strings.ToUpper(name)) {
+			upper := strings.ToUpper(name)
+			if !secretArgNameRe.MatchString(upper) || nonSecretSuffixRe.MatchString(upper) {
 				continue
 			}
 			findings = append(findings, finding.Finding{
