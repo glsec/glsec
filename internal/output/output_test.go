@@ -7,7 +7,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"encoding/xml"
+	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -710,5 +712,120 @@ func TestWriteSARIF_HelpURI(t *testing.T) {
 		if !seen[f.RuleID] {
 			t.Errorf("%s has no descriptor", f.RuleID)
 		}
+	}
+}
+
+var errWrite = errors.New("disk full")
+
+// failAfter accepts n writes, then fails every write after them.
+type failAfter struct{ n int }
+
+func (w *failAfter) Write(p []byte) (int, error) {
+	if w.n == 0 {
+		return 0, errWrite
+	}
+	w.n--
+	return len(p), nil
+}
+
+// Every format returns the writer's error, whichever write fails: the test
+// lets the 1st, 2nd, … write fail until the output fits in the successful ones.
+func TestWrite_WriterErrors(t *testing.T) {
+	src := filepath.Join(t.TempDir(), "ci.yml")
+	if err := os.WriteFile(src, []byte("build:\n  image: node:latest\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	findings := []finding.Finding{
+		{RuleID: "GL001", Severity: finding.Error, File: src, Line: 2, Col: 10, Job: "build", Message: "mutable tag"},
+		{RuleID: "GL002", Severity: finding.Warn, File: src, Line: 1, Message: "second"},
+	}
+	for _, format := range []Format{FormatText, FormatTable, FormatJSON, FormatSARIF, FormatCodeClimate, FormatJUnit} {
+		t.Run(string(format), func(t *testing.T) {
+			failures := 0
+			for n := 0; ; n++ {
+				err := Write(&failAfter{n: n}, format, findings, 1, true, true)
+				if err == nil {
+					break
+				}
+				if !errors.Is(err, errWrite) {
+					t.Fatalf("write %d: got %v, want the writer's error", n, err)
+				}
+				failures++
+				if n > 100 {
+					t.Fatal("output never fits")
+				}
+			}
+			if failures == 0 {
+				t.Error("no write failed")
+			}
+		})
+	}
+}
+
+func TestWrite_CleanRunSummaryWriteError(t *testing.T) {
+	for _, format := range []Format{FormatText, FormatTable} {
+		if err := Write(&failAfter{}, format, nil, 3, false, true); !errors.Is(err, errWrite) {
+			t.Errorf("%s: got %v, want the writer's error", format, err)
+		}
+	}
+}
+
+func TestWriteText_InfoAndNoColumn(t *testing.T) {
+	src := filepath.Join(t.TempDir(), "ci.yml")
+	if err := os.WriteFile(src, []byte("build:\n  script: [make]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	f := []finding.Finding{{RuleID: "GL099", Severity: finding.Info, File: src, Line: 2, Message: "note"}}
+	if err := Write(&buf, FormatText, f, 1, true, false); err != nil {
+		t.Fatal(err)
+	}
+	got := buf.String()
+	if !strings.HasPrefix(got, "info[") {
+		t.Errorf("info severity must stay uncoloured: %q", got)
+	}
+	if !strings.Contains(got, "2 |   script: [make]") {
+		t.Errorf("expected the source line: %q", got)
+	}
+	if strings.Contains(got, "^") {
+		t.Errorf("column 0 must print no caret line: %q", got)
+	}
+}
+
+func TestWriteSARIF_InfoAndRuleOnce(t *testing.T) {
+	var buf bytes.Buffer
+	f := []finding.Finding{
+		{RuleID: "GL001", Severity: finding.Info, File: "a.yml", Line: 1, Message: "one"},
+		{RuleID: "GL001", Severity: finding.Info, File: "b.yml", Line: 2, Message: "two"},
+	}
+	if err := WriteSARIF(&buf, f, func(string) string { return "CWE-1104" }, nil, nil, nil, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	var log sarifLog
+	if err := json.Unmarshal(buf.Bytes(), &log); err != nil {
+		t.Fatal(err)
+	}
+	run := log.Runs[0]
+	if len(run.Results) != 2 || run.Results[0].Level != "note" {
+		t.Errorf("expected two results at level note, got %+v", run.Results)
+	}
+	if len(run.Tool.Driver.Rules) != 1 {
+		t.Errorf("a rule with two findings must be listed once, got %d", len(run.Tool.Driver.Rules))
+	}
+}
+
+func TestWriteJUnit_LineZero(t *testing.T) {
+	var buf bytes.Buffer
+	f := []finding.Finding{{RuleID: "GL053", Severity: finding.Warn, File: ".gitlab-ci.yml", Message: "no workflow"}}
+	if err := Write(&buf, FormatJUnit, f, 1, false, false); err != nil {
+		t.Fatal(err)
+	}
+	var out junitTestsuites
+	if err := xml.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	c := out.Suites[0].Cases[0]
+	if c.Classname != ".gitlab-ci.yml" || !strings.HasSuffix(c.Failure.Text, " .gitlab-ci.yml") {
+		t.Errorf("line 0 must not be appended to the location: %+v", c)
 	}
 }

@@ -20,6 +20,7 @@ func TestSanitize(t *testing.T) {
 		{"\x00\x7f", `\x00\x7f`},
 		{"a\u0085b\u2028c\u2029", "a\\u0085b\\u2028c\\u2029"},
 		{"a\u202eb\u2066c", "a\\u202eb\\u2066c"},
+		{"a\u200eb\u200fc\u061cd", "a\\u200eb\\u200fc\\u061cd"},
 	}
 	for _, tt := range tests {
 		if got := Sanitize(tt.in); got != tt.want {
