@@ -225,10 +225,10 @@ func TestStore_ReadOnlyDirDoesNotFail(t *testing.T) {
 	}
 	// Owned and not writable by others, so usableDir accepts it, but the
 	// temporary file can't be created.
-	if err := os.Chmod(Dir(), 0o500); err != nil {
+	if err := os.Chmod(Dir(), 0o500); err != nil { //nolint:gosec // G302: a directory needs x, and the test removes w
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(Dir(), 0o700) })
+	t.Cleanup(func() { _ = os.Chmod(Dir(), 0o700) }) //nolint:gosec // G302: restores the mode Store creates
 
 	Store("k", &Entry{JobCount: 1})
 	if _, ok := Load("k"); ok {
