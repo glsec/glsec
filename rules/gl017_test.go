@@ -170,3 +170,17 @@ start-release-pipeline:
 		t.Fatalf("a trigger job runs on no runner, tags: doesn't apply; got %+v", f)
 	}
 }
+
+func TestGL017_DevTierEnvironmentStillNeedsTags(t *testing.T) {
+	f := findings017(t, `
+review:
+  environment:
+    name: review/mr-$CI_MERGE_REQUEST_IID
+    deployment_tier: development
+  script:
+    - ./preview.sh
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected a review deploy to still need runner tags, got %+v", f)
+	}
+}

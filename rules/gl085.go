@@ -62,9 +62,9 @@ func (r *gl085) Check(doc *yaml.Node, file string) []finding.Finding {
 	EachScriptLinePerJob(doc, file, func(item *yaml.Node, file, job string) {
 		found := agents.get(item, func() []agentLine {
 			var out []agentLine
-			text := strings.ReplaceAll(item.Value, "\\\n", " ")
-			for _, line := range strings.Split(text, "\n") {
-				if f, ok := checkAgentLine(line); ok {
+			for _, l := range logicalLines(item.Value) {
+				if f, ok := checkAgentLine(l.text); ok {
+					f.line = l.line
 					out = append(out, f)
 				}
 			}
@@ -93,7 +93,7 @@ func (r *gl085) Check(doc *yaml.Node, file string) []finding.Finding {
 				Job:      job,
 				Message:  msg,
 				File:     file,
-				Line:     item.Line,
+				Line:     parser.ScalarContentLine(item, f.line),
 				Col:      item.Column,
 			})
 		}
@@ -103,6 +103,7 @@ func (r *gl085) Check(doc *yaml.Node, file string) []finding.Finding {
 
 type agentLine struct {
 	agent, bypass, taint string
+	line                 int // index of the item line the call starts on
 }
 
 // checkAgentLine inspects one physical script line. Flags and variables only

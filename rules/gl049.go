@@ -20,12 +20,15 @@ func (r *gl049) ID() string { return "GL049" }
 
 func (r *gl049) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
+	in := NewInheritance(doc)
 
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
-		if !IsDeployLikeJob(name.Value, job) {
+		// A job extending a template from another file still counts: its own
+		// keys win over anything that template sets.
+		if strings.HasPrefix(name.Value, ".") || !deployLikeInherited(in, name.Value, job) {
 			return
 		}
-		interruptible := parser.FindKey(job, "interruptible")
+		interruptible := in.Key(job, "interruptible")
 		if interruptible == nil || interruptible.Kind != yaml.ScalarNode {
 			return
 		}
@@ -47,4 +50,19 @@ func (r *gl049) Check(doc *yaml.Node, file string) []finding.Finding {
 	})
 
 	return findings
+}
+
+// deployLikeInherited is IsDeployLikeJob over the keys the job inherits, with
+// a development or testing environment not counting as a deploy (#797).
+func deployLikeInherited(in *Inheritance, jobName string, job *yaml.Node) bool {
+	if env := in.Key(job, "environment"); env != nil && !envActionNoDeploy(env) && !envDevTier(env) {
+		return true
+	}
+	if deployLikeName(strings.ToLower(jobName), deployLikeKeywords) {
+		return true
+	}
+	if stage := in.Key(job, "stage"); stage != nil && stage.Kind == yaml.ScalarNode {
+		return deployLikeName(strings.ToLower(stage.Value), deployLikeKeywords)
+	}
+	return false
 }

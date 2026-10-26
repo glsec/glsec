@@ -149,3 +149,79 @@ unit-tests:
 		t.Fatalf("expected no findings for test job with interruptible: true, got %d", len(f))
 	}
 }
+
+func TestGL049_InheritedFromHiddenTemplate(t *testing.T) {
+	f := findings049(t, `
+.deploy:
+  stage: deploy
+  interruptible: true
+  script:
+    - kubectl apply -f k8s/
+
+deploy-production:
+  extends: .deploy
+`)
+	if len(f) != 1 || f[0].Job != "deploy-production" || f[0].Line != 4 {
+		t.Fatalf("expected one finding for deploy-production on the template's interruptible line, got %+v", f)
+	}
+}
+
+func TestGL049_InterruptibleFromDefault(t *testing.T) {
+	f := findings049(t, `
+default:
+  interruptible: true
+
+deploy-production:
+  stage: deploy
+  script:
+    - kubectl apply -f k8s/
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected default: interruptible to count, got %+v", f)
+	}
+}
+
+func TestGL049_DevTierEnvironment_NoFinding(t *testing.T) {
+	f := findings049(t, `
+review:
+  interruptible: true
+  environment:
+    name: review/mr-$CI_MERGE_REQUEST_IID
+    deployment_tier: development
+  script:
+    - ./preview.sh
+`)
+	if len(f) != 0 {
+		t.Fatalf("expected no finding for a development environment, got %+v", f)
+	}
+}
+
+func TestGL049_DevTierDeployStage(t *testing.T) {
+	f := findings049(t, `
+review:
+  stage: deploy
+  interruptible: true
+  environment:
+    name: review/mr-$CI_MERGE_REQUEST_IID
+    deployment_tier: testing
+  script:
+    - ./deploy.sh
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected the deploy stage to still count, got %+v", f)
+	}
+}
+
+func TestGL049_OwnKeysWithTemplateFromAnotherFile(t *testing.T) {
+	f := findings049(t, `
+server-image:
+  extends: .kaniko-template
+  stage: release
+  interruptible: true
+  environment:
+    name: server-image
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected the job's own keys to count, got %+v", f)
+	}
+}

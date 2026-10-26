@@ -138,3 +138,33 @@ deploy-prod:
 		t.Error("expected non-zero line number")
 	}
 }
+
+func TestGL019_DevTierEnvironment_NoFinding(t *testing.T) {
+	for _, tier := range []string{"development", "testing"} {
+		f := findings019(t, `
+review:
+  environment:
+    name: review/mr-$CI_MERGE_REQUEST_IID
+    deployment_tier: `+tier+`
+  script:
+    - ./preview.sh
+`)
+		if len(f) != 0 {
+			t.Errorf("%s: expected no finding, got %+v", tier, f)
+		}
+	}
+}
+
+func TestGL019_StagingTierEnvironment(t *testing.T) {
+	f := findings019(t, `
+review:
+  environment:
+    name: staging
+    deployment_tier: staging
+  script:
+    - ./deploy.sh
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected a staging environment to count, got %+v", f)
+	}
+}

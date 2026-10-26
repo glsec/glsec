@@ -126,3 +126,19 @@ review:
 		t.Errorf("expected one error across a line continuation, got %+v", f)
 	}
 }
+
+func TestGL085_LineInsideBlock(t *testing.T) {
+	f := findings085(t, `
+review:
+  script:
+    - |
+      if [ -n "$POST" ]; then
+        echo posting
+      fi
+      claude -p "/review" \
+        --dangerously-skip-permissions
+`)
+	if len(f) != 1 || f[0].Line != 8 {
+		t.Errorf("expected one finding on line 8, the agent call, got %+v", f)
+	}
+}

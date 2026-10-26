@@ -22,7 +22,7 @@ func (r *gl019) Check(doc *yaml.Node, file string) []finding.Finding {
 	in := NewInheritance(doc)
 
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
-		if !runsInheritedJob(in, name, job) || !isSensitiveJob(in, job) {
+		if !runsInheritedJob(in, name, job) || !isSensitiveJob(in, job, false) {
 			return
 		}
 		if in.Key(job, "resource_group") != nil {

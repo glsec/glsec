@@ -26,7 +26,7 @@ func (r *gl017) Check(doc *yaml.Node, file string) []finding.Finding {
 	in := NewInheritance(doc)
 
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
-		if !runsInheritedJob(in, name, job) || !isSensitiveJob(in, job) {
+		if !runsInheritedJob(in, name, job) || !isSensitiveJob(in, job, true) {
 			return
 		}
 		// A trigger job starts a downstream pipeline and runs on no runner, so
@@ -65,6 +65,16 @@ func envActionNoDeploy(env *yaml.Node) bool {
 	}
 	a := parser.FindKey(env, "action")
 	return a != nil && (a.Value == "prepare" || a.Value == "verify" || a.Value == "access")
+}
+
+// envDevTier reports an environment that declares itself a review or test
+// target: per-branch previews, links to job artifacts.
+func envDevTier(env *yaml.Node) bool {
+	if env.Kind != yaml.MappingNode {
+		return false
+	}
+	t := parser.FindKey(env, "deployment_tier")
+	return t != nil && (t.Value == "development" || t.Value == "testing")
 }
 
 // checkOnlyKeywords mark a job or stage that tests or checks rather than
@@ -124,10 +134,13 @@ func runsInheritedJob(in *Inheritance, name, job *yaml.Node) bool {
 	return !strings.HasPrefix(name.Value, ".") && in.ExtendsResolved(job)
 }
 
-func isSensitiveJob(in *Inheritance, job *yaml.Node) bool {
+// isSensitiveJob reports a job that deploys through its environment: or its
+// stage. With devTierDeploys false, an environment whose deployment_tier is
+// development or testing doesn't count as a deploy (#797).
+func isSensitiveJob(in *Inheritance, job *yaml.Node, devTierDeploys bool) bool {
 	// An environment: deploys unless its action only uses the environment;
 	// then the stage still decides.
-	if env := in.Key(job, "environment"); env != nil && !envActionNoDeploy(env) {
+	if env := in.Key(job, "environment"); env != nil && !envActionNoDeploy(env) && (devTierDeploys || !envDevTier(env)) {
 		return true
 	}
 	stageNode := in.Key(job, "stage")
