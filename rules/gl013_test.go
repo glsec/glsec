@@ -348,3 +348,84 @@ deploy:
 		}
 	}
 }
+
+func TestGL013_Inheritance(t *testing.T) {
+	cases := []struct {
+		name string
+		yaml string
+		want int
+	}{
+		{"guard from extends", `
+.main-only:
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+deploy:
+  extends: .main-only
+  environment: production
+  script: [./deploy.sh]
+`, 0},
+		{"guard two levels up", `
+.guard:
+  only: [main]
+.deploy:
+  extends: .guard
+deploy:
+  extends: [.deploy]
+  environment: production
+  script: [./deploy.sh]
+`, 0},
+		{"environment from extends, no guard", `
+.prod:
+  environment: production
+deploy:
+  extends: .prod
+  script: [./deploy.sh]
+`, 1},
+		{"hidden template is not reported", `
+.prod:
+  environment: production
+  script: [./deploy.sh]
+`, 0},
+		{"base in another file", `
+deploy:
+  extends: .from-included-file
+  environment: production
+  script: [./deploy.sh]
+`, 0},
+		{"pages: true from extends", `
+.pages:
+  pages: true
+docs:
+  extends: .pages
+  script: [mkdocs build -d public]
+`, 1},
+		{"path_prefix from extends", `
+.review:
+  pages:
+    path_prefix: review
+pages:
+  extends: .review
+  script: [mkdocs build -d public]
+`, 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if f := findings013(t, tc.yaml); len(f) != tc.want {
+				t.Fatalf("expected %d findings, got %d: %v", tc.want, len(f), f)
+			}
+		})
+	}
+}
+
+func TestGL013_InheritedEnvironmentReportsTheJob(t *testing.T) {
+	f := findings013(t, `
+.prod:
+  environment: production
+deploy:
+  extends: .prod
+  script: [./deploy.sh]
+`)
+	if len(f) != 1 || f[0].Line != 4 {
+		t.Fatalf("expected one finding on the job's line 4, got %v", f)
+	}
+}

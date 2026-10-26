@@ -179,7 +179,7 @@ func jobGuardState(job *yaml.Node) guardState {
 // environment or the main Pages site, with no rules:/only: restriction), so
 // GL080 can defer to it.
 func gl013Owns(name string, job *yaml.Node) bool {
-	if !hasExecutionRestriction(job) && !inheritsConfig(job) && publishesMainPages(name, job) {
+	if !hasExecutionRestriction(job) && publishesMainPages(name, parser.FindKey(job, "pages")) {
 		return true
 	}
 	env := parser.FindKey(job, "environment")

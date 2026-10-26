@@ -34,68 +34,69 @@ func (r *gl013) Check(doc *yaml.Node, file string) []finding.Finding {
 	}
 
 	var findings []finding.Finding
+	in := NewInheritance(doc)
 
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
-		if hasExecutionRestriction(job) {
+		// Hidden jobs are templates GitLab never runs; the jobs extending them
+		// are checked with what they inherit.
+		if strings.HasPrefix(name.Value, ".") {
 			return
 		}
-		envNode := parser.FindKey(job, "environment")
-		if envNode == nil {
-			if f, ok := gl013Pages(name, job, file); ok {
-				findings = append(findings, f)
-			}
+		if in.Key(job, "rules") != nil || in.Key(job, "only") != nil {
 			return
 		}
-		envName := extractEnvName(envNode)
-		tier := extractDeploymentTier(envNode)
+		// A base in another file may carry the guard.
+		if !in.ExtendsResolved(job) {
+			return
+		}
+		line, col := name.Line, name.Column
+		envNode := in.Key(job, "environment")
+		if own := parser.FindKey(job, "environment"); own != nil {
+			line, col = own.Line, own.Column
+		}
+		var envName, tier string
+		if envNode != nil {
+			envName = extractEnvName(envNode)
+			tier = extractDeploymentTier(envNode)
+		}
 		byName := envName != "" && isProdEnv(envName)
-		byTier := isProdTier(tier)
-		if !byName && !byTier {
-			if f, ok := gl013Pages(name, job, file); ok {
-				findings = append(findings, f)
-			}
+		if byName || isProdTier(tier) {
+			findings = append(findings, finding.Finding{
+				RuleID:   "GL013",
+				Severity: finding.Warn,
+				Job:      name.Value,
+				Message:  gl013Message(name.Value, envName, tier, byName),
+				File:     file,
+				Line:     line,
+				Col:      col,
+			})
 			return
 		}
-		findings = append(findings, finding.Finding{
-			RuleID:   "GL013",
-			Severity: finding.Warn,
-			Job:      name.Value,
-			Message:  gl013Message(name.Value, envName, tier, byName),
-			File:     file,
-			Line:     envNode.Line,
-			Col:      envNode.Column,
-		})
+		if publishesMainPages(name.Value, in.Key(job, "pages")) {
+			findings = append(findings, finding.Finding{
+				RuleID:   "GL013",
+				Severity: finding.Warn,
+				Job:      name.Value,
+				Message: fmt.Sprintf(
+					"job %q publishes the project's GitLab Pages site but has no rules: or only: clause — any branch can replace the live site",
+					name.Value,
+				),
+				File: file,
+				Line: name.Line,
+				Col:  name.Column,
+			})
+		}
 	})
 
 	return findings
 }
 
-// gl013Pages reports a job that publishes the project's main GitLab Pages
-// site. The most recent Pages job wins, whatever its branch, so an unguarded
-// one lets any pushed branch replace the live site.
-func gl013Pages(name, job *yaml.Node, file string) (finding.Finding, bool) {
-	if strings.HasPrefix(name.Value, ".") || inheritsConfig(job) || !publishesMainPages(name.Value, job) {
-		return finding.Finding{}, false
-	}
-	return finding.Finding{
-		RuleID:   "GL013",
-		Severity: finding.Warn,
-		Job:      name.Value,
-		Message: fmt.Sprintf(
-			"job %q publishes the project's GitLab Pages site but has no rules: or only: clause — any branch can replace the live site",
-			name.Value,
-		),
-		File: file,
-		Line: name.Line,
-		Col:  name.Column,
-	}, true
-}
-
 // publishesMainPages reports whether a job deploys GitLab Pages to the main
-// site: a job named pages or one with a pages: key, unless pages: is false or
-// sets a path_prefix (a parallel deployment beside the main site).
-func publishesMainPages(jobName string, job *yaml.Node) bool {
-	p := parser.FindKey(job, "pages")
+// site, given its pages: value: a job named pages or one with a pages: key,
+// unless pages: is false or sets a path_prefix (a parallel deployment beside
+// the main site). The most recent Pages job wins, whatever its branch, so an
+// unguarded one lets any pushed branch replace the live site.
+func publishesMainPages(jobName string, p *yaml.Node) bool {
 	if p == nil {
 		return jobName == "pages"
 	}
