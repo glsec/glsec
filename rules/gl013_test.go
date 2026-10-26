@@ -259,6 +259,11 @@ docs:
     expire_in: 1 week
   script: [mkdocs build -d public]
 `, 1},
+		{"pages: neither a scalar nor a mapping", `
+docs:
+  pages: [public]
+  script: [mkdocs build -d public]
+`, 0},
 		{"pages job with non-prod environment", `
 pages:
   environment: docs

@@ -54,9 +54,14 @@ func TestIfRestrictsToProtected(t *testing.T) {
 		{`($CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == "push") || $CI_PIPELINE_SOURCE == "web"`, false},
 		{`($CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH) && ($CI_PIPELINE_SOURCE == "push") || $CI_COMMIT_BRANCH`, false},
 		{`$CI_COMMIT_BRANCH == "a || b"`, true},
-		// Unbalanced parentheses restrict nothing.
+		// Not restricting: no && operand restricts.
+		{`$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH`, false},
+		// Unbalanced parentheses, quotes or regex literals restrict nothing.
 		{`($CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH`, false},
 		{`$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH)`, false},
+		{`$CI_COMMIT_BRANCH == "main`, false},
+		{`$CI_COMMIT_TAG =~ /^v`, false},
+		{`$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_TAG =~ /^v`, false},
 	}
 	for _, tt := range tests {
 		if got := ifRestrictsToProtected(tt.expr); got != tt.want {
