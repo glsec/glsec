@@ -79,25 +79,20 @@ func writeTable(w io.Writer, findings []finding.Finding, jobCount int, colorOn, 
 		return nil
 	}
 
+	// The table is rendered into buf, and writes to a bytes.Buffer don't fail;
+	// only the writes to w below can.
 	var buf bytes.Buffer
 	tw := tabwriter.NewWriter(&buf, 0, 0, 2, ' ', 0)
-	if _, err := fmt.Fprintln(tw, "SEVERITY\tRULE\tJOB\tFILE\tLINE\tMESSAGE"); err != nil {
-		return err
-	}
+	_, _ = fmt.Fprintln(tw, "SEVERITY\tRULE\tJOB\tFILE\tLINE\tMESSAGE")
 	for _, f := range findings {
 		job := Sanitize(f.Job)
 		if job == "" {
 			job = "-"
 		}
-		if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\t%s\n",
-			strings.ToUpper(string(f.Severity)), f.RuleID, job, Sanitize(f.File), f.Line, Sanitize(f.Message),
-		); err != nil {
-			return err
-		}
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\t%s\n",
+			strings.ToUpper(string(f.Severity)), f.RuleID, job, Sanitize(f.File), f.Line, Sanitize(f.Message))
 	}
-	if err := tw.Flush(); err != nil {
-		return err
-	}
+	_ = tw.Flush()
 	if !colorOn {
 		_, err := buf.WriteTo(w)
 		return err
@@ -115,12 +110,10 @@ func writeTable(w io.Writer, findings []finding.Finding, jobCount int, colorOn, 
 	return nil
 }
 
+// colorTableSeverity colours the severity label a table row starts with.
 func colorTableSeverity(line string, sev finding.Severity) string {
 	label := strings.ToUpper(string(sev))
-	rest, ok := strings.CutPrefix(line, label)
-	if !ok {
-		return line
-	}
+	rest := strings.TrimPrefix(line, label)
 	switch sev {
 	case finding.Error:
 		return color.Red(label, true) + rest
