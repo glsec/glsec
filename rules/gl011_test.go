@@ -4,6 +4,7 @@
 package rules
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -289,5 +290,60 @@ nested:
 	}
 	if f[0].Line != 3 || f[1].Line != 6 {
 		t.Errorf("findings on lines %d and %d, want 3 and 6", f[0].Line, f[1].Line)
+	}
+}
+
+func TestGL011_PowerShellDownloadExecute(t *testing.T) {
+	lines := []string{
+		`pwsh -c "iwr https://example.com/install.ps1 | iex"`,
+		`powershell -Command "iex (irm https://example.com/install.ps1)"`,
+		`iex "& {$(irm get.scoop.sh)} -RunAsAdmin"`,
+		`Invoke-Expression (Invoke-WebRequest -UseBasicParsing https://example.com/i.ps1).Content`,
+		`Invoke-RestMethod https://example.com/i.ps1 | Select-Object -First 1 | Invoke-Expression`,
+		`IEX ((New-Object System.Net.WebClient).DownloadString('https://example.com/i.ps1'))`,
+		`powershell -c "(New-Object Net.WebClient).DownloadString('https://example.com/i.ps1') | iex"`,
+	}
+	for _, line := range lines {
+		f := findings011(t, "build:\n  script:\n    - '"+strings.ReplaceAll(line, "'", "''")+"'\n")
+		if len(f) != 1 {
+			t.Errorf("expected 1 finding for %s, got %d", line, len(f))
+		}
+	}
+}
+
+func TestGL011_HexPayload(t *testing.T) {
+	lines := []string{
+		`echo 6375726c2e2e2e | xxd -r -p | bash`,
+		`echo 6375726c2e2e2e | xxd -rp | sh`,
+		`printf '\x63\x75\x72\x6c' | sh`,
+		`echo -e "\x63\x75\x72\x6c" | bash`,
+		`echo -ne '\x63\x75' | python3`,
+	}
+	for _, line := range lines {
+		f := findings011(t, "build:\n  script:\n    - '"+strings.ReplaceAll(line, "'", "''")+"'\n")
+		if len(f) != 1 {
+			t.Errorf("expected 1 finding for %s, got %d", line, len(f))
+		}
+	}
+}
+
+func TestGL011_PowerShellAndHex_NoFinding(t *testing.T) {
+	lines := []string{
+		`iex $command`,
+		`Invoke-Expression "Write-Host hello"`,
+		`iex (Get-Content ./build.ps1 -Raw)`,
+		`Invoke-WebRequest https://example.com/tool.zip -OutFile tool.zip`,
+		`irm https://example.com/api/status | ConvertTo-Json`,
+		`iwr https://example.com/i.ps1 -OutFile i.ps1; Get-Content local.ps1 | iex`,
+		`echo 6375726c | xxd -r -p > payload.bin`,
+		`xxd -p firmware.bin | head`,
+		`printf '\x1b[1mBuild\x1b[0m\n'`,
+		`printf 'plain text' | sh`,
+	}
+	for _, line := range lines {
+		f := findings011(t, "build:\n  script:\n    - '"+strings.ReplaceAll(line, "'", "''")+"'\n")
+		if len(f) != 0 {
+			t.Errorf("expected no finding for %s, got %d", line, len(f))
+		}
 	}
 }

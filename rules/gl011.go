@@ -33,6 +33,26 @@ var (
 	// base64ExecRe matches a base64-decode piped straight into a shell, e.g.
 	// echo "…" | base64 -d | bash — an inline-obfuscated payload with no download tool.
 	base64ExecRe = regexp.MustCompile(`\bbase64\s+(?:-d|--decode)\b.*\|\s*(?:` + shellAlt + `)\b`)
+	// hexExecRe matches a hex dump reversed by xxd -r and piped into a shell,
+	// e.g. echo 6375… | xxd -r -p | bash — the same as base64ExecRe in hex.
+	hexExecRe = regexp.MustCompile(`\bxxd\b[^|]*\s-[a-z]*r[a-z]*\b.*\|\s*(?:` + shellAlt + `)\b`)
+	// escapePrinterRe and hexEscapeRe together match printf '\x63\x75…' | sh or
+	// echo -e "\x63…" | sh. The escapes sit inside quotes, so hexEscapeRe is
+	// matched against the raw line.
+	escapePrinterRe = regexp.MustCompile(`\b(?:printf|echo\s+-[a-zA-Z]*e[a-zA-Z]*)\b`)
+	hexEscapeRe     = regexp.MustCompile(`\\x[0-9a-fA-F]{2}`)
+	// psDownload matches a PowerShell download: Invoke-WebRequest and
+	// Invoke-RestMethod with their aliases (curl and wget alias the former in
+	// Windows PowerShell), or a WebClient DownloadString/DownloadData call.
+	psDownload = `(?:\b(?:iwr|irm|invoke-webrequest|invoke-restmethod|curl|wget)\b|\bnew-object\s+(?:system\.)?net\.webclient\s*\)\s*\.\s*download(?:string|data)\b)`
+	// psPipeExecRe matches a download piped into Invoke-Expression:
+	// iwr URL | iex, irm URL | Select … | Invoke-Expression. The pipeline ends
+	// at the next ;, so a later statement's iex doesn't count.
+	psPipeExecRe = regexp.MustCompile(`(?i)` + psDownload + `[^;]*\|\s*(?:iex|invoke-expression)\b`)
+	// psArgExecRe matches Invoke-Expression whose argument is the download:
+	// iex (irm URL), iex "& {$(irm URL)}", iex ((New-Object Net.WebClient).DownloadString(URL)).
+	// Invoke-Expression on a local string has no download there and stays quiet.
+	psArgExecRe = regexp.MustCompile(`(?i)\b(?:iex|invoke-expression)\b[\s("'&{$]*` + psDownload)
 	// downloadThenExecRe matches a download saved to a file and executed on the same
 	// line, e.g. curl … -o f && bash f, or curl … > f; sh f. The redirect alternative
 	// uses [^0-9&]> so stderr/merge redirects (2>, &>) do not count as a save-to-file.
@@ -97,7 +117,14 @@ func isDownloadExecute(line string) bool {
 	if downloadToolRe.MatchString(stripped) && pipeToShellRe.MatchString(stripped) {
 		return true
 	}
-	if base64ExecRe.MatchString(stripped) {
+	if base64ExecRe.MatchString(stripped) || hexExecRe.MatchString(stripped) {
+		return true
+	}
+	if hexEscapeRe.MatchString(line) && escapePrinterRe.MatchString(stripped) && pipeToShellRe.MatchString(stripped) {
+		return true
+	}
+	// PowerShell commands usually arrive quoted (pwsh -c "…"), so match the raw line.
+	if psPipeExecRe.MatchString(line) || psArgExecRe.MatchString(line) {
 		return true
 	}
 	return downloadThenExecRe.MatchString(stripped)

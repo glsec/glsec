@@ -310,7 +310,7 @@ A cached result decides what glsec reports, so glsec only uses a cache directory
 
 ### Shell assumptions
 
-The script-analysis rules (e.g. GL002, GL011, GL024, GL025, GL047, GL048, GL050) assume **POSIX shell** (`bash`/`sh`) semantics — the default for Linux and macOS runners. PowerShell pipelines on Windows runners use different syntax (`$env:VAR` instead of `$VAR`, `Invoke-WebRequest` instead of `curl`, etc.), so these rules will not match them. **A Windows-runner job that emits no findings has not been meaningfully checked for shell issues** — don't treat the absence of findings there as a clean bill of health. GL024 skips jobs whose runner tags contain `windows`, because PowerShell has no `pipefail`.
+The script-analysis rules (e.g. GL002, GL024, GL025, GL047, GL048, GL050) assume **POSIX shell** (`bash`/`sh`) semantics — the default for Linux and macOS runners. PowerShell pipelines on Windows runners use different syntax (`$env:VAR` instead of `$VAR`, `Invoke-WebRequest` instead of `curl`, etc.), so these rules will not match them. GL011 is the exception: it also recognises PowerShell download-and-execute (`iwr URL | iex`, `iex (irm URL)`). **A Windows-runner job that emits no findings has not been meaningfully checked for shell issues** — don't treat the absence of findings there as a clean bill of health. GL024 skips jobs whose runner tags contain `windows`, because PowerShell has no `pipefail`.
 
 ### Variables in `rules:`
 
