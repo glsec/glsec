@@ -26,9 +26,9 @@ var scriptOnlyInVariables = map[string]bool{
 	"GCP service account key": true,
 }
 
-// tokenBoundary is a character that can't continue a token, used on both
+// boundaryClass is a character that can't continue a token, used on both
 // sides because RE2 has no lookaround.
-const tokenBoundary = `[^A-Za-z0-9_-]`
+const boundaryClass = `[^A-Za-z0-9_-]`
 
 // scriptSecretPatterns are GL006's patterns with the whole-value anchors
 // replaced by token boundaries, so they find a token inside a command (#737).
@@ -45,7 +45,7 @@ var scriptSecretPatterns = func() []secretPattern {
 		}
 		expr = strings.TrimSuffix(strings.TrimPrefix(expr, "^"), "$")
 		out = append(out, secretPattern{p.name, regexp.MustCompile(
-			flags + `(?:^|` + tokenBoundary + `)(` + expr + `)(?:$|` + tokenBoundary + `)`)})
+			flags + `(?:^|` + boundaryClass + `)(` + expr + `)(?:$|` + boundaryClass + `)`)})
 	}
 	return out
 }()
