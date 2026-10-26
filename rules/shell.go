@@ -47,8 +47,18 @@ func shellCommands(script string) []shellCommand {
 		cur.WriteString(s)
 	}
 	var quote byte
+	// A $( inside double quotes opens a new, unquoted context until its ):
+	// "$(a | b)" runs a pipeline. substs holds the open parentheses of each.
+	var substs []int
 	for i := 0; i < len(script); i++ {
 		c := script[i]
+		if quote == '"' && c == '$' && strings.HasPrefix(script[i:], "$(") && !strings.HasPrefix(script[i:], "$((") {
+			cur.WriteString("$(")
+			i++
+			substs = append(substs, 0)
+			quote = 0
+			continue
+		}
 		if quote != 0 {
 			if c == '\n' {
 				line++
@@ -67,6 +77,20 @@ func shellCommands(script string) []shellCommand {
 			}
 			cur.WriteByte(c)
 			continue
+		}
+		if n := len(substs); n > 0 {
+			switch c {
+			case '(':
+				substs[n-1]++
+			case ')':
+				if substs[n-1] == 0 {
+					substs = substs[:n-1]
+					cur.WriteByte(c)
+					quote = '"'
+					continue
+				}
+				substs[n-1]--
+			}
 		}
 		switch {
 		case c == '\\' && i+1 < len(script):
@@ -103,6 +127,8 @@ func shellCommands(script string) []shellCommand {
 			emit(false)
 		case c == '&' && (i > 0 && (script[i-1] == '>' || script[i-1] == '<') || i+1 < len(script) && script[i+1] == '>'):
 			add(string(c)) // a redirection such as 2>&1 or &>file
+		case c == '|' && i > 0 && script[i-1] == '>':
+			add(string(c)) // >| forces a redirect
 		case c == '|' || c == '&':
 			if i+1 < len(script) && script[i+1] == c {
 				i++

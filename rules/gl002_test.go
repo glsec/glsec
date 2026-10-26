@@ -4,6 +4,7 @@
 package rules
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 
@@ -450,5 +451,58 @@ func TestGL002_NewUserControlledVars(t *testing.T) {
 		if f := findings002(t, "job:\n  script:\n    - echo $"+v+"\n"); len(f) != 0 {
 			t.Errorf("%s: not user-controlled, expected no finding, got %d", v, len(f))
 		}
+	}
+}
+
+func TestGL002_NoWordSplitting(t *testing.T) {
+	for _, tc := range []struct {
+		script string
+		want   int
+	}{
+		{`export VERSION=$CI_COMMIT_TAG`, 0},
+		{`export VERSION=${CI_COMMIT_TAG##v}`, 0},
+		{`local ref=$CI_COMMIT_REF_NAME`, 0},
+		{`declare -r REF=$CI_COMMIT_REF_NAME`, 0},
+		{`A=1 IMAGE_TAG=$CI_COMMIT_REF_NAME ./build.sh`, 0},
+		{`cd app && IMAGE_TAG=$CI_COMMIT_REF_NAME`, 0},
+		{`if [[ $CI_COMMIT_TAG =~ dev ]]; then echo dev; fi`, 0},
+		{`case $CI_COMMIT_REF_NAME in main) echo m;; esac`, 0},
+		{`if [ ! -z ${CI_MERGE_REQUEST_SOURCE_BRANCH_NAME+x} ]; then echo mr; fi`, 0},
+		{`[ -n "${CI_COMMIT_TAG:+set}" ]`, 0},
+		{`curl --data "$(jq -n --arg tag "$CI_COMMIT_TAG" '{tag: $tag}')" https://example.com`, 0},
+		{`make VERSION=$CI_COMMIT_TAG`, 1},
+		{`echo $CI_COMMIT_REF_NAME`, 1},
+		{`[[ -n x ]] && echo $CI_COMMIT_TAG`, 1},
+		{`echo "$(git log $CI_COMMIT_REF_NAME)"`, 1},
+		{`[ ${CI_COMMIT_TAG:-none} = none ]`, 1},
+	} {
+		doc, err := parser.Parse([]byte("job:\n  script:\n    - "+strconv.Quote(tc.script)+"\n"), "t.yml")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if f := GL002.Check(doc.Root, "t.yml"); len(f) != tc.want {
+			t.Errorf("%s: expected %d findings, got %d", tc.script, tc.want, len(f))
+		}
+	}
+}
+
+func TestGL002_BlockLineAndMessage(t *testing.T) {
+	doc, err := parser.Parse([]byte(`
+job:
+  script:
+    - |
+      echo start
+      git push origin $CI_COMMIT_REF_NAME
+      echo $GITLAB_USER_EMAIL
+`), "t.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := GL002.Check(doc.Root, "t.yml")
+	if len(f) != 2 || f[0].Line != 6 || f[1].Line != 7 {
+		t.Fatalf("expected findings on lines 6 and 7, got %v", f)
+	}
+	if !strings.Contains(f[1].Message, "user who started the pipeline") {
+		t.Errorf("unexpected message: %s", f[1].Message)
 	}
 }

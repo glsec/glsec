@@ -18,10 +18,6 @@ var GL024 = &gl024{}
 func (r *gl024) ID() string { return "GL024" }
 
 var (
-	// realPipeRe matches a shell pipe (|) that is not || (logical OR), |& (stderr+stdout),
-	// or >| (force redirect). Requires the preceding char to be neither | nor >.
-	realPipeRe = regexp.MustCompile(`(?:^|[^|>])\|[^|&]`)
-
 	// pipefailRe matches a line that enables pipefail.
 	pipefailRe = regexp.MustCompile(`\bpipefail\b`)
 )
@@ -61,18 +57,25 @@ func (r *gl024) Check(doc *yaml.Node, file string) []finding.Finding {
 			}
 		}
 
-		// Find the first line that contains a real pipe.
+		// Find the first command whose output is piped. A | inside quotes, as
+		// in sed "s|a|b|" or grep "a|b", is part of an argument.
 		for _, l := range lines {
-			if realPipeRe.MatchString(l.Value) {
-				findings = append(findings, finding.Finding{
+			for _, cmd := range shellCommands(l.Value) {
+				if !cmd.piped {
+					continue
+				}
+				f := finding.Finding{
 					RuleID:   "GL024",
 					Severity: finding.Warn,
 					Job:      name.Value,
 					Message:  "script uses a pipe without set -o pipefail — failures in all but the last command are silently ignored",
 					File:     file,
-					Line:     l.Line,
-					Col:      l.Column,
-				})
+					Line:     parser.ScalarContentLine(l, cmd.line),
+				}
+				if cmd.line == 0 {
+					f.Col = l.Column
+				}
+				findings = append(findings, f)
 				return // one finding per job
 			}
 		}

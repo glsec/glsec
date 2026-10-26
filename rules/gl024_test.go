@@ -5,6 +5,7 @@ package rules
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -450,5 +451,32 @@ func TestGL024_LongExtendsChainIsFast(t *testing.T) {
 	case <-done:
 	case <-time.After(5 * time.Second):
 		t.Fatal("a 5000-job extends chain did not finish in 5s")
+	}
+}
+
+func TestGL024_QuotedPipes(t *testing.T) {
+	for _, tc := range []struct {
+		script string
+		want   int
+	}{
+		{`sed -i "s|http://old|https://new|g" sources.list`, 0},
+		{`perl -pi -e 's|\r||g' file`, 0},
+		{`git log --grep "(^Signed-off-by)|(^Merge branch)"`, 0},
+		{`ctest -LE "slow|broken"`, 0},
+		{`find . -regex '.*\.\(htm\|html\)$'`, 0},
+		{`echo "|1|abc" >> ~/.ssh/known_hosts`, 0},
+		{`cmd >| out.log`, 0},
+		{`a || b`, 0},
+		{`cat f | grep x`, 1},
+		{`make 2>&1 | tee build.log`, 1},
+		{`make |& tee build.log`, 1},
+	} {
+		doc, err := parser.Parse([]byte("job:\n  script:\n    - "+strconv.Quote(tc.script)+"\n"), "t.yml")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if f := GL024.Check(doc.Root, "t.yml"); len(f) != tc.want {
+			t.Errorf("%s: expected %d findings, got %d", tc.script, tc.want, len(f))
+		}
 	}
 }

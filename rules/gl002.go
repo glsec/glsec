@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
+	"github.com/glsec/glsec/internal/parser"
 	"gopkg.in/yaml.v3"
 )
 
@@ -106,23 +107,44 @@ func checkScriptLine(node *yaml.Node, file string) []finding.Finding {
 		if seen[varName] {
 			continue
 		}
-		if isBareAssignment(masked, dollarPos) {
+		if notWordSplit(masked, dollarPos, loc[3]) {
 			continue
 		}
 		seen[varName] = true
-		findings = append(findings, finding.Finding{
+		at := strings.Count(masked[:dollarPos], "\n")
+		f := finding.Finding{
 			RuleID:   "GL002",
 			Severity: finding.Warn,
 			Message: fmt.Sprintf(
-				"unquoted user-controlled variable $%s in script — value is set by commit authors and may contain shell metacharacters",
-				varName,
+				"unquoted user-controlled variable $%s in script — value is %s and may contain shell metacharacters",
+				varName, whoSets(varName),
 			),
 			File: file,
-			Line: node.Line,
-			Col:  node.Column,
-		})
+			Line: parser.ScalarContentLine(node, at),
+		}
+		if at == 0 {
+			f.Col = node.Column
+		}
+		findings = append(findings, f)
 	}
 	return findings
+}
+
+// whoSets says who controls a user-controlled variable, for the message.
+func whoSets(name string) string {
+	switch {
+	case strings.HasPrefix(name, "GITLAB_USER_"):
+		return "taken from the profile of the user who started the pipeline"
+	case strings.HasPrefix(name, "AI_FLOW_"):
+		return "taken from the comment and merge request or issue that triggered the flow"
+	case strings.Contains(name, "MERGE_REQUEST") || strings.Contains(name, "PULL_REQUEST"):
+		return "set by the merge request author"
+	case strings.Contains(name, "MESSAGE") || strings.Contains(name, "TITLE") || strings.Contains(name, "DESCRIPTION") || strings.Contains(name, "AUTHOR"):
+		return "written by whoever creates the commit, tag or release"
+	case strings.Contains(name, "REF_NAME") || strings.Contains(name, "BRANCH") || strings.Contains(name, "TAG") || name == "CI_CONFIG_REF_URI":
+		return "the branch or tag name chosen by whoever pushed it"
+	}
+	return "set by commit authors"
 }
 
 // checkEvaluatedArgs reports user-controlled variables inside the
@@ -166,29 +188,63 @@ func checkEvaluatedArgs(node *yaml.Node, file, masked string, seen map[string]bo
 	return findings
 }
 
-// isBareAssignment reports whether the $ at dollarPos in s is the RHS of a
-// simple shell assignment (IDENTIFIER=$VAR). The LHS must consist solely of
-// a valid identifier followed by '=', with nothing else on the line before it.
-// The RHS of such an assignment is not word-split by the shell, so it is not
-// subject to injection via metacharacters.
-func isBareAssignment(s string, dollarPos int) bool {
-	if dollarPos == 0 {
+// declarationWords take assignments as arguments and, like a plain
+// assignment, don't word-split their values.
+var declarationWords = map[string]bool{
+	"export": true, "local": true, "readonly": true, "declare": true, "typeset": true,
+}
+
+// notWordSplit reports whether the unquoted variable reference at
+// masked[dollarPos:end] sits where the shell does not word-split it, so a
+// crafted value can't add arguments or commands there:
+//   - the value of an assignment: X=$V, export X=$V, local X=$V, A=1 X=$V cmd
+//   - inside [[ … ]]
+//   - the word after case
+//   - ${V+x} and ${V:+x}, which expand to x or nothing, never to the value
+func notWordSplit(masked string, dollarPos, end int) bool {
+	rest := masked[end:]
+	if strings.HasPrefix(rest, "+") || strings.HasPrefix(rest, ":+") {
+		return true
+	}
+	start := strings.LastIndexAny(masked[:dollarPos], ";&|\n(){`") + 1
+	words := strings.Fields(masked[start:dollarPos])
+	for len(words) > 0 && shellKeywords[words[0]] && !declarationWords[words[0]] {
+		words = words[1:]
+	}
+	if len(words) > 0 && words[0] == "[[" && !containsWord(words, "]]") {
+		return true
+	}
+	if len(words) == 1 && words[0] == "case" {
+		return true
+	}
+	// The word holding the reference must be NAME=…, and every word before it
+	// an assignment or a declaration builtin with its options.
+	cur := ""
+	if len(words) > 0 && dollarPos > 0 && !isShellSpace(masked[dollarPos-1]) {
+		cur, words = words[len(words)-1], words[:len(words)-1]
+	}
+	if !assignmentRe.MatchString(cur) {
 		return false
 	}
-	if s[dollarPos-1] != '=' {
-		return false
-	}
-	lhs := s[:dollarPos-1]
-	if len(lhs) == 0 {
-		return false
-	}
-	for _, ch := range lhs {
-		if (ch < 'A' || ch > 'Z') && (ch < 'a' || ch > 'z') && (ch < '0' || ch > '9') && ch != '_' {
+	for i, w := range words {
+		switch {
+		case assignmentRe.MatchString(w):
+		case declarationWords[w]:
+		case strings.HasPrefix(w, "-") && i > 0 && declarationWords[words[0]]:
+		default:
 			return false
 		}
 	}
-	// first char must not be a digit
-	return lhs[0] < '0' || lhs[0] > '9'
+	return true
+}
+
+func containsWord(words []string, w string) bool {
+	for _, x := range words {
+		if x == w {
+			return true
+		}
+	}
+	return false
 }
 
 // maskShellQuotes replaces the contents of single- and double-quoted shell
@@ -201,14 +257,24 @@ func isBareAssignment(s string, dollarPos int) bool {
 func maskShellQuotes(s string) string {
 	var b strings.Builder
 	b.Grow(len(s))
-	i := 0
+	maskShell(s, 0, &b, false)
+	return b.String()
+}
+
+// maskShell writes the masked form of s from i on. In a command substitution
+// (inSubst) it stops after the ) that closes it. A $( inside double quotes
+// starts a new quoting context, as in the shell: in "$(jq --arg t "$TAG")"
+// the inner "$TAG" is quoted on its own, and an unquoted $TAG in there would
+// be split.
+func maskShell(s string, i int, b *strings.Builder, inSubst bool) int {
+	depth := 0
 	for i < len(s) {
+		c := s[i]
 		switch {
-		case s[i] == '\\' && i+1 < len(s):
-			b.WriteByte(' ')
-			b.WriteByte(' ')
+		case c == '\\' && i+1 < len(s):
+			b.WriteString("  ")
 			i += 2
-		case s[i] == '\'':
+		case c == '\'':
 			b.WriteByte('\'')
 			i++
 			for i < len(s) && s[i] != '\'' {
@@ -219,27 +285,41 @@ func maskShellQuotes(s string) string {
 				b.WriteByte('\'')
 				i++
 			}
-		case s[i] == '"':
+		case c == '"':
 			b.WriteByte('"')
 			i++
 			for i < len(s) && s[i] != '"' {
-				if s[i] == '\\' && i+1 < len(s) {
-					b.WriteByte(' ')
-					b.WriteByte(' ')
+				switch {
+				case s[i] == '\\' && i+1 < len(s):
+					b.WriteString("  ")
 					i += 2
-					continue
+				case strings.HasPrefix(s[i:], "$(") && !strings.HasPrefix(s[i:], "$(("):
+					b.WriteString("$(")
+					i = maskShell(s, i+2, b, true)
+				default:
+					b.WriteByte(' ')
+					i++
 				}
-				b.WriteByte(' ')
-				i++
 			}
 			if i < len(s) {
 				b.WriteByte('"')
 				i++
 			}
+		case inSubst && c == '(':
+			depth++
+			b.WriteByte(c)
+			i++
+		case inSubst && c == ')':
+			b.WriteByte(c)
+			i++
+			if depth == 0 {
+				return i
+			}
+			depth--
 		default:
-			b.WriteByte(s[i])
+			b.WriteByte(c)
 			i++
 		}
 	}
-	return b.String()
+	return i
 }

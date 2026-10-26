@@ -68,3 +68,18 @@ func TestCommandWords(t *testing.T) {
 		t.Errorf("withoutSudo = %q", got)
 	}
 }
+
+func TestShellCommandsSubstitutionInQuotes(t *testing.T) {
+	got := shellCommands(`X="$(dotnet app.dll -version | cut -d':' -f2)" && echo "a | b"`)
+	var texts []string
+	for _, c := range got {
+		texts = append(texts, c.text)
+	}
+	want := []string{`X="$(dotnet app.dll -version`, `cut -d':' -f2)"`, `echo "a | b"`}
+	if !reflect.DeepEqual(texts, want) || !got[0].piped {
+		t.Errorf("got %+v", got)
+	}
+	if got := shellCommands(`echo "$(( 1 | 2 ))"`); len(got) != 1 {
+		t.Errorf("arithmetic expansion split: %+v", got)
+	}
+}
