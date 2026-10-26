@@ -310,27 +310,30 @@ func TestGL006_AnchoredFormatsExtra(t *testing.T) {
 		value string
 		label string
 	}{
-		"age":         {"AGE-SECRET-KEY-1" + strings.Repeat("A", 58), "age secret key"},
-		"clojars":     {"CLOJARS_" + a(60), "Clojars deploy token"},
-		"dynatrace":   {"dt0c01." + strings.Repeat("A", 24) + "." + strings.Repeat("B", 64), "Dynatrace token"},
-		"duffel":      {"duffel_" + "test_" + a(43), "Duffel API token"},
-		"frameio":     {"fio-u-" + a(64), "Frame.io token"},
-		"terraform":   {a(14) + ".atlasv1." + strings.Repeat("b", 70), "Terraform Cloud token"},
-		"linear":      {"lin_" + "api_" + a(40), "Linear API key"},
-		"nrjs":        {"NRJS-" + a(19), "New Relic browser key"},
-		"pulumi":      {"pul-" + a(40), "Pulumi access token"},
-		"shippo":      {"shippo_" + "live_" + a(40), "Shippo API token"},
-		"slack":       {"https://hooks.slack.com/services/T" + strings.Repeat("A", 9) + "/B" + strings.Repeat("A", 9) + "/" + a(24), "Slack webhook URL"},
-		"alibaba":     {"LTAI" + a(20), "Alibaba access key ID"},
-		"packagist":   {"packagist_" + "uip_" + a(68), "Private Packagist token"},
-		"adobe":       {"p8e-" + a(32), "Adobe client secret"},
-		"flutterwave": {"FLW" + "SECK_TEST-" + a(32) + "-X", "Flutterwave secret key"},
-		"cf user":     {"cfu" + "t_" + strings.Repeat("A", 40) + "0123abcd", "Cloudflare API token"},
-		"cf account":  {"cfa" + "t_" + strings.Repeat("Ab1", 13) + "x" + "0123abcd", "Cloudflare API token"},
-		"cf originca": {"v1.0-" + a(24) + "-" + strings.Repeat("b", 146), "Cloudflare Origin CA key"},
-		"bbdc":        {"BBD" + "C-" + strings.Repeat("Ab+/", 11), "Bitbucket Data Center token"},
-		"nuget":       {"oy" + "2a" + "bcdefghijklmn23" + "q" + "rstuvwxyz234567abcdefghij" + "e", "NuGet API key"},
-		"nuget upper": {"OY" + "2A" + "BCDEFGHIJKLMN23" + "Q" + "RSTUVWXYZ234567ABCDEFGHIJ" + "E", "NuGet API key"},
+		"age":           {"AGE-SECRET-KEY-1" + strings.Repeat("A", 58), "age secret key"},
+		"clojars":       {"CLOJARS_" + a(60), "Clojars deploy token"},
+		"dynatrace":     {"dt0c01." + strings.Repeat("A", 24) + "." + strings.Repeat("B", 64), "Dynatrace token"},
+		"duffel":        {"duffel_" + "test_" + a(43), "Duffel API token"},
+		"frameio":       {"fio-u-" + a(64), "Frame.io token"},
+		"terraform":     {a(14) + ".atlasv1." + strings.Repeat("b", 70), "Terraform Cloud token"},
+		"linear":        {"lin_" + "api_" + a(40), "Linear API key"},
+		"nrjs":          {"NRJS-" + a(19), "New Relic browser key"},
+		"pulumi":        {"pul-" + a(40), "Pulumi access token"},
+		"shippo":        {"shippo_" + "live_" + a(40), "Shippo API token"},
+		"slack":         {"https://hooks.slack.com/services/T" + strings.Repeat("A", 9) + "/B" + strings.Repeat("A", 9) + "/" + a(24), "Slack webhook URL"},
+		"alibaba":       {"LTAI" + a(20), "Alibaba access key ID"},
+		"packagist":     {"packagist_" + "uip_" + a(68), "Private Packagist token"},
+		"adobe":         {"p8e-" + a(32), "Adobe client secret"},
+		"flutterwave":   {"FLW" + "SECK_TEST-" + a(32) + "-X", "Flutterwave secret key"},
+		"cf user":       {"cfu" + "t_" + strings.Repeat("A", 40) + "0123abcd", "Cloudflare API token"},
+		"cf account":    {"cfa" + "t_" + strings.Repeat("Ab1", 13) + "x" + "0123abcd", "Cloudflare API token"},
+		"cf originca":   {"v1.0-" + a(24) + "-" + strings.Repeat("b", 146), "Cloudflare Origin CA key"},
+		"bbdc":          {"BBD" + "C-" + strings.Repeat("Ab+/", 11), "Bitbucket Data Center token"},
+		"nuget":         {"oy" + "2a" + "bcdefghijklmn23" + "q" + "rstuvwxyz234567abcdefghij" + "e", "NuGet API key"},
+		"nuget upper":   {"OY" + "2A" + "BCDEFGHIJKLMN23" + "Q" + "RSTUVWXYZ234567ABCDEFGHIJ" + "E", "NuGet API key"},
+		"sonar user":    {"sq" + "u_" + strings.Repeat("0123456789abcdef", 2) + "01234567", "SonarQube token"},
+		"sonar project": {"sq" + "p_" + strings.Repeat("0123456789abcdef", 2) + "01234567", "SonarQube token"},
+		"sonar global":  {"sq" + "a_" + strings.Repeat("0123456789abcdef", 2) + "01234567", "SonarQube token"},
 	}
 	for name, tc := range cases {
 		tc := tc
@@ -392,6 +395,28 @@ func TestGL006_NuGetNearMiss_NoFinding(t *testing.T) {
 		f := findings006(t, fmt.Sprintf(`
 variables:
   NUGET_API_KEY: "%s"
+build:
+  script: [echo ok]
+`, v))
+		if len(f) != 0 {
+			t.Errorf("expected no finding for %q, got %d", v, len(f))
+		}
+	}
+}
+
+func TestGL006_SonarQubeNearMiss_NoFinding(t *testing.T) {
+	const hex = "0123456789abcdef0123456789abcdef0123456"
+	values := []string{
+		"sq" + "u_" + hex,                      // 39 hex chars
+		"sq" + "u_" + hex + "78",               // 41 hex chars
+		"sq" + "u_" + strings.ToUpper(hex+"7"), // uppercase hex
+		"sq" + "x_" + hex + "7",                // unknown prefix
+		"$SONAR_TOKEN",
+	}
+	for _, v := range values {
+		f := findings006(t, fmt.Sprintf(`
+variables:
+  SONAR_TOKEN: "%s"
 build:
   script: [echo ok]
 `, v))

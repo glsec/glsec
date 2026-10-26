@@ -88,6 +88,8 @@ var secretPatterns = []secretPattern{
 	// base32 after the oy2 prefix; the 4th, 20th and last characters carry
 	// fixed bits, which keeps random lowercase strings from matching.
 	{"NuGet API key", regexp.MustCompile(`(?i)^oy2[a-p][a-z2-7]{15}[aq][a-z2-7]{25}[aeimquy4]$`)},
+	// squ_ user, sqp_ project analysis and sqa_ global analysis tokens.
+	{"SonarQube token", regexp.MustCompile(`^sq[apu]_[0-9a-f]{40}$`)},
 }
 
 func (r *gl006) Check(doc *yaml.Node, file string) []finding.Finding {
