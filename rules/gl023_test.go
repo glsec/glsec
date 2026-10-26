@@ -118,14 +118,77 @@ build:
 
 // --- pnpm ---
 
-func TestGL023_PnpmInstall(t *testing.T) {
+// pnpm freezes the lockfile by itself when CI is set, as it is in GitLab.
+func TestGL023_PnpmInstall_NoFinding(t *testing.T) {
 	f := findings023(t, `
 build:
   script:
     - pnpm install
 `)
-	if len(f) != 1 {
-		t.Fatalf("expected 1 finding for pnpm install, got %d", len(f))
+	if len(f) != 0 {
+		t.Fatalf("expected no finding for pnpm install, got %d", len(f))
+	}
+}
+
+func TestGL023_BundlerFrozenBeforehand(t *testing.T) {
+	for _, tc := range []struct {
+		name, yaml string
+		want       int
+	}{
+		{"config set frozen", `
+build:
+  script:
+    - bundle config set --global frozen 'true'
+    - bundle install
+`, 0},
+		{"config set deployment", `
+build:
+  script:
+    - bundle config set deployment true
+    - bundle install
+`, 0},
+		{"BUNDLE_FROZEN job variable", `
+build:
+  variables:
+    BUNDLE_FROZEN: "true"
+  script:
+    - bundle install
+`, 0},
+		{"BUNDLE_DEPLOYMENT global variable", `
+variables:
+  BUNDLE_DEPLOYMENT: "1"
+build:
+  script:
+    - bundle install
+`, 0},
+		{"BUNDLE_FROZEN from extends", `
+.ruby:
+  variables:
+    BUNDLE_FROZEN: "true"
+build:
+  extends: .ruby
+  script:
+    - bundle install
+`, 0},
+		{"config after the install", `
+build:
+  script:
+    - bundle install
+    - bundle config set frozen true
+`, 1},
+		{"frozen false", `
+build:
+  variables:
+    BUNDLE_FROZEN: "false"
+  script:
+    - bundle install
+`, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if f := findings023(t, tc.yaml); len(f) != tc.want {
+				t.Fatalf("expected %d findings, got %d", tc.want, len(f))
+			}
+		})
 	}
 }
 

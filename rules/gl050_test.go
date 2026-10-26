@@ -4,6 +4,8 @@
 package rules
 
 import (
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -141,5 +143,52 @@ setup:
 `)
 	if len(f) != 2 {
 		t.Fatalf("expected 2 findings for two sudo lines, got %d", len(f))
+	}
+}
+
+func TestGL050_NotTheCommand(t *testing.T) {
+	for _, script := range []string{
+		"apt-get install -y jq curl sudo make",
+		"pacman -Syu --noconfirm sudo fakeroot",
+		`echo "run sudo make install yourself"`,
+		"cat > help.html <<EOF\n<p>Then: <code>sudo pacman -Sy tool</code></p>\nEOF",
+	} {
+		f := findings050(t, "job:\n  script:\n    - |\n"+indentBlock(script)+"\n")
+		if len(f) != 0 {
+			t.Errorf("%q: expected no finding, got %d", script, len(f))
+		}
+	}
+}
+
+func TestGL050_SudoLaterInBlock(t *testing.T) {
+	f := findings050(t, `
+job:
+  script:
+    - |
+      apt-get update
+      cd build && sudo make install
+`)
+	if len(f) != 1 || f[0].Line != 6 {
+		t.Fatalf("expected one finding on line 6, got %v", f)
+	}
+}
+
+func indentBlock(s string) string {
+	return "      " + strings.ReplaceAll(s, "\n", "\n      ")
+}
+
+func TestGL050_SudoInSubstitution(t *testing.T) {
+	for _, tc := range []struct {
+		script string
+		want   int
+	}{
+		{"test $(sudo pvesh get /nodes) = ok", 1},
+		{"export VMID=$(sudo qm list | head -1)", 1},
+		{"echo `sudo id -u`", 1},
+		{"echo '$(sudo id)'", 0},
+	} {
+		if f := findings050(t, "job:\n  script:\n    - "+strconv.Quote(tc.script)+"\n"); len(f) != tc.want {
+			t.Errorf("%s: expected %d, got %d", tc.script, tc.want, len(f))
+		}
 	}
 }

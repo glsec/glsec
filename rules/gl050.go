@@ -5,9 +5,9 @@ package rules
 
 import (
 	"regexp"
-	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
+	"github.com/glsec/glsec/internal/parser"
 	"gopkg.in/yaml.v3"
 )
 
@@ -17,24 +17,31 @@ var GL050 = &gl050{}
 
 func (r *gl050) ID() string { return "GL050" }
 
-var sudoRe = regexp.MustCompile(`\bsudo\b`)
+// sudoSubstRe matches sudo run inside a command substitution: test $(sudo …).
+var sudoSubstRe = regexp.MustCompile("(?:\\$\\(|`)\\s*sudo\\b")
 
 func (r *gl050) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
 	EachScriptLine(doc, file, func(line *yaml.Node, file, job string) {
-		if strings.HasPrefix(strings.TrimSpace(line.Value), "#") {
-			return
-		}
-		if sudoRe.MatchString(line.Value) {
-			findings = append(findings, finding.Finding{
+		// Only sudo as the command a line runs counts: not the sudo package in
+		// an install list, and not the word in text a heredoc writes.
+		for _, cmd := range shellCommands(line.Value) {
+			if commandName(commandWords(cmd.text)) != "sudo" && !sudoSubstRe.MatchString(maskSingleQuoted(cmd.text)) {
+				continue
+			}
+			f := finding.Finding{
 				RuleID:   "GL050",
 				Severity: finding.Warn,
 				Job:      job,
 				Message:  "sudo in CI script escalates privileges — use a container image with required tools pre-installed instead",
 				File:     file,
-				Line:     line.Line,
-				Col:      line.Column,
-			})
+				Line:     parser.ScalarContentLine(line, cmd.line),
+			}
+			if cmd.line == 0 {
+				f.Col = line.Column
+			}
+			findings = append(findings, f)
+			return
 		}
 	})
 	return findings

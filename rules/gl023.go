@@ -45,13 +45,8 @@ var lockfileChecks = []lockfileCheck{
 		skip:       nil,
 		hint:       "yarn install --frozen-lockfile",
 	},
-	{
-		manager:    "pnpm",
-		trigger:    regexp.MustCompile(`\bpnpm\s+install\b`),
-		strictFlag: regexp.MustCompile(`--frozen-lockfile\b`),
-		skip:       nil,
-		hint:       "pnpm install --frozen-lockfile",
-	},
+	// pnpm is not listed: it turns on --frozen-lockfile by itself when CI is
+	// set, and GitLab sets CI=true in every job.
 	{
 		manager:    "bundler",
 		trigger:    regexp.MustCompile(`\bbundle\s+install\b`),
@@ -64,9 +59,19 @@ var lockfileChecks = []lockfileCheck{
 func (r *gl023) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
 
+	in := NewInheritance(doc)
+	globalFrozen := bundlerFrozenVars(parser.FindKey(parser.Unwrap(doc), "variables"))
+
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
 		lines := CollectJobScriptLines(job)
+		frozen := globalFrozen || bundlerFrozenVars(in.Key(job, "variables"))
 		for _, l := range lines {
+			if bundleConfigFrozenRe.MatchString(l.Value) {
+				frozen = true
+			}
+			if frozen && bundleInstallRe.MatchString(l.Value) {
+				continue
+			}
 			if f := checkLockfileLine(l.Value, file, l.Line, l.Column); f != nil {
 				f.Job = name.Value
 				findings = append(findings, *f)
@@ -75,6 +80,31 @@ func (r *gl023) Check(doc *yaml.Node, file string) []finding.Finding {
 	})
 
 	return findings
+}
+
+var (
+	bundleInstallRe = regexp.MustCompile(`\bbundle\s+install\b`)
+	// bundleConfigFrozenRe matches bundler being set to frozen or deployment
+	// mode before the install: bundle config set --global frozen 'true'.
+	bundleConfigFrozenRe = regexp.MustCompile(`\bbundle\s+config\s+(?:set\s+)?(?:--(?:global|local)\s+)?(?:frozen|deployment)\s+["']?(?:true|1)\b`)
+)
+
+// bundlerFrozenVars reports whether a variables: block sets BUNDLE_FROZEN or
+// BUNDLE_DEPLOYMENT, which make bundle install refuse to change the lockfile.
+func bundlerFrozenVars(vars *yaml.Node) bool {
+	if vars == nil || vars.Kind != yaml.MappingNode {
+		return false
+	}
+	for _, k := range []string{"BUNDLE_FROZEN", "BUNDLE_DEPLOYMENT"} {
+		v := parser.FindKey(vars, k)
+		if v != nil && v.Kind == yaml.MappingNode {
+			v = parser.FindKey(v, "value")
+		}
+		if v != nil && v.Kind == yaml.ScalarNode && (v.Value == "true" || v.Value == "1") {
+			return true
+		}
+	}
+	return false
 }
 
 func checkLockfileLine(line, file string, lineNum, col int) *finding.Finding {

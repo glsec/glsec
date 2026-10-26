@@ -6,6 +6,7 @@ package rules
 import (
 	"fmt"
 	"regexp"
+	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
 	"github.com/glsec/glsec/internal/parser"
@@ -51,7 +52,7 @@ var (
 			manager: "pip",
 			trigger: regexp.MustCompile(`\bpip[23]?\s+install\b`),
 			pinned:  regexp.MustCompile(`==|~=|!=|>=|<=`),
-			skip:    regexp.MustCompile(`\s-r\s|\s-r$|-e\s|\.\s*(?:$|&&|\|)|--upgrade\b|-U\b`),
+			skip:    regexp.MustCompile(`\s-r\s|\s-r$|-e\s|--editable\s|\.\s*(?:$|&&|\|)|\s["']?\.{1,2}(?:/|\[|["']|\s|$)|--upgrade\b|-U\b`),
 		},
 		{
 			manager: "npm (global)",
@@ -181,6 +182,15 @@ var (
 	// the line is skipped to avoid false positives.
 	pmVarPkg = regexp.MustCompile(`\b(?:install|add|require|in|npx|npm\s+(?:exec|x)|dlx|uvx|uv\s+tool\s+run|pipx\s+run)\s+(?:-\S+\s+)*["']?\$\{?[A-Za-z_]`)
 
+	// varPinnedRe matches a version given through a variable: pkg@$V,
+	// pkg==$V, pkg=$V, -v $V, --version=${V}. The value is unknown statically,
+	// like a package named by a variable (pmVarPkg), so it isn't flagged.
+	varPinnedRe = regexp.MustCompile(`(?:@|==|[^\s=-]=|(?:-v|--version|--vers)[\s=]+)["']?\$\{?[A-Za-z_]`)
+
+	// localPackageRe matches a package file or directory on disk, such as
+	// ./dist/tool.deb or /tmp/pkg.whl (a relative path or a package file): a local build, not a registry package.
+	localPackageRe = regexp.MustCompile(`(?:^|\s)["']?\.{1,2}/\S*|\S+\.(?:deb|rpm|whl|apk)\b`)
+
 	pmUpdateChecks = []pmUpdateCheck{
 		{"npm", regexp.MustCompile(`\bnpm\s+update\b`)},
 		{"yarn", regexp.MustCompile(`\byarn\s+upgrade\b`)},
@@ -245,6 +255,15 @@ func checkPMLine(line, file string, lineNum, col int) *finding.Finding {
 			continue
 		}
 		if ic.pinned != nil && ic.pinned.MatchString(line) {
+			continue
+		}
+		// Only the rest of the install command can pin or name a package: not
+		// a VAR=$X prefix in front of it, and not other commands in a block.
+		args := line[ic.trigger.FindStringIndex(probe)[1]:]
+		if end := strings.IndexAny(args, "\n;|&"); end >= 0 {
+			args = args[:end]
+		}
+		if varPinnedRe.MatchString(args) || localPackageRe.MatchString(args) {
 			continue
 		}
 		msg := fmt.Sprintf("%s install without version pin — use an exact version to make the pipeline reproducible", ic.manager)

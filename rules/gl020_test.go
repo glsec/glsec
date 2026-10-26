@@ -4,6 +4,7 @@
 package rules
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -176,5 +177,82 @@ install:
 	}
 	if f[0].Line == 0 {
 		t.Error("expected non-zero line number")
+	}
+}
+
+func TestGL020_Commands(t *testing.T) {
+	for _, tc := range []struct {
+		name, script string
+		want         int
+	}{
+		{"curl -o", "curl -sSL -o tool.tgz https://example.com/tool.tgz", 1},
+		{"curl -O cluster", "curl -sSLO https://example.com/tool.tgz", 1},
+		{"curl --output=", "curl --output=tool.tgz https://example.com/tool.tgz", 1},
+		{"wget", "wget https://example.com/tool.tgz", 1},
+		{"sudo wget", "sudo wget -q https://example.com/tool.tgz", 1},
+		{"curl in a substitution", "TGZ=$(curl -sSLo tool.tgz https://example.com/tool.tgz)", 1},
+		{"wget as an apt package", "apt-get install -y curl wget ca-certificates --no-install-recommends", 0},
+		{"curl to stdout", "curl -sSL https://example.com/api | jq .", 0},
+		{"curl -o /dev/null probe", "curl --retry 10 --output /dev/null http://app:8080", 0},
+		{"curl -o - into jq", "curl -sSL -o - https://example.com/x | jq .", 0},
+		{"wget -qO- into grep", "wget -qO- https://example.com/x | grep ok", 0},
+		{"wget -O /dev/null", "wget -O /dev/null http://app:8080", 0},
+		{"wget --spider", "wget --spider http://app:8080", 0},
+		{"curl in quoted text", `echo "use curl -O to fetch"`, 0},
+		{"no-install-recommends", "apt install curl python3 --no-install-recommends", 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := findings020(t, "job:\n  script:\n    - '"+strings.ReplaceAll(tc.script, "'", "''")+"'\n")
+			if len(f) != tc.want {
+				t.Fatalf("expected %d findings, got %d", tc.want, len(f))
+			}
+		})
+	}
+}
+
+// The finding points at the line of a block that downloads, not the block start.
+func TestGL020_BlockLine(t *testing.T) {
+	f := findings020(t, `
+job:
+  script:
+    - |
+      apt-get install -y wget
+      echo ready
+      wget https://example.com/tool.tgz
+`)
+	if len(f) != 1 || f[0].Line != 7 {
+		t.Fatalf("expected one finding on line 7, got %v", f)
+	}
+}
+
+func TestGL020_StdoutIntoFiles(t *testing.T) {
+	for _, tc := range []struct {
+		script string
+		want   int
+	}{
+		{"wget -qO- https://example.com/x.tar.gz | tar -xz", 1},
+		{"curl -sSL https://example.com/x.tar.gz | tar xz -C /usr/local", 1},
+		{"curl -sSL https://example.com/x > tool", 1},
+		{"curl.exe -O https://example.com/x.py", 1},
+		{"curl -sSL https://example.com/x > /dev/null", 0},
+		{"curl -sSL https://example.com/x 2>&1 | grep ok", 0},
+		{"curl -sSL https://example.com/api | jq -r .tag", 0},
+	} {
+		f := findings020(t, "job:\n  script:\n    - '"+strings.ReplaceAll(tc.script, "'", "''")+"'\n")
+		if len(f) != tc.want {
+			t.Errorf("%s: expected %d findings, got %d", tc.script, tc.want, len(f))
+		}
+	}
+}
+
+func TestGL020_Wrappers(t *testing.T) {
+	for _, script := range []string{
+		"timeout 60 wget https://example.com/x.tgz",
+		"retry 3 10 curl -sSLo x.tgz https://example.com/x.tgz",
+		"wget https://example.com/x.tar.xz -O - | xzcat | tar -x",
+	} {
+		if f := findings020(t, "job:\n  script:\n    - '"+script+"'\n"); len(f) != 1 {
+			t.Errorf("%s: expected 1 finding, got %d", script, len(f))
+		}
 	}
 }

@@ -753,3 +753,45 @@ func TestGL022_YarnGlobal_NoFinding(t *testing.T) {
 		}
 	}
 }
+
+func TestGL022_LocalAndVariablePins(t *testing.T) {
+	for _, tc := range []struct {
+		script string
+		want   int
+	}{
+		{`pip install ".[test,optional]"`, 0},
+		{`pip install .[test]`, 0},
+		{`pip install --editable .[docs]`, 0},
+		{`pip install ./dist/pkg-1.0-py3-none-any.whl`, 0},
+		{`apt-get install -qy ./dist/tool_amd64.deb`, 0},
+		{`dnf install -y /tmp/tool.rpm`, 0},
+		{`gem install bundler -v $BUNDLER_VERSION`, 0},
+		{`npm install -g "npm@${NPM_VERSION}"`, 0},
+		{`go install golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}`, 0},
+		{`apt-get install -y nodejs=${NODE_VERSION}-1nodesource1`, 0},
+		{`pip install requests==$REQUESTS_VERSION`, 0},
+		{`DEBIAN_FRONTEND=$MODE apt-get install -y curl`, 1},
+		{`apt-get install -y curl > /dev/null`, 1},
+		{`pip install requests`, 1},
+		{`gem install bundler`, 1},
+	} {
+		f := findings022(t, "job:\n  script:\n    - '"+strings.ReplaceAll(tc.script, "'", "''")+"'\n")
+		if len(f) != tc.want {
+			t.Errorf("%s: expected %d findings, got %d", tc.script, tc.want, len(f))
+		}
+	}
+}
+
+// A variable or a local path elsewhere in a block doesn't pin the install.
+func TestGL022_BlockArgsStayOnTheCommand(t *testing.T) {
+	f := findings022(t, `
+job:
+  script:
+    - |
+      apk add curl
+      VERSION=$CI_COMMIT_TAG ./build.sh ./dist/
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding, got %d", len(f))
+	}
+}
