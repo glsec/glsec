@@ -206,6 +206,38 @@ func TestWriteTable_EmptyNonTTY(t *testing.T) {
 	}
 }
 
+func TestWriteTable_Color(t *testing.T) {
+	findings := append([]finding.Finding{
+		{RuleID: "GL099", Severity: finding.Info, Job: "lint", File: ".gitlab-ci.yml", Line: 9, Message: "informational"},
+	}, testFindingsWithJob...)
+
+	var plain, colored bytes.Buffer
+	if err := Write(&plain, FormatTable, findings, 3, false, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := Write(&colored, FormatTable, findings, 3, true, false); err != nil {
+		t.Fatal(err)
+	}
+
+	if strings.Contains(plain.String(), "\033[") {
+		t.Errorf("expected no ANSI escapes with colour disabled:\n%s", plain.String())
+	}
+	got := colored.String()
+	for _, want := range []string{"\033[31mERROR\033[0m  ", "\033[33mWARN\033[0m   ", "\nINFO   "} {
+		if !strings.Contains(got, want) {
+			t.Errorf("coloured table missing %q:\n%q", want, got)
+		}
+	}
+	if strings.Count(got, "\033[") != 2*(len(findings)-1) {
+		t.Errorf("expected only the ERROR and WARN cells to be coloured:\n%q", got)
+	}
+	// Columns line up only if the escapes come on top of the plain layout.
+	stripped := strings.NewReplacer("\033[31m", "", "\033[33m", "", "\033[0m", "").Replace(got)
+	if stripped != plain.String() {
+		t.Errorf("coloured table is misaligned:\nplain:\n%s\nstripped:\n%s", plain.String(), stripped)
+	}
+}
+
 func TestParseFormat(t *testing.T) {
 	for _, tc := range []struct {
 		in   string

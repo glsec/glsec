@@ -4,6 +4,7 @@
 package output
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -54,7 +55,7 @@ func Write(w io.Writer, format Format, findings []finding.Finding, jobCount int,
 	case FormatJUnit:
 		return writeJUnit(w, findings)
 	case FormatTable:
-		return writeTable(w, findings, jobCount, isTTY)
+		return writeTable(w, findings, jobCount, colorEnabled, isTTY)
 	default:
 		return writeText(w, findings, jobCount, colorEnabled, isTTY)
 	}
@@ -64,7 +65,12 @@ func Write(w io.Writer, format Format, findings []finding.Finding, jobCount int,
 // osv-scanner's table output. Columns are tab-separated and padded with
 // text/tabwriter. On a clean run it falls back to the same summary line as the
 // text format, which is only emitted on an interactive terminal (issue #273).
-func writeTable(w io.Writer, findings []finding.Finding, jobCount int, isTTY bool) error {
+//
+// The severity is coloured after tabwriter has aligned the lines: tabwriter
+// counts the bytes of ANSI escapes as width, which would shift the columns
+// (#726). Sanitize keeps line breaks out of the cells, so output line i+1 is
+// finding i and starts with its severity.
+func writeTable(w io.Writer, findings []finding.Finding, jobCount int, colorOn, isTTY bool) error {
 	if len(findings) == 0 {
 		if isTTY {
 			_, err := fmt.Fprintf(w, "Scanned %d jobs, 0 issues found.\n", jobCount)
@@ -73,7 +79,8 @@ func writeTable(w io.Writer, findings []finding.Finding, jobCount int, isTTY boo
 		return nil
 	}
 
-	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	var buf bytes.Buffer
+	tw := tabwriter.NewWriter(&buf, 0, 0, 2, ' ', 0)
 	if _, err := fmt.Fprintln(tw, "SEVERITY\tRULE\tJOB\tFILE\tLINE\tMESSAGE"); err != nil {
 		return err
 	}
@@ -88,7 +95,39 @@ func writeTable(w io.Writer, findings []finding.Finding, jobCount int, isTTY boo
 			return err
 		}
 	}
-	return tw.Flush()
+	if err := tw.Flush(); err != nil {
+		return err
+	}
+	if !colorOn {
+		_, err := buf.WriteTo(w)
+		return err
+	}
+
+	lines := strings.SplitAfter(buf.String(), "\n")
+	for i, line := range lines {
+		if i >= 1 && i <= len(findings) {
+			line = colorTableSeverity(line, findings[i-1].Severity)
+		}
+		if _, err := io.WriteString(w, line); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func colorTableSeverity(line string, sev finding.Severity) string {
+	label := strings.ToUpper(string(sev))
+	rest, ok := strings.CutPrefix(line, label)
+	if !ok {
+		return line
+	}
+	switch sev {
+	case finding.Error:
+		return color.Red(label, true) + rest
+	case finding.Warn:
+		return color.Yellow(label, true) + rest
+	}
+	return line
 }
 
 // writeText renders findings as compiler-style diagnostics: a header carrying
