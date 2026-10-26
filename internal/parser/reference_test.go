@@ -169,3 +169,120 @@ func TestResolveReferences_NestedReferenceBudget(t *testing.T) {
 		t.Errorf(".t3: got %d script lines, want 8", len(got))
 	}
 }
+
+// parseJob parses src and returns the named job's mapping.
+func parseJob(t *testing.T, src, job string) *yaml.Node {
+	t.Helper()
+	doc, err := Parse([]byte(src), "test.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := FindKey(doc.MappingNode(), job)
+	if n == nil {
+		t.Fatalf("job %q not found", job)
+	}
+	return n
+}
+
+// requireUnresolved fails unless n is still the !reference with the given
+// scalar path, as written.
+func requireUnresolved(t *testing.T, n *yaml.Node, path ...string) {
+	t.Helper()
+	if !isReference(n) || n.Kind != yaml.SequenceNode || len(n.Content) != len(path) {
+		t.Fatalf("got kind %d tag %q with %d items, want the unresolved !reference %v", n.Kind, n.Tag, len(n.Content), path)
+	}
+	for i, p := range path {
+		if p != "" && n.Content[i].Value != p {
+			t.Errorf("path item %d = %q, want %q", i, n.Content[i].Value, p)
+		}
+	}
+}
+
+func TestResolveReferences_NonScalarPathStaysUnresolved(t *testing.T) {
+	job := parseJob(t, `
+.job:
+  script: [make]
+build:
+  script: !reference [.job, [script]]
+`, "build")
+	ref := FindKey(job, "script")
+	requireUnresolved(t, ref, ".job", "")
+	if ref.Content[1].Kind != yaml.SequenceNode {
+		t.Errorf("the nested path segment must be kept as written")
+	}
+}
+
+func TestResolveReferences_EmptyPathStaysUnresolved(t *testing.T) {
+	job := parseJob(t, `
+build:
+  script:
+    - echo before
+    - !reference []
+`, "build")
+	script := FindKey(job, "script")
+	if len(script.Content) != 2 || script.Content[0].Value != "echo before" {
+		t.Fatalf("unexpected script: %v", script.Content)
+	}
+	requireUnresolved(t, script.Content[1])
+}
+
+func TestResolveReferences_PathThroughListOrString(t *testing.T) {
+	for _, path := range []string{"[.job, script, 0]", "[.job, image, name]"} {
+		job := parseJob(t, `
+.job:
+  image: alpine:3.20
+  script: [make]
+build:
+  script: !reference `+path+`
+`, "build")
+		if ref := FindKey(job, "script"); !isReference(ref) {
+			t.Errorf("%s walks into a list or string and must stay unresolved, got kind %d", path, ref.Kind)
+		}
+	}
+}
+
+func TestResolveReferences_MappingAsListItem(t *testing.T) {
+	job := parseJob(t, `
+.vars:
+  variables:
+    A: "1"
+build:
+  script: [make]
+  services:
+    - postgres:16
+    - !reference [.vars, variables]
+`, "build")
+	services := FindKey(job, "services")
+	if len(services.Content) != 2 {
+		t.Fatalf("got %d services, want 2", len(services.Content))
+	}
+	item := services.Content[1]
+	if isReference(item) || item.Kind != yaml.MappingNode || FindKey(item, "A") == nil {
+		t.Errorf("a mapping target must be inserted as one item, got kind %d tag %q", item.Kind, item.Tag)
+	}
+}
+
+func TestResolveReferences_UnresolvableMappingValue(t *testing.T) {
+	job := parseJob(t, `
+build:
+  script: [make]
+  variables: !reference [.from_include, variables]
+`, "build")
+	requireUnresolved(t, FindKey(job, "variables"), ".from_include", "variables")
+}
+
+func TestResolveReferences_TopLevelNotAMapping(t *testing.T) {
+	for _, src := range []string{"- !reference [a, b]\n", "just a string\n"} {
+		var doc yaml.Node
+		if err := yaml.Unmarshal([]byte(src), &doc); err != nil {
+			t.Fatal(err)
+		}
+		before, _ := yaml.Marshal(&doc)
+		ResolveReferences(&doc)
+		NormalizeScripts(&doc)
+		after, _ := yaml.Marshal(&doc)
+		if string(before) != string(after) {
+			t.Errorf("%q changed:\n%s", src, after)
+		}
+	}
+}

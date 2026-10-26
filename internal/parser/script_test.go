@@ -94,3 +94,52 @@ func TestNormalizeScripts_NestingCap(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestNormalizeScripts_UnresolvedReferenceStays(t *testing.T) {
+	doc, err := Parse([]byte(`
+build:
+  script: !reference [.from_include, script]
+  before_script:
+    - - echo nested
+      - !reference [.from_include, before_script]
+`), "test.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	job := FindKey(doc.MappingNode(), "build")
+	script := FindKey(job, "script")
+	if !isReference(script) || len(script.Content) != 2 || script.Content[0].Value != ".from_include" {
+		t.Errorf("an unresolved !reference as the whole script: must stay a reference, got kind %d tag %q", script.Kind, script.Tag)
+	}
+	before := FindKey(job, "before_script").Content
+	if len(before) != 2 || before[0].Value != "echo nested" || !isReference(before[1]) {
+		t.Errorf("flattening must keep a nested unresolved !reference as one item, got %v", before)
+	}
+}
+
+func TestNormalizeScripts_Hooks(t *testing.T) {
+	doc, err := Parse([]byte(`
+string_hooks:
+  hooks: not a mapping
+  script: [make]
+other_hooks:
+  hooks:
+    pre_get_sources_script: echo hook
+    other_hook: echo untouched
+  script: [make]
+`), "test.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	top := doc.MappingNode()
+	if h := FindKey(FindKey(top, "string_hooks"), "hooks"); h.Kind != yaml.ScalarNode || h.Value != "not a mapping" {
+		t.Errorf("hooks: that isn't a mapping must stay as it is, got kind %d", h.Kind)
+	}
+	hooks := FindKey(FindKey(top, "other_hooks"), "hooks")
+	if values, _ := commands(t, FindKey(hooks, "pre_get_sources_script")); len(values) != 1 || values[0] != "echo hook" {
+		t.Errorf("pre_get_sources_script = %v", values)
+	}
+	if other := FindKey(hooks, "other_hook"); other.Kind != yaml.ScalarNode {
+		t.Errorf("only pre_get_sources_script is a script list, other_hook became kind %d", other.Kind)
+	}
+}
