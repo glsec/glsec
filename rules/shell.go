@@ -264,3 +264,37 @@ func maskSingleQuoted(s string) string {
 	}
 	return string(b)
 }
+
+// logicalLine is one line of a script item, with backslash continuations
+// joined.
+type logicalLine struct {
+	text string
+	line int // index of the item line it starts on
+}
+
+// logicalLines splits a script item into lines, joining a line that ends in a
+// backslash with the next one.
+func logicalLines(script string) []logicalLine {
+	var out []logicalLine
+	var cur strings.Builder
+	start := 0
+	for i, l := range strings.Split(script, "\n") {
+		if cur.Len() == 0 {
+			start = i
+		}
+		if strings.HasSuffix(l, "\\") {
+			cur.WriteString(strings.TrimSuffix(l, "\\"))
+			cur.WriteByte(' ')
+			continue
+		}
+		cur.WriteString(l)
+		if t := strings.TrimSpace(cur.String()); t != "" {
+			out = append(out, logicalLine{text: t, line: start})
+		}
+		cur.Reset()
+	}
+	if t := strings.TrimSpace(cur.String()); t != "" {
+		out = append(out, logicalLine{text: t, line: start})
+	}
+	return out
+}

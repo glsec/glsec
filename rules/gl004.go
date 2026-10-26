@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
+	"github.com/glsec/glsec/internal/parser"
 	"gopkg.in/yaml.v3"
 )
 
@@ -20,8 +21,6 @@ func (r *gl004) ID() string { return "GL004" }
 
 var (
 	jobTokenPattern = regexp.MustCompile(`\$\{?CI_JOB_TOKEN\}?`)
-	// urlPattern captures the hostname from a URL, skipping optional userinfo (user:pass@).
-	urlPattern004 = regexp.MustCompile(`https?://(?:[^@]*@)?([a-zA-Z0-9.\-]+)`)
 )
 
 func (r *gl004) Check(doc *yaml.Node, file string) []finding.Finding {
@@ -48,32 +47,78 @@ func scanScriptForToken(node *yaml.Node, file string) []finding.Finding {
 	return findings
 }
 
+// checkTokenLine reports a command that passes $CI_JOB_TOKEN and names a
+// non-GitLab host as a URL argument. Each command of a block is looked at on
+// its own, and only words that are URLs count: a URL in an echo, a form value
+// (-F "x=https://…") or another command of the block is not where the token
+// goes.
 func checkTokenLine(node *yaml.Node, file string) []finding.Finding {
 	if !jobTokenPattern.MatchString(node.Value) {
 		return nil
 	}
-
-	// Only flag when an explicit non-GitLab URL is present in the same command.
-	// If no URL is found the token might be going to $CI_SERVER_URL or similar — skip.
-	matches := urlPattern004.FindAllStringSubmatch(node.Value, -1)
-	for _, m := range matches {
-		domain := m[1]
-		if !isGitLabDomain(domain) {
-			return []finding.Finding{{
+	var findings []finding.Finding
+	for _, cmd := range shellCommands(node.Value) {
+		if !jobTokenPattern.MatchString(cmd.text) {
+			continue
+		}
+		for _, w := range shellWords(cmd.text) {
+			host := urlHost(w)
+			if host == "" || isGitLabDomain(host) {
+				continue
+			}
+			f := finding.Finding{
 				RuleID:   "GL004",
 				Severity: finding.Warn,
 				Message: fmt.Sprintf(
 					"CI_JOB_TOKEN sent to non-GitLab host %q — this token is scoped to the GitLab API and should not be forwarded to external services",
-					domain,
+					host,
 				),
 				File: file,
-				Line: node.Line,
-				Col:  node.Column,
-			}}
+				Line: parser.ScalarContentLine(node, cmd.line),
+			}
+			if cmd.line == 0 {
+				f.Col = node.Column
+			}
+			findings = append(findings, f)
+			break
 		}
 	}
-	return nil
+	return findings
 }
+
+// urlHost returns the host of a word that is an http(s) URL, without userinfo
+// and port. A host given by a variable ($CI_SERVER_HOST) is unknown and
+// returns "".
+func urlHost(word string) string {
+	if strings.HasPrefix(word, "-") {
+		if i := strings.IndexByte(word, '='); i >= 0 {
+			word = word[i+1:] // --url=https://…
+		}
+	}
+	m := urlWordRe.FindStringSubmatch(word)
+	if m == nil {
+		return ""
+	}
+	rest := m[1]
+	if i := strings.IndexAny(rest, "/?#"); i >= 0 {
+		rest = rest[:i]
+	}
+	if i := strings.LastIndexByte(rest, '@'); i >= 0 {
+		rest = rest[i+1:]
+	}
+	if i := strings.LastIndexByte(rest, ':'); i >= 0 {
+		rest = rest[:i]
+	}
+	if !hostRe.MatchString(rest) {
+		return ""
+	}
+	return strings.ToLower(rest)
+}
+
+var (
+	urlWordRe = regexp.MustCompile(`^(?i:https?)://(.+)$`)
+	hostRe    = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.\-]*$`)
+)
 
 func isGitLabDomain(domain string) bool {
 	return domain == "gitlab.com" || strings.HasSuffix(domain, ".gitlab.com")

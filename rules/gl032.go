@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
+	"github.com/glsec/glsec/internal/parser"
 	"gopkg.in/yaml.v3"
 )
 
@@ -18,16 +19,17 @@ var GL032 = &gl032{}
 func (r *gl032) ID() string { return "GL032" }
 
 var (
-	// echoPrintfRe matches a shell print command.
-	echoPrintfRe = regexp.MustCompile(`\b(?:echo|printf)\b`)
-
 	// keyVarRe matches a variable reference whose name implies key material
 	// (contains PRIVATE or a _KEY segment). Group 1 is the variable name.
 	keyVarRe = regexp.MustCompile(`\$\{?([A-Za-z0-9_]*(?:PRIVATE|_KEY)[A-Za-z0-9_]*)\}?`)
 
-	// sshRedirectRe matches echoing/printing redirected or piped into a file
-	// under an .ssh/ directory; group 1 is the target filename.
-	sshRedirectRe = regexp.MustCompile(`\b(?:echo|printf)\b.*[|>].*\.ssh/([A-Za-z0-9._-]*)`)
+	// substEchoRe matches echo/printf inside a process or command substitution;
+	// group 1 is what it prints.
+	substEchoRe = regexp.MustCompile(`(?:<\(|\$\()\s*(?:echo|printf)\b([^)]*)`)
+
+	// sshRedirectRe matches a pipeline's output redirected into a file under an
+	// .ssh/ directory; group 1 is the target filename.
+	sshRedirectRe = regexp.MustCompile(`>.*\.ssh/([A-Za-z0-9._-]*)`)
 )
 
 // sshNonKeyTargets are .ssh/ files that hold configuration or public keys, not
@@ -55,46 +57,71 @@ func checkSSHKeyEcho(node *yaml.Node, file, job string) []finding.Finding {
 		if item.Kind != yaml.ScalarNode {
 			continue
 		}
-		if sshKeyEchoLine(item.Value) {
-			findings = append(findings, finding.Finding{
+		for _, line := range sshKeyEchoLines(item.Value) {
+			f := finding.Finding{
 				RuleID:   "GL032",
 				Severity: finding.Warn,
 				Job:      job,
 				Message:  "private key written via echo — its value appears in the job log when debug tracing (set -x / CI_DEBUG_TRACE) is active; use a file-type variable or a here-string instead, e.g. ssh-add - <<< \"$KEY\"",
 				File:     file,
-				Line:     item.Line,
-				Col:      item.Column,
-			})
+				Line:     parser.ScalarContentLine(item, line),
+			}
+			if line == 0 {
+				f.Col = item.Column
+			}
+			findings = append(findings, f)
 		}
 	}
 	return findings
 }
 
-// sshKeyEchoLine reports whether a script line echoes/prints private key
-// material. It excludes public/host keys and writes into non-key .ssh/ files
-// (config, known_hosts, authorized_keys).
-func sshKeyEchoLine(line string) bool {
-	// Destination-based: echo redirected/piped into an .ssh/ key file.
-	if m := sshRedirectRe.FindStringSubmatch(line); m != nil && !sshNonKeyTargets[m[1]] {
-		return true
-	}
-	// Variable-name based: a private-key-named variable being printed.
-	return echoesPrivateKey(line)
-}
-
-// echoesPrivateKey reports whether a print command outputs a variable whose
-// name implies a private key, ignoring clearly-public ones (PUBLIC, HOST keys).
-func echoesPrivateKey(line string) bool {
-	loc := echoPrintfRe.FindStringIndex(line)
-	if loc == nil {
-		return false
-	}
-	for _, m := range keyVarRe.FindAllStringSubmatch(line[loc[1]:], -1) {
-		name := strings.ToUpper(m[1])
-		if strings.Contains(name, "PUBLIC") || strings.Contains(name, "HOST") {
+// sshKeyEchoLines returns the item lines of pipelines that echo/print private
+// key material: a key-named variable printed by echo/printf, or echo output
+// written into a key file under .ssh/. Public and host keys, writes into
+// non-key .ssh/ files and *.pub files don't count. Each pipeline is looked at
+// on its own, so an echo and a key-named variable in different commands of a
+// block are not combined.
+func sshKeyEchoLines(script string) []int {
+	var lines []int
+	cmds := shellCommands(script)
+	for i := 0; i < len(cmds); i++ {
+		first := cmds[i]
+		pipeline := []string{first.text}
+		for cmds[i].piped && i+1 < len(cmds) {
+			i++
+			pipeline = append(pipeline, cmds[i].text)
+		}
+		name := commandName(withoutSudo(commandWords(first.text)))
+		if name != "echo" && name != "printf" {
+			// echo inside a substitution: ssh-add <(echo "$KEY"), $(echo …).
+			if m := substEchoRe.FindStringSubmatch(maskSingleQuoted(first.text)); m != nil {
+				if private, _ := printedKeyVars(m[1]); private {
+					lines = append(lines, first.line)
+				}
+			}
 			continue
 		}
-		return true
+		private, public := printedKeyVars(maskSingleQuoted(first.text))
+		m := sshRedirectRe.FindStringSubmatch(strings.Join(pipeline, " | "))
+		keyFile := m != nil && !sshNonKeyTargets[m[1]] && !strings.HasSuffix(m[1], ".pub")
+		if private || keyFile && !public {
+			lines = append(lines, first.line)
+		}
 	}
-	return false
+	return lines
+}
+
+// printedKeyVars reports whether a print command outputs key-named variables:
+// private ones, and clearly public ones (PUBLIC, HOST or a _PUB segment in
+// the name).
+func printedKeyVars(cmd string) (private, public bool) {
+	for _, m := range keyVarRe.FindAllStringSubmatch(cmd, -1) {
+		name := strings.ToUpper(m[1])
+		if strings.Contains(name, "PUBLIC") || strings.Contains(name, "HOST") || strings.HasSuffix(name, "_PUB") || strings.Contains(name, "_PUB_") {
+			public = true
+		} else {
+			private = true
+		}
+	}
+	return private, public
 }

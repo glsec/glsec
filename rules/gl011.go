@@ -8,6 +8,7 @@ import (
 	"regexp"
 
 	"github.com/glsec/glsec/internal/finding"
+	"github.com/glsec/glsec/internal/parser"
 	"gopkg.in/yaml.v3"
 )
 
@@ -20,6 +21,9 @@ func (r *gl011) ID() string { return "GL011" }
 const shellAlt = `bash|sh|python[23]?|ruby|perl|node`
 
 var (
+	// interpreterDashCRe matches a pipe into an interpreter that gets its code
+	// from -c (python3 -c, bash -c), so the piped input is data.
+	interpreterDashCRe = regexp.MustCompile(`\|\s*(?:` + shellAlt + `)\s+-c\b`)
 	// downloadToolRe matches curl or wget anywhere in a script line.
 	downloadToolRe = regexp.MustCompile(`\b(?:curl|wget)\b`)
 	// pipeToShellRe matches a pipe directly into a shell interpreter.
@@ -85,22 +89,32 @@ func checkScriptDownloadExecute(node *yaml.Node, file string) []finding.Finding 
 		if item.Kind != yaml.ScalarNode {
 			continue
 		}
-		if isDownloadExecute(item.Value) {
-			findings = append(findings, finding.Finding{
+		// Each line of a block on its own: a curl on one line and a pipe into
+		// an interpreter on another are two unrelated commands.
+		for _, l := range logicalLines(item.Value) {
+			if !isDownloadExecute(l.text) {
+				continue
+			}
+			f := finding.Finding{
 				RuleID:   "GL011",
 				Severity: finding.Error,
-				Message:  fmt.Sprintf("script line downloads and executes remote code without integrity verification: %q", truncate(item.Value, 80)),
+				Message:  fmt.Sprintf("script line downloads and executes remote code without integrity verification: %q", truncate(l.text, 80)),
 				File:     file,
-				Line:     item.Line,
-				Col:      item.Column,
-			})
+				Line:     parser.ScalarContentLine(item, l.line),
+			}
+			if l.line == 0 {
+				f.Col = item.Column
+			}
+			findings = append(findings, f)
 		}
 	}
 	return findings
 }
 
 func isDownloadExecute(line string) bool {
-	stripped := quotedRe.ReplaceAllString(line, "")
+	// An interpreter given its code with -c reads stdin as data:
+	// curl … | python3 -c "import json, sys; …" runs no downloaded code.
+	stripped := interpreterDashCRe.ReplaceAllString(quotedRe.ReplaceAllString(line, ""), "| data")
 	// An integrity check on the same line means the code is verified before running.
 	if checksumGuardRe.MatchString(stripped) {
 		return false

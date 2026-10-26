@@ -36,19 +36,22 @@ func (r *gl025) Check(doc *yaml.Node, file string) []finding.Finding {
 
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
 		for _, l := range CollectJobScriptLines(job) {
-			m := userVarInRequest(l.Value)
+			m, at := userVarInRequest(l.Value)
 			if m == "" {
 				continue
 			}
-			findings = append(findings, finding.Finding{
+			f := finding.Finding{
 				RuleID:   "GL025",
 				Severity: finding.Warn,
 				Job:      name.Value,
 				Message:  "curl/wget request includes user-controlled variable " + m + " — whoever names the branch or writes the commit or merge request controls part of the URL or request body",
 				File:     file,
-				Line:     l.Line,
-				Col:      l.Column,
-			})
+				Line:     parser.ScalarContentLine(l, at),
+			}
+			if at == 0 {
+				f.Col = l.Column
+			}
+			findings = append(findings, f)
 		}
 	})
 
@@ -64,13 +67,14 @@ var shellAssignRe = regexp.MustCompile(`^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]
 var sanitiserRe = regexp.MustCompile(`\btr\s+-(?:cd|dc)\b|\bsed\b|@uri\b`)
 
 // userVarInRequest returns the first user-controlled variable used in a curl
-// or wget command in script, or "". Each shell line is checked on its own
+// or wget command in script, or "", and the index of the line it is on. Each shell line is checked on its own
 // (with \ continuations joined). A variable assigned from a user-controlled
 // one on an earlier line counts as that variable unless the assignment
 // sanitises it.
-func userVarInRequest(script string) string {
+func userVarInRequest(script string) (string, int) {
 	tainted := map[string]string{}
-	for _, line := range strings.Split(strings.ReplaceAll(script, "\\\n", " "), "\n") {
+	for _, ll := range logicalLines(script) {
+		line := ll.text
 		if a := shellAssignRe.FindStringSubmatch(line); a != nil {
 			if m := userControlledVarRe.FindString(a[2]); m != "" && !sanitiserRe.MatchString(a[2]) {
 				tainted[a[1]] = m
@@ -83,15 +87,26 @@ func userVarInRequest(script string) string {
 		if !curlWgetRe.MatchString(line) {
 			continue
 		}
-		request := urlEncodedArgRe.ReplaceAllString(line, "")
+		// Only the curl/wget commands of the line make the request: a variable
+		// passed to jq or another command of the same pipeline doesn't.
+		var parts []string
+		for _, cmd := range shellCommands(line) {
+			if name := commandName(withoutSudo(commandWords(cmd.text))); name == "curl" || name == "wget" {
+				parts = append(parts, cmd.text)
+			}
+		}
+		if len(parts) == 0 {
+			continue
+		}
+		request := urlEncodedArgRe.ReplaceAllString(strings.Join(parts, " "), "")
 		if m := userControlledVarRe.FindString(request); m != "" {
-			return m
+			return m, ll.line
 		}
 		if src := taintedRef(request, tainted); src != "" {
-			return src
+			return src, ll.line
 		}
 	}
-	return ""
+	return "", 0
 }
 
 // shellVarRefRe matches a shell variable reference; group 1 is the name.

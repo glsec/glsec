@@ -28,7 +28,6 @@ func (r *gl016) SetTrustedHosts(hosts []string) {
 }
 
 var (
-	httpURLRe      = regexp.MustCompile(`https?://[^\s'"]+`)
 	gitURLRe       = regexp.MustCompile(`\bgit://[^\s'"]+`)
 	curlWgetHTTPRe = regexp.MustCompile(`\b(?:curl|wget)\b[^|]*\bhttp://`)
 	// git fetches remote content just like curl/wget, so the same HTTP check applies.
@@ -221,28 +220,43 @@ func (r *gl016) scriptLineFinding(item *yaml.Node, file string) *finding.Finding
 		}
 	}
 
-	if !curlWgetHTTPRe.MatchString(item.Value) && !gitFetchHTTPRe.MatchString(item.Value) {
-		return nil
+	// Each command on its own, and the URL must be one of its words: an
+	// http:// URL in a variable or heredoc elsewhere in the block is not what
+	// curl or git fetches.
+	for _, cmd := range shellCommands(item.Value) {
+		if !curlWgetHTTPRe.MatchString(cmd.text) && !gitFetchHTTPRe.MatchString(cmd.text) {
+			continue
+		}
+		var url string
+		for _, w := range shellWords(cmd.text) {
+			if strings.HasPrefix(w, "http://") {
+				url = w
+				break
+			}
+		}
+		if url == "" {
+			continue
+		}
+		host := hostOf(url)
+		if r.skip(host) {
+			continue
+		}
+		sev := finding.Warn
+		msg := "script downloads over HTTP — a MITM attacker can serve malicious content"
+		if isPrivateOrInternal(host) {
+			sev = finding.Info
+			msg = "script downloads over HTTP from a private/internal host — consider HTTPS"
+		}
+		f := &finding.Finding{
+			RuleID: "GL016", Severity: sev, Message: msg,
+			File: file, Line: parser.ScalarContentLine(item, cmd.line),
+		}
+		if cmd.line == 0 {
+			f.Col = item.Column
+		}
+		return f
 	}
-	// Extract the http:// URL from the line to get the host.
-	m := httpURLRe.FindString(item.Value)
-	if m == "" || !strings.HasPrefix(m, "http://") {
-		return nil
-	}
-	host := hostOf(m)
-	if r.skip(host) {
-		return nil
-	}
-	sev := finding.Warn
-	msg := "script downloads over HTTP — a MITM attacker can serve malicious content"
-	if isPrivateOrInternal(host) {
-		sev = finding.Info
-		msg = "script downloads over HTTP from a private/internal host — consider HTTPS"
-	}
-	return &finding.Finding{
-		RuleID: "GL016", Severity: sev, Message: msg,
-		File: file, Line: item.Line, Col: item.Column,
-	}
+	return nil
 }
 
 // skip returns true if the host should never be flagged (loopback or trusted).

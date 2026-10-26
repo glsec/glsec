@@ -66,9 +66,11 @@ func (r *gl021) Check(doc *yaml.Node, file string) []finding.Finding {
 				if item.Kind != yaml.ScalarNode {
 					continue
 				}
-				// Match per physical line: a `|` block scalar is one item but
-				// many commands.
-				for i, line := range strings.Split(item.Value, "\n") {
+				// Match per line: a `|` block scalar is one item but many
+				// commands. A backslash continuation belongs to its line, so a
+				// redirect or pipe on the next physical line still counts.
+				for _, l := range logicalLines(item.Value) {
+					i, line := l.line, l.text
 					match, ok := printedSecret(line)
 					if !ok {
 						continue
