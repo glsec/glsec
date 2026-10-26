@@ -55,7 +55,7 @@ It adds a `glsec` job that runs in the `test` stage (set the `stage` input to ch
 | [gitlab-ci-lint](https://docs.gitlab.com/api/lint/) | GitLab CI syntax only (requires API access) |
 | **glsec** | GitLab CI security — works offline, no API key needed |
 
-- **87 rules** across the [OWASP Top 10 CI/CD Security Risks](#rules), each mapped to CWE: mutable images, secrets in variables, script injection, token exfiltration, unrestricted OIDC tokens, untrusted includes and more.
+- **88 rules** across the [OWASP Top 10 CI/CD Security Risks](#rules), each mapped to CWE: mutable images, secrets in variables, script injection, token exfiltration, unrestricted OIDC tokens, untrusted includes and more.
 - **Findings where you review code**: GitLab Code Quality reports in merge requests, JUnit, SARIF for GitHub Code Scanning, JSON.
 - **Adoptable on existing pipelines**: a baseline file and `--new-only` report only what a change introduces; suppressions carry a reason and an expiry date.
 - **Trustworthy releases**: signed, with SLSA provenance and reproducible builds ([details](#verifying-a-release)).
@@ -293,11 +293,11 @@ A cached result decides what glsec reports, so glsec only uses a cache directory
 
 ## Rules
 
-87 rules across 8 [OWASP CI/CD security categories](https://owasp.org/www-project-top-10-ci-cd-security-risks/):
+88 rules across 8 [OWASP CI/CD security categories](https://owasp.org/www-project-top-10-ci-cd-security-risks/):
 
 | Category | OWASP | Rules |
 |----------|-------|-------|
-| Credential Hygiene | CICD-SEC-6 | GL004, GL005, GL006, GL010, GL014, GL018, GL021, GL027, GL029, GL032, GL033, GL035, GL036, GL037, GL038, GL040, GL052, GL059, GL062, GL066, GL068, GL070, GL073 |
+| Credential Hygiene | CICD-SEC-6 | GL004, GL005, GL006, GL010, GL014, GL018, GL021, GL027, GL029, GL032, GL033, GL035, GL036, GL037, GL038, GL040, GL052, GL059, GL062, GL066, GL068, GL070, GL073, GL088 |
 | Dependency & Image Pinning | CICD-SEC-3 | GL001, GL003, GL011, GL016, GL022, GL023, GL026, GL046, GL064, GL069, GL072, GL075, GL079 |
 | Component & Third-Party Integrity | CICD-SEC-4, CICD-SEC-8 | GL002, GL007, GL015, GL025, GL041, GL044, GL051, GL053, GL065, GL067, GL078, GL083, GL084, GL085 |
 | Supply Chain Integrity | CICD-SEC-9 | GL020, GL045 |

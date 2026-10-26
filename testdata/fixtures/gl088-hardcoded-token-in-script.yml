@@ -1,0 +1,10 @@
+stages:
+  - deploy
+
+publish:
+  stage: deploy
+  script:
+    - npm config set //registry.npmjs.org/:_authToken npm_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    - npm publish
+  after_script:
+    - 'curl -H "PRIVATE-TOKEN: glpat-xxxxxxxxxxxxxxxxxxxx" "https://gitlab.example.com/api/v4/projects/1/statuses/$CI_COMMIT_SHA?state=success"'

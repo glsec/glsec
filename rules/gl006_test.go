@@ -301,12 +301,18 @@ build:
 	}
 }
 
-func TestGL006_AnchoredFormatsExtra(t *testing.T) {
-	// Values are assembled from split literals + strings.Repeat so no contiguous
-	// token ever appears in source — otherwise GitHub push protection blocks the
-	// push (fixtures cannot split literals, so these formats live in unit tests).
+// anchoredFormatCases returns one sample per token format, with the label
+// GL006 reports for it. GL088 checks the same samples in script lines.
+//
+// Values are assembled from split literals + strings.Repeat so no contiguous
+// token ever appears in source — otherwise GitHub push protection blocks the
+// push (fixtures cannot split literals, so these formats live in unit tests).
+func anchoredFormatCases() map[string]struct {
+	value string
+	label string
+} {
 	a := func(n int) string { return strings.Repeat("a", n) }
-	cases := map[string]struct {
+	return map[string]struct {
 		value string
 		label string
 	}{
@@ -335,6 +341,10 @@ func TestGL006_AnchoredFormatsExtra(t *testing.T) {
 		"sonar project": {"sq" + "p_" + strings.Repeat("0123456789abcdef", 2) + "01234567", "SonarQube token"},
 		"sonar global":  {"sq" + "a_" + strings.Repeat("0123456789abcdef", 2) + "01234567", "SonarQube token"},
 	}
+}
+
+func TestGL006_AnchoredFormatsExtra(t *testing.T) {
+	cases := anchoredFormatCases()
 	for name, tc := range cases {
 		tc := tc
 		t.Run(name, func(t *testing.T) {
