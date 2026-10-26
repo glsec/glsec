@@ -1,0 +1,12 @@
+# schema: skip — a mapping with a duplicate key is what GL087 reports, and the
+# schema check's YAML loader (ruamel.yaml) refuses to load it.
+stages:
+  - build
+
+build:
+  stage: build
+  script:
+    - echo "building"
+  script:
+    - set -o pipefail
+    - curl -sSf https://get.example/install.sh | sh

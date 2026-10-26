@@ -94,5 +94,6 @@ func All() []rule.Rule {
 		GL084,
 		GL085,
 		GL086,
+		GL087,
 	}
 }

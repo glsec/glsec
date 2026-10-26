@@ -26,6 +26,9 @@ type Document struct {
 	// A root .gitlab-ci.yml with a `spec:` header declares pipeline inputs and
 	// is still a whole pipeline.
 	ComponentTemplate bool
+	// DuplicateKeys lists the keys the parser removed because the same
+	// mapping has them again later, in the spec: header and the body.
+	DuplicateKeys []DuplicateKey
 }
 
 func ParseFile(path string) (*Document, error) {
@@ -64,6 +67,11 @@ func Parse(data []byte, file string) (*Document, error) {
 		doc.Root = docs[1]
 		doc.ComponentTemplate = !isRootPipelineFile(file)
 	}
+	for _, d := range CollapseDuplicateKeys(doc.Spec) {
+		d.Job = ""
+		doc.DuplicateKeys = append(doc.DuplicateKeys, d)
+	}
+	doc.DuplicateKeys = append(doc.DuplicateKeys, CollapseDuplicateKeys(doc.Root)...)
 	ExpandAliases(doc.Root)
 	ExpandAliases(doc.Spec)
 	ResolveReferences(doc.Root)

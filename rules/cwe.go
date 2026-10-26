@@ -91,6 +91,7 @@ var cweIDs = map[string]string{
 	"GL084": "CWE-829",
 	"GL085": "CWE-1427",
 	"GL086": "CWE-710",
+	"GL087": "CWE-561",
 }
 
 // cweNames maps CWE IDs to their short names.
@@ -121,6 +122,7 @@ var cweNames = map[string]string{
 	"CWE-1007": "Insufficient Visual Distinction of Homoglyphs Presented to User",
 	"CWE-1427": "Improper Neutralization of Input Used for LLM Prompting",
 	"CWE-710":  "Improper Adherence to Coding Standards",
+	"CWE-561":  "Dead Code",
 }
 
 // CWEID returns the CWE identifier for a rule, e.g. "CWE-798".

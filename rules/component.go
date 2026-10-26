@@ -28,9 +28,13 @@ func AppliesToComponentTemplate(id string) bool {
 	return !wholePipelineRules[id]
 }
 
-// Check runs a rule against a parsed document, handing the `spec:` header to
-// rules that read it.
+// Check runs a rule against a parsed document, handing the whole document to
+// rules that read what the parser recorded, and the `spec:` header to rules
+// that read it.
 func Check(r rule.Rule, doc *parser.Document, file string) []finding.Finding {
+	if dr, ok := r.(rule.DocumentRule); ok {
+		return dr.CheckDocument(doc, file)
+	}
 	if sr, ok := r.(rule.SpecRule); ok && doc.Spec != nil {
 		return sr.CheckWithSpec(doc.Spec, doc.Root, file)
 	}

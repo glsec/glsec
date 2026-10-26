@@ -5,6 +5,7 @@ package rule
 
 import (
 	"github.com/glsec/glsec/internal/finding"
+	"github.com/glsec/glsec/internal/parser"
 	"gopkg.in/yaml.v3"
 )
 
@@ -18,4 +19,11 @@ type Rule interface {
 // so Check alone never sees it.
 type SpecRule interface {
 	CheckWithSpec(spec, doc *yaml.Node, file string) []finding.Finding
+}
+
+// DocumentRule is implemented by rules that read what the parser recorded
+// about a file rather than the tree it produced, such as the duplicate keys it
+// removed. Check alone never sees those.
+type DocumentRule interface {
+	CheckDocument(doc *parser.Document, file string) []finding.Finding
 }

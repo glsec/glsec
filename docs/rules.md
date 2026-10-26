@@ -141,6 +141,7 @@ Misconfigured CI settings that expand the attack surface or leak build context.
 | [GL077](rules/GL077.md) | `warn`  | `docker run --ipc host` shares the host IPC namespace — container can read host shared memory and signal host processes |
 | [GL063](rules/GL063.md) | `warn`  | `chmod` grants world-writable permissions (`777`, `a+w`, `o+w`) — TOCTOU risk on shared runners |
 | [GL086](rules/GL086.md) | `error` | Script line that YAML parses as a mapping (unquoted `: `) — GitLab rejects the pipeline and the command is never checked |
+| [GL087](rules/GL087.md) | `warn`  | Duplicate key in a mapping — GitLab uses the last value, the earlier one is dead configuration |
 
 ---
 
