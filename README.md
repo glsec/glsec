@@ -133,8 +133,10 @@ glsec --format json .gitlab-ci.yml
 # SARIF output for GitHub Code Scanning
 glsec --format sarif .gitlab-ci.yml > gl.sarif
 
-# JSON carries the OWASP CICD-SEC and ASVS V14 mappings per finding, SARIF also CWE;
-# each SARIF rule links to its page on glsec.github.io (helpUri)
+# JSON carries the OWASP CICD-SEC and ASVS V14 mappings per finding, SARIF also CWE.
+# Each SARIF rule has a title, help with a safe alternative, CWE tags and a
+# security severity, and links to its page on glsec.github.io; example workflow:
+# https://github.com/glsec/example-github-code-scanning
 
 # Code Climate output for GitLab Code Quality (merge request report on all tiers,
 # inline in the diff with Ultimate)

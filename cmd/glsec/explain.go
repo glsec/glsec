@@ -11,6 +11,8 @@ import (
 
 	glsecdocs "github.com/glsec/glsec/docs"
 	"github.com/glsec/glsec/internal/color"
+	"github.com/glsec/glsec/internal/finding"
+	"github.com/glsec/glsec/internal/output"
 	"github.com/glsec/glsec/rules"
 )
 
@@ -170,4 +172,57 @@ func wrapWords(text string, width int) []string {
 		lines = append(lines, cur.String())
 	}
 	return lines
+}
+
+// sarifRuleInfo describes a rule for the SARIF rule object from its
+// documentation: the title, the risk, the first safe alternative and the
+// severity. A rule with "error/warn" in its doc gets the first of them.
+func sarifRuleInfo(id string) output.SARIFRule {
+	raw, err := glsecdocs.FS.ReadFile("rules/" + id + ".md")
+	if err != nil {
+		return output.SARIFRule{}
+	}
+	doc := parseExplainDoc(raw)
+	sev := strings.TrimSpace(strings.Split(normalizeSeverity(doc.severity), "/")[0])
+	return output.SARIFRule{
+		Title: strings.ReplaceAll(doc.title, "`", ""),
+		// A first paragraph that leads into a list ends in a colon.
+		Risk:     strings.TrimSuffix(doc.risk, ":") + map[bool]string{true: ".", false: ""}[strings.HasSuffix(doc.risk, ":")],
+		Details:  docSection(string(raw), "Risk", "What glsec checks"),
+		Fix:      doc.safeAlt,
+		Severity: finding.Severity(sev),
+	}
+}
+
+var docRuleLinkRe = regexp.MustCompile(`\]\((GL\d{3})\.md\)`)
+
+// docSection returns the Markdown of the first of the named "## " sections
+// in a rule doc, without its heading.
+func docSection(doc string, names ...string) string {
+	lines := strings.Split(strings.ReplaceAll(doc, "\r\n", "\n"), "\n")
+	for _, name := range names {
+		var out []string
+		in := false
+		for _, l := range lines {
+			if strings.HasPrefix(l, "## ") {
+				if in {
+					break
+				}
+				in = strings.TrimPrefix(l, "## ") == name
+				continue
+			}
+			if in {
+				out = append(out, l)
+			}
+		}
+		if s := strings.TrimSpace(strings.Join(out, "\n")); s != "" {
+			// Links between rule docs and to the README only work in the
+			// repository; code scanning shows the text elsewhere.
+			s = docRuleLinkRe.ReplaceAllStringFunc(s, func(m string) string {
+				return "](" + output.RuleURL(docRuleLinkRe.FindStringSubmatch(m)[1]) + ")"
+			})
+			return strings.ReplaceAll(s, "](../../README.md", "](https://github.com/glsec/glsec/blob/main/README.md")
+		}
+	}
+	return ""
 }

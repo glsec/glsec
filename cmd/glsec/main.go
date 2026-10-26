@@ -415,7 +415,7 @@ func scanRoot(file string, opt scanOptions) (findings []finding.Finding, jobCoun
 func writeOutput(w io.Writer, format output.Format, findings []finding.Finding, jobCount int, colorEnabled, isTTY bool) error {
 	switch format {
 	case output.FormatSARIF:
-		return output.WriteSARIF(w, findings, rules.CWEID, rules.CWEName, rules.OWASPCategories, rules.OWASPCategoryName, rules.ASVSRequirements, rules.ASVSRequirementName)
+		return output.WriteSARIF(w, findings, output.SARIFTool{Version: version, Rule: sarifRuleInfo}, rules.CWEID, rules.CWEName, rules.OWASPCategories, rules.OWASPCategoryName, rules.ASVSRequirements, rules.ASVSRequirementName)
 	case output.FormatJSON:
 		return output.WriteJSON(w, findings, rules.OWASPCategories, rules.ASVSRequirements)
 	default:

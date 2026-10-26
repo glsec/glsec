@@ -49,7 +49,7 @@ func Write(w io.Writer, format Format, findings []finding.Finding, jobCount int,
 	case FormatJSON:
 		return writeJSON(w, findings, nil, nil)
 	case FormatSARIF:
-		return writeSARIF(w, findings, nil, nil, nil, nil, nil, nil)
+		return writeSARIF(w, findings, SARIFTool{}, nil, nil, nil, nil, nil, nil)
 	case FormatCodeClimate:
 		return writeCodeClimate(w, findings)
 	case FormatJUnit:
@@ -277,15 +277,73 @@ type sarifTool struct {
 }
 
 type sarifDriver struct {
-	Name           string      `json:"name"`
-	InformationURI string      `json:"informationUri"`
-	Rules          []sarifRule `json:"rules,omitempty"`
+	Name            string      `json:"name"`
+	Version         string      `json:"version,omitempty"`
+	SemanticVersion string      `json:"semanticVersion,omitempty"`
+	InformationURI  string      `json:"informationUri"`
+	Rules           []sarifRule `json:"rules,omitempty"`
 }
 
 type sarifRule struct {
-	ID            string              `json:"id"`
-	HelpURI       string              `json:"helpUri,omitempty"`
-	Relationships []sarifRelationship `json:"relationships,omitempty"`
+	ID                   string              `json:"id"`
+	ShortDescription     *sarifText          `json:"shortDescription,omitempty"`
+	FullDescription      *sarifText          `json:"fullDescription,omitempty"`
+	Help                 *sarifHelp          `json:"help,omitempty"`
+	HelpURI              string              `json:"helpUri,omitempty"`
+	DefaultConfiguration *sarifConfig        `json:"defaultConfiguration,omitempty"`
+	Properties           *sarifRuleProps     `json:"properties,omitempty"`
+	Relationships        []sarifRelationship `json:"relationships,omitempty"`
+}
+
+type sarifText struct {
+	Text string `json:"text"`
+}
+
+type sarifHelp struct {
+	Text     string `json:"text"`
+	Markdown string `json:"markdown,omitempty"`
+}
+
+type sarifConfig struct {
+	Level string `json:"level"`
+}
+
+// sarifRuleProps are the rule properties GitHub code scanning reads: tags
+// for filtering (external/cwe/cwe-N) and security-severity, which it shows as
+// Critical, High, Medium or Low.
+type sarifRuleProps struct {
+	Tags             []string `json:"tags,omitempty"`
+	SecuritySeverity string   `json:"security-severity,omitempty"`
+}
+
+// SARIFRule describes a rule for the SARIF rule object; the fields come from
+// the rule's documentation. Empty fields are left out.
+type SARIFRule struct {
+	Title    string           // shortDescription: the alert title
+	Risk     string           // fullDescription, and help.text
+	Details  string           // help.markdown: the rule doc's section on what it checks
+	Fix      string           // a safe alternative, shown as a YAML block in help
+	Severity finding.Severity // defaultConfiguration.level and security-severity
+}
+
+// SARIFTool is what WriteSARIF says about glsec itself and its rules.
+type SARIFTool struct {
+	Version string                    // glsec's version; "dev" and "" are left out
+	Rule    func(id string) SARIFRule // nil: rules carry only id, helpUri and relationships
+}
+
+// securitySeverity maps a severity to GitHub's security-severity score:
+// 7.0–8.9 shows as High, 4.0–6.9 as Medium, 0.1–3.9 as Low.
+func securitySeverity(s finding.Severity) string {
+	switch s {
+	case finding.Error:
+		return "8.0"
+	case finding.Warn:
+		return "5.0"
+	case finding.Info:
+		return "2.0"
+	}
+	return ""
 }
 
 type sarifRelationship struct {
@@ -379,15 +437,15 @@ func RuleURL(id string) string {
 // owasp maps a rule ID to its OWASP CI/CD Security Risks categories.
 // owaspName maps an OWASP category ID to its human-readable name.
 // Pass nil for any parameter to omit that taxonomy.
-func WriteSARIF(w io.Writer, findings []finding.Finding,
+func WriteSARIF(w io.Writer, findings []finding.Finding, tool SARIFTool,
 	cweID func(string) string, cweName func(string) string,
 	owasp func(string) []string, owaspName func(string) string,
 	asvs func(string) []string, asvsName func(string) string,
 ) error {
-	return writeSARIF(w, findings, cweID, cweName, owasp, owaspName, asvs, asvsName)
+	return writeSARIF(w, findings, tool, cweID, cweName, owasp, owaspName, asvs, asvsName)
 }
 
-func writeSARIF(w io.Writer, findings []finding.Finding,
+func writeSARIF(w io.Writer, findings []finding.Finding, tool SARIFTool,
 	cweID func(string) string, cweName func(string) string,
 	owasp func(string) []string, owaspName func(string) string,
 	asvs func(string) []string, asvsName func(string) string,
@@ -414,6 +472,10 @@ func writeSARIF(w io.Writer, findings []finding.Finding,
 		}},
 		Results: results,
 	}
+	if tool.Version != "" && tool.Version != "dev" {
+		run.Tool.Driver.Version = tool.Version
+		run.Tool.Driver.SemanticVersion = strings.TrimPrefix(tool.Version, "v")
+	}
 
 	seenRules := map[string]bool{}
 	seenCWEs := map[string]bool{}
@@ -427,9 +489,11 @@ func writeSARIF(w io.Writer, findings []finding.Finding,
 		seenRules[f.RuleID] = true
 
 		var rels []sarifRelationship
+		props := &sarifRuleProps{Tags: []string{"security"}}
 
 		if cweID != nil {
 			if cwe := cweID(f.RuleID); cwe != "" {
+				props.Tags = append(props.Tags, "external/cwe/"+strings.ToLower(cwe))
 				rels = append(rels, sarifRelationship{
 					Target: sarifRelationshipTarget{ID: cwe, ToolComponent: sarifToolComponentRef{Name: "CWE"}},
 					Kinds:  []string{"superset"},
@@ -458,11 +522,12 @@ func writeSARIF(w io.Writer, findings []finding.Finding,
 			}
 		}
 
-		help := RuleURL(f.RuleID)
-		if help != "" || len(rels) > 0 {
-			run.Tool.Driver.Rules = append(run.Tool.Driver.Rules, sarifRule{
-				ID: f.RuleID, HelpURI: help, Relationships: rels,
-			})
+		rule := sarifRule{ID: f.RuleID, HelpURI: RuleURL(f.RuleID), Relationships: rels}
+		if tool.Rule != nil {
+			describeSARIFRule(&rule, tool.Rule(f.RuleID), props)
+		}
+		if rule.HelpURI != "" || len(rels) > 0 || rule.ShortDescription != nil {
+			run.Tool.Driver.Rules = append(run.Tool.Driver.Rules, rule)
 		}
 	}
 
@@ -504,6 +569,38 @@ func writeSARIF(w io.Writer, findings []finding.Finding,
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	return enc.Encode(log)
+}
+
+// describeSARIFRule fills in what code scanning shows for a rule: the title,
+// the description, a help text with the safe alternative and a link to the
+// rule page, the default level, the CWE tags and the security severity.
+func describeSARIFRule(rule *sarifRule, info SARIFRule, props *sarifRuleProps) {
+	if info.Title != "" {
+		rule.ShortDescription = &sarifText{Text: info.Title}
+	}
+	if info.Risk != "" {
+		rule.FullDescription = &sarifText{Text: info.Risk}
+	}
+	if info.Risk != "" || info.Fix != "" {
+		text, md := info.Risk, info.Details
+		if md == "" {
+			md = info.Risk
+		}
+		if info.Fix != "" {
+			text += "\n\nSafe alternative:\n" + info.Fix
+			md += "\n\n**Safe alternative:**\n\n```yaml\n" + info.Fix + "\n```"
+		}
+		if rule.HelpURI != "" {
+			text += "\n\n" + rule.HelpURI
+			md += fmt.Sprintf("\n\n[%s on glsec.github.io](%s)", rule.ID, rule.HelpURI)
+		}
+		rule.Help = &sarifHelp{Text: strings.TrimSpace(text), Markdown: strings.TrimSpace(md)}
+	}
+	if info.Severity != "" {
+		rule.DefaultConfiguration = &sarifConfig{Level: severityToSARIFLevel(info.Severity)}
+		props.SecuritySeverity = securitySeverity(info.Severity)
+	}
+	rule.Properties = props
 }
 
 // Code Climate JSON — consumed natively by GitLab's Code Quality widget

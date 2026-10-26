@@ -321,7 +321,7 @@ func TestWriteSARIF_WithCWE(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := WriteSARIF(&buf, testFindings, cweID, cweName, nil, nil, nil, nil); err != nil {
+	if err := WriteSARIF(&buf, testFindings, SARIFTool{}, cweID, cweName, nil, nil, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	var log sarifLog
@@ -353,7 +353,7 @@ func TestWriteSARIF_WithCWE(t *testing.T) {
 
 func TestWriteSARIF_NoCWE(t *testing.T) {
 	var buf bytes.Buffer
-	if err := WriteSARIF(&buf, testFindings, nil, nil, nil, nil, nil, nil); err != nil {
+	if err := WriteSARIF(&buf, testFindings, SARIFTool{}, nil, nil, nil, nil, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	var log sarifLog
@@ -511,7 +511,7 @@ func TestWriteSARIF_WithOWASP(t *testing.T) {
 		return ""
 	}
 	var buf bytes.Buffer
-	if err := WriteSARIF(&buf, testFindings, nil, nil, owasp, owaspName, nil, nil); err != nil {
+	if err := WriteSARIF(&buf, testFindings, SARIFTool{}, nil, nil, owasp, owaspName, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	var log sarifLog
@@ -577,7 +577,7 @@ func TestWriteSARIF_WithASVS(t *testing.T) {
 		return ""
 	}
 	var buf bytes.Buffer
-	if err := WriteSARIF(&buf, testFindings, nil, nil, nil, nil, asvs, asvsName); err != nil {
+	if err := WriteSARIF(&buf, testFindings, SARIFTool{}, nil, nil, nil, nil, asvs, asvsName); err != nil {
 		t.Fatal(err)
 	}
 	var log sarifLog
@@ -687,7 +687,7 @@ func TestRuleURL(t *testing.T) {
 func TestWriteSARIF_HelpURI(t *testing.T) {
 	findings := append([]finding.Finding{{RuleID: "SC2086", Severity: finding.Warn, File: "ci.yml", Line: 3, Message: "quote it"}}, testFindings...)
 	var buf bytes.Buffer
-	if err := WriteSARIF(&buf, findings, nil, nil, nil, nil, nil, nil); err != nil {
+	if err := WriteSARIF(&buf, findings, SARIFTool{}, nil, nil, nil, nil, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	var log sarifLog
@@ -798,7 +798,7 @@ func TestWriteSARIF_InfoAndRuleOnce(t *testing.T) {
 		{RuleID: "GL001", Severity: finding.Info, File: "a.yml", Line: 1, Message: "one"},
 		{RuleID: "GL001", Severity: finding.Info, File: "b.yml", Line: 2, Message: "two"},
 	}
-	if err := WriteSARIF(&buf, f, func(string) string { return "CWE-1104" }, nil, nil, nil, nil, nil); err != nil {
+	if err := WriteSARIF(&buf, f, SARIFTool{}, func(string) string { return "CWE-1104" }, nil, nil, nil, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	var log sarifLog
@@ -827,5 +827,76 @@ func TestWriteJUnit_LineZero(t *testing.T) {
 	c := out.Suites[0].Cases[0]
 	if c.Classname != ".gitlab-ci.yml" || !strings.HasSuffix(c.Failure.Text, " .gitlab-ci.yml") {
 		t.Errorf("line 0 must not be appended to the location: %+v", c)
+	}
+}
+
+func TestWriteSARIFRuleMetadata(t *testing.T) {
+	tool := SARIFTool{
+		Version: "1.24.1",
+		Rule: func(id string) SARIFRule {
+			return SARIFRule{
+				Title:    "Mutable image tag",
+				Risk:     "A tag can move.",
+				Details:  "A tag can move:\n\n- latest\n- main",
+				Fix:      "image: alpine:3.20.3",
+				Severity: finding.Error,
+			}
+		},
+	}
+	var buf bytes.Buffer
+	f := []finding.Finding{{RuleID: "GL001", Severity: finding.Warn, Message: "m", File: "x.yml", Line: 2}}
+	if err := WriteSARIF(&buf, f, tool, func(string) string { return "CWE-1104" }, nil, nil, nil, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	var log struct {
+		Runs []struct {
+			Tool struct {
+				Driver struct {
+					Version, SemanticVersion string
+					Rules                    []struct {
+						ShortDescription     struct{ Text string }
+						FullDescription      struct{ Text string }
+						Help                 struct{ Text, Markdown string }
+						DefaultConfiguration struct{ Level string }
+						Properties           struct {
+							Tags             []string
+							SecuritySeverity string `json:"security-severity"`
+						}
+					}
+				}
+			}
+			Results []struct{ Level string }
+		}
+	}
+	if err := json.Unmarshal(buf.Bytes(), &log); err != nil {
+		t.Fatal(err)
+	}
+	d := log.Runs[0].Tool.Driver
+	r := d.Rules[0]
+	switch {
+	case d.Version != "1.24.1" || d.SemanticVersion != "1.24.1":
+		t.Errorf("version = %q/%q", d.Version, d.SemanticVersion)
+	case r.ShortDescription.Text != "Mutable image tag" || r.FullDescription.Text != "A tag can move.":
+		t.Errorf("descriptions = %+v", r)
+	case !strings.Contains(r.Help.Markdown, "- latest") || !strings.Contains(r.Help.Markdown, "```yaml\nimage: alpine:3.20.3\n```") || !strings.Contains(r.Help.Markdown, "(https://glsec.github.io/rules/GL001/)"):
+		t.Errorf("help markdown = %q", r.Help.Markdown)
+	case !strings.HasPrefix(r.Help.Text, "A tag can move.") || !strings.HasSuffix(r.Help.Text, "https://glsec.github.io/rules/GL001/"):
+		t.Errorf("help text = %q", r.Help.Text)
+	case r.DefaultConfiguration.Level != "error" || r.Properties.SecuritySeverity != "8.0":
+		t.Errorf("level/severity = %q/%q", r.DefaultConfiguration.Level, r.Properties.SecuritySeverity)
+	case strings.Join(r.Properties.Tags, ",") != "security,external/cwe/cwe-1104":
+		t.Errorf("tags = %v", r.Properties.Tags)
+	case log.Runs[0].Results[0].Level != "warning":
+		t.Errorf("the result keeps the finding's own level, got %q", log.Runs[0].Results[0].Level)
+	}
+}
+
+func TestWriteSARIFDevVersionLeftOut(t *testing.T) {
+	var buf bytes.Buffer
+	if err := WriteSARIF(&buf, testFindings, SARIFTool{Version: "dev"}, nil, nil, nil, nil, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(buf.String(), `"version": "dev"`) || strings.Contains(buf.String(), "semanticVersion") {
+		t.Errorf("dev version written: %s", buf.String()[:200])
 	}
 }
