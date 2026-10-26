@@ -186,7 +186,7 @@ func (r *gl016) checkVariablesHTTP(node *yaml.Node, file string) []finding.Findi
 }
 
 func (r *gl016) checkScriptHTTP(node *yaml.Node, file string) []finding.Finding {
-	if node.Kind != yaml.SequenceNode {
+	if !isScriptList(node) {
 		return nil
 	}
 	var findings []finding.Finding

@@ -170,12 +170,18 @@ func hookScriptNode(container *yaml.Node) *yaml.Node {
 	return parser.FindKey(hooks, "pre_get_sources_script")
 }
 
+// isScriptList reports whether n is a script list whose items are commands: a
+// sequence that isn't an unresolved !reference, whose items would be its path.
+func isScriptList(n *yaml.Node) bool {
+	return n != nil && n.Kind == yaml.SequenceNode && !parser.IsReference(n)
+}
+
 // CollectJobScriptLines returns all scalar script lines from a job's
 // before_script, script, after_script, and hooks:pre_get_sources_script sections.
 func CollectJobScriptLines(job *yaml.Node) []*yaml.Node {
 	var lines []*yaml.Node
 	appendScalars := func(node *yaml.Node) {
-		if node == nil || node.Kind != yaml.SequenceNode {
+		if !isScriptList(node) {
 			return
 		}
 		for _, item := range node.Content {
@@ -202,7 +208,7 @@ func EachScriptBlock(doc *yaml.Node, file string, fn func(node *yaml.Node, file,
 	mapping := parser.Unwrap(doc)
 
 	visit := func(node *yaml.Node, job string) {
-		if node != nil && node.Kind == yaml.SequenceNode {
+		if isScriptList(node) {
 			fn(node, file, job)
 		}
 	}

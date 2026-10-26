@@ -57,7 +57,7 @@ func (r *gl089) Check(doc *yaml.Node, file string) []finding.Finding {
 		vars := jobVariableBlocks(doc, in, job)
 		for _, key := range []string{"before_script", "script"} {
 			block := in.Key(job, key)
-			if block == nil || block.Kind != yaml.SequenceNode {
+			if !isScriptList(block) {
 				continue
 			}
 			for _, item := range block.Content {

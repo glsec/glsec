@@ -107,7 +107,7 @@ func (r *gl042) Check(doc *yaml.Node, file string) []finding.Finding {
 }
 
 func checkTLSLines(node *yaml.Node, file, job string) []finding.Finding {
-	if node.Kind != yaml.SequenceNode {
+	if !isScriptList(node) {
 		return nil
 	}
 	var findings []finding.Finding

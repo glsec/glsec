@@ -195,7 +195,8 @@ func hooksScriptNode(container *yaml.Node) *yaml.Node {
 // extractLines builds a flat slice of script lines with their YAML line numbers
 // from a YAML sequence node (script:/before_script:/after_script:).
 func extractLines(seqNode *yaml.Node) []scriptLine {
-	if seqNode == nil || seqNode.Kind != yaml.SequenceNode {
+	// An unresolved !reference holds its path, not commands (#746).
+	if seqNode == nil || seqNode.Kind != yaml.SequenceNode || parser.IsReference(seqNode) {
 		return nil
 	}
 	var lines []scriptLine

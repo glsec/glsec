@@ -43,6 +43,11 @@ func isReference(n *yaml.Node) bool {
 	return n != nil && n.Tag == referenceTag
 }
 
+// IsReference reports whether n is a !reference that could not be resolved
+// within the file. Its items are the path, not content, so code that reads
+// script lists must skip it (#746).
+func IsReference(n *yaml.Node) bool { return isReference(n) }
+
 // expand walks node, resolving any !reference descendants. active is the chain
 // of reference paths currently being resolved, used for cycle detection.
 func (r *resolver) expand(node *yaml.Node, active []string) {

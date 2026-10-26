@@ -86,7 +86,7 @@ func eachJobScriptLine(job *yaml.Node, fn func(item *yaml.Node) bool) {
 	}
 	blocks = append(blocks, parser.RunStepBlocks(job)...)
 	for _, block := range blocks {
-		if block == nil || block.Kind != yaml.SequenceNode {
+		if !isScriptList(block) {
 			continue
 		}
 		for _, item := range block.Content {

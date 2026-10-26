@@ -52,7 +52,7 @@ func (r *gl024) Check(doc *yaml.Node, file string) []finding.Finding {
 			if parser.FindKey(job, key) != nil {
 				continue
 			}
-			if seq := inherit.Key(job, key); seq != nil && seq.Kind == yaml.SequenceNode {
+			if seq := inherit.Key(job, key); isScriptList(seq) {
 				for _, l := range seq.Content {
 					if l.Kind == yaml.ScalarNode && pipefailRe.MatchString(l.Value) {
 						return

@@ -59,7 +59,7 @@ func (r *gl021) Check(doc *yaml.Node, file string) []finding.Finding {
 		}
 		scriptNodes = append(scriptNodes, parser.RunStepBlocks(job)...)
 		for _, node := range scriptNodes {
-			if node == nil || node.Kind != yaml.SequenceNode {
+			if !isScriptList(node) {
 				continue
 			}
 			for _, item := range node.Content {

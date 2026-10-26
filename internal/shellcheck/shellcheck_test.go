@@ -97,3 +97,13 @@ func TestMapSeverity(t *testing.T) {
 		}
 	}
 }
+
+func TestExtractLines_UnresolvedReference(t *testing.T) {
+	ref := parseSeq(t, "!reference [.from_include, script]\n")
+	if ref.Tag != "!reference" {
+		t.Fatalf("test input is not a !reference: %q", ref.Tag)
+	}
+	if lines := extractLines(ref); lines != nil {
+		t.Errorf("an unresolved !reference holds a path, not commands, got %v", lines)
+	}
+}

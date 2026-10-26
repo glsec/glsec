@@ -188,7 +188,7 @@ func gl051CheckServices(node *yaml.Node, file, job string, patterns map[string]*
 }
 
 func gl051CheckScripts(node *yaml.Node, file, job, keyword string, patterns map[string]*regexp.Regexp) []finding.Finding {
-	if node == nil || node.Kind != yaml.SequenceNode {
+	if !isScriptList(node) {
 		return nil
 	}
 	var findings []finding.Finding
@@ -262,7 +262,7 @@ func gl051JobInputs(jobName string, job *yaml.Node, file string) []finding.Findi
 
 // eachScalar calls fn for every scalar under node.
 func eachScalar(node *yaml.Node, fn func(*yaml.Node)) {
-	if node == nil {
+	if node == nil || parser.IsReference(node) {
 		return
 	}
 	if node.Kind == yaml.ScalarNode {

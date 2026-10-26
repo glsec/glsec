@@ -91,7 +91,7 @@ func jobHasMRTrigger(job *yaml.Node) bool {
 }
 
 func checkScriptForMRSourceSHA(node *yaml.Node, file string) []finding.Finding {
-	if node.Kind != yaml.SequenceNode {
+	if !isScriptList(node) {
 		return nil
 	}
 	var findings []finding.Finding
