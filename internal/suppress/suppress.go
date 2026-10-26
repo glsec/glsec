@@ -67,15 +67,10 @@ func fromComment(comment string, line int) []Suppression {
 		return nil
 	}
 	var out []Suppression
+	// pattern has three groups, so every match has four entries; an optional
+	// group that didn't match is empty.
 	for _, match := range pattern.FindAllStringSubmatch(comment, -1) {
-		s := Suppression{RuleID: match[1], Line: line}
-		if len(match) > 2 {
-			s.Expiry = match[2]
-		}
-		if len(match) > 3 {
-			s.Reason = strings.TrimSpace(match[3])
-		}
-		out = append(out, s)
+		out = append(out, Suppression{RuleID: match[1], Line: line, Expiry: match[2], Reason: strings.TrimSpace(match[3])})
 	}
 	return out
 }

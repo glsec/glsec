@@ -252,3 +252,16 @@ func TestLoadIgnoreFile_Expiry(t *testing.T) {
 		t.Error("entry should stop suppressing once its expiry has passed")
 	}
 }
+
+func TestBuild_NilNode(t *testing.T) {
+	if m := Build(nil); len(m) != 0 {
+		t.Errorf("Build(nil) = %v, want an empty map", m)
+	}
+}
+
+func TestFromComment_OptionalPartsEmpty(t *testing.T) {
+	got := fromComment("# glsec:ignore GL001", 3)
+	if len(got) != 1 || got[0].Expiry != "" || got[0].Reason != "" {
+		t.Errorf("got %+v, want no expiry and no reason", got)
+	}
+}

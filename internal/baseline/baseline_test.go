@@ -77,3 +77,16 @@ func TestEmpty(t *testing.T) {
 		t.Fatal("empty baseline must report everything as new")
 	}
 }
+
+func TestLoad_MissingFile(t *testing.T) {
+	_, err := Load(filepath.Join(t.TempDir(), "absent"))
+	if !os.IsNotExist(err) {
+		t.Errorf("got %v, want a not-exist error", err)
+	}
+}
+
+func TestLoad_InvalidJSON(t *testing.T) {
+	if _, err := Load(write(t, `{"findings": [`)); err == nil {
+		t.Error("a truncated JSON snapshot must fail to load, not become an empty baseline")
+	}
+}
