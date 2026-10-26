@@ -151,7 +151,7 @@ func renderExplainDoc(w io.Writer, id string, doc explainDoc, colorEnabled bool)
 			_, _ = fmt.Fprintf(w, "  %s\n", line)
 		}
 	}
-	_, _ = fmt.Fprintf(w, "\nDocs: https://glsec.dev/rules/%s\n", id)
+	_, _ = fmt.Fprintf(w, "\nDocs: %s\n", output.RuleURL(id))
 }
 
 func wrapWords(text string, width int) []string {

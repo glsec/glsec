@@ -325,7 +325,7 @@ func TestRun_Explain(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("explain gl001: exit %d", code)
 	}
-	for _, want := range []string{"GL001 — ", "Severity:", "Risk:", "Docs: "} {
+	for _, want := range []string{"GL001 — ", "Severity:", "Risk:", "Docs: https://glsec.github.io/rules/GL001/\n"} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("explain output lacks %q:\n%s", want, stdout)
 		}
