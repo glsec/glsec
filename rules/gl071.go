@@ -5,6 +5,7 @@ package rules
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
 	"github.com/glsec/glsec/internal/parser"
@@ -27,17 +28,21 @@ func (r *gl071) Check(doc *yaml.Node, file string) []finding.Finding {
 	mapping := parser.Unwrap(doc)
 	stageIdx := buildStageIndex(mapping)
 
-	// Highest stage index that contains a production-like deploy job.
-	maxDeployIdx := -1
+	// Production-like deploy jobs, with their stage.
+	type deploy struct {
+		idx int
+		job *yaml.Node
+	}
+	var deploys []deploy
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
 		if isHiddenJob(name.Value) || !isProdDeployJob(job) {
 			return
 		}
-		if idx, ok := jobStageIndex(job, stageIdx); ok && idx > maxDeployIdx {
-			maxDeployIdx = idx
+		if idx, ok := jobStageIndex(job, stageIdx); ok {
+			deploys = append(deploys, deploy{idx, job})
 		}
 	})
-	if maxDeployIdx < 0 {
+	if len(deploys) == 0 {
 		return nil
 	}
 
@@ -65,7 +70,20 @@ func (r *gl071) Check(doc *yaml.Node, file string) []finding.Finding {
 			return
 		}
 		idx, ok := jobStageIndex(job, stageIdx)
-		if !ok || idx >= maxDeployIdx {
+		if !ok {
+			return
+		}
+		// The gate has to come before a deploy that can be in the same
+		// pipeline: a gate with only: [develop] doesn't gate a deploy with
+		// only: [main].
+		gates := false
+		for _, d := range deploys {
+			if d.idx > idx && !disjointOnlyRefs(job, d.job) {
+				gates = true
+				break
+			}
+		}
+		if !gates {
 			return
 		}
 		findings = append(findings, finding.Finding{
@@ -83,6 +101,54 @@ func (r *gl071) Check(doc *yaml.Node, file string) []finding.Finding {
 	})
 
 	return findings
+}
+
+// disjointOnlyRefs reports whether two jobs are limited by only: to plain
+// branch or tag names that have none in common, so they never run in the
+// same pipeline. Keywords (branches, tags, merge_requests, …), regexes and
+// rules: make the answer unknown, which counts as not disjoint.
+func disjointOnlyRefs(a, b *yaml.Node) bool {
+	ra, ok := plainOnlyRefs(a)
+	if !ok {
+		return false
+	}
+	rb, ok := plainOnlyRefs(b)
+	if !ok {
+		return false
+	}
+	for r := range ra {
+		if rb[r] {
+			return false
+		}
+	}
+	return true
+}
+
+var onlyKeywords = map[string]bool{
+	"branches": true, "tags": true, "merge_requests": true, "api": true, "external": true,
+	"pipelines": true, "pushes": true, "schedules": true, "triggers": true, "web": true,
+	"chat": true, "external_pull_requests": true,
+}
+
+func plainOnlyRefs(job *yaml.Node) (map[string]bool, bool) {
+	if parser.FindKey(job, "rules") != nil {
+		return nil, false
+	}
+	only := parser.FindKey(job, "only")
+	if only != nil && only.Kind == yaml.MappingNode {
+		only = parser.FindKey(only, "refs")
+	}
+	if only == nil || only.Kind != yaml.SequenceNode || len(only.Content) == 0 {
+		return nil, false
+	}
+	refs := map[string]bool{}
+	for _, r := range only.Content {
+		if r.Kind != yaml.ScalarNode || onlyKeywords[r.Value] || strings.HasPrefix(r.Value, "/") {
+			return nil, false
+		}
+		refs[r.Value] = true
+	}
+	return refs, true
 }
 
 func buildStageIndex(mapping *yaml.Node) map[string]int {

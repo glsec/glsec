@@ -53,3 +53,46 @@ func TestGL070_NotFlagged_Keyless(t *testing.T) {
 		}
 	}
 }
+
+func TestGL070_STSCredentials(t *testing.T) {
+	for _, tc := range []struct {
+		name, yaml string
+		want       int
+	}{
+		{"assume-role-with-web-identity in one line", `
+deploy:
+  id_tokens:
+    GITLAB_OIDC_TOKEN:
+      aud: https://gitlab.example.com
+  script:
+    - >
+      export $(printf "AWS_ACCESS_KEY_ID=%s AWS_SECRET_ACCESS_KEY=%s AWS_SESSION_TOKEN=%s"
+      $(aws sts assume-role-with-web-identity --role-arn $ROLE --role-session-name ci
+      --web-identity-token "$GITLAB_OIDC_TOKEN" --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' --output text))
+`, 0},
+		{"STS output in an earlier line", `
+deploy:
+  script:
+    - CREDS=$(aws sts assume-role --role-arn $ROLE --role-session-name ci)
+    - export AWS_SECRET_ACCESS_KEY=$(echo $CREDS | jq -r .Credentials.SecretAccessKey)
+`, 0},
+		{"static key in another job", `
+sts:
+  script:
+    - CREDS=$(aws sts assume-role --role-arn $ROLE --role-session-name ci)
+static:
+  script:
+    - export AWS_SECRET_ACCESS_KEY=$PROD_SECRET
+`, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			doc, err := parser.Parse([]byte(tc.yaml), "t.yml")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if f := GL070.Check(doc.Root, "t.yml"); len(f) != tc.want {
+				t.Fatalf("expected %d findings, got %d", tc.want, len(f))
+			}
+		})
+	}
+}

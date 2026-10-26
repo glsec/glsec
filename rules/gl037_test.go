@@ -61,15 +61,25 @@ deploy:
 			yaml: `variables:
   API_KEY: $API_KEY
 
+deploy-a:
+  trigger:
+    project: group/a
+deploy-b:
+  trigger:
+    project: group/b`,
+			wantHits: 2,
+		},
+		{
+			// A child pipeline runs in the same project with the same variables.
+			name: "child pipelines",
+			yaml: `variables:
+  API_KEY: $API_KEY
+
 child-a:
   trigger:
     include:
-      - local: .gitlab/ci/a.yml
-child-b:
-  trigger:
-    include:
-      - local: .gitlab/ci/b.yml`,
-			wantHits: 2,
+      - local: .gitlab/ci/a.yml`,
+			wantHits: 0,
 		},
 		{
 			name: "inherit block present but variables not false",

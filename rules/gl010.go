@@ -25,6 +25,11 @@ func (r *gl010) Check(doc *yaml.Node, file string) []finding.Finding {
 		if trigger == nil || trigger.Kind != yaml.MappingNode {
 			return
 		}
+		// A child pipeline (trigger: include:) runs in the same project and
+		// has its variables already; only another project is a new audience.
+		if parser.FindKey(trigger, "project") == nil {
+			return
+		}
 		forward := parser.FindKey(trigger, "forward")
 		if forward == nil || forward.Kind != yaml.MappingNode {
 			return

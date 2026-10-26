@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
+	"github.com/glsec/glsec/internal/parser"
 	"gopkg.in/yaml.v3"
 )
 
@@ -34,15 +35,27 @@ func (r *gl062) Check(doc *yaml.Node, file string) []finding.Finding {
 		if !envFullDumpRe.MatchString(v) {
 			return
 		}
-		findings = append(findings, finding.Finding{
-			RuleID:   "GL062",
-			Severity: finding.Warn,
-			Job:      job,
-			Message:  "printenv/env with no arguments dumps every environment variable to the job log, including CI/CD secrets and tokens that may not be reliably masked — print only the specific variables you need",
-			File:     file,
-			Line:     line.Line,
-			Col:      line.Column,
-		})
+		for _, cmd := range shellCommands(v) {
+			loc := envFullDumpRe.FindStringIndex(cmd.text)
+			// Output captured by $(…) or backticks goes to a variable or an
+			// argument, not to the log: X=$(env | grep …), for v in $(env …).
+			if loc == nil || strings.Contains(cmd.text[:loc[1]], "$(") || strings.Contains(cmd.text[:loc[1]], "`") {
+				continue
+			}
+			f := finding.Finding{
+				RuleID:   "GL062",
+				Severity: finding.Warn,
+				Job:      job,
+				Message:  "printenv/env with no arguments dumps every environment variable to the job log, including CI/CD secrets and tokens that may not be reliably masked — print only the specific variables you need",
+				File:     file,
+				Line:     parser.ScalarContentLine(line, cmd.line),
+			}
+			if cmd.line == 0 {
+				f.Col = line.Column
+			}
+			findings = append(findings, f)
+			return
+		}
 	})
 	return findings
 }

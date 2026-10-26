@@ -33,7 +33,13 @@ func (r *gl037) Check(doc *yaml.Node, file string) []finding.Finding {
 
 	var findings []finding.Finding
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
-		if parser.FindKey(job, "trigger") == nil {
+		trigger := parser.FindKey(job, "trigger")
+		if trigger == nil {
+			return
+		}
+		// A child pipeline (trigger: include:) runs in the same project; only
+		// a multi-project trigger hands the variables to another project.
+		if trigger.Kind == yaml.MappingNode && parser.FindKey(trigger, "project") == nil {
 			return
 		}
 		if !inheritsAnyOf(parser.FindKey(job, "inherit"), secrets) {

@@ -34,7 +34,13 @@ var releaseSigningRe = regexp.MustCompile(
 		`|\bgpg\b.*--detach-sign\b` +
 		`|\bgpg\b.*\s-b\b` +
 		`|\bnotation\s+sign\b` +
-		`|\bslsa-verifier\b`,
+		`|\bslsa-verifier\b` +
+		// Sigstore-backed provenance and attestations from the publish step:
+		// npm publish --provenance, twine upload --attestations, uv publish
+		// --trusted-publishing with attestations, and GitLab's attest step.
+		`|\bnpm\b[^|;&]*\bpublish\b[^|;&]*--provenance\b` +
+		`|\b(?:twine\s+upload|uv\s+publish)\b[^|;&]*--attestations\b` +
+		`|\bgh\s+attestation\b|\bcosign\s+attest\b`,
 )
 
 func (r *gl045) Check(doc *yaml.Node, file string) []finding.Finding {

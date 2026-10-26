@@ -5,6 +5,7 @@ package rules
 
 import (
 	"regexp"
+	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
 	"github.com/glsec/glsec/internal/parser"
@@ -30,10 +31,49 @@ var (
 	// branchFlagRe captures the value of --branch or -b.
 	// Handles both space-separated (--branch main) and equals-sign (--branch=main) forms.
 	branchFlagRe = regexp.MustCompile(`(?:--branch|-b)(?:\s+|=)(\S+)`)
-
-	// newBranchFlagRe detects -b or --orphan (creates a local branch, not a dep checkout).
-	newBranchFlagRe = regexp.MustCompile(`\s(?:-b|--orphan)(?:\s|$)`)
 )
+
+// shaVarRe matches a predefined variable that holds a commit SHA, such as
+// $CI_COMMIT_SHA, ${CI_MERGE_REQUEST_DIFF_BASE_SHA} or the deprecated
+// $CI_BUILD_REF: immutable like a literal SHA.
+var shaVarRe = regexp.MustCompile(`^\$\{?(?:CI_[A-Z_]*_SHA|CI_BUILD_REF)\}?$`)
+
+// checksOutMutableRef reports whether a command is `git checkout <ref>` with a
+// ref other than a commit SHA. Creating a local branch (-b, -B, --orphan) and
+// restoring files (git checkout -- path, git checkout <ref> -- path,
+// git checkout .) are not ref checkouts, and neither are other subcommands
+// that only contain the word (git submodule update --checkout, git lfs
+// checkout, git config checkout.defaultRemote).
+func checksOutMutableRef(words []string) bool {
+	if commandName(words) != "git" {
+		return false
+	}
+	args := words[1:]
+	// Global options before the subcommand: -C dir, -c key=value, --git-dir=….
+	for len(args) > 0 && strings.HasPrefix(args[0], "-") {
+		if (args[0] == "-C" || args[0] == "-c") && len(args) > 1 {
+			args = args[1:]
+		}
+		args = args[1:]
+	}
+	if len(args) == 0 || args[0] != "checkout" {
+		return false
+	}
+	var refs []string
+	for _, a := range args[1:] {
+		switch {
+		case a == "-b" || a == "-B" || a == "--orphan" || a == "--":
+			return false
+		case strings.HasPrefix(a, "-"):
+		default:
+			refs = append(refs, a)
+		}
+	}
+	if len(refs) == 0 || refs[0] == "." || len(refs) > 1 {
+		return false // no ref, or files: git checkout . / git checkout file1 file2
+	}
+	return !shaRe.MatchString(refs[0]) && !shaVarRe.MatchString(refs[0])
+}
 
 func (r *gl026) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
@@ -87,21 +127,23 @@ func (r *gl026) Check(doc *yaml.Node, file string) []finding.Finding {
 			}
 
 			if gitCheckoutRe.MatchString(line) {
-				if newBranchFlagRe.MatchString(line) {
-					continue // creating a local branch, not a dependency checkout
+				for _, cmd := range shellCommands(line) {
+					if !checksOutMutableRef(commandWords(cmd.text)) {
+						continue
+					}
+					f := finding.Finding{
+						RuleID:   "GL026",
+						Severity: finding.Warn,
+						Job:      name.Value,
+						Message:  "git checkout uses a mutable ref — pin to a full 40-character commit SHA",
+						File:     file,
+						Line:     parser.ScalarContentLine(l, cmd.line),
+					}
+					if cmd.line == 0 {
+						f.Col = l.Column
+					}
+					findings = append(findings, f)
 				}
-				if shaRe.MatchString(line) {
-					continue // SHA-pinned — safe
-				}
-				findings = append(findings, finding.Finding{
-					RuleID:   "GL026",
-					Severity: finding.Warn,
-					Job:      name.Value,
-					Message:  "git checkout uses a mutable ref — pin to a full 40-character commit SHA",
-					File:     file,
-					Line:     l.Line,
-					Col:      l.Column,
-				})
 			}
 		}
 	})

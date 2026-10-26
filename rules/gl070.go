@@ -32,6 +32,12 @@ var (
 	awsEnvRe = regexp.MustCompile(`\bAWS_SECRET_ACCESS_KEY\s*=`)
 )
 
+// Indexes of the AWS checks in staticCredChecks.
+const (
+	awsConfigCheck = 1
+	awsEnvCheck    = 2
+)
+
 var staticCredChecks = []staticCredCheck{
 	{
 		match: gcpKeyRe.MatchString,
@@ -60,14 +66,30 @@ func isAzureStaticLogin(line string) bool {
 		!strings.Contains(line, "--federated-token")
 }
 
+// awsSTSRe matches the keyless AWS flow: credentials from sts assume-role,
+// usually with the job's OIDC token (--web-identity-token).
+var awsSTSRe = regexp.MustCompile(`\bsts\s+assume-role|--web-identity-token\b`)
+
 func (r *gl070) Check(doc *yaml.Node, file string) []finding.Finding {
+	// Jobs that get their AWS credentials from STS: the AWS_SECRET_ACCESS_KEY
+	// they set is short-lived, the flow this rule recommends.
+	sts := map[string]bool{}
+	EachScriptLine(doc, file, func(line *yaml.Node, file, job string) {
+		if awsSTSRe.MatchString(line.Value) {
+			sts[job] = true
+		}
+	})
+
 	var findings []finding.Finding
 	EachScriptLine(doc, file, func(line *yaml.Node, file, job string) {
 		if strings.HasPrefix(strings.TrimSpace(line.Value), "#") {
 			return
 		}
-		for _, c := range staticCredChecks {
+		for i, c := range staticCredChecks {
 			if !c.match(line.Value) {
+				continue
+			}
+			if sts[job] && (i == awsConfigCheck || i == awsEnvCheck) {
 				continue
 			}
 			findings = append(findings, finding.Finding{
