@@ -39,25 +39,45 @@ func (r *gl005) Check(doc *yaml.Node, file string) []finding.Finding {
 
 	if def := parser.FindKey(mapping, "default"); def != nil {
 		if artifactsNode := parser.FindKey(def, "artifacts"); artifactsNode != nil {
-			findings = append(findings, checkArtifacts(artifactsNode, file)...)
+			findings = append(findings, checkArtifactPaths(artifactsNode, file)...)
+			if _, e := parser.FindKeyNode(artifactsNode, "expire_in"); e == nil {
+				findings = append(findings, missingExpireIn(artifactsNode, file))
+			}
 		}
 	}
 
+	in := NewInheritance(doc)
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
-		artifactsNode := parser.FindKey(job, "artifacts")
-		if artifactsNode == nil {
+		// Paths are checked where they are written, templates included.
+		if own := parser.FindKey(job, "artifacts"); own != nil {
+			for _, f := range checkArtifactPaths(own, file) {
+				f.Job = name.Value
+				findings = append(findings, f)
+			}
+		}
+		// expire_in is checked on the jobs GitLab runs, with artifacts:
+		// deep-merged along extends:, so it may come from a template.
+		if !runsInheritedJob(in, name, job) {
 			return
 		}
-		for _, f := range checkArtifacts(artifactsNode, file) {
-			f.Job = name.Value
-			findings = append(findings, f)
+		chain := in.Chain(job, "artifacts")
+		if len(chain) == 0 {
+			return
 		}
+		for _, a := range chain {
+			if _, e := parser.FindKeyNode(a, "expire_in"); e != nil {
+				return
+			}
+		}
+		f := missingExpireIn(chain[0], file)
+		f.Job = name.Value
+		findings = append(findings, f)
 	})
 
 	return findings
 }
 
-func checkArtifacts(node *yaml.Node, file string) []finding.Finding {
+func checkArtifactPaths(node *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
 
 	for _, section := range []string{"paths", "exclude"} {
@@ -73,19 +93,18 @@ func checkArtifacts(node *yaml.Node, file string) []finding.Finding {
 		}
 	}
 
-	_, expireNode := parser.FindKeyNode(node, "expire_in")
-	if expireNode == nil {
-		findings = append(findings, finding.Finding{
-			RuleID:   "GL005",
-			Severity: finding.Warn,
-			Message:  "artifacts block has no \"expire_in\" — artifacts are stored indefinitely, increasing the exposure window for any sensitive content",
-			File:     file,
-			Line:     node.Line,
-			Col:      node.Column,
-		})
-	}
-
 	return findings
+}
+
+func missingExpireIn(node *yaml.Node, file string) finding.Finding {
+	return finding.Finding{
+		RuleID:   "GL005",
+		Severity: finding.Warn,
+		Message:  "artifacts block has no \"expire_in\" — artifacts are stored indefinitely, increasing the exposure window for any sensitive content",
+		File:     file,
+		Line:     node.Line,
+		Col:      node.Column,
+	}
 }
 
 func checkArtifactPath(item *yaml.Node, file string) []finding.Finding {

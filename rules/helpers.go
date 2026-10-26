@@ -135,6 +135,38 @@ func (in *Inheritance) extendedKey(job *yaml.Node, key string, depth int, seen m
 	return nil
 }
 
+// Chain returns the values of key along the job's extends: chain in this
+// file, the job's own first, for keys GitLab deep-merges such as artifacts:
+// and trigger:. default: is not included.
+func (in *Inheritance) Chain(job *yaml.Node, key string) []*yaml.Node {
+	var out []*yaml.Node
+	in.chain(job, key, 0, map[*yaml.Node]bool{}, &out)
+	return out
+}
+
+func (in *Inheritance) chain(job *yaml.Node, key string, depth int, seen map[*yaml.Node]bool, out *[]*yaml.Node) {
+	if job == nil || job.Kind != yaml.MappingNode || seen[job] || depth > maxExtendsDepth {
+		return
+	}
+	seen[job] = true
+	if v := parser.FindKey(job, key); v != nil {
+		*out = append(*out, v)
+	}
+	ext := parser.FindKey(job, "extends")
+	if ext == nil {
+		return
+	}
+	parents := []*yaml.Node{ext}
+	if ext.Kind == yaml.SequenceNode {
+		parents = ext.Content
+	}
+	for i := len(parents) - 1; i >= 0; i-- {
+		if parents[i].Kind == yaml.ScalarNode {
+			in.chain(in.jobs[parents[i].Value], key, depth+1, seen, out)
+		}
+	}
+}
+
 // ExtendsResolved reports whether every job in the job's extends: chain is
 // defined in this file, so Key sees everything the job inherits.
 func (in *Inheritance) ExtendsResolved(job *yaml.Node) bool {

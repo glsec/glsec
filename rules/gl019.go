@@ -19,12 +19,13 @@ func (r *gl019) ID() string { return "GL019" }
 
 func (r *gl019) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
+	in := NewInheritance(doc)
 
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
-		if !isSensitiveJob(job) {
+		if !runsInheritedJob(in, name, job) || !isSensitiveJob(in, job) {
 			return
 		}
-		if parser.FindKey(job, "resource_group") != nil {
+		if in.Key(job, "resource_group") != nil {
 			return
 		}
 		findings = append(findings, finding.Finding{

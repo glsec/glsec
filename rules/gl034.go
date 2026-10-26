@@ -19,12 +19,17 @@ const gl034Message = "trigger: job has no strategy: — child/downstream pipelin
 
 func (r *gl034) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
+	in := NewInheritance(doc)
 
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
-		triggerNode := parser.FindKey(job, "trigger")
-		if triggerNode == nil {
+		if !runsInheritedJob(in, name, job) {
 			return
 		}
+		triggers := in.Chain(job, "trigger")
+		if len(triggers) == 0 {
+			return
+		}
+		triggerNode := triggers[0]
 
 		// Scalar trigger (e.g. "trigger: other/project") — cannot carry a strategy.
 		if triggerNode.Kind == yaml.ScalarNode {
@@ -44,10 +49,19 @@ func (r *gl034) Check(doc *yaml.Node, file string) []finding.Finding {
 			return
 		}
 
-		strategyNode := parser.FindKey(triggerNode, "strategy")
-		// mirror (GitLab 18.2+) and the older depend both wait for the downstream status.
-		if strategyNode != nil && (strategyNode.Value == "mirror" || strategyNode.Value == "depend") {
-			return
+		// trigger: is deep-merged along extends:, so the strategy can come from
+		// a template. mirror (GitLab 18.2+) and the older depend both wait for
+		// the downstream status.
+		for _, t := range triggers {
+			if t.Kind != yaml.MappingNode {
+				break
+			}
+			if s := parser.FindKey(t, "strategy"); s != nil {
+				if s.Value == "mirror" || s.Value == "depend" {
+					return
+				}
+				break
+			}
 		}
 
 		findings = append(findings, finding.Finding{
