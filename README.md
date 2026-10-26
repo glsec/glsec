@@ -62,21 +62,15 @@ It adds a `glsec` job that runs in the `test` stage (set the `stage` input to ch
 
 ## Install
 
-**Homebrew (macOS and Linux):**
+**Package managers:**
 
 ```sh
-brew install glsec/tap/glsec
+brew install glsec/tap/glsec        # Homebrew (macOS and Linux)
+aqua g -i glsec/glsec && aqua i     # aqua
+mise use github:glsec/glsec         # mise
 ```
 
-The [tap](https://github.com/glsec/homebrew-tap) takes each release only after its archives pass the provenance check described under [Verifying a release](#verifying-a-release).
-
-**aqua:**
-
-```sh
-aqua g -i glsec/glsec && aqua i
-```
-
-glsec is in the [aqua](https://aquaproj.github.io/) standard registry from v4.578.0 on. aqua checks each download against `checksums.txt` and against the provenance of glsec's release workflow.
+The [Homebrew tap](https://github.com/glsec/homebrew-tap) takes each release only after its archives pass the provenance check described under [Verifying a release](#verifying-a-release). glsec is in the [aqua](https://aquaproj.github.io/) standard registry from v4.578.0 on; aqua checks each download against `checksums.txt` and the provenance of glsec's release workflow. [mise](https://mise.jdx.dev/) installs the release archive from GitHub.
 
 **Go install (requires Go 1.26+):**
 
