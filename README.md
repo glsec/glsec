@@ -41,7 +41,7 @@ Add glsec to a GitLab pipeline with the [CI/CD Catalog component](https://gitlab
 
 ```yaml
 include:
-  - component: gitlab.com/glsec-io/glsec/glsec@v1.0.25
+  - component: gitlab.com/glsec-io/glsec/glsec@v1.0.26
 ```
 
 It adds a `glsec` job that runs in the `test` stage (set the `stage` input to change that) and fails on error findings. For findings in merge requests, Docker, binary or GitHub Actions setups, see [CI integration](#ci-integration). To run it locally, see [Install](#install).
@@ -430,7 +430,7 @@ Use the official component from the [GitLab CI Catalog](https://gitlab.com/explo
 
 ```yaml
 include:
-  - component: gitlab.com/glsec-io/glsec/glsec@v1.0.25
+  - component: gitlab.com/glsec-io/glsec/glsec@v1.0.26
 
 stages:
   - test
@@ -440,7 +440,7 @@ To see findings in merge requests, add the `glsec-code-quality` template. The me
 
 ```yaml
 include:
-  - component: gitlab.com/glsec-io/glsec/glsec-code-quality@v1.0.25
+  - component: gitlab.com/glsec-io/glsec/glsec-code-quality@v1.0.26
 
 stages:
   - test
