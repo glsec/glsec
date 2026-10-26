@@ -70,6 +70,14 @@ brew install glsec/tap/glsec
 
 The [tap](https://github.com/glsec/homebrew-tap) takes each release only after its archives pass the provenance check described under [Verifying a release](#verifying-a-release).
 
+**aqua:**
+
+```sh
+aqua g -i glsec/glsec && aqua i
+```
+
+glsec is in the [aqua](https://aquaproj.github.io/) standard registry from v4.578.0 on. aqua checks each download against `checksums.txt` and against the provenance of glsec's release workflow.
+
 **Go install (requires Go 1.26+):**
 
 ```sh
