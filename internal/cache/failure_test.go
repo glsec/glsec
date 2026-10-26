@@ -6,6 +6,7 @@ package cache
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -18,6 +19,18 @@ func noHome(t *testing.T) {
 	t.Setenv("HOME", "")
 	t.Setenv("USERPROFILE", "")
 	t.Setenv("home", "") // plan9
+}
+
+// skipUnlessPermissionsApply skips tests that rely on a missing permission bit
+// stopping the current user: Windows ignores the bits, root ignores them.
+func skipUnlessPermissionsApply(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows ignores Unix permission bits")
+	}
+	if os.Getuid() == 0 {
+		t.Skip("root ignores permission bits")
+	}
 }
 
 func TestDir(t *testing.T) {
@@ -166,5 +179,112 @@ func TestKey_DiffersOnConfigAndExcludes(t *testing.T) {
 	}
 	if base([]string{"a/"}) == withCfg {
 		t.Error("an exclude pattern must change the key")
+	}
+}
+
+func TestKey_UnreadablePipelineFileFails(t *testing.T) {
+	// A scanned file that exists but can't be read must not produce a key,
+	// otherwise a cache entry could stand in for content nobody hashed.
+	dir := t.TempDir()
+	if _, err := Key("v", "d", "", []string{dir}, "", "", nil, nil, nil); err == nil {
+		t.Error("a pipeline path that is a directory must make Key fail")
+	}
+}
+
+func TestKey_PathThroughAFileFails(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows reports a path through a file as not existing")
+	}
+	file := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(file, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// Resolving file/ci.yml fails with ENOTDIR, which is not "missing".
+	if _, err := Key("v", "d", "", []string{filepath.Join(file, "ci.yml")}, "", "", nil, nil, nil); err == nil {
+		t.Error("a path that can't be resolved must make Key fail")
+	}
+}
+
+func TestLoad_PermissionDeniedIsAMiss(t *testing.T) {
+	skipUnlessPermissionsApply(t)
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	Store("k", &Entry{JobCount: 1})
+	if err := os.Chmod(filepath.Join(Dir(), "k.json"), 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := Load("k"); ok {
+		t.Error("an entry that can't be read must be a miss")
+	}
+}
+
+func TestStore_ReadOnlyDirDoesNotFail(t *testing.T) {
+	skipUnlessPermissionsApply(t)
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	if err := os.MkdirAll(Dir(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// Owned and not writable by others, so usableDir accepts it, but the
+	// temporary file can't be created.
+	if err := os.Chmod(Dir(), 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(Dir(), 0o700) })
+
+	Store("k", &Entry{JobCount: 1})
+	if _, ok := Load("k"); ok {
+		t.Error("nothing could be stored, so Load must miss")
+	}
+}
+
+func TestStore_FailedRenameLeavesNoTempFile(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	// A non-empty directory under the entry's name makes the rename fail.
+	if err := os.MkdirAll(filepath.Join(Dir(), "k.json", "sub"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	Store("k", &Entry{JobCount: 1})
+	if _, ok := Load("k"); ok {
+		t.Error("nothing could be stored, so Load must miss")
+	}
+	tmp, err := filepath.Glob(filepath.Join(Dir(), "*.tmp"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tmp) != 0 {
+		t.Errorf("Store left temporary files behind: %v", tmp)
+	}
+}
+
+func TestClear_UnremovableEntryFails(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	// A non-empty directory named like an entry can't be removed.
+	if err := os.MkdirAll(filepath.Join(Dir(), "k.json", "sub"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := Clear(); err == nil {
+		t.Error("Clear must report an entry it could not remove, not claim the cache is clear")
+	}
+}
+
+func TestClear_BadPatternInDirFails(t *testing.T) {
+	// Clear globs inside the cache dir, so an unbalanced "[" in its path is a
+	// malformed pattern.
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(t.TempDir(), "a["))
+	if err := Clear(); err == nil {
+		t.Error("Clear must report a cache dir it can't search")
+	}
+}
+
+type fakeFileInfo struct{ os.FileInfo }
+
+func (fakeFileInfo) Sys() any { return nil }
+
+func TestOwnedByCurrentUser_NoOwnerInfo(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows doesn't check the owner")
+	}
+	if ownedByCurrentUser(fakeFileInfo{}) {
+		t.Error("a file whose owner can't be read must not count as the current user's")
 	}
 }
