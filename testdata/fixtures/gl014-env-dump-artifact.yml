@@ -1,0 +1,12 @@
+stages:
+  - test
+
+diag:
+  stage: test
+  script:
+    - make test
+    - env > diagnostics.txt
+  artifacts:
+    paths:
+      - diagnostics.txt
+    expire_in: 1 day

@@ -11,7 +11,6 @@ var minVersions = map[string]version.Version{
 	"GL009": {Major: 15, Minor: 7}, // id_tokens:
 	"GL081": {Major: 15, Minor: 7}, // id_tokens:
 	"GL010": {Major: 14, Minor: 9}, // trigger: forward:
-	"GL014": {Major: 12, Minor: 9}, // artifacts: reports: dotenv:
 }
 
 // EnabledFor returns true if rule id should run against the given GitLab
