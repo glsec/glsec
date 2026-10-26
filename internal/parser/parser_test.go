@@ -4,6 +4,11 @@
 package parser
 
 import (
+	"errors"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
@@ -252,5 +257,142 @@ func TestRunStepScripts_MalformedAndAbsent(t *testing.T) {
 				t.Errorf("%q: expected no scripts, got %d", src, got)
 			}
 		})
+	}
+}
+
+func TestParseFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".gitlab-ci.yml")
+	if err := os.WriteFile(path, []byte("build:\n  script: [make]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	doc, err := ParseFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if doc.File != path || FindKey(doc.MappingNode(), "build") == nil {
+		t.Errorf("unexpected document for %s: file %q", path, doc.File)
+	}
+
+	_, err = ParseFile(filepath.Join(dir, "missing.yml"))
+	if !errors.Is(err, fs.ErrNotExist) || !strings.Contains(err.Error(), "missing.yml") {
+		t.Errorf("got %v, want a not-exist error naming the file", err)
+	}
+}
+
+func TestParse_SyntaxError(t *testing.T) {
+	_, err := Parse([]byte("build:\n  script: [make\n"), "broken.yml")
+	if err == nil || !strings.Contains(err.Error(), "parse broken.yml") {
+		t.Errorf("got %v, want a parse error naming the file", err)
+	}
+}
+
+func TestParse_TopLevelNotAMapping(t *testing.T) {
+	for _, tc := range []struct {
+		src  string
+		kind yaml.Kind
+	}{
+		{"- build\n- test\n", yaml.SequenceNode},
+		{"just a string\n", yaml.ScalarNode},
+	} {
+		doc, err := Parse([]byte(tc.src), "test.yml")
+		if err != nil {
+			t.Fatalf("%q: %v", tc.src, err)
+		}
+		top := doc.MappingNode()
+		if top.Kind != tc.kind || Unwrap(doc.Root) != top {
+			t.Errorf("%q: MappingNode/Unwrap returned kind %d, want %d", tc.src, top.Kind, tc.kind)
+		}
+		if FindKey(top, "build") != nil {
+			t.Errorf("%q: FindKey on a non-mapping must return nil", tc.src)
+		}
+		if k, v := FindKeyNode(top, "build"); k != nil || v != nil {
+			t.Errorf("%q: FindKeyNode on a non-mapping must return nil, nil", tc.src)
+		}
+		jobs := 0
+		EachJob(doc.Root, func(*yaml.Node, *yaml.Node) { jobs++ })
+		if jobs != 0 {
+			t.Errorf("%q: EachJob visited %d jobs, want 0", tc.src, jobs)
+		}
+	}
+}
+
+func TestParse_ListBeforeSecondDocumentIsNoSpecHeader(t *testing.T) {
+	doc, err := Parse([]byte("- a\n---\nbuild:\n  script: [make]\n"), "test.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if doc.Spec != nil || doc.MappingNode().Kind != yaml.SequenceNode {
+		t.Errorf("a leading list is not a spec: header; got spec %v, root kind %d", doc.Spec, doc.MappingNode().Kind)
+	}
+}
+
+func TestParse_EmptyDocumentInStream(t *testing.T) {
+	// A trailing --- with nothing after it doesn't replace the pipeline.
+	doc, err := Parse([]byte("build:\n  script: [make]\n---\n"), "test.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if FindKey(doc.MappingNode(), "build") == nil {
+		t.Error("a trailing empty document must not become the root")
+	}
+
+	// A leading empty document is the first document, holding a null. It is not
+	// skipped: the file then has no top-level mapping, which validate rejects,
+	// so glsec reports an error instead of finding nothing.
+	doc, err = Parse([]byte("---\n---\nbuild:\n  script: [make]\n"), "test.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if top := doc.MappingNode(); top.Kind != yaml.ScalarNode || top.Tag != "!!null" {
+		t.Errorf("got kind %d tag %q, want the leading empty document's null", top.Kind, top.Tag)
+	}
+}
+
+func TestMappingNode_RootWithoutDocument(t *testing.T) {
+	m := &yaml.Node{Kind: yaml.MappingNode}
+	if got := (&Document{Root: m}).MappingNode(); got != m {
+		t.Errorf("a Root that is not a document node must be returned as is")
+	}
+	if Unwrap(m) != m {
+		t.Errorf("Unwrap must return a non-document node as is")
+	}
+}
+
+func TestFindKeyNode_Missing(t *testing.T) {
+	doc, err := Parse([]byte("build:\n  script: [make]\n"), "test.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if k, v := FindKeyNode(doc.MappingNode(), "deploy"); k != nil || v != nil {
+		t.Errorf("got %v, %v for a missing key, want nil, nil", k, v)
+	}
+}
+
+func TestScalarContentLine(t *testing.T) {
+	doc, err := Parse([]byte(`build:
+  script:
+    - "echo a"
+    - |
+      echo b
+      echo c
+    - >
+      echo d
+`), "test.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	items := FindKey(FindKey(doc.MappingNode(), "build"), "script").Content
+	for _, tc := range []struct {
+		item, i, want int
+	}{
+		{0, 0, 3}, // plain/quoted: the content is on the node's own line
+		{1, 0, 5}, // literal block: content starts one line after "|"
+		{1, 1, 6},
+		{2, 0, 8}, // folded block: one line after ">"
+	} {
+		if got := ScalarContentLine(items[tc.item], tc.i); got != tc.want {
+			t.Errorf("item %d line %d: got %d, want %d", tc.item, tc.i, got, tc.want)
+		}
 	}
 }

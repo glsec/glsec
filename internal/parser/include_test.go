@@ -56,3 +56,13 @@ func TestIncludeItems_ShorthandKeepsPosition(t *testing.T) {
 		t.Errorf("value position = %d:%d, want 2:5", v.Line, v.Column)
 	}
 }
+
+func TestIncludeItems_OtherShapes(t *testing.T) {
+	items := IncludeItems(includeOf(t, "include:\n  - - nested.yml\n  - local: a.yml\n"))
+	if len(items) != 1 || items[0].Content[1].Value != "a.yml" {
+		t.Errorf("a nested list entry is not an include and must be skipped, got %d items", len(items))
+	}
+	if got := IncludeItems(&yaml.Node{Kind: yaml.AliasNode}); got != nil {
+		t.Errorf("an include: that is neither a string, a mapping nor a list has no items, got %v", got)
+	}
+}
