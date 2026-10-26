@@ -900,3 +900,28 @@ func TestWriteSARIFDevVersionLeftOut(t *testing.T) {
 		t.Errorf("dev version written: %s", buf.String()[:200])
 	}
 }
+
+func TestSecuritySeverity(t *testing.T) {
+	for s, want := range map[finding.Severity]string{finding.Error: "8.0", finding.Warn: "5.0", finding.Info: "2.0", "": ""} {
+		if got := securitySeverity(s); got != want {
+			t.Errorf("securitySeverity(%q) = %q, want %q", s, got, want)
+		}
+	}
+}
+
+// Without the doc section, the help markdown falls back to the description,
+// and a rule with neither severity nor CWE still gets its security tag.
+func TestDescribeSARIFRuleFallbacks(t *testing.T) {
+	rule := sarifRule{ID: "GL001", HelpURI: RuleURL("GL001")}
+	props := &sarifRuleProps{Tags: []string{"security"}}
+	describeSARIFRule(&rule, SARIFRule{Risk: "A tag can move."}, props)
+	if rule.Help == nil || !strings.HasPrefix(rule.Help.Markdown, "A tag can move.") || strings.Contains(rule.Help.Markdown, "Safe alternative") {
+		t.Errorf("help = %+v", rule.Help)
+	}
+	if rule.DefaultConfiguration != nil || props.SecuritySeverity != "" {
+		t.Errorf("severity set without one: %+v %+v", rule.DefaultConfiguration, props)
+	}
+	if rule.ShortDescription != nil {
+		t.Errorf("title set without one: %+v", rule.ShortDescription)
+	}
+}

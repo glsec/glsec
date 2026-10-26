@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/glsec/glsec/internal/output"
 	"github.com/glsec/glsec/rules"
 )
 
@@ -23,5 +24,16 @@ func TestSARIFRuleInfoForEveryRule(t *testing.T) {
 		case strings.Contains(info.Details, ".md)") || strings.Contains(info.Details, "](../"):
 			t.Errorf("%s: help has a repository-relative link", r.ID())
 		}
+	}
+}
+
+// A rule without a doc, such as a ShellCheck code, gets no metadata, and a doc
+// without the named sections gives no details.
+func TestSARIFRuleInfoWithoutDoc(t *testing.T) {
+	if info := sarifRuleInfo("SC2086"); info != (output.SARIFRule{}) {
+		t.Errorf("SC2086: %+v", info)
+	}
+	if got := docSection("# GL000 — x\n\n## Other\n\ntext\n", "Risk", "What glsec checks"); got != "" {
+		t.Errorf("docSection = %q", got)
 	}
 }
