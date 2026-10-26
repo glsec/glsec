@@ -33,9 +33,15 @@ var urlEncodedArgRe = regexp.MustCompile(`--data-urlencode(?:=|\s+)(?:"[^"]*"|'[
 
 func (r *gl025) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
+	// An item shared by several jobs through an anchor is checked once (#766).
+	seen := map[*yaml.Node]bool{}
 
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
 		for _, l := range CollectJobScriptLines(job) {
+			if seen[l] {
+				continue
+			}
+			seen[l] = true
 			m, at := userVarInRequest(l.Value)
 			if m == "" {
 				continue

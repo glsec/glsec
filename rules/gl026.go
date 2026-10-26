@@ -77,76 +77,89 @@ func checksOutMutableRef(words []string) bool {
 
 func (r *gl026) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
+	// What each line says on its own, cached for lines shared through an
+	// anchor (#766). Only the bare-clone finding depends on the job.
+	facts := nodeMemo[gl026Facts]{}
 
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
 		lines := CollectJobScriptLines(job)
 		if len(lines) == 0 {
 			return
 		}
-
-		// Pre-check: does the job have any SHA-pinned checkout?
+		all := make([]gl026Facts, len(lines))
 		// A bare `git clone` paired with `git checkout <sha>` is the safe pattern.
 		hasSHACheckout := false
-		for _, l := range lines {
-			if gitCheckoutRe.MatchString(l.Value) && shaRe.MatchString(l.Value) {
-				hasSHACheckout = true
-				break
-			}
+		for i, l := range lines {
+			all[i] = facts.get(l, func() gl026Facts { return gl026Line(l, file) })
+			hasSHACheckout = hasSHACheckout || all[i].shaCheckout
 		}
-
-		for _, l := range lines {
-			line := l.Value
-
-			if gitCloneRe.MatchString(line) {
-				m := branchFlagRe.FindStringSubmatch(line)
-				if len(m) >= 2 {
-					ref := m[1]
-					if !shaRe.MatchString(ref) {
-						findings = append(findings, finding.Finding{
-							RuleID:   "GL026",
-							Severity: finding.Warn,
-							Job:      name.Value,
-							Message:  "git clone uses mutable ref \"" + ref + "\" — pin to a full commit SHA with git checkout after cloning",
-							File:     file,
-							Line:     l.Line,
-							Col:      l.Column,
-						})
-					}
-				} else if !hasSHACheckout {
-					findings = append(findings, finding.Finding{
-						RuleID:   "GL026",
-						Severity: finding.Warn,
-						Job:      name.Value,
-						Message:  "git clone without --branch clones HEAD of the default branch — follow with git checkout <sha> to pin the revision",
-						File:     file,
-						Line:     l.Line,
-						Col:      l.Column,
-					})
-				}
-				continue
+		for i, l := range lines {
+			for _, f := range all[i].findings {
+				f.Job = name.Value
+				findings = append(findings, f)
 			}
-
-			if gitCheckoutRe.MatchString(line) {
-				for _, cmd := range shellCommands(line) {
-					if !checksOutMutableRef(commandWords(cmd.text)) {
-						continue
-					}
-					f := finding.Finding{
-						RuleID:   "GL026",
-						Severity: finding.Warn,
-						Job:      name.Value,
-						Message:  "git checkout uses a mutable ref — pin to a full 40-character commit SHA",
-						File:     file,
-						Line:     parser.ScalarContentLine(l, cmd.line),
-					}
-					if cmd.line == 0 {
-						f.Col = l.Column
-					}
-					findings = append(findings, f)
-				}
+			if all[i].bareClone && !hasSHACheckout {
+				findings = append(findings, finding.Finding{
+					RuleID:   "GL026",
+					Severity: finding.Warn,
+					Job:      name.Value,
+					Message:  "git clone without --branch clones HEAD of the default branch — follow with git checkout <sha> to pin the revision",
+					File:     file,
+					Line:     l.Line,
+					Col:      l.Column,
+				})
 			}
 		}
 	})
 
 	return findings
+}
+
+// gl026Facts is what one script item says on its own.
+type gl026Facts struct {
+	shaCheckout bool              // checks out a commit SHA
+	bareClone   bool              // git clone without --branch
+	findings    []finding.Finding // the findings that don't depend on the job, without Job
+}
+
+// gl026Line checks one script item.
+func gl026Line(l *yaml.Node, file string) (lf gl026Facts) {
+	line := l.Value
+	lf.shaCheckout = gitCheckoutRe.MatchString(line) && shaRe.MatchString(line)
+	if gitCloneRe.MatchString(line) {
+		m := branchFlagRe.FindStringSubmatch(line)
+		switch {
+		case len(m) < 2:
+			lf.bareClone = true
+		case !shaRe.MatchString(m[1]):
+			lf.findings = append(lf.findings, finding.Finding{
+				RuleID:   "GL026",
+				Severity: finding.Warn,
+				Message:  "git clone uses mutable ref \"" + m[1] + "\" — pin to a full commit SHA with git checkout after cloning",
+				File:     file,
+				Line:     l.Line,
+				Col:      l.Column,
+			})
+		}
+		return lf
+	}
+	if gitCheckoutRe.MatchString(line) {
+		for _, cmd := range shellCommands(line) {
+			if !checksOutMutableRef(commandWords(cmd.text)) {
+				continue
+			}
+			f := finding.Finding{
+				RuleID:   "GL026",
+				Severity: finding.Warn,
+				Message:  "git checkout uses a mutable ref — pin to a full 40-character commit SHA",
+				File:     file,
+				Line:     parser.ScalarContentLine(l, cmd.line),
+			}
+			if cmd.line == 0 {
+				f.Col = l.Column
+			}
+			lf.findings = append(lf.findings, f)
+		}
+	}
+	return lf
 }

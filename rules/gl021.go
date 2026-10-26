@@ -49,6 +49,8 @@ var (
 
 func (r *gl021) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
+	// An item shared by several jobs through an anchor is checked once (#766).
+	seen := map[*yaml.Node]bool{}
 
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
 		scriptNodes := []*yaml.Node{
@@ -63,9 +65,10 @@ func (r *gl021) Check(doc *yaml.Node, file string) []finding.Finding {
 				continue
 			}
 			for _, item := range node.Content {
-				if item.Kind != yaml.ScalarNode {
+				if item.Kind != yaml.ScalarNode || seen[item] {
 					continue
 				}
+				seen[item] = true
 				// Match per line: a `|` block scalar is one item but many
 				// commands. A backslash continuation belongs to its line, so a
 				// redirect or pipe on the next physical line still counts.

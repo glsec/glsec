@@ -77,6 +77,16 @@ func (r *gl016) Check(doc *yaml.Node, file string) []finding.Finding {
 		}
 	}
 
+	// A block shared by several jobs through an anchor is checked once; the
+	// other jobs' findings would be merged by finding.Dedupe (#766).
+	seen := map[*yaml.Node]bool{}
+	once := func(n *yaml.Node) bool {
+		if n == nil || seen[n] {
+			return false
+		}
+		seen[n] = true
+		return true
+	}
 	// per-job
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
 		jobScripts := []*yaml.Node{
@@ -86,14 +96,14 @@ func (r *gl016) Check(doc *yaml.Node, file string) []finding.Finding {
 		}
 		jobScripts = append(jobScripts, parser.RunStepBlocks(job)...)
 		for _, node := range jobScripts {
-			if node != nil {
+			if once(node) {
 				for _, f := range r.checkScriptHTTP(node, file) {
 					f.Job = name.Value
 					findings = append(findings, f)
 				}
 			}
 		}
-		if h := hookScriptNode(job); h != nil {
+		if h := hookScriptNode(job); once(h) {
 			for _, f := range r.checkScriptHTTP(h, file) {
 				f.Job = name.Value
 				findings = append(findings, f)

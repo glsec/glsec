@@ -25,6 +25,11 @@ var (
 func (r *gl024) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
 	inherit := NewInheritance(doc)
+	pipefail := nodeMemo[bool]{}
+	firstPipe := nodeMemo[int]{} // index of the item line, or -1
+	hasPipefail := func(l *yaml.Node) bool {
+		return pipefail.get(l, func() bool { return pipefailRe.MatchString(l.Value) })
+	}
 
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
 		lines := CollectJobScriptLines(job)
@@ -40,7 +45,7 @@ func (r *gl024) Check(doc *yaml.Node, file string) []finding.Finding {
 		// before_script/script it inherits through extends: or default: (#615).
 		// An inherited after_script runs in a separate shell, so it doesn't count.
 		for _, l := range lines {
-			if pipefailRe.MatchString(l.Value) {
+			if hasPipefail(l) {
 				return
 			}
 		}
@@ -50,7 +55,7 @@ func (r *gl024) Check(doc *yaml.Node, file string) []finding.Finding {
 			}
 			if seq := inherit.Key(job, key); isScriptList(seq) {
 				for _, l := range seq.Content {
-					if l.Kind == yaml.ScalarNode && pipefailRe.MatchString(l.Value) {
+					if l.Kind == yaml.ScalarNode && hasPipefail(l) {
 						return
 					}
 				}
@@ -60,24 +65,30 @@ func (r *gl024) Check(doc *yaml.Node, file string) []finding.Finding {
 		// Find the first command whose output is piped. A | inside quotes, as
 		// in sed "s|a|b|" or grep "a|b", is part of an argument.
 		for _, l := range lines {
-			for _, cmd := range shellCommands(l.Value) {
-				if !cmd.piped {
-					continue
+			at := firstPipe.get(l, func() int {
+				for _, cmd := range shellCommands(l.Value) {
+					if cmd.piped {
+						return cmd.line
+					}
 				}
-				f := finding.Finding{
-					RuleID:   "GL024",
-					Severity: finding.Warn,
-					Job:      name.Value,
-					Message:  "script uses a pipe without set -o pipefail — failures in all but the last command are silently ignored",
-					File:     file,
-					Line:     parser.ScalarContentLine(l, cmd.line),
-				}
-				if cmd.line == 0 {
-					f.Col = l.Column
-				}
-				findings = append(findings, f)
-				return // one finding per job
+				return -1
+			})
+			if at < 0 {
+				continue
 			}
+			f := finding.Finding{
+				RuleID:   "GL024",
+				Severity: finding.Warn,
+				Job:      name.Value,
+				Message:  "script uses a pipe without set -o pipefail — failures in all but the last command are silently ignored",
+				File:     file,
+				Line:     parser.ScalarContentLine(l, at),
+			}
+			if at == 0 {
+				f.Col = l.Column
+			}
+			findings = append(findings, f)
+			return // one finding per job
 		}
 	})
 

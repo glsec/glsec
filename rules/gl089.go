@@ -50,6 +50,9 @@ var autodiscoverLimitVars = []string{
 func (r *gl089) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
 	in := NewInheritance(doc)
+	// Whether an item runs renovate at all, cached for items shared through
+	// an anchor (#766); the rest depends on the job's variables.
+	runsRenovate := nodeMemo[bool]{}
 	parser.EachJob(doc, func(name, job *yaml.Node) {
 		if strings.HasPrefix(name.Value, ".") {
 			return
@@ -61,7 +64,7 @@ func (r *gl089) Check(doc *yaml.Node, file string) []finding.Finding {
 				continue
 			}
 			for _, item := range block.Content {
-				if item.Kind != yaml.ScalarNode {
+				if item.Kind != yaml.ScalarNode || !runsRenovate.get(item, func() bool { return renovateCmdRe.MatchString(item.Value) }) {
 					continue
 				}
 				for _, line := range strings.Split(strings.ReplaceAll(item.Value, "\\\n", " "), "\n") {

@@ -62,19 +62,35 @@ func (r *gl023) Check(doc *yaml.Node, file string) []finding.Finding {
 	in := NewInheritance(doc)
 	globalFrozen := bundlerFrozenVars(parser.FindKey(parser.Unwrap(doc), "variables"))
 
+	// What each line says on its own, cached for lines shared through an
+	// anchor (#766).
+	type lineFacts struct {
+		setsFrozen, bundleInstall bool
+		finding                   *finding.Finding
+	}
+	facts := nodeMemo[lineFacts]{}
+
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
 		lines := CollectJobScriptLines(job)
 		frozen := globalFrozen || bundlerFrozenVars(in.Key(job, "variables"))
 		for _, l := range lines {
-			if bundleConfigFrozenRe.MatchString(l.Value) {
+			lf := facts.get(l, func() lineFacts {
+				return lineFacts{
+					setsFrozen:    bundleConfigFrozenRe.MatchString(l.Value),
+					bundleInstall: bundleInstallRe.MatchString(l.Value),
+					finding:       checkLockfileLine(l.Value, file, l.Line, l.Column),
+				}
+			})
+			if lf.setsFrozen {
 				frozen = true
 			}
-			if frozen && bundleInstallRe.MatchString(l.Value) {
+			if frozen && lf.bundleInstall {
 				continue
 			}
-			if f := checkLockfileLine(l.Value, file, l.Line, l.Column); f != nil {
+			if lf.finding != nil {
+				f := *lf.finding
 				f.Job = name.Value
-				findings = append(findings, *f)
+				findings = append(findings, f)
 			}
 		}
 	})

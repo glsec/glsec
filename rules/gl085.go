@@ -56,13 +56,21 @@ func (r *gl085) Check(doc *yaml.Node, file string) []finding.Finding {
 	mapping := parser.Unwrap(doc)
 	workflowMR := workflowAllowsMR(mapping)
 	var findings []finding.Finding
+	// The agent lines of an item, cached for items shared through an anchor
+	// (#766); the message still depends on the job.
+	agents := nodeMemo[[]agentLine]{}
 	EachScriptLinePerJob(doc, file, func(item *yaml.Node, file, job string) {
-		text := strings.ReplaceAll(item.Value, "\\\n", " ")
-		for _, line := range strings.Split(text, "\n") {
-			f, ok := checkAgentLine(line)
-			if !ok {
-				continue
+		found := agents.get(item, func() []agentLine {
+			var out []agentLine
+			text := strings.ReplaceAll(item.Value, "\\\n", " ")
+			for _, line := range strings.Split(text, "\n") {
+				if f, ok := checkAgentLine(line); ok {
+					out = append(out, f)
+				}
 			}
+			return out
+		})
+		for _, f := range found {
 			severity := finding.Warn
 			msg := ""
 			switch {

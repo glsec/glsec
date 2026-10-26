@@ -74,21 +74,31 @@ func (r *gl070) Check(doc *yaml.Node, file string) []finding.Finding {
 	// Jobs that get their AWS credentials from STS: the AWS_SECRET_ACCESS_KEY
 	// they set is short-lived, the flow this rule recommends.
 	sts := map[string]bool{}
+	// Per-line results, cached for lines shared through an anchor (#766).
+	usesSTS := nodeMemo[bool]{}
+	matches := nodeMemo[[]int]{}
 	EachScriptLinePerJob(doc, file, func(line *yaml.Node, file, job string) {
-		if awsSTSRe.MatchString(line.Value) {
+		if usesSTS.get(line, func() bool { return awsSTSRe.MatchString(line.Value) }) {
 			sts[job] = true
 		}
 	})
 
 	var findings []finding.Finding
 	EachScriptLinePerJob(doc, file, func(line *yaml.Node, file, job string) {
-		if strings.HasPrefix(strings.TrimSpace(line.Value), "#") {
-			return
-		}
-		for i, c := range staticCredChecks {
-			if !c.match(line.Value) {
-				continue
+		hits := matches.get(line, func() []int {
+			if strings.HasPrefix(strings.TrimSpace(line.Value), "#") {
+				return nil
 			}
+			var out []int
+			for i, c := range staticCredChecks {
+				if c.match(line.Value) {
+					out = append(out, i)
+				}
+			}
+			return out
+		})
+		for _, i := range hits {
+			c := staticCredChecks[i]
 			if sts[job] && (i == awsConfigCheck || i == awsEnvCheck) {
 				continue
 			}

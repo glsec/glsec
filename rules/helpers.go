@@ -268,6 +268,20 @@ func EachScriptBlock(doc *yaml.Node, file string, fn func(node *yaml.Node, file,
 	})
 }
 
+// nodeMemo caches a per-node result within one Check call, for rules that
+// walk each job's lines and so meet a line shared through an anchor once per
+// job (#766).
+type nodeMemo[T any] map[*yaml.Node]T
+
+func (m nodeMemo[T]) get(n *yaml.Node, f func() T) T {
+	if v, ok := m[n]; ok {
+		return v
+	}
+	v := f()
+	m[n] = v
+	return v
+}
+
 // EachScriptBlockPerJob is EachScriptBlock without the sharing shortcut: a
 // sequence used by several jobs is visited once per job.
 func EachScriptBlockPerJob(doc *yaml.Node, file string, fn func(node *yaml.Node, file, job string)) {

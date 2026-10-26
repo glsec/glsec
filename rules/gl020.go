@@ -24,28 +24,22 @@ var checksumRe = regexp.MustCompile(`\b(?:sha(?:256|512|1|224|384)sum|shasum|md5
 func (r *gl020) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
 
+	download := nodeMemo[int]{} // item line of the first saved download, or -1
+	checksum := nodeMemo[bool]{}
+
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
 		lines := CollectJobScriptLines(job)
 
 		// The first command that saves a download to disk.
 		downloadLine, downloadCol := 0, 0
-	scan:
 		for _, l := range lines {
-			cmds := shellCommands(l.Value)
-			for i, cmd := range cmds {
-				saved := savesDownload(withoutSudo(commandWords(cmd.text)))
-				if !saved && isDownload(withoutSudo(commandWords(cmd.text))) {
-					// To stdout, but into a file or an archive extractor.
-					saved = redirectToFileRe.MatchString(cmd.text) ||
-						cmd.piped && i+1 < len(cmds) && extractors[commandName(withoutSudo(commandWords(cmds[i+1].text)))]
+			at := download.get(l, func() int { return firstSavedDownload(l.Value) })
+			if at >= 0 {
+				downloadLine = parser.ScalarContentLine(l, at)
+				if at == 0 {
+					downloadCol = l.Column
 				}
-				if saved {
-					downloadLine = parser.ScalarContentLine(l, cmd.line)
-					if cmd.line == 0 {
-						downloadCol = l.Column
-					}
-					break scan
-				}
+				break
 			}
 		}
 		if downloadLine == 0 {
@@ -54,7 +48,7 @@ func (r *gl020) Check(doc *yaml.Node, file string) []finding.Finding {
 
 		// If any line in the job has a checksum command, the job is considered safe.
 		for _, l := range lines {
-			if checksumRe.MatchString(l.Value) {
+			if checksum.get(l, func() bool { return checksumRe.MatchString(l.Value) }) {
 				return
 			}
 		}
@@ -71,6 +65,24 @@ func (r *gl020) Check(doc *yaml.Node, file string) []finding.Finding {
 	})
 
 	return findings
+}
+
+// firstSavedDownload returns the index of the item line whose command saves a
+// download to disk, or -1.
+func firstSavedDownload(script string) int {
+	cmds := shellCommands(script)
+	for i, cmd := range cmds {
+		saved := savesDownload(withoutSudo(commandWords(cmd.text)))
+		if !saved && isDownload(withoutSudo(commandWords(cmd.text))) {
+			// To stdout, but into a file or an archive extractor.
+			saved = redirectToFileRe.MatchString(cmd.text) ||
+				cmd.piped && i+1 < len(cmds) && extractors[commandName(withoutSudo(commandWords(cmds[i+1].text)))]
+		}
+		if saved {
+			return cmd.line
+		}
+	}
+	return -1
 }
 
 // savesDownload reports whether a command is curl or wget writing what it
