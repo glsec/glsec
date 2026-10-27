@@ -1,0 +1,26 @@
+# #797: a review agent in a | block, inherited through extends: from a hidden job; development environments are not deploys.
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
+.review:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      when: manual
+  stage: .pre
+  script:
+    - echo "$CI_MERGE_REQUEST_IID" > iid.txt
+    - |
+      if [ -n "$POST" ]; then
+        echo posting
+      fi
+      claude -p "/review $CI_MERGE_REQUEST_IID" --dangerously-skip-permissions
+  interruptible: true
+  environment:
+    name: review/mr-$CI_MERGE_REQUEST_IID
+    url: https://example.com/review.html
+    auto_stop_in: one week
+    deployment_tier: development
+
+review:
+  extends: .review

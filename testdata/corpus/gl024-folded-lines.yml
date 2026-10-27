@@ -1,0 +1,8 @@
+# #753, #760: line numbers inside multi-line scalars, and pipes inside quotes.
+build:
+  script:
+    - echo c
+
+      echo d
+    - echo "a | b"
+    - make | tee build.log

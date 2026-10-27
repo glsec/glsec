@@ -1,0 +1,4 @@
+# #802: a zero-width non-joiner inside Persian text is not a hidden character.
+release:
+  script:
+    - echo "| Android | [app.apk - اندروید (توصیه‌شده)](app.apk) |" >> notes.md

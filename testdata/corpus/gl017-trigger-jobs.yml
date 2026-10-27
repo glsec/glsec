@@ -1,0 +1,14 @@
+# #596: a trigger job has no script and needs no image; spec:inputs comparisons are not constant.
+spec:
+  inputs:
+    deploy:
+      type: boolean
+      default: false
+---
+child:
+  trigger:
+    include: child.yml
+deploy:
+  rules:
+    - if: '"$[[ inputs.deploy ]]" == "true"'
+  script: [./deploy.sh]

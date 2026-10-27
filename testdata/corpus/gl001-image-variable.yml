@@ -1,0 +1,9 @@
+# #173: an image from a variable is not "no tag"; a floating tag is.
+variables:
+  MY_IMAGE: alpine:3.19.1
+build:
+  image: $MY_IMAGE
+  script: [make]
+test:
+  image: node:lts
+  script: [npm test]

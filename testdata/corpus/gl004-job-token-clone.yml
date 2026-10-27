@@ -1,0 +1,7 @@
+# #179: CI_JOB_TOKEN in a clone URL of the own instance is fine; sending it elsewhere is not.
+clone:
+  script:
+    - git clone https://gitlab-ci-token:$CI_JOB_TOKEN@gitlab.com/org/repo.git
+upload:
+  script:
+    - 'curl -H "JOB-TOKEN: $CI_JOB_TOKEN" https://ci.appveyor.example.com/api/upload'

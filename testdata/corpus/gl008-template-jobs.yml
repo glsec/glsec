@@ -1,0 +1,6 @@
+# #673: disabling an analyzer job of an included template is reported with the right job name.
+include:
+  - template: Jobs/SAST.gitlab-ci.yml
+semgrep-sast:
+  rules:
+    - when: never

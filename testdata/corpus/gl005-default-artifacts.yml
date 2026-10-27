@@ -1,0 +1,10 @@
+# #181, #815: artifacts under default: are checked too, and broad paths are reported.
+default:
+  artifacts:
+    paths:
+      - .env
+build:
+  script: [make]
+  artifacts:
+    paths:
+      - "**/*"

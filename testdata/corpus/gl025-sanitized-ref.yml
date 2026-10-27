@@ -1,0 +1,10 @@
+# #697: a sanitised or URL-encoded ref is not injected into a URL.
+notify:
+  script:
+    - |
+      BRANCH=$(printf '%s' "$CI_COMMIT_REF_NAME" | tr -cd '[:alnum:]-_.')
+      curl "https://hooks.example.com/notify?branch=${BRANCH}"
+notify-encoded:
+  script:
+    - curl -X POST https://hooks.example.com/notify \
+        --data-urlencode "branch=$CI_COMMIT_REF_NAME"

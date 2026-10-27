@@ -1,0 +1,11 @@
+# #700: an anchored pattern with an escaped slash is fine.
+# #820 (open): the namespace pattern is still reported; the snapshot records today's behaviour.
+deploy:
+  rules:
+    - if: $CI_COMMIT_BRANCH =~ /^release\/\d+\.\d+$/
+  script:
+    - ./deploy.sh
+build:
+  rules:
+    - if: $CI_PROJECT_NAMESPACE =~ /^mygroup\//
+  script: [make]

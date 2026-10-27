@@ -1,0 +1,11 @@
+# #305: a service on a GitLab subdomain is not a GitLab instance audience; a bare instance URL is.
+vault:
+  id_tokens:
+    VAULT_ID_TOKEN:
+      aud: https://vault.gitlab.net
+  script: [./read-secrets.sh]
+broad:
+  id_tokens:
+    TOKEN:
+      aud: https://gitlab.com
+  script: [./read-secrets.sh]

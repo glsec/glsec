@@ -1,0 +1,6 @@
+# #799: DOCKER_AUTH_CONFIG built only from variables is not a hardcoded credential.
+deploy:
+  variables:
+    DOCKER_AUTH_CONFIG: '{"auths":{"${CI_REGISTRY}":{"username":"${CI_REGISTRY_USER}","password":"${CI_REGISTRY_PASSWORD}"}}}'
+  script:
+    - ./deploy.sh

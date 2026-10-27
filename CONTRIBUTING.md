@@ -383,3 +383,25 @@ GITLAB_LINT_TOKEN=... GITLAB_LINT_PROJECT=<id> \
 ```
 
 Passing files are cached per GitLab major.minor version, so a second run only sends what changed.
+
+## Regression corpus
+
+`testdata/corpus/` holds short pipelines taken from past false-positive and false-negative issues, each with a `.golden` snapshot of its findings (`LINE RULE SEVERITY JOB`). `TestCorpus` fails when a finding appears or disappears. When you fix a false positive or a missed finding, add the case: a small `.yml` with a comment that names the issue and what should or shouldn't be reported, then
+
+```sh
+go test ./cmd/glsec -run TestCorpus -update
+```
+
+and review the snapshot diff before committing it. Cases for issues that are still open record today's behaviour and say so in their comment; the snapshot changes with the fix.
+
+## Performance
+
+`TestRulesScaleLinearly` runs every rule on a large generated pipeline and on one four times its size, and fails when a rule takes more than ten times as long, which means it grows faster than linearly. It skips itself under `-race`, which makes it take minutes; CI runs it once without. To compare a change locally:
+
+```sh
+go test ./cmd/glsec -run '^$' -bench . -count 10 > old.txt   # on main
+go test ./cmd/glsec -run '^$' -bench . -count 10 > new.txt   # on your branch
+benchstat old.txt new.txt
+```
+
+`BenchmarkParse`, `BenchmarkRules` and `BenchmarkRun` use a pipeline of 2,000 jobs with `extends:` and `!reference` chains, anchors, long script blocks and a very long line.

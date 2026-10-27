@@ -1,0 +1,4 @@
+# #195: --branch=value is the same as --branch value.
+clone:
+  script:
+    - git clone --branch=$CI_COMMIT_REF_NAME https://example.com/repo.git

@@ -1,0 +1,10 @@
+# #836 (open): bash -x and SHELLOPTS=xtrace trace like set -x. The snapshot records today's behaviour.
+a:
+  script:
+    - set -x
+b:
+  script:
+    - bash -x ./deploy.sh
+c:
+  script:
+    - export SHELLOPTS=xtrace

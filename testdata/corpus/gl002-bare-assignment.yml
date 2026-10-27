@@ -1,0 +1,8 @@
+# #175: assigning a user-controlled variable is not an injection; using it unquoted in a command is.
+checkout:
+  script:
+    - BRANCH=$CI_COMMIT_REF_NAME
+    - git checkout "$BRANCH"
+deploy:
+  script:
+    - eval "deploy $CI_COMMIT_REF_NAME"

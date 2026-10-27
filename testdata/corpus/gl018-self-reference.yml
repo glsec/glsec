@@ -1,0 +1,6 @@
+# #820 (open): a variable that forwards a project variable of the same name is still
+# reported; the snapshot records today's behaviour.
+variables:
+  S3_ACCESS_KEY: $S3_ACCESS_KEY
+upload:
+  script: [./upload.sh]

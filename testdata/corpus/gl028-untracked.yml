@@ -1,0 +1,20 @@
+# #817, #824: paths: does not limit untracked:, and an exclude: without secret patterns does not help.
+test:
+  script: make test
+  artifacts:
+    untracked: true
+    paths:
+      - report.xml
+build:
+  script: make
+  artifacts:
+    untracked: true
+    exclude:
+      - "**/__pycache__/**/*"
+package:
+  script: make dist
+  artifacts:
+    untracked: true
+    exclude:
+      - "**/.env"
+      - "**/*.pem"

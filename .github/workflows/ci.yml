@@ -49,6 +49,10 @@ jobs:
           cache: true
       - run: go mod verify
       - run: go test -race -coverprofile=coverage.out ./...
+      # The large-pipeline tests skip themselves under -race, which makes them
+      # take minutes; once without it is enough (#838).
+      - if: matrix.os == 'ubuntu-latest'
+        run: go test -run 'TestRulesScaleLinearly|TestLargePipelineAllFormats' -v ./cmd/glsec
       # Show coverage on the run's summary page and fail when the total drops
       # below the floor. Raise COVERAGE_FLOOR on purpose, never lower it to
       # make a change pass (#538).

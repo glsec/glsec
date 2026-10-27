@@ -1,0 +1,6 @@
+# #820 (open): a fuzzing job named "migrations" is still reported as a deploy job;
+# the snapshot records today's behaviour.
+fuzz migrations:
+  stage: test
+  interruptible: true
+  script: [npm run fuzz-migrations]

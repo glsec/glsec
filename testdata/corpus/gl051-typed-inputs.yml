@@ -1,0 +1,21 @@
+# #512: typed inputs and inputs limited by rules: options are constrained.
+spec:
+  inputs:
+    count:
+      type: number
+      default: 1
+    debug:
+      type: boolean
+      default: false
+    env:
+      default: staging
+      rules:
+        - if: $[[ inputs.count ]] > 1
+          options: [staging, production]
+    image:
+      default: alpine
+---
+run:
+  image: $[[ inputs.image ]]
+  script:
+    - ./run.sh --env $[[ inputs.env ]] --count $[[ inputs.count ]]

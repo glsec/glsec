@@ -1,0 +1,5 @@
+# #827 (open): an uppercase scheme is still plain HTTP. The snapshot records today's behaviour.
+download:
+  script:
+    - curl -fsSL http://example.com/tool -o tool
+    - curl -fsSL HTTP://example.com/tool -o tool

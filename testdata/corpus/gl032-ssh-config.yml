@@ -1,0 +1,11 @@
+# #296, #302: writing ~/.ssh/config or a public key is not an SSH private key echo.
+deploy:
+  before_script:
+    - eval $(ssh-agent -s)
+    - chmod 600 "$CI_SSH_PRIVATE_KEY_FILE"
+    - ssh-add "$CI_SSH_PRIVATE_KEY_FILE"
+    - mkdir -p ~/.ssh
+    - echo "StrictHostKeyChecking no" >> ~/.ssh/config
+    - echo "$SSH_PUBLIC_KEY" > ~/.ssh/id_ed25519.pub
+  script:
+    - ./deploy.sh
