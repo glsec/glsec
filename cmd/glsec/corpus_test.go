@@ -56,7 +56,8 @@ func TestCorpus(t *testing.T) {
 			if err != nil {
 				t.Fatalf("%v (run with -update to create it)", err)
 			}
-			if got != string(want) {
+			// Git may check the snapshot out with CRLF line endings on Windows.
+			if got != strings.ReplaceAll(string(want), "\r\n", "\n") {
 				t.Errorf("findings differ from %s (run with -update after an intended change)\ngot:\n%swant:\n%s", filepath.Base(golden), got, want)
 			}
 		})

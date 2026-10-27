@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime/debug"
 	"strings"
 	"testing"
 	"time"
@@ -68,6 +69,20 @@ workflow:
 	return b.String()
 }
 
+// raceEnabled reports whether the tests run with -race, which makes the
+// large-pipeline tests take minutes. It reads the build settings rather than
+// a build tag, which gobco ignores when it copies the package.
+func raceEnabled() bool {
+	if bi, ok := debug.ReadBuildInfo(); ok {
+		for _, s := range bi.Settings {
+			if s.Key == "-race" {
+				return s.Value == "true"
+			}
+		}
+	}
+	return false
+}
+
 // ruleTimes returns how long each rule takes on src, the fastest of three runs.
 func ruleTimes(t *testing.T, src string) map[string]time.Duration {
 	t.Helper()
@@ -96,7 +111,7 @@ func ruleTimes(t *testing.T, src string) map[string]time.Duration {
 // #838) without a flaky time budget. Rules that stay under a few milliseconds
 // are skipped, their ratios are noise.
 func TestRulesScaleLinearly(t *testing.T) {
-	if testing.Short() || raceEnabled {
+	if testing.Short() || raceEnabled() {
 		t.Skip("large pipelines; CI runs this without -race")
 	}
 	const (
@@ -129,7 +144,7 @@ func TestRulesScaleLinearly(t *testing.T) {
 // TestLargePipelineAllFormats checks that every output format handles a large
 // pipeline.
 func TestLargePipelineAllFormats(t *testing.T) {
-	if testing.Short() || raceEnabled {
+	if testing.Short() || raceEnabled() {
 		t.Skip("large pipelines; CI runs this without -race")
 	}
 	files := map[string]string{".gitlab-ci.yml": largePipeline(100, 1000)}
