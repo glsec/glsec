@@ -1,3 +1,4 @@
+# lint: skip — includes a remote file on an example host that GitLab cannot fetch
 include:
   - remote: "https://templates.example.com/ci.yml"
 

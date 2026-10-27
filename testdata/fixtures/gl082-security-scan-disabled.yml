@@ -4,6 +4,7 @@ include:
 
 stages:
   - build
+  - test
 
 variables:
   SAST_DISABLED: "true"

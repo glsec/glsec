@@ -1,3 +1,4 @@
+# lint: skip — the variables in include: are what GL084 reports; GitLab cannot resolve them
 workflow:
   rules:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH

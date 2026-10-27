@@ -1,3 +1,4 @@
+# lint: skip — includes placeholder components that do not exist on gitlab.com
 include:
   - component: gitlab.com/components/sast@latest
   - component: gitlab.com/components/dast

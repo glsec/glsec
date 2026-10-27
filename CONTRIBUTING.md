@@ -281,6 +281,8 @@ build:
 
 Create `testdata/fixtures/glNNN-short-name.yml` with a realistic example that exercises the rule. The fixture must be valid GitLab CI YAML — CI validates all fixtures against the GitLab CI JSON schema via `check-jsonschema`. Only a rule that reports something the schema itself rejects may skip this: start its fixture with a `# schema: skip` comment that says why, and put `<!-- schema: skip … -->` before the trigger example in its docs file.
 
+After the schema check, CI also sends every fixture and every trigger and safe example to GitLab's CI Lint API, which rejects things the schema can't see: a `stage:` missing from `stages:`, a `needs:` on a job that doesn't exist, a file without a visible job. So a fixture or example is a complete pipeline, not a fragment. Where GitLab can't accept a block by design (a placeholder include, a component template whose inputs have no values, invalid YAML the rule is about), start the fixture with `# lint: skip — reason` or put `<!-- lint: skip — reason -->` before the block. This job needs a repository secret, so on a pull request from a fork it is skipped and the files are linted after the merge. Examples that use a recent GitLab feature should name the minimum version in the text, since the lint runs against the current gitlab.com release.
+
 ### Step 7 — add a docs file and update the overviews
 
 Create `docs/rules/GLNNN.md` with the full rule documentation (see existing files for structure). Required sections:
@@ -370,3 +372,14 @@ check-jsonschema --builtin-schema gitlab-ci testdata/fixtures/*.yml
 ```
 
 Run this locally before pushing if you add or change a fixture.
+
+The GitLab lint runs with a project access token of a gitlab.com project (`GITLAB_LINT_TOKEN`, `GITLAB_LINT_PROJECT`). With your own token and project:
+
+```sh
+python3 .github/scripts/doc-examples.py /tmp/doc-examples lint
+GITLAB_LINT_TOKEN=... GITLAB_LINT_PROJECT=<id> \
+  python3 .github/scripts/gitlab-ci-lint.py lint /tmp/gitlab-lint-cache \
+  $(grep -L '^# lint: skip' testdata/fixtures/*.yml) /tmp/doc-examples/*.yml
+```
+
+Passing files are cached per GitLab major.minor version, so a second run only sends what changed.

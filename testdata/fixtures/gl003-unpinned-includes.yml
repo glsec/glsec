@@ -1,3 +1,4 @@
+# lint: skip — includes a placeholder project that does not exist on gitlab.com
 include:
   - project: company/ci-templates
     file: /jobs/security.yml

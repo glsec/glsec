@@ -360,6 +360,44 @@ jobs:
           python3 .github/scripts/doc-examples.py "$RUNNER_TEMP/doc-examples"
           check-jsonschema --builtin-schema gitlab-ci "$RUNNER_TEMP"/doc-examples/*.yml
 
+  # The schema checks structure only; GitLab's linter also rejects an undefined
+  # stage or a file without a visible job (#840). Pull requests from forks get
+  # no secrets, so their files are linted on the push to main after the merge.
+  gitlab-ci-lint:
+    name: Lint fixtures and rule doc examples with GitLab
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Look up the GitLab version
+        id: gitlab
+        env:
+          GITLAB_LINT_TOKEN: ${{ secrets.GITLAB_LINT_TOKEN }}
+          GITLAB_LINT_PROJECT: ${{ vars.GITLAB_LINT_PROJECT }}
+        run: python3 .github/scripts/gitlab-ci-lint.py version >> "$GITHUB_OUTPUT"
+      # One cache entry per GitLab major.minor: a new release lints every file
+      # again, in between only new or changed files are sent.
+      - if: steps.gitlab.outputs.version != 'none'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/gitlab-ci-lint-cache
+          key: gitlab-ci-lint-${{ steps.gitlab.outputs.version }}-${{ github.run_id }}
+          restore-keys: gitlab-ci-lint-${{ steps.gitlab.outputs.version }}-
+      # A file whose rule reports something GitLab rejects carries a
+      # "lint: skip" comment that says why.
+      - if: steps.gitlab.outputs.version != 'none'
+        name: Lint with the GitLab CI Lint API
+        env:
+          GITLAB_LINT_TOKEN: ${{ secrets.GITLAB_LINT_TOKEN }}
+          GITLAB_LINT_PROJECT: ${{ vars.GITLAB_LINT_PROJECT }}
+        run: |
+          python3 .github/scripts/doc-examples.py "$RUNNER_TEMP/doc-examples" lint
+          mapfile -t fixtures < <(grep -L '^# lint: skip' testdata/fixtures/*.yml)
+          python3 .github/scripts/gitlab-ci-lint.py lint "$RUNNER_TEMP/gitlab-ci-lint-cache" \
+            "${fixtures[@]}" "$RUNNER_TEMP"/doc-examples/*.yml
+
   version-pins:
     name: Check version pins agree
     runs-on: ubuntu-latest

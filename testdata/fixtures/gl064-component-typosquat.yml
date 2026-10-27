@@ -1,3 +1,4 @@
+# lint: skip — the misspelled component path is what GL064 reports
 # Component path one edit away from components/opentofu under a different namespace.
 include:
   - component: componets/opentofu/opentofu@1.0.0

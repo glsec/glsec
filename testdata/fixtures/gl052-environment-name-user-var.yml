@@ -4,3 +4,11 @@ deploy:
   environment:
     name: review/$CI_COMMIT_REF_NAME
     on_stop: stop-review
+
+stop-review:
+  script:
+    - ./teardown.sh
+  environment:
+    name: review/$CI_COMMIT_REF_NAME
+    action: stop
+  when: manual
