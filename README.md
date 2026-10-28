@@ -147,6 +147,9 @@ glsec --format codeclimate .gitlab-ci.yml > gl-code-quality.json
 # JUnit output for the pipeline Tests tab / MR test widget (works on all tiers)
 glsec --format junit .gitlab-ci.yml > glsec-junit.xml
 
+# GitLab SAST report for the vulnerability report and MR security widget (Ultimate)
+glsec --format gitlab-sast .gitlab-ci.yml > gl-sast-report.json
+
 # treat warn findings as hard failures (exit 1)
 glsec --strict .gitlab-ci.yml
 
@@ -518,7 +521,38 @@ glsec:
 
 Severity mapping (glsec → Code Climate): `error` → `critical`, `warn` → `major`, `info` → `info`.
 
-glsec doesn't write GitLab's security report schema, so `artifacts:reports:sast` can't read its output: GitLab expects its own JSON format there, not SARIF. Code Quality is the way to see glsec's findings in a GitLab merge request.
+### GitLab vulnerability report and security widget (Ultimate)
+
+On GitLab Ultimate, `--format gitlab-sast` (glsec 1.25.0 and later) writes a SAST report in GitLab's security report schema (version 15.2.1). Uploaded as `artifacts:reports:sast`, the findings appear in the project's **vulnerability report**, where they can be triaged, and in the merge request's **security widget**, which lists the findings the merge request adds:
+
+```yaml
+glsec-sast:
+  stage: test
+  image:
+    name: ghcr.io/glsec/glsec:1.24.1
+    entrypoint: [""]
+  script:
+    - glsec --format gitlab-sast --no-exit-codes .gitlab-ci.yml > gl-sast-report.json
+  artifacts:
+    reports:
+      sast: gl-sast-report.json
+```
+
+Each finding becomes one vulnerability:
+
+| Report field | From glsec |
+|---|---|
+| name | rule ID and title, e.g. `GL001: Mutable image tag` |
+| severity | `error` → High, `warn` → Medium, `info` → Low |
+| identifiers | the rule ID with a link to its page (primary), the CWE, the OWASP CICD-SEC category |
+| location | file and line |
+| description, solution | the finding's message and job, and the link to the rule page |
+
+Things to know:
+
+- On Free and Premium, GitLab accepts the report but doesn't show it. Use [Code Quality](#gitlab-code-quality-integration) there; on Ultimate both can run side by side.
+- GitLab matches a finding from one pipeline to the next by its file and line. A merge request that adds or removes lines above an unchanged finding shows it in the widget as fixed and as new.
+- `--no-exit-codes` keeps the job green, so the report is uploaded. To fail the pipeline on findings as well, run glsec a second time without it, or use a [pipeline execution policy](https://gitlab.com/glsec-io/glsec#enforcing-glsec-with-a-pipeline-execution-policy).
 
 ### GitHub Actions
 

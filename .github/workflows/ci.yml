@@ -363,6 +363,16 @@ jobs:
         run: |
           python3 .github/scripts/doc-examples.py "$RUNNER_TEMP/doc-examples"
           check-jsonschema --builtin-schema gitlab-ci "$RUNNER_TEMP"/doc-examples/*.yml
+      # The gitlab-sast writer's golden report has to match GitLab's SAST report
+      # schema, pinned by version and hash (#846).
+      - name: Validate the GitLab SAST report against GitLab's schema
+        env:
+          SCHEMA_URL: https://gitlab.com/gitlab-org/security-products/security-report-schemas/-/raw/v15.2.1/dist/sast-report-format.json
+          SCHEMA_SHA256: f3d877b4ecb519775bb268be0544284a09a01d54c29e4fcc6cb8fed3d91ae1bf
+        run: |
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/sast-report-format.json" "$SCHEMA_URL"
+          echo "$SCHEMA_SHA256  $RUNNER_TEMP/sast-report-format.json" | sha256sum -c -
+          check-jsonschema --schemafile "$RUNNER_TEMP/sast-report-format.json" internal/output/testdata/gitlab-sast.golden.json
 
   # The schema checks structure only; GitLab's linter also rejects an undefined
   # stage or a file without a visible job (#840). Pull requests from forks get

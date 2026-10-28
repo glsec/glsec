@@ -74,7 +74,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("glsec", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 
-	formatFlag := flags.String("format", "text", "output format: text, table, json, sarif, codeclimate, junit")
+	formatFlag := flags.String("format", "text", "output format: text, table, json, sarif, codeclimate, junit, gitlab-sast")
 	configFlag := flags.String("config", config.DefaultFile, "path to .glsec.yml config file")
 	versionFlag := flags.Bool("version", false, "print version and exit")
 	gitlabVersionFlag := flags.String("gitlab-version", "", "target GitLab version, e.g. 16.0 (skips rules not available in that version)")
@@ -140,7 +140,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 	format, ok := output.ParseFormat(*formatFlag)
 	if !ok {
-		_, _ = fmt.Fprintf(stderr, "unknown format %q — use text, table, json, sarif, codeclimate, or junit\n", *formatFlag)
+		_, _ = fmt.Fprintf(stderr, "unknown format %q — use text, table, json, sarif, codeclimate, junit, or gitlab-sast\n", *formatFlag)
 		return 2
 	}
 
@@ -411,6 +411,9 @@ func scanRoot(file string, opt scanOptions) (findings []finding.Finding, jobCoun
 	return findings, jobCount, unjustified, true
 }
 
+// scanStart is when glsec started, the scan start time in a GitLab SAST report.
+var scanStart = time.Now()
+
 // writeOutput renders findings in the requested format.
 func writeOutput(w io.Writer, format output.Format, findings []finding.Finding, jobCount int, colorEnabled, isTTY bool) error {
 	switch format {
@@ -418,6 +421,11 @@ func writeOutput(w io.Writer, format output.Format, findings []finding.Finding, 
 		return output.WriteSARIF(w, findings, output.SARIFTool{Version: version, Rule: sarifRuleInfo}, rules.CWEID, rules.CWEName, rules.OWASPCategories, rules.OWASPCategoryName, rules.ASVSRequirements, rules.ASVSRequirementName)
 	case output.FormatJSON:
 		return output.WriteJSON(w, findings, rules.OWASPCategories, rules.ASVSRequirements)
+	case output.FormatGitLabSAST:
+		return output.WriteGitLabSAST(w, findings, output.GitLabSASTMeta{
+			Version: version, Rule: sarifRuleInfo, CWE: rules.CWEID,
+			OWASP: rules.OWASPCategories, OWASPName: rules.OWASPCategoryName, Start: scanStart,
+		})
 	default:
 		return output.Write(w, format, findings, jobCount, colorEnabled, isTTY)
 	}

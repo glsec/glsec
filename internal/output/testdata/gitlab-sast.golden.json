@@ -1,0 +1,151 @@
+{
+  "version": "15.2.1",
+  "scan": {
+    "analyzer": {
+      "id": "glsec",
+      "name": "glsec",
+      "url": "https://glsec.github.io",
+      "version": "1.2.3",
+      "vendor": {
+        "name": "glsec"
+      }
+    },
+    "scanner": {
+      "id": "glsec",
+      "name": "glsec",
+      "url": "https://glsec.github.io",
+      "version": "1.2.3",
+      "vendor": {
+        "name": "glsec"
+      }
+    },
+    "type": "sast",
+    "start_time": "2026-10-28T08:30:00",
+    "end_time": "2026-10-28T08:30:00",
+    "status": "success"
+  },
+  "vulnerabilities": [
+    {
+      "id": "a86fd0a6-5625-5a01-8f51-55234ea1857d",
+      "name": "GL001: Mutable image tag",
+      "description": "image \"node:latest\" uses mutable tag \"latest\" (job: build)",
+      "severity": "High",
+      "solution": "See https://glsec.github.io/rules/GL001/",
+      "identifiers": [
+        {
+          "type": "glsec_rule",
+          "name": "GL001",
+          "value": "GL001",
+          "url": "https://glsec.github.io/rules/GL001/"
+        },
+        {
+          "type": "cwe",
+          "name": "CWE-1104",
+          "value": "1104",
+          "url": "https://cwe.mitre.org/data/definitions/1104.html"
+        },
+        {
+          "type": "owasp_cicd",
+          "name": "CICD-SEC-3 Dependency Chain Abuse",
+          "value": "CICD-SEC-3"
+        }
+      ],
+      "location": {
+        "file": ".gitlab-ci.yml",
+        "start_line": 3
+      }
+    },
+    {
+      "id": "b88537c9-574c-5226-8bed-77321d3bc333",
+      "name": "GL053",
+      "description": "no top-level workflow:rules",
+      "severity": "Medium",
+      "solution": "See https://glsec.github.io/rules/GL053/",
+      "identifiers": [
+        {
+          "type": "glsec_rule",
+          "name": "GL053",
+          "value": "GL053",
+          "url": "https://glsec.github.io/rules/GL053/"
+        },
+        {
+          "type": "owasp_cicd",
+          "name": "CICD-SEC-1",
+          "value": "CICD-SEC-1"
+        },
+        {
+          "type": "owasp_cicd",
+          "name": "CICD-SEC-4",
+          "value": "CICD-SEC-4"
+        }
+      ],
+      "location": {
+        "file": ".gitlab-ci.yml",
+        "start_line": 1
+      }
+    },
+    {
+      "id": "2c783054-e57f-59d6-b5c0-0ffc85087b4b",
+      "name": "GL070",
+      "description": "informational (job: lint)",
+      "severity": "Low",
+      "solution": "See https://glsec.github.io/rules/GL070/",
+      "identifiers": [
+        {
+          "type": "glsec_rule",
+          "name": "GL070",
+          "value": "GL070",
+          "url": "https://glsec.github.io/rules/GL070/"
+        }
+      ],
+      "location": {
+        "file": "ci/child.yml",
+        "start_line": 1
+      }
+    },
+    {
+      "id": "63e00211-36dc-5e8c-aee9-478b67a045de",
+      "name": "SC2086",
+      "description": "Double quote to prevent globbing and word splitting. (job: deploy)",
+      "severity": "Medium",
+      "solution": "See https://www.shellcheck.net/wiki/SC2086",
+      "identifiers": [
+        {
+          "type": "glsec_rule",
+          "name": "SC2086",
+          "value": "SC2086",
+          "url": "https://www.shellcheck.net/wiki/SC2086"
+        }
+      ],
+      "location": {
+        "file": ".gitlab-ci.yml",
+        "start_line": 12
+      }
+    },
+    {
+      "id": "bba4a752-fb67-58b2-823b-b2920d00fd3d",
+      "name": "GL011: Download and execute",
+      "description": "pipe\\x0ato sh (job: a\\u202eb)",
+      "severity": "High",
+      "solution": "See https://glsec.github.io/rules/GL011/",
+      "identifiers": [
+        {
+          "type": "glsec_rule",
+          "name": "GL011",
+          "value": "GL011",
+          "url": "https://glsec.github.io/rules/GL011/"
+        },
+        {
+          "type": "cwe",
+          "name": "CWE-494",
+          "value": "494",
+          "url": "https://cwe.mitre.org/data/definitions/494.html"
+        }
+      ],
+      "location": {
+        "file": ".gitlab-ci.yml",
+        "start_line": 7
+      }
+    }
+  ]
+}

@@ -428,3 +428,46 @@ func TestEveryRuleHasAPage(t *testing.T) {
 		}
 	}
 }
+
+// The gitlab-sast report takes rule titles, CWE and OWASP IDs from the rule
+// metadata (#846).
+func TestRun_FormatGitLabSAST(t *testing.T) {
+	code, stdout, stderr := runCLI(t, map[string]string{".gitlab-ci.yml": errorPipeline}, "--format", "gitlab-sast", ".gitlab-ci.yml")
+	if code != 1 {
+		t.Fatalf("exit %d, want 1: %s", code, stderr)
+	}
+	var r struct {
+		Version         string `json:"version"`
+		Vulnerabilities []struct {
+			Name        string `json:"name"`
+			Severity    string `json:"severity"`
+			Identifiers []struct {
+				Type  string `json:"type"`
+				Value string `json:"value"`
+			} `json:"identifiers"`
+		} `json:"vulnerabilities"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &r); err != nil {
+		t.Fatalf("not JSON: %v\n%s", err, stdout)
+	}
+	if r.Version != output.GitLabSASTSchemaVersion {
+		t.Errorf("version = %q", r.Version)
+	}
+	var gl001 bool
+	for _, v := range r.Vulnerabilities {
+		if !strings.HasPrefix(v.Name, "GL001: ") || v.Severity != "High" {
+			continue
+		}
+		gl001 = true
+		types := map[string]string{}
+		for _, id := range v.Identifiers {
+			types[id.Type] = id.Value
+		}
+		if types["glsec_rule"] != "GL001" || types["cwe"] != "1104" || types["owasp_cicd"] == "" {
+			t.Errorf("GL001 identifiers = %+v", v.Identifiers)
+		}
+	}
+	if !gl001 {
+		t.Errorf("no titled High GL001 vulnerability in %s", stdout)
+	}
+}

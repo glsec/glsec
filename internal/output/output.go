@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/glsec/glsec/internal/color"
 	"github.com/glsec/glsec/internal/finding"
@@ -30,11 +31,12 @@ const (
 	FormatCodeClimate Format = "codeclimate"
 	FormatTable       Format = "table"
 	FormatJUnit       Format = "junit"
+	FormatGitLabSAST  Format = "gitlab-sast"
 )
 
 func ParseFormat(s string) (Format, bool) {
 	switch Format(s) {
-	case FormatText, FormatJSON, FormatSARIF, FormatCodeClimate, FormatTable, FormatJUnit:
+	case FormatText, FormatJSON, FormatSARIF, FormatCodeClimate, FormatTable, FormatJUnit, FormatGitLabSAST:
 		return Format(s), true
 	default:
 		return "", false
@@ -54,6 +56,8 @@ func Write(w io.Writer, format Format, findings []finding.Finding, jobCount int,
 		return writeCodeClimate(w, findings)
 	case FormatJUnit:
 		return writeJUnit(w, findings)
+	case FormatGitLabSAST:
+		return WriteGitLabSAST(w, findings, GitLabSASTMeta{Start: time.Now()})
 	case FormatTable:
 		return writeTable(w, findings, jobCount, colorEnabled, isTTY)
 	default:
