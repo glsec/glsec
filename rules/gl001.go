@@ -387,3 +387,7 @@ func imageTag(ref string) string {
 	}
 	return ""
 }
+
+// IsMutableImageTag reports whether tag is a well-known moving tag such as
+// latest or stable. The pipeline inventory uses it to mark images (#830).
+func IsMutableImageTag(tag string) bool { return mutableTags[tag] }

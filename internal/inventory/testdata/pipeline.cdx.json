@@ -1,0 +1,408 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "serialNumber": "urn:uuid:0ae6f97e-3332-5d99-8d8e-46d847158bcf",
+  "version": 1,
+  "metadata": {
+    "tools": {
+      "components": [
+        {
+          "type": "application",
+          "name": "glsec",
+          "version": "1.2.3",
+          "externalReferences": [
+            {
+              "type": "website",
+              "url": "https://glsec.github.io"
+            }
+          ]
+        }
+      ]
+    },
+    "component": {
+      "type": "file",
+      "bom-ref": "pipeline",
+      "name": ".gitlab-ci.yml"
+    }
+  },
+  "components": [
+    {
+      "type": "library",
+      "bom-ref": "component:gitlab.com/components/sast/sast@~latest",
+      "name": "gitlab.com/components/sast/sast",
+      "version": "~latest",
+      "properties": [
+        {
+          "name": "glsec:kind",
+          "value": "component"
+        },
+        {
+          "name": "glsec:pinning",
+          "value": "mutable"
+        },
+        {
+          "name": "glsec:line",
+          "value": "6"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "component:gitlab.com/g/p/c@1.2",
+      "name": "gitlab.com/g/p/c",
+      "version": "1.2",
+      "properties": [
+        {
+          "name": "glsec:kind",
+          "value": "component"
+        },
+        {
+          "name": "glsec:pinning",
+          "value": "mutable"
+        },
+        {
+          "name": "glsec:line",
+          "value": "55"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "component:gitlab.com/glsec-io/glsec/glsec@v1.0.26",
+      "name": "gitlab.com/glsec-io/glsec/glsec",
+      "version": "v1.0.26",
+      "properties": [
+        {
+          "name": "glsec:kind",
+          "value": "component"
+        },
+        {
+          "name": "glsec:pinning",
+          "value": "version"
+        },
+        {
+          "name": "glsec:line",
+          "value": "4"
+        }
+      ]
+    },
+    {
+      "type": "container",
+      "bom-ref": "image:$LINT_IMAGE",
+      "name": "$LINT_IMAGE",
+      "properties": [
+        {
+          "name": "glsec:kind",
+          "value": "image"
+        },
+        {
+          "name": "glsec:pinning",
+          "value": "unresolved"
+        },
+        {
+          "name": "glsec:line",
+          "value": "40"
+        },
+        {
+          "name": "glsec:job",
+          "value": "lint"
+        }
+      ]
+    },
+    {
+      "type": "container",
+      "bom-ref": "image:alpine:3.22.2",
+      "name": "alpine",
+      "version": "3.22.2",
+      "purl": "pkg:docker/library/alpine@3.22.2",
+      "properties": [
+        {
+          "name": "glsec:kind",
+          "value": "image"
+        },
+        {
+          "name": "glsec:pinning",
+          "value": "version"
+        },
+        {
+          "name": "glsec:line",
+          "value": "22"
+        },
+        {
+          "name": "glsec:job",
+          "value": "plain"
+        }
+      ]
+    },
+    {
+      "type": "container",
+      "bom-ref": "image:ghcr.io/glsec/glsec:1.24.1",
+      "name": "ghcr.io/glsec/glsec",
+      "version": "1.24.1",
+      "purl": "pkg:docker/glsec/glsec@1.24.1?repository_url=ghcr.io",
+      "properties": [
+        {
+          "name": "glsec:kind",
+          "value": "image"
+        },
+        {
+          "name": "glsec:pinning",
+          "value": "version"
+        },
+        {
+          "name": "glsec:line",
+          "value": "48"
+        },
+        {
+          "name": "glsec:job",
+          "value": "deploy"
+        }
+      ]
+    },
+    {
+      "type": "container",
+      "bom-ref": "image:registry.example.com/team/builder:1.4.0@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "name": "registry.example.com/team/builder",
+      "version": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "purl": "pkg:docker/team/builder@sha256%3A0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef?repository_url=registry.example.com",
+      "properties": [
+        {
+          "name": "glsec:kind",
+          "value": "image"
+        },
+        {
+          "name": "glsec:pinning",
+          "value": "digest"
+        },
+        {
+          "name": "glsec:line",
+          "value": "25"
+        },
+        {
+          "name": "glsec:job",
+          "value": "build"
+        },
+        {
+          "name": "glsec:job",
+          "value": "test"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "project:$TEMPLATE_PROJECT",
+      "name": "$TEMPLATE_PROJECT",
+      "properties": [
+        {
+          "name": "glsec:kind",
+          "value": "project"
+        },
+        {
+          "name": "glsec:pinning",
+          "value": "unresolved"
+        },
+        {
+          "name": "glsec:line",
+          "value": "18"
+        },
+        {
+          "name": "glsec:file",
+          "value": "x.yml"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "project:my-group/ci-templates@3a1f9c2b7e5d4a6f8c0b1d2e3f4a5b6c7d8e9f01",
+      "name": "my-group/ci-templates",
+      "version": "3a1f9c2b7e5d4a6f8c0b1d2e3f4a5b6c7d8e9f01",
+      "properties": [
+        {
+          "name": "glsec:kind",
+          "value": "project"
+        },
+        {
+          "name": "glsec:pinning",
+          "value": "sha"
+        },
+        {
+          "name": "glsec:line",
+          "value": "7"
+        },
+        {
+          "name": "glsec:file",
+          "value": "/jobs/build.yml"
+        },
+        {
+          "name": "glsec:file",
+          "value": "/jobs/test.yml"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "project:my-group/ci-templates@main",
+      "name": "my-group/ci-templates",
+      "version": "main",
+      "properties": [
+        {
+          "name": "glsec:kind",
+          "value": "project"
+        },
+        {
+          "name": "glsec:pinning",
+          "value": "mutable"
+        },
+        {
+          "name": "glsec:line",
+          "value": "10"
+        },
+        {
+          "name": "glsec:file",
+          "value": "/jobs/deploy.yml"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "remote:https://example.com/ci.yml",
+      "name": "https://example.com/ci.yml",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://example.com/ci.yml"
+        }
+      ],
+      "properties": [
+        {
+          "name": "glsec:kind",
+          "value": "remote"
+        },
+        {
+          "name": "glsec:pinning",
+          "value": "digest"
+        },
+        {
+          "name": "glsec:line",
+          "value": "13"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "remote:https://example.com/other.yml",
+      "name": "https://example.com/other.yml",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://example.com/other.yml"
+        }
+      ],
+      "properties": [
+        {
+          "name": "glsec:kind",
+          "value": "remote"
+        },
+        {
+          "name": "glsec:pinning",
+          "value": "none"
+        },
+        {
+          "name": "glsec:line",
+          "value": "15"
+        }
+      ]
+    },
+    {
+      "type": "container",
+      "bom-ref": "service:postgres:17",
+      "name": "postgres",
+      "version": "17",
+      "purl": "pkg:docker/library/postgres@17",
+      "properties": [
+        {
+          "name": "glsec:kind",
+          "value": "service"
+        },
+        {
+          "name": "glsec:pinning",
+          "value": "mutable"
+        },
+        {
+          "name": "glsec:line",
+          "value": "34"
+        },
+        {
+          "name": "glsec:job",
+          "value": "test"
+        }
+      ]
+    },
+    {
+      "type": "container",
+      "bom-ref": "service:redis:latest",
+      "name": "redis",
+      "version": "latest",
+      "purl": "pkg:docker/library/redis@latest",
+      "properties": [
+        {
+          "name": "glsec:kind",
+          "value": "service"
+        },
+        {
+          "name": "glsec:pinning",
+          "value": "mutable"
+        },
+        {
+          "name": "glsec:line",
+          "value": "35"
+        },
+        {
+          "name": "glsec:job",
+          "value": "test"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "template:Jobs/SAST.gitlab-ci.yml",
+      "name": "Jobs/SAST.gitlab-ci.yml",
+      "properties": [
+        {
+          "name": "glsec:kind",
+          "value": "template"
+        },
+        {
+          "name": "glsec:pinning",
+          "value": "gitlab"
+        },
+        {
+          "name": "glsec:line",
+          "value": "16"
+        }
+      ]
+    }
+  ],
+  "dependencies": [
+    {
+      "ref": "pipeline",
+      "dependsOn": [
+        "component:gitlab.com/components/sast/sast@~latest",
+        "component:gitlab.com/g/p/c@1.2",
+        "component:gitlab.com/glsec-io/glsec/glsec@v1.0.26",
+        "image:$LINT_IMAGE",
+        "image:alpine:3.22.2",
+        "image:ghcr.io/glsec/glsec:1.24.1",
+        "image:registry.example.com/team/builder:1.4.0@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "project:$TEMPLATE_PROJECT",
+        "project:my-group/ci-templates@3a1f9c2b7e5d4a6f8c0b1d2e3f4a5b6c7d8e9f01",
+        "project:my-group/ci-templates@main",
+        "remote:https://example.com/ci.yml",
+        "remote:https://example.com/other.yml",
+        "service:postgres:17",
+        "service:redis:latest",
+        "template:Jobs/SAST.gitlab-ci.yml"
+      ]
+    }
+  ]
+}

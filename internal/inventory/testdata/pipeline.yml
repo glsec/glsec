@@ -1,0 +1,55 @@
+# Every form the inventory reads: includes in all shapes, images and services
+# through default:, anchors, extends:, variables and a trigger include (#830).
+include:
+  - component: gitlab.com/glsec-io/glsec/glsec@v1.0.26
+    inputs: {stage: test}
+  - component: gitlab.com/components/sast/sast@~latest
+  - project: my-group/ci-templates
+    ref: 3a1f9c2b7e5d4a6f8c0b1d2e3f4a5b6c7d8e9f01
+    file: [/jobs/build.yml, /jobs/test.yml]
+  - project: my-group/ci-templates
+    ref: main
+    file: /jobs/deploy.yml
+  - remote: https://example.com/ci.yml
+    integrity: sha256-AbCdEf0123456789AbCdEf0123456789AbCdEf01234=
+  - https://example.com/other.yml
+  - template: Jobs/SAST.gitlab-ci.yml
+  - local: /ci/local.yml
+  - project: $TEMPLATE_PROJECT
+    file: x.yml
+
+default:
+  image: alpine:3.22.2
+
+.base: &base
+  image: registry.example.com/team/builder:1.4.0@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+
+build:
+  <<: *base
+  script: [make]
+
+test:
+  extends: .base
+  services:
+    - postgres:17
+    - name: redis:latest
+      alias: cache
+  script: [make test]
+
+lint:
+  image: $LINT_IMAGE
+  script: [lint]
+
+plain:
+  script: [echo]
+
+deploy:
+  image:
+    name: ghcr.io/glsec/glsec:1.24.1
+    entrypoint: [""]
+  script: [deploy]
+
+child:
+  trigger:
+    include:
+      - component: gitlab.com/g/p/c@1.2

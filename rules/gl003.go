@@ -135,3 +135,7 @@ func isMutableRef(ref string) bool {
 	}
 	return mutableRefs[ref]
 }
+
+// IsMutableRef reports whether ref is a well-known branch name that moves,
+// as GL003 judges include refs. The pipeline inventory uses it (#830).
+func IsMutableRef(ref string) bool { return isMutableRef(ref) }

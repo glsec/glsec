@@ -171,6 +171,9 @@ glsec --only GL001,GL003 .gitlab-ci.yml
 # skip specific rules
 glsec --skip GL008,GL022 .gitlab-ci.yml
 
+# CycloneDX BOM of the images and includes the pipeline pulls in (see Pipeline inventory)
+glsec inventory .gitlab-ci.yml > pipeline.cdx.json
+
 # list all rules (ID, severity, OWASP, description); --format json / --owasp also supported
 glsec list
 glsec list --owasp CICD-SEC-4
@@ -553,6 +556,43 @@ Things to know:
 - On Free and Premium, GitLab accepts the report but doesn't show it. Use [Code Quality](#gitlab-code-quality-integration) there; on Ultimate both can run side by side.
 - GitLab matches a finding from one pipeline to the next by its file and line. A merge request that adds or removes lines above an unchanged finding shows it in the widget as fixed and as new.
 - `--no-exit-codes` keeps the job green, so the report is uploaded. To fail the pipeline on findings as well, run glsec a second time without it, or use a [pipeline execution policy](https://gitlab.com/glsec-io/glsec#enforcing-glsec-with-a-pipeline-execution-policy).
+
+### Pipeline inventory (CycloneDX)
+
+`glsec inventory` lists what a pipeline pulls in as a [CycloneDX 1.6](https://cyclonedx.org/docs/1.6/json/) bill of materials, so SBOM tools such as Dependency-Track can track it next to your application's dependencies. It reports no findings and exits 0, or 2 when the file can't be read.
+
+```sh
+glsec inventory .gitlab-ci.yml > pipeline.cdx.json
+```
+
+| Listed | CycloneDX type | Name and version |
+|---|---|---|
+| `image:` of every job, through `extends:`, anchors, `default:` and a top-level `image:` | `container` | image and tag or digest, with a `pkg:docker` purl |
+| `services:` | `container` | the same |
+| `include: component:` | `library` | component path and version |
+| `include: project:` | `library` | project and `ref:`, the files as `glsec:file` properties |
+| `include: remote:` (and a URL written as a plain string) | `library` | the URL, also as a `distribution` reference |
+| `include: template:` | `library` | template name |
+
+Includes of `trigger:` jobs count too. Every component carries these properties:
+
+- `glsec:kind`: `image`, `service`, `component`, `project`, `remote` or `template`
+- `glsec:pinning`:
+  - `digest`: an image digest, or `integrity:` on a remote include
+  - `sha`: a full commit SHA
+  - `version`: an exact version, or a tag that isn't a known moving one
+  - `mutable`: for example `latest`, `17`, `main`, `~latest` or `@1.2`
+  - `none`: no tag or ref
+  - `unresolved`: the reference contains a CI variable or input
+  - `gitlab`: a template, which moves with your GitLab version
+- `glsec:job`: each job that uses an image or service
+- `glsec:line`: where the reference first appears
+
+The pipeline file is the BOM's `metadata.component`; a single `dependencies` entry links it to every component. Jobs are not components of their own, since they are not software a BOM tool could track; the image properties name them instead.
+
+The output depends only on the pipeline: there is no timestamp, and the serial number is derived from the content, so an unchanged pipeline gives a byte-identical BOM and diffs stay clean. Upload it to Dependency-Track as a project BOM (`PUT /api/v1/bom`) or with any CycloneDX-aware tool.
+
+Like the rest of glsec it works offline: includes are listed, not fetched, so what an include or component brings in itself is not part of the BOM. `local:` and `artifact:` includes are left out, since they come from the repository or the pipeline. There is no vulnerability data; an SBOM tool adds that from the purls.
 
 ### GitHub Actions
 

@@ -47,6 +47,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) >= 1 && args[0] == "list" {
 		return runList(args[1:], stdout, stderr)
 	}
+	if len(args) >= 1 && args[0] == "inventory" {
+		return runInventory(args[1:], stdout, stderr)
+	}
 	if len(args) >= 1 && args[0] == "explain" {
 		if len(args) < 2 {
 			_, _ = fmt.Fprintln(stderr, "usage: glsec explain <RULE-ID>")
@@ -114,6 +117,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		_, _ = fmt.Fprintln(stderr, "usage: glsec [flags] [file]")
 		_, _ = fmt.Fprintln(stderr, "       glsec explain <RULE-ID>")
 		_, _ = fmt.Fprintln(stderr, "       glsec list [--format text|json] [--owasp CICD-SEC-N]")
+		_, _ = fmt.Fprintln(stderr, "       glsec inventory [--format cyclonedx] [file]")
 		_, _ = fmt.Fprintln(stderr, "       If no file is given, glsec looks for .gitlab-ci.yml in the current directory.")
 		flags.PrintDefaults()
 	}
