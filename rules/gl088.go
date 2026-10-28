@@ -30,10 +30,19 @@ var scriptOnlyInVariables = map[string]bool{
 // sides because RE2 has no lookaround.
 const boundaryClass = `[^A-Za-z0-9_-]`
 
+type scriptSecretPattern struct {
+	name string
+	// prefix is the literal every token of this type starts with, empty when
+	// there is none. Most script lines contain none of them, and a
+	// strings.Contains is far cheaper than the regexp (#870).
+	prefix string
+	re     *regexp.Regexp
+}
+
 // scriptSecretPatterns are GL006's patterns with the whole-value anchors
 // replaced by token boundaries, so they find a token inside a command (#737).
-var scriptSecretPatterns = func() []secretPattern {
-	out := make([]secretPattern, 0, len(secretPatterns))
+var scriptSecretPatterns = func() []scriptSecretPattern {
+	out := make([]scriptSecretPattern, 0, len(secretPatterns))
 	for _, p := range secretPatterns {
 		if scriptOnlyInVariables[p.name] {
 			continue
@@ -44,7 +53,11 @@ var scriptSecretPatterns = func() []secretPattern {
 			flags, expr = "(?i)", strings.TrimPrefix(expr, "(?i)")
 		}
 		expr = strings.TrimSuffix(strings.TrimPrefix(expr, "^"), "$")
-		out = append(out, secretPattern{p.name, regexp.MustCompile(
+		prefix := ""
+		if flags == "" {
+			prefix, _ = regexp.MustCompile(expr).LiteralPrefix()
+		}
+		out = append(out, scriptSecretPattern{name: p.name, prefix: prefix, re: regexp.MustCompile(
 			flags + `(?:^|` + boundaryClass + `)(` + expr + `)(?:$|` + boundaryClass + `)`)})
 	}
 	return out
@@ -79,6 +92,9 @@ func scriptSecrets(line string) []string {
 	var names []string
 	var taken [][2]int
 	for _, p := range scriptSecretPatterns {
+		if p.prefix != "" && !strings.Contains(line, p.prefix) {
+			continue
+		}
 		// The boundary after a token is part of the match, so the next search
 		// starts at the token's end: two tokens may share one separator.
 		for pos := 0; pos < len(line); {
