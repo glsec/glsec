@@ -189,6 +189,21 @@ func TestLargePipelineAllFormats(t *testing.T) {
 	}
 }
 
+// TestWriteBenchmarkInput writes the pipeline the benchmark history scans to
+// the file GLSEC_BENCH_INPUT names (#875). The history workflow measures every
+// commit and old release on one stored copy, so a change to largePipeline
+// doesn't shift the series; regenerate it only together with a new input
+// version on the benchmarks branch.
+func TestWriteBenchmarkInput(t *testing.T) {
+	path := os.Getenv("GLSEC_BENCH_INPUT")
+	if path == "" {
+		t.Skip("set GLSEC_BENCH_INPUT to write the benchmark input")
+	}
+	if err := os.WriteFile(path, []byte(largePipeline(2000, 0)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func BenchmarkParse(b *testing.B) {
 	src := []byte(largePipeline(2000, 20000))
 	b.SetBytes(int64(len(src)))
