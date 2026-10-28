@@ -73,15 +73,22 @@ func checkTokenLine(node *yaml.Node, file string) []finding.Finding {
 			if host == "" || isGitLabDomain(host) {
 				continue
 			}
+			msg := fmt.Sprintf(
+				"CI_JOB_TOKEN sent to non-GitLab host %q — this token is scoped to the GitLab API and should not be forwarded to external services",
+				host,
+			)
+			if hasGitLabShape(w) {
+				msg = fmt.Sprintf(
+					"CI_JOB_TOKEN sent to hardcoded GitLab host %q — if this is the instance running the pipeline, use $CI_API_V4_URL / $CI_SERVER_HOST so the token can't go to another instance after a move or fork",
+					host,
+				)
+			}
 			f := finding.Finding{
 				RuleID:   "GL004",
 				Severity: finding.Warn,
-				Message: fmt.Sprintf(
-					"CI_JOB_TOKEN sent to non-GitLab host %q — this token is scoped to the GitLab API and should not be forwarded to external services",
-					host,
-				),
-				File: file,
-				Line: parser.ScalarContentLine(node, cmd.line),
+				Message:  msg,
+				File:     file,
+				Line:     parser.ScalarContentLine(node, cmd.line),
 			}
 			if cmd.line == 0 {
 				f.Col = node.Column
@@ -126,6 +133,23 @@ var (
 	urlWordRe = regexp.MustCompile(`^(?i:https?)://(.+)$`)
 	hostRe    = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.\-]*$`)
 )
+
+// gitLabShapes are the markers of a GitLab API, job-artifact or trigger URL,
+// and of the gitlab-ci-token userinfo used by git over HTTPS.
+var gitLabShapes = []string{"/api/v4/", "/-/jobs/artifacts/", "/trigger/pipeline", "gitlab-ci-token:"}
+
+// hasGitLabShape reports whether a URL word has the shape of a GitLab
+// instance's URL, which suggests a self-hosted instance rather than an
+// unrelated service.
+func hasGitLabShape(word string) bool {
+	word = strings.ToLower(word)
+	for _, s := range gitLabShapes {
+		if strings.Contains(word, s) {
+			return true
+		}
+	}
+	return false
+}
 
 func isGitLabDomain(domain string) bool {
 	return domain == "gitlab.com" || strings.HasSuffix(domain, ".gitlab.com")

@@ -198,6 +198,21 @@ build:
 	}
 }
 
+func TestGL004_SelfHostedGitLabAdvice(t *testing.T) {
+	f := findings004(t, `
+pages:
+  script:
+    - curl -X POST -F "token=$CI_JOB_TOKEN" https://gitlab.example.org/api/v4/projects/42/trigger/pipeline
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for token sent to GitLab-shaped URL on a foreign host, got %d", len(f))
+	}
+	want := `CI_JOB_TOKEN sent to hardcoded GitLab host "gitlab.example.org" — if this is the instance running the pipeline, use $CI_API_V4_URL / $CI_SERVER_HOST so the token can't go to another instance after a move or fork`
+	if f[0].Message != want {
+		t.Errorf("unexpected message:\n got: %s\nwant: %s", f[0].Message, want)
+	}
+}
+
 func TestGL004_LineNumbers(t *testing.T) {
 	f := findings004(t, `
 upload:
