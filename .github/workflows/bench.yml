@@ -1,0 +1,62 @@
+name: Benchmarks
+
+# Compares the rule benchmarks of a pull request with its base (#872). The
+# scaling test catches a rule that grows quadratically; this catches one that
+# gets a constant factor slower. Base and head run alternately in one job, so
+# both see the same machine: shared runners vary by 10 to 30% between jobs,
+# which rules out a fixed time budget. The table goes to the job summary; the
+# job fails only on a large regression that every run agrees on.
+
+on:
+  pull_request:
+    paths:
+      - "**.go"
+      - go.mod
+      - go.sum
+      - .github/workflows/bench.yml
+      - .github/scripts/bench-compare.py
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bench-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  compare:
+    name: Compare benchmarks with the base
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Build the base and head test binaries
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git worktree add --detach "$RUNNER_TEMP/base" "$BASE_SHA"
+          go test -c -o "$RUNNER_TEMP/head.test" ./cmd/glsec
+          (cd "$RUNNER_TEMP/base" && go test -c -o "$RUNNER_TEMP/base.test" ./cmd/glsec)
+
+      # Alternating spreads a slow phase of the runner over both sides.
+      - name: Run the benchmarks
+        run: |
+          for _ in 1 2 3 4 5 6 7 8; do
+            for side in base head; do
+              dir="$GITHUB_WORKSPACE"
+              [ "$side" = base ] && dir="$RUNNER_TEMP/base"
+              (cd "$dir/cmd/glsec" && "$RUNNER_TEMP/$side.test" -test.run '^$' \
+                -test.bench 'BenchmarkRules|BenchmarkRun' -test.benchmem -test.count 1) \
+                >> "$RUNNER_TEMP/$side.txt"
+            done
+          done
+
+      - name: Compare
+        run: python3 .github/scripts/bench-compare.py "$RUNNER_TEMP/base.txt" "$RUNNER_TEMP/head.txt"
