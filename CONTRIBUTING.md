@@ -95,9 +95,15 @@ And one fixture under `testdata/fixtures/`:
 testdata/fixtures/glNNN-short-name.yml   # must be valid GitLab CI YAML
 ```
 
+### Before you start — does an existing rule cover it?
+
+Most ideas fit an existing rule. Another package manager, shell syntax or flag for a pattern glsec already reports goes into that rule's table or pattern, not into a new `GLNNN`: for example the install commands of GL023, the verification bypasses of GL069, or the PowerShell forms of GL004 and GL044. A new rule costs a doc page, a fixture, OWASP/CWE/ASVS mappings and its own false-positive surface; a table entry costs a line.
+
+Add a new rule only when the case needs its own detection logic and threat model. If you are unsure, ask in the issue first.
+
 ### Step 1 — assign an ID
 
-Pick the next available `GLNNN` number and open an issue describing what the rule detects and why it matters.
+Once it is clear that a new rule is needed, pick the next available `GLNNN` number and open an issue describing what the rule detects and why it matters.
 
 ### Step 2 — create the rule file
 
