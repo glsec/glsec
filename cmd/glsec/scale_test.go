@@ -7,12 +7,14 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime"
 	"runtime/debug"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/glsec/glsec/internal/parser"
+	"github.com/glsec/glsec/internal/rule"
 	"github.com/glsec/glsec/rules"
 )
 
@@ -83,19 +85,21 @@ func raceEnabled() bool {
 	return false
 }
 
-// ruleTimes returns how long each rule takes on src, the fastest of three runs.
-func ruleTimes(t *testing.T, src string) map[string]time.Duration {
+func parsePipeline(t *testing.T, src string) *parser.Document {
 	t.Helper()
 	doc, err := parser.Parse([]byte(src), ".gitlab-ci.yml")
 	if err != nil {
 		t.Fatal(err)
 	}
+	return doc
+}
+
+// ruleTimes returns how long each rule takes on doc, the fastest of three runs.
+func ruleTimes(doc *parser.Document) map[string]time.Duration {
 	times := map[string]time.Duration{}
 	for range 3 {
 		for _, r := range rules.All() {
-			start := time.Now()
-			rules.Check(r, doc, ".gitlab-ci.yml")
-			d := time.Since(start)
+			d := ruleTime(r, doc)
 			if old, ok := times[r.ID()]; !ok || d < old {
 				times[r.ID()] = d
 			}
@@ -104,12 +108,37 @@ func ruleTimes(t *testing.T, src string) map[string]time.Duration {
 	return times
 }
 
+func ruleTime(r rule.Rule, doc *parser.Document) time.Duration {
+	start := time.Now()
+	rules.Check(r, doc, ".gitlab-ci.yml")
+	return time.Since(start)
+}
+
+// remeasure times r on both pipelines again, fastest of runs runs each, with
+// a garbage collection before every run so a pause left over from an earlier
+// rule doesn't land in this one.
+func remeasure(r rule.Rule, small, large *parser.Document, runs int) (s, l time.Duration) {
+	best := func(doc *parser.Document) time.Duration {
+		var fastest time.Duration
+		for i := range runs {
+			runtime.GC()
+			if d := ruleTime(r, doc); i == 0 || d < fastest {
+				fastest = d
+			}
+		}
+		return fastest
+	}
+	return best(small), best(large)
+}
+
 // TestRulesScaleLinearly runs every rule on a pipeline and on one four times
 // its size, and fails when a rule takes more than ten times as long: linear
 // work grows about 4x, quadratic work 16x. A ratio doesn't depend on how fast
 // the runner is or on -race, so it catches a quadratic rule (GL089 was one,
-// #838) without a flaky time budget. Rules that stay under a few milliseconds
-// are skipped, their ratios are noise.
+// #838) without a flaky time budget. A ratio of a few milliseconds is noise on
+// a busy machine (#868), so a rule is judged only when it takes at least
+// minTime on both pipelines, and one over the limit is measured again before
+// it fails.
 func TestRulesScaleLinearly(t *testing.T) {
 	if testing.Short() || raceEnabled() {
 		t.Skip("large pipelines; CI runs this without -race")
@@ -127,14 +156,19 @@ func TestRulesScaleLinearly(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			small, large := ruleTimes(t, c.small), ruleTimes(t, c.large)
-			for id, l := range large {
-				s := small[id]
-				if l < minTime || s == 0 {
+			smallDoc, largeDoc := parsePipeline(t, c.small), parsePipeline(t, c.large)
+			small, large := ruleTimes(smallDoc), ruleTimes(largeDoc)
+			for _, r := range rules.All() {
+				s, l := small[r.ID()], large[r.ID()]
+				if s < minTime || float64(l)/float64(s) <= maxRatio {
+					continue
+				}
+				s, l = remeasure(r, smallDoc, largeDoc, 5)
+				if s < minTime {
 					continue
 				}
 				if ratio := float64(l) / float64(s); ratio > maxRatio {
-					t.Errorf("%s: 4x the input took %.1fx as long (%s vs %s), want at most %dx", id, ratio, l.Round(time.Millisecond), s.Round(time.Millisecond), maxRatio)
+					t.Errorf("%s: 4x the input took %.1fx as long (%s vs %s), want at most %dx", r.ID(), ratio, l.Round(time.Millisecond), s.Round(time.Millisecond), maxRatio)
 				}
 			}
 		})
