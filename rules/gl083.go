@@ -5,7 +5,6 @@ package rules
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -21,35 +20,35 @@ func (r *gl083) ID() string { return "GL083" }
 var (
 	// socketRedirRe matches a redirect to a raw TCP/UDP socket, the bash-only
 	// /dev/tcp/host/port device.
-	socketRedirRe = regexp.MustCompile(`/dev/(?:tcp|udp)/`)
+	socketRedirRe = mustCompilePrefiltered(`/dev/(?:tcp|udp)/`)
 	// interactiveShellRe matches a shell invoked with the interactive flag, in
 	// any of the -i, -it, -si spellings. The interactive flag is what separates
 	// a reverse shell from the wait-for-service probe, which opens the socket
 	// and closes it again without ever attaching a shell to it.
-	interactiveShellRe = regexp.MustCompile(`\b(?:ba|z|k|da)?sh\b[^|;&\n]*\s-[a-zA-Z]*i\b`)
+	interactiveShellRe = mustCompilePrefiltered(`\b(?:ba|z|k|da)?sh\b[^|;&\n]*\s-[a-zA-Z]*i\b`)
 
 	// netcatExecRe matches netcat asked to run a *shell* on connect. The flag
 	// alone is not enough: nc -lc "printf ..." is a one-shot HTTP responder, so
 	// the argument has to name a shell.
-	netcatExecRe = regexp.MustCompile(`\b(?:nc|ncat|netcat)(?:\.traditional|\.openbsd)?\b[^|;&\n]*(?:\s-[a-zA-Z]*[ec]\b|\s--(?:exec|sh-exec|lua-exec)\b)\s*['"]?\S*(?:\bsh\b|\bbash\b|\bzsh\b|\bash\b|\bdash\b|\bcmd(?:\.exe)?\b|\bpowershell\b)`)
+	netcatExecRe = mustCompilePrefiltered(`\b(?:nc|ncat|netcat)(?:\.traditional|\.openbsd)?\b[^|;&\n]*(?:\s-[a-zA-Z]*[ec]\b|\s--(?:exec|sh-exec|lua-exec)\b)\s*['"]?\S*(?:\bsh\b|\bbash\b|\bzsh\b|\bash\b|\bdash\b|\bcmd(?:\.exe)?\b|\bpowershell\b)`)
 	// netcatRe matches any netcat invocation, used only in combination with mkfifo.
-	netcatRe = regexp.MustCompile(`\b(?:nc|ncat|netcat)(?:\.traditional|\.openbsd)?\b`)
-	mkfifoRe = regexp.MustCompile(`\bmkfifo\b`)
+	netcatRe = mustCompilePrefiltered(`\b(?:nc|ncat|netcat)(?:\.traditional|\.openbsd)?\b`)
+	mkfifoRe = mustCompilePrefiltered(`\bmkfifo\b`)
 
 	// socatRe, socatExecRe and socatNetRe together match socat wiring a program
 	// to a network peer. A program endpoint on its own is ordinary usage:
 	// socat EXEC:'...' STDIO drives a local command and never opens a socket.
 	// socat address keywords are case-insensitive.
-	socatRe     = regexp.MustCompile(`\bsocat\b`)
-	socatExecRe = regexp.MustCompile(`(?i)\b(?:exec|system):`)
-	socatNetRe  = regexp.MustCompile(`(?i)\b(?:tcp|udp|openssl|ssl|socks[45]a?)[46]?(?:-[a-z]+)?:`)
+	socatRe     = mustCompilePrefiltered(`\bsocat\b`)
+	socatExecRe = mustCompilePrefiltered(`(?i)\b(?:exec|system):`)
+	socatNetRe  = mustCompilePrefiltered(`(?i)\b(?:tcp|udp|openssl|ssl|socks[45]a?)[46]?(?:-[a-z]+)?:`)
 
 	// interpreterRe, socketAPIRe and interpreterExecRe together match the
 	// scripting-language one-liners: an interpreter that opens a socket and
 	// hands it to a shell.
-	interpreterRe     = regexp.MustCompile(`\b(?:python[23]?(?:\.\d+)?|perl|ruby)\b`)
-	socketAPIRe       = regexp.MustCompile(`\bsocket\.socket\b|\bTCPSocket\b|\bIO::Socket::INET\b|\bSocket::inet_aton\b|\bsocket\.AF_INET\b`)
-	interpreterExecRe = regexp.MustCompile(`\bos\.dup2\b|\bsubprocess\.(?:call|Popen|run|check_call)\b|\bpty\.spawn\b|\bexecl?\b|>&\s*S\b`)
+	interpreterRe     = mustCompilePrefiltered(`\b(?:python[23]?(?:\.\d+)?|perl|ruby)\b`)
+	socketAPIRe       = mustCompilePrefiltered(`\bsocket\.socket\b|\bTCPSocket\b|\bIO::Socket::INET\b|\bSocket::inet_aton\b|\bsocket\.AF_INET\b`)
+	interpreterExecRe = mustCompilePrefiltered(`\bos\.dup2\b|\bsubprocess\.(?:call|Popen|run|check_call)\b|\bpty\.spawn\b|\bexecl?\b|>&\s*S\b`)
 )
 
 // reverseShellKind returns a short description of the reverse-shell pattern in
@@ -133,23 +132,23 @@ func scanReverseShell(value string) (kind, payload string, exfil bool) {
 var (
 	// credFileRe matches a well-known credential file in a home directory.
 	// Group 1 is the ".pub" suffix of an SSH key, which marks a public key.
-	credFileRe = regexp.MustCompile(`(?:~|\$HOME|\$\{HOME\}|/root|/home/[\w.-]+)/(?:\.ssh/id_[\w-]+(\.pub)?|\.aws/credentials|\.docker/config\.json|\.kube/config|\.netrc|\.git-credentials|\.config/gcloud/[\w.-]+)`)
+	credFileRe = mustCompilePrefiltered(`(?:~|\$HOME|\$\{HOME\}|/root|/home/[\w.-]+)/(?:\.ssh/id_[\w-]+(\.pub)?|\.aws/credentials|\.docker/config\.json|\.kube/config|\.netrc|\.git-credentials|\.config/gcloud/[\w.-]+)`)
 	// tokenMintRe matches a command that prints a live cloud access token.
-	tokenMintRe = regexp.MustCompile(`\bgcloud\s+auth\s+print-(?:access|identity)-token\b|\baws\s+ecr\s+get-login-password\b|\baz\s+account\s+get-access-token\b`)
+	tokenMintRe = mustCompilePrefiltered(`\bgcloud\s+auth\s+print-(?:access|identity)-token\b|\baws\s+ecr\s+get-login-password\b|\baz\s+account\s+get-access-token\b`)
 
 	// uploadFlagRe matches an upload option whose value is a local file that
 	// the tool sends: curl -F name=@file, -d @file, --data-binary @file,
 	// -T file, --upload-file file, and wget --post-file=file. Only the
 	// credential right after the option counts, so `curl --netrc-file
 	// ~/.netrc` (authenticating with the file, not sending it) stays quiet.
-	uploadFlagRe = regexp.MustCompile(`(?:-F[ \t]*["']?[\w.-]*=@|-d[ \t]*["']?@|--data(?:-binary|-raw|-urlencode)?(?:=|[ \t]+)["']?@|-T[ \t]*["']?|--upload-file(?:=|[ \t]+)["']?|--post-file(?:=|[ \t]*)["']?)$`)
+	uploadFlagRe = mustCompilePrefiltered(`(?:-F[ \t]*["']?[\w.-]*=@|-d[ \t]*["']?@|--data(?:-binary|-raw|-urlencode)?(?:=|[ \t]+)["']?@|-T[ \t]*["']?|--upload-file(?:=|[ \t]+)["']?|--post-file(?:=|[ \t]*)["']?)$`)
 	// stdinSinkRe matches a network tool that sends what it reads on stdin.
-	stdinSinkRe   = regexp.MustCompile(`\b(?:nc|ncat|netcat)(?:\.traditional|\.openbsd)?\b|\bcurl\b.*(?:@-|-T[ \t]*-(?:\s|$)|--upload-file[ \t]+-(?:\s|$))|\bwget\b.*--post-file[= \t]*/dev/stdin`)
-	socketWriteRe = regexp.MustCompile(`>[ \t]*/dev/(?:tcp|udp)/`)
-	scpRe         = regexp.MustCompile(`\bscp\b`)
-	scpIdentityRe = regexp.MustCompile(`-i[ \t]*$`)
-	scpRemoteRe   = regexp.MustCompile(`\s[\w.@-]+:\S*`)
-	writeTargetRe = regexp.MustCompile(`>>?[ \t]*["']?$`)
+	stdinSinkRe   = mustCompilePrefiltered(`\b(?:nc|ncat|netcat)(?:\.traditional|\.openbsd)?\b|\bcurl\b.*(?:@-|-T[ \t]*-(?:\s|$)|--upload-file[ \t]+-(?:\s|$))|\bwget\b.*--post-file[= \t]*/dev/stdin`)
+	socketWriteRe = mustCompilePrefiltered(`>[ \t]*/dev/(?:tcp|udp)/`)
+	scpRe         = mustCompilePrefiltered(`\bscp\b`)
+	scpIdentityRe = mustCompilePrefiltered(`-i[ \t]*$`)
+	scpRemoteRe   = mustCompilePrefiltered(`\s[\w.@-]+:\S*`)
+	writeTargetRe = mustCompilePrefiltered(`>>?[ \t]*["']?$`)
 )
 
 // credentialExfilKind returns a short description of how line sends a
@@ -239,17 +238,17 @@ func sinksAfter(stages []string) []bool {
 var (
 	// procSecretRe matches another process's environment or memory under
 	// /proc, by PID, glob, self, or a variable or command substitution.
-	procSecretRe = regexp.MustCompile(`/proc/(?:\d+|self|\*|\$\{?\w+\}?|\$\([^)]*\))/(?:environ|mem)\b`)
+	procSecretRe = mustCompilePrefiltered(`/proc/(?:\d+|self|\*|\$\{?\w+\}?|\$\([^)]*\))/(?:environ|mem)\b`)
 	// procMemRe matches process memory specifically; reading it is suspect
 	// even without a network send.
-	procMemRe = regexp.MustCompile(`/proc/(?:\d+|self|\*|\$\{?\w+\}?|\$\([^)]*\))/mem\b`)
+	procMemRe = mustCompilePrefiltered(`/proc/(?:\d+|self|\*|\$\{?\w+\}?|\$\([^)]*\))/mem\b`)
 	// psEnvRe matches BSD-style ps with the e modifier, which prints every
 	// process's environment (ps auxe, ps eww). ps -e only selects processes, and
 	// ps must be the command, not a subcommand such as docker compose ps.
-	psEnvRe = regexp.MustCompile(`(?:^|[;&|(]|\$\()\s*(?:sudo\s+)?ps\s+[a-zA-Z]*e[a-zA-Z]*(?:\s|$)`)
+	psEnvRe = mustCompilePrefiltered(`(?:^|[;&|(]|\$\()\s*(?:sudo\s+)?ps\s+[a-zA-Z]*e[a-zA-Z]*(?:\s|$)`)
 	// envSubstRe matches $(...) (one level of nested parentheses) and `...`.
-	envSubstRe = regexp.MustCompile("\\$\\(((?:[^()]|\\([^()]*\\))*)\\)|`([^`]*)`")
-	netToolRe  = regexp.MustCompile(`\b(?:curl|wget|nc|ncat|netcat)\b`)
+	envSubstRe = mustCompilePrefiltered("\\$\\(((?:[^()]|\\([^()]*\\))*)\\)|`([^`]*)`")
+	netToolRe  = mustCompilePrefiltered(`\b(?:curl|wget|nc|ncat|netcat)\b`)
 )
 
 // environmentSource reports whether a command fragment produces the job's

@@ -22,7 +22,7 @@ func (r *gl022) ID() string { return "GL022" }
 // pmInstallCheck describes how to detect an unpinned package manager install.
 type pmInstallCheck struct {
 	manager string
-	trigger *regexp.Regexp // matches the install command
+	trigger prefiltered    // matches the install command
 	pinned  *regexp.Regexp // if present, version is pinned → no finding
 	skip    *regexp.Regexp // if present, skip the line entirely (e.g. -r file)
 	// mask matches the check against a quote-masked copy of the line, so that
@@ -43,20 +43,20 @@ const adhocFirstArg = `\s+(?:-{1,2}[\w=@./:-]+\s+)*[^-\s"']`
 // pmUpdateCheck describes explicit update-to-latest commands that are always wrong in CI.
 type pmUpdateCheck struct {
 	manager string
-	re      *regexp.Regexp
+	re      prefiltered
 }
 
 var (
 	pmInstallChecks = []pmInstallCheck{
 		{
 			manager: "pip",
-			trigger: regexp.MustCompile(`\bpip[23]?\s+install\b`),
+			trigger: mustCompilePrefiltered(`\bpip[23]?\s+install\b`),
 			pinned:  regexp.MustCompile(`==|~=|!=|>=|<=`),
 			skip:    regexp.MustCompile(`\s-r\s|\s-r$|-e\s|--editable\s|\.\s*(?:$|&&|\|)|\s["']?\.{1,2}(?:/|\[|["']|\s|$)|--upgrade\b|-U\b`),
 		},
 		{
 			manager: "npm (global)",
-			trigger: regexp.MustCompile(`\bnpm\s+(?:install|i|add)\b.*(?:-g\b|--global\b)`),
+			trigger: mustCompilePrefiltered(`\bnpm\s+(?:install|i|add)\b.*(?:-g\b|--global\b)`),
 			pinned:  regexp.MustCompile(`@\d`),
 			skip:    nil,
 		},
@@ -65,21 +65,21 @@ var (
 			// is in no package.json and no lockfile, so the registry decides the
 			// version on every run. Bare `npm install` is GL023's territory.
 			manager: "npm (ad-hoc)",
-			trigger: regexp.MustCompile(`\bnpm\s+(?:install|i|add)` + adhocFirstArg),
+			trigger: mustCompilePrefiltered(`\bnpm\s+(?:install|i|add)` + adhocFirstArg),
 			pinned:  regexp.MustCompile(`@\d`),
 			skip:    regexp.MustCompile(`-g\b|--global\b|\s\.{1,2}/|\sfile:|\s\.\s*(?:$|&&|\|)`),
 			mask:    true,
 		},
 		{
 			manager: "yarn (ad-hoc)",
-			trigger: regexp.MustCompile(`\byarn\s+(?:global\s+)?add` + adhocFirstArg),
+			trigger: mustCompilePrefiltered(`\byarn\s+(?:global\s+)?add` + adhocFirstArg),
 			pinned:  regexp.MustCompile(`@\d`),
 			skip:    regexp.MustCompile(`\s\.{1,2}/|\sfile:|\slink:`),
 			mask:    true,
 		},
 		{
 			manager: "pnpm (ad-hoc)",
-			trigger: regexp.MustCompile(`\bpnpm\s+add` + adhocFirstArg),
+			trigger: mustCompilePrefiltered(`\bpnpm\s+add` + adhocFirstArg),
 			pinned:  regexp.MustCompile(`@\d`),
 			skip:    regexp.MustCompile(`\s\.{1,2}/|\sfile:|\slink:|\sworkspace:`),
 			mask:    true,
@@ -90,14 +90,14 @@ var (
 			// package comes from the registry are flagged: an explicit -y/--yes
 			// (or npm_config_yes=true), or a dist-tag on the package name.
 			manager: "npx",
-			trigger: regexp.MustCompile(`\bnpm_config_yes=true\s+npx\b|\b(?:npx|npm\s+(?:exec|x))\s+(?:-{1,2}[\w=@./:-]+\s+)*?(?:-y|--yes)\b|\bnpx\s+(?:-{1,2}[\w=@./:-]+\s+)*(?:@[\w.-]+/)?[\w.-]+@[A-Za-z]`),
+			trigger: mustCompilePrefiltered(`\bnpm_config_yes=true\s+npx\b|\b(?:npx|npm\s+(?:exec|x))\s+(?:-{1,2}[\w=@./:-]+\s+)*?(?:-y|--yes)\b|\bnpx\s+(?:-{1,2}[\w=@./:-]+\s+)*(?:@[\w.-]+/)?[\w.-]+@[A-Za-z]`),
 			pinned:  regexp.MustCompile(`@\d`),
 			mask:    true,
 			run:     true,
 		},
 		{
 			manager: "pnpm/yarn dlx",
-			trigger: regexp.MustCompile(`\b(?:pnpm|yarn)\s+dlx` + adhocFirstArg),
+			trigger: mustCompilePrefiltered(`\b(?:pnpm|yarn)\s+dlx` + adhocFirstArg),
 			pinned:  regexp.MustCompile(`@\d`),
 			skip:    regexp.MustCompile(`\s\.{1,2}/|\sfile:|\slink:`),
 			mask:    true,
@@ -105,7 +105,7 @@ var (
 		},
 		{
 			manager: "uvx / pipx run",
-			trigger: regexp.MustCompile(`\b(?:uvx|uv\s+tool\s+run|pipx\s+run)` + adhocFirstArg),
+			trigger: mustCompilePrefiltered(`\b(?:uvx|uv\s+tool\s+run|pipx\s+run)` + adhocFirstArg),
 			pinned:  regexp.MustCompile(`@\d|==\d`),
 			// A local project as the package source: `uvx --from . tool`.
 			skip: regexp.MustCompile(`(?:uvx|run|--from|--spec)(?:\s+|=)\.{1,2}(?:/|\s|$)`),
@@ -114,7 +114,7 @@ var (
 		},
 		{
 			manager: "bundler (ad-hoc)",
-			trigger: regexp.MustCompile(`\bbundle\s+add` + adhocFirstArg),
+			trigger: mustCompilePrefiltered(`\bbundle\s+add` + adhocFirstArg),
 			// Accepts a quoted constraint too: --version '~> 7.1'.
 			pinned: regexp.MustCompile(`(?:-v|--version)\s+["']?[~^><=\s]*\d`),
 			skip:   nil,
@@ -122,55 +122,55 @@ var (
 		},
 		{
 			manager: "apt-get",
-			trigger: regexp.MustCompile(`\bapt(?:-get)?\s+install\b`),
+			trigger: mustCompilePrefiltered(`\bapt(?:-get)?\s+install\b`),
 			pinned:  regexp.MustCompile(`\b\S+=\d`),
 			skip:    nil,
 		},
 		{
 			manager: "apk",
-			trigger: regexp.MustCompile(`\bapk\s+add\b`),
+			trigger: mustCompilePrefiltered(`\bapk\s+add\b`),
 			pinned:  regexp.MustCompile(`\b\S+=\d`),
 			skip:    nil,
 		},
 		{
 			manager: "gem",
-			trigger: regexp.MustCompile(`\bgem\s+install\b`),
+			trigger: mustCompilePrefiltered(`\bgem\s+install\b`),
 			pinned:  regexp.MustCompile(`(?:-v|--version)\s+\d`),
 			skip:    nil,
 		},
 		{
 			manager: "cargo",
-			trigger: regexp.MustCompile(`\bcargo\s+install\b`),
+			trigger: mustCompilePrefiltered(`\bcargo\s+install\b`),
 			pinned:  regexp.MustCompile(`(?:--version|--vers)\s+\d`),
 			skip:    nil,
 		},
 		{
 			manager: "composer require",
-			trigger: regexp.MustCompile(`\bcomposer\s+require\b`),
+			trigger: mustCompilePrefiltered(`\bcomposer\s+require\b`),
 			pinned:  regexp.MustCompile(`:\S`),
 			skip:    nil,
 		},
 		{
 			manager: "yum",
-			trigger: regexp.MustCompile(`\byum\s+install\b`),
+			trigger: mustCompilePrefiltered(`\byum\s+install\b`),
 			pinned:  regexp.MustCompile(`\b\S+-\d`),
 			skip:    nil,
 		},
 		{
 			manager: "dnf",
-			trigger: regexp.MustCompile(`\bdnf\s+install\b`),
+			trigger: mustCompilePrefiltered(`\bdnf\s+install\b`),
 			pinned:  regexp.MustCompile(`\b\S+-\d`),
 			skip:    nil,
 		},
 		{
 			manager: "zypper",
-			trigger: regexp.MustCompile(`\bzypper\s+(?:install|in)\b`),
+			trigger: mustCompilePrefiltered(`\bzypper\s+(?:install|in)\b`),
 			pinned:  regexp.MustCompile(`\b\S+=\d`),
 			skip:    nil,
 		},
 		{
 			manager: "go",
-			trigger: regexp.MustCompile(`\bgo\s+install\b`),
+			trigger: mustCompilePrefiltered(`\bgo\s+install\b`),
 			pinned:  regexp.MustCompile(`@v?\d`),
 			// Local builds (no module, or a relative/absolute path target) need no version.
 			skip: regexp.MustCompile(`\bgo\s+install\s*$|\bgo\s+install\s+(?:-\S+\s+)*[./]`),
@@ -192,14 +192,14 @@ var (
 	localPackageRe = regexp.MustCompile(`(?:^|\s)["']?\.{1,2}/\S*|\S+\.(?:deb|rpm|whl|apk)\b`)
 
 	pmUpdateChecks = []pmUpdateCheck{
-		{"npm", regexp.MustCompile(`\bnpm\s+update\b`)},
-		{"yarn", regexp.MustCompile(`\byarn\s+upgrade\b`)},
-		{"pnpm", regexp.MustCompile(`\bpnpm\s+update\b`)},
-		{"composer", regexp.MustCompile(`\bcomposer\s+update\b`)},
-		{"bundler", regexp.MustCompile(`\bbundle\s+update\b`)},
-		{"gem", regexp.MustCompile(`\bgem\s+update\b`)},
-		{"cargo", regexp.MustCompile(`\bcargo\s+update\b`)},
-		{"pip (--upgrade)", regexp.MustCompile(`\bpip[23]?\s+install\b.*(?:--upgrade\b|-U\b)`)},
+		{"npm", mustCompilePrefiltered(`\bnpm\s+update\b`)},
+		{"yarn", mustCompilePrefiltered(`\byarn\s+upgrade\b`)},
+		{"pnpm", mustCompilePrefiltered(`\bpnpm\s+update\b`)},
+		{"composer", mustCompilePrefiltered(`\bcomposer\s+update\b`)},
+		{"bundler", mustCompilePrefiltered(`\bbundle\s+update\b`)},
+		{"gem", mustCompilePrefiltered(`\bgem\s+update\b`)},
+		{"cargo", mustCompilePrefiltered(`\bcargo\s+update\b`)},
+		{"pip (--upgrade)", mustCompilePrefiltered(`\bpip[23]?\s+install\b.*(?:--upgrade\b|-U\b)`)},
 	}
 )
 

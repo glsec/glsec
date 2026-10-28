@@ -5,7 +5,6 @@ package rules
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -20,36 +19,36 @@ func (r *gl039) ID() string { return "GL039" }
 
 // silencedRe matches "|| true", "|| exit 0" or "|| :" at end of a pipeline
 // segment.
-var silencedRe = regexp.MustCompile(`\|\|\s*(?:(?:true|exit\s+0)\b|:(?:[\s;)]|$))`)
+var silencedRe = mustCompilePrefiltered(`\|\|\s*(?:(?:true|exit\s+0)\b|:(?:[\s;)]|$))`)
 
 // scannerCmd builds the pattern for a scanner that has to be in command
 // position, so an install step (pip install pip-audit) doesn't count: at the
 // start of a command, after a runner (npx, pipx run, poetry run, uv run, bundle
 // exec, python -m, go run, exec, sudo), behind a path or module path, and after
 // leading VAR=value assignments.
-func scannerCmd(cmd string) *regexp.Regexp {
-	return regexp.MustCompile(`(?:^|[;&|(]|\$\()\s*(?:\w+=\S*\s+)*` +
+func scannerCmd(cmd string) prefiltered {
+	return mustCompilePrefiltered(`(?:^|[;&|(]|\$\()\s*(?:\w+=\S*\s+)*` +
 		`(?:(?:npx|bunx)\s+(?:-y\s+|--yes\s+)?|pipx\s+run\s+|(?:poetry|pipenv|uv)\s+run\s+|bundle\s+exec\s+|python[0-9.]*\s+-m\s+|go\s+run\s+|exec\s+|sudo\s+)?` +
 		`(?:[\w.@/-]*/)?(?:` + cmd + `)(?:[\s@;|&)]|$)`)
 }
 
 type auditTool struct {
 	name string
-	re   *regexp.Regexp
+	re   prefiltered
 }
 
 var auditTools = []auditTool{
-	{name: "npm audit", re: regexp.MustCompile(`\b(?:npm|pnpm|yarn)\s+audit\b`)},
-	{name: "composer audit", re: regexp.MustCompile(`\bcomposer\s+audit\b`)},
-	{name: "trivy", re: regexp.MustCompile(`\btrivy\b`)},
-	{name: "grype", re: regexp.MustCompile(`\bgrype\b`)},
-	{name: "snyk", re: regexp.MustCompile(`\bsnyk\b`)},
-	{name: "osv-scanner", re: regexp.MustCompile(`\bosv-scanner\b`)},
-	{name: "retire", re: regexp.MustCompile(`\bretire\b`)},
-	{name: "safety check", re: regexp.MustCompile(`\bsafety\s+(?:check|scan)\b`)},
-	{name: "anchore-cli", re: regexp.MustCompile(`\banchore-cli\b`)},
-	{name: "inspector check", re: regexp.MustCompile(`\binspector\s+check\b`)},
-	{name: "syft", re: regexp.MustCompile(`\bsyft\b`)},
+	{name: "npm audit", re: mustCompilePrefiltered(`\b(?:npm|pnpm|yarn)\s+audit\b`)},
+	{name: "composer audit", re: mustCompilePrefiltered(`\bcomposer\s+audit\b`)},
+	{name: "trivy", re: mustCompilePrefiltered(`\btrivy\b`)},
+	{name: "grype", re: mustCompilePrefiltered(`\bgrype\b`)},
+	{name: "snyk", re: mustCompilePrefiltered(`\bsnyk\b`)},
+	{name: "osv-scanner", re: mustCompilePrefiltered(`\bosv-scanner\b`)},
+	{name: "retire", re: mustCompilePrefiltered(`\bretire\b`)},
+	{name: "safety check", re: mustCompilePrefiltered(`\bsafety\s+(?:check|scan)\b`)},
+	{name: "anchore-cli", re: mustCompilePrefiltered(`\banchore-cli\b`)},
+	{name: "inspector check", re: mustCompilePrefiltered(`\binspector\s+check\b`)},
+	{name: "syft", re: mustCompilePrefiltered(`\bsyft\b`)},
 	// Secret scanners.
 	{name: "gitleaks", re: scannerCmd(`gitleaks`)},
 	{name: "trufflehog", re: scannerCmd(`trufflehog`)},

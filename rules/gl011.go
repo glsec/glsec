@@ -5,7 +5,6 @@ package rules
 
 import (
 	"fmt"
-	"regexp"
 
 	"github.com/glsec/glsec/internal/finding"
 	"github.com/glsec/glsec/internal/parser"
@@ -23,28 +22,28 @@ const shellAlt = `bash|sh|python[23]?|ruby|perl|node`
 var (
 	// interpreterDashCRe matches a pipe into an interpreter that gets its code
 	// from -c (python3 -c, bash -c), so the piped input is data.
-	interpreterDashCRe = regexp.MustCompile(`\|\s*(?:` + shellAlt + `)\s+-c\b`)
+	interpreterDashCRe = mustCompilePrefiltered(`\|\s*(?:` + shellAlt + `)\s+-c\b`)
 	// downloadToolRe matches curl or wget anywhere in a script line.
-	downloadToolRe = regexp.MustCompile(`\b(?:curl|wget)\b`)
+	downloadToolRe = mustCompilePrefiltered(`\b(?:curl|wget)\b`)
 	// pipeToShellRe matches a pipe directly into a shell interpreter.
-	pipeToShellRe = regexp.MustCompile(`\|\s*(?:` + shellAlt + `)\b`)
+	pipeToShellRe = mustCompilePrefiltered(`\|\s*(?:` + shellAlt + `)\b`)
 	// processSubstRe matches bash process substitution: <(curl ...) or <(wget ...).
-	processSubstRe = regexp.MustCompile(`<\s*\(\s*(?:curl|wget)\b`)
+	processSubstRe = mustCompilePrefiltered(`<\s*\(\s*(?:curl|wget)\b`)
 	// cmdSubstRe matches command substitution passed to a shell: bash -c "$(curl ...)".
-	cmdSubstRe = regexp.MustCompile(`\b(?:bash|sh)\b.*\$\(\s*(?:curl|wget)\b`)
+	cmdSubstRe = mustCompilePrefiltered(`\b(?:bash|sh)\b.*\$\(\s*(?:curl|wget)\b`)
 	// downloadSubstRe matches a curl/wget inside a command substitution: $(curl ...) or $(wget ...).
-	downloadSubstRe = regexp.MustCompile(`\$\(\s*(?:curl|wget)\b`)
+	downloadSubstRe = mustCompilePrefiltered(`\$\(\s*(?:curl|wget)\b`)
 	// base64ExecRe matches a base64-decode piped straight into a shell, e.g.
 	// echo "…" | base64 -d | bash — an inline-obfuscated payload with no download tool.
-	base64ExecRe = regexp.MustCompile(`\bbase64\s+(?:-d|--decode)\b.*\|\s*(?:` + shellAlt + `)\b`)
+	base64ExecRe = mustCompilePrefiltered(`\bbase64\s+(?:-d|--decode)\b.*\|\s*(?:` + shellAlt + `)\b`)
 	// hexExecRe matches a hex dump reversed by xxd -r and piped into a shell,
 	// e.g. echo 6375… | xxd -r -p | bash — the same as base64ExecRe in hex.
-	hexExecRe = regexp.MustCompile(`\bxxd\b[^|]*\s-[a-z]*r[a-z]*\b.*\|\s*(?:` + shellAlt + `)\b`)
+	hexExecRe = mustCompilePrefiltered(`\bxxd\b[^|]*\s-[a-z]*r[a-z]*\b.*\|\s*(?:` + shellAlt + `)\b`)
 	// escapePrinterRe and hexEscapeRe together match printf '\x63\x75…' | sh or
 	// echo -e "\x63…" | sh. The escapes sit inside quotes, so hexEscapeRe is
 	// matched against the raw line.
-	escapePrinterRe = regexp.MustCompile(`\b(?:printf|echo\s+-[a-zA-Z]*e[a-zA-Z]*)\b`)
-	hexEscapeRe     = regexp.MustCompile(`\\x[0-9a-fA-F]{2}`)
+	escapePrinterRe = mustCompilePrefiltered(`\b(?:printf|echo\s+-[a-zA-Z]*e[a-zA-Z]*)\b`)
+	hexEscapeRe     = mustCompilePrefiltered(`\\x[0-9a-fA-F]{2}`)
 	// psDownload matches a PowerShell download: Invoke-WebRequest and
 	// Invoke-RestMethod with their aliases (curl and wget alias the former in
 	// Windows PowerShell), or a WebClient DownloadString/DownloadData call.
@@ -52,21 +51,21 @@ var (
 	// psPipeExecRe matches a download piped into Invoke-Expression:
 	// iwr URL | iex, irm URL | Select … | Invoke-Expression. The pipeline ends
 	// at the next ;, so a later statement's iex doesn't count.
-	psPipeExecRe = regexp.MustCompile(`(?i)` + psDownload + `[^;]*\|\s*(?:iex|invoke-expression)\b`)
+	psPipeExecRe = mustCompilePrefiltered(`(?i)` + psDownload + `[^;]*\|\s*(?:iex|invoke-expression)\b`)
 	// psArgExecRe matches Invoke-Expression whose argument is the download:
 	// iex (irm URL), iex "& {$(irm URL)}", iex ((New-Object Net.WebClient).DownloadString(URL)).
 	// Invoke-Expression on a local string has no download there and stays quiet.
-	psArgExecRe = regexp.MustCompile(`(?i)\b(?:iex|invoke-expression)\b[\s("'&{$]*` + psDownload)
+	psArgExecRe = mustCompilePrefiltered(`(?i)\b(?:iex|invoke-expression)\b[\s("'&{$]*` + psDownload)
 	// downloadThenExecRe matches a download saved to a file and executed on the same
 	// line, e.g. curl … -o f && bash f, or curl … > f; sh f. The redirect alternative
 	// uses [^0-9&]> so stderr/merge redirects (2>, &>) do not count as a save-to-file.
-	downloadThenExecRe = regexp.MustCompile(`\b(?:curl|wget)\b.*(?:\s-o\b|\s--output\b|[^0-9&]>).*(?:;|&&)\s*(?:` + shellAlt + `)\s+\S`)
+	downloadThenExecRe = mustCompilePrefiltered(`\b(?:curl|wget)\b.*(?:\s-o\b|\s--output\b|[^0-9&]>).*(?:;|&&)\s*(?:` + shellAlt + `)\s+\S`)
 	// checksumGuardRe matches an integrity check on the same line; its presence means
 	// the fetched code is verified before execution, so the line is not flagged.
-	checksumGuardRe = regexp.MustCompile(`\b(?:sha256sum|sha512sum|shasum)\b|\bgpg\b.*--verify\b|\bcosign\b.*\bverify\b`)
+	checksumGuardRe = mustCompilePrefiltered(`\b(?:sha256sum|sha512sum|shasum)\b|\bgpg\b.*--verify\b|\bcosign\b.*\bverify\b`)
 	// quotedRe matches single- or double-quoted substrings, stripped before matching so
 	// a "| bash" inside a string literal does not trigger.
-	quotedRe = regexp.MustCompile(`"[^"]*"|'[^']*'`)
+	quotedRe = mustCompilePrefiltered(`"[^"]*"|'[^']*'`)
 )
 
 func (r *gl011) Check(doc *yaml.Node, file string) []finding.Finding {
