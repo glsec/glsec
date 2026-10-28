@@ -213,3 +213,24 @@ deploy:
 		t.Errorf("message should quote the whole pattern and the plain prefix: %s", f[0].Message)
 	}
 }
+
+// isLiteralNamespacePrefix accepts only a literal group path ending in \/;
+// anything that could match another group is rejected (#820).
+func TestIsLiteralNamespacePrefix(t *testing.T) {
+	for pattern, want := range map[string]bool{
+		`^mygroup\/`:        true,
+		`\Amy-group\/sub\/`: true,
+		`^my\.group\/`:      true,
+		`^my_group\/`:       true,
+		`^mygroup`:          false, // no trailing \/
+		`^\/`:               false, // empty prefix
+		`^my\\/`:            false, // a lone backslash is left before the final \/
+		`^my\d\/`:           false, // escape other than . - _ /
+		`^my.group\/`:       false, // unescaped dot matches any character
+		`^my[a-z]\/`:        false, // character class
+	} {
+		if got := isLiteralNamespacePrefix(pattern); got != want {
+			t.Errorf("isLiteralNamespacePrefix(%q) = %v, want %v", pattern, got, want)
+		}
+	}
+}
