@@ -199,7 +199,7 @@ func TestWriteBenchmarkInput(t *testing.T) {
 	if path == "" {
 		t.Skip("set GLSEC_BENCH_INPUT to write the benchmark input")
 	}
-	if err := os.WriteFile(path, []byte(largePipeline(2000, 0)), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte(largePipeline(2000, 0)), 0o600); err != nil { //nolint:gosec // G703: the developer names the output file
 		t.Fatal(err)
 	}
 }
