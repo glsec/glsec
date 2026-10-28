@@ -1,11 +1,11 @@
 name: Benchmarks
 
-# Compares the rule benchmarks of a pull request with its base (#872). The
-# scaling test catches a rule that grows quadratically; this catches one that
-# gets a constant factor slower. Base and head run alternately in one job, so
-# both see the same machine: shared runners vary by 10 to 30% between jobs,
-# which rules out a fixed time budget. The table goes to the job summary; the
-# job fails only on a large regression that every run agrees on.
+# Compares the rule benchmarks of a pull request with its base (#872, #880).
+# Base and head run alternately in one job, so both see the same machine.
+# benchstat's table of time, bytes and allocations goes to the job summary.
+# The job fails only on an allocation regression: allocations hardly depend on
+# the runner, while time varies by 10 to 30% even within one job, too much for
+# a threshold to mean anything.
 
 on:
   pull_request:
@@ -15,6 +15,7 @@ on:
       - go.sum
       - .github/workflows/bench.yml
       - .github/scripts/bench-compare.py
+      - .github/tools/benchstat/**
 
 permissions:
   contents: read
@@ -37,6 +38,11 @@ jobs:
         with:
           go-version-file: go.mod
 
+      # Built from .github/tools/benchstat, whose go.sum pins the version.
+      - name: Build benchstat
+        working-directory: .github/tools/benchstat
+        run: go build -o "$RUNNER_TEMP/benchstat" golang.org/x/perf/cmd/benchstat
+
       - name: Build the base and head test binaries
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -58,5 +64,22 @@ jobs:
             done
           done
 
-      - name: Compare
+      - name: Show benchstat
+        run: |
+          {
+            echo "## Benchmarks: base vs head"
+            echo
+            echo "Time varies between runners and is shown for reading; only allocations are checked."
+            echo
+            echo '```'
+            "$RUNNER_TEMP/benchstat" base="$RUNNER_TEMP/base.txt" head="$RUNNER_TEMP/head.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Check allocations
+        env:
+          # A new rule adds about 1% on average; a regexp compiled once per
+          # script line adds about 16%. The same code differs by a few dozen.
+          ALLOCS_LIMIT: "5" # percent
+          ALLOCS_MIN_DELTA: "1000" # allocations per op
         run: python3 .github/scripts/bench-compare.py "$RUNNER_TEMP/base.txt" "$RUNNER_TEMP/head.txt"

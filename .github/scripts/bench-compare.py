@@ -1,17 +1,19 @@
 # Copyright The glsec Authors
 # SPDX-License-Identifier: Apache-2.0
-"""Compare `go test -bench` output of a pull request's base and head (#872).
+"""Check a pull request's benchmarks for allocation regressions (#872, #880).
 
     bench-compare.py BASE.txt HEAD.txt
 
-Prints a Markdown table of the medians (time, bytes and allocations per
-operation) and appends it to $GITHUB_STEP_SUMMARY when that is set.
+Reads `go test -bench -benchmem` output of the base and the head and fails
+when a benchmark's median allocs/op grew by more than ALLOCS_LIMIT percent
+(default 5) and by more than ALLOCS_MIN_DELTA allocations (default 1000).
+Allocations hardly depend on the machine (the same code differs by a few dozen
+between runs), so a rise past both is a change in the code. A new rule adds
+about 1% on average; a regexp compiled once per script line adds about 16%.
 
-Exits 1 when a benchmark got much slower: its median time grew by more than
-LIMIT and every head run was slower than every base run. Shared runners vary
-by 10 to 30%, so a smaller change, or one where the runs overlap, is shown
-but not enforced. Allocations don't depend on the machine; they are reported
-for reading, not checked.
+Time is not checked: shared runners vary by 10 to 30% even within one job.
+benchstat shows it in the job summary. This script adds the allocation table
+to $GITHUB_STEP_SUMMARY when that is set.
 """
 
 import os
@@ -19,12 +21,7 @@ import re
 import statistics
 import sys
 
-LIMIT = 0.5  # +50%
-
-LINE = re.compile(
-    r"^(Benchmark\S+?)(?:-\d+)?\s+\d+\s+([\d.]+) ns/op"
-    r"(?:.*?\s([\d.]+) B/op)?(?:.*?\s([\d.]+) allocs/op)?"
-)
+LINE = re.compile(r"^(Benchmark\S+?)(?:-\d+)?\s+\d+\s.*?\s([\d.]+) allocs/op")
 
 
 def load(path):
@@ -32,64 +29,29 @@ def load(path):
     with open(path, encoding="utf-8") as f:
         for line in f:
             m = LINE.match(line)
-            if not m:
-                continue
-            ns, b, allocs = (float(v) if v else None for v in m.group(2, 3, 4))
-            runs.setdefault(m.group(1), []).append((ns, b, allocs))
-    return runs
+            if m:
+                runs.setdefault(m.group(1), []).append(float(m.group(2)))
+    return {name: statistics.median(values) for name, values in runs.items()}
 
 
-def median(runs, i):
-    values = [r[i] for r in runs if r[i] is not None]
-    return statistics.median(values) if values else None
-
-
-def change(old, new):
-    if old is None or new is None or old == 0:
-        return ""
-    return f"{(new - old) / old:+.0%}"
-
-
-def fmt_time(ns):
-    return "" if ns is None else f"{ns / 1e6:,.0f} ms"
-
-
-def fmt_bytes(b):
-    return "" if b is None else f"{b / 1e6:,.1f} MB"
-
-
-def fmt_count(n):
-    return "" if n is None else f"{n:,.0f}"
-
-
-def compare(base, head):
-    """Return the Markdown report and the names of regressed benchmarks."""
+def compare(base, head, limit, min_delta):
+    """Return the Markdown report and the regressed benchmarks."""
     names = [n for n in head if n in base]
     if not names:
-        return "No benchmark ran on both the base and the head.\n", []
-    out = [
-        "| Benchmark | Time base | Time head | | B/op base | B/op head | | allocs base | allocs head | |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
-    ]
+        return "No benchmark with allocations ran on both the base and the head.\n", []
+    out = ["| Benchmark | allocs/op base | allocs/op head | |", "|---|---:|---:|---:|"]
     regressed = []
     for name in names:
-        b, h = base[name], head[name]
-        cells = []
-        for i, fmt in ((0, fmt_time), (1, fmt_bytes), (2, fmt_count)):
-            old, new = median(b, i), median(h, i)
-            cells += [fmt(old), fmt(new), change(old, new)]
-        old_t, new_t = median(b, 0), median(h, 0)
-        slower = new_t > old_t * (1 + LIMIT) and min(r[0] for r in h) > max(r[0] for r in b)
-        if slower:
-            regressed.append(name)
-        mark = " ❌" if slower else ""
-        out.append(f"| `{name}`{mark} | " + " | ".join(cells) + " |")
-    runs = min(len(base[n]) for n in names), min(len(head[n]) for n in names)
+        old, new = base[name], head[name]
+        change = f"{(new - old) / old:+.1%}" if old else ""
+        bad = old > 0 and new - old > min_delta and (new - old) / old * 100 > limit
+        if bad:
+            regressed.append(f"{name}: {old:,.0f} -> {new:,.0f} ({change})")
+        out.append(f"| `{name}`{' ❌' if bad else ''} | {old:,.0f} | {new:,.0f} | {change} |")
     out.append("")
     out.append(
-        f"Medians of {runs[0]} base and {runs[1]} head runs on the same runner. "
-        f"A benchmark fails when its median time grows by more than {LIMIT:.0%} "
-        "and every head run is slower than every base run."
+        f"Medians over all runs. A benchmark fails when its allocations grow by more than "
+        f"{limit:g}% and by more than {min_delta:,.0f}."
     )
     return "\n".join(out) + "\n", regressed
 
@@ -97,15 +59,17 @@ def compare(base, head):
 def main(argv):
     if len(argv) != 3:
         sys.exit(__doc__)
-    report, regressed = compare(load(argv[1]), load(argv[2]))
-    report = "## Benchmarks: base vs head\n\n" + report
-    if regressed:
-        report += "\n**Slower:** " + ", ".join(f"`{n}`" for n in regressed) + "\n"
+    limit = float(os.environ.get("ALLOCS_LIMIT", "5"))
+    min_delta = float(os.environ.get("ALLOCS_MIN_DELTA", "1000"))
+    report, regressed = compare(load(argv[1]), load(argv[2]), limit, min_delta)
+    report = "## Allocations: base vs head\n\n" + report
     print(report)
     summary = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary:
         with open(summary, "a", encoding="utf-8") as f:
             f.write(report)
+    for r in regressed:
+        print(f"::error::{r}, limit {limit:g}% and {min_delta:,.0f} allocations")
     return 1 if regressed else 0
 
 

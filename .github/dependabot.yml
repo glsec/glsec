@@ -14,6 +14,15 @@ updates:
     cooldown:
       default-days: 7
 
+  # benchstat for the Benchmarks workflow, pinned by its own module (#880).
+  - package-ecosystem: gomod
+    directory: /.github/tools/benchstat
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
+
   - package-ecosystem: github-actions
     directory: /
     schedule:
