@@ -80,6 +80,9 @@ func TestPrefilteredMethods(t *testing.T) {
 		if got, want := p.FindStringIndex(s), p.Regexp.FindStringIndex(s); !reflect.DeepEqual(got, want) {
 			t.Errorf("FindStringIndex(%q) = %v, want %v", s, got, want)
 		}
+		if got, want := p.FindStringSubmatchIndex(s), p.Regexp.FindStringSubmatchIndex(s); !reflect.DeepEqual(got, want) {
+			t.Errorf("FindStringSubmatchIndex(%q) = %v, want %v", s, got, want)
+		}
 		if got, want := p.FindAllStringIndex(s, -1), p.Regexp.FindAllStringIndex(s, -1); !reflect.DeepEqual(got, want) {
 			t.Errorf("FindAllStringIndex(%q) = %v, want %v", s, got, want)
 		}

@@ -88,6 +88,13 @@ func (p prefiltered) FindStringIndex(s string) []int {
 	return p.Regexp.FindStringIndex(s)
 }
 
+func (p prefiltered) FindStringSubmatchIndex(s string) []int {
+	if !p.possible(s) {
+		return nil
+	}
+	return p.Regexp.FindStringSubmatchIndex(s)
+}
+
 func (p prefiltered) FindAllStringIndex(s string, n int) [][]int {
 	if !p.possible(s) {
 		return nil
