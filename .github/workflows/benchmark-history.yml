@@ -7,9 +7,14 @@ name: Benchmark history
 #
 # The input is a stored file on that branch, not generated here, so a commit
 # from today and a release from May are measured on the same pipeline.
-# Shared runners vary by 10 to 30% from job to job: releases measured by one
-# backfill run compare best with each other, and allocations (from the Go
-# benchmarks, main only) don't depend on the machine at all.
+# Shared runners vary by 10 to 30% from job to job, so each push also measures
+# the latest release in the same job, taking turns, and records the ratio
+# (#879). Releases measured by one backfill run compare with each other, and
+# allocations (from the Go benchmarks, main only) don't depend on the machine.
+#
+# Two jobs, so the write token never shares a runner with code from the
+# repository or a release: measure runs everything with a read-only token and
+# uploads the new records; record checks their shape and appends them.
 
 on:
   push:
@@ -39,12 +44,10 @@ env:
   INPUT_VERSION: "1"
 
 jobs:
-  record:
-    name: Record benchmarks
+  measure:
+    name: Measure
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    permissions:
-      contents: write # update data/benchmarks.jsonl on the benchmarks branch
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -54,24 +57,44 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Get the input and the records so far
+      - name: Get the input
         run: |
           git fetch --no-tags origin benchmarks
           git show "origin/benchmarks:inputs/v${INPUT_VERSION}/synthetic.yml" > "$RUNNER_TEMP/synthetic.yml"
-          git show origin/benchmarks:data/benchmarks.jsonl > "$RUNNER_TEMP/benchmarks.jsonl"
+          mkdir -p "$RUNNER_TEMP/out"
 
-      - name: Measure this commit
+      # Downloads a release's linux_amd64 binary to $RUNNER_TEMP/releases/<tag>
+      # after checking it against the release's checksums.txt.
+      - name: Prepare the release download
         run: |
+          cat > "$RUNNER_TEMP/fetch-release.sh" <<'EOF'
+          set -euo pipefail
+          tag=$1
+          archive="glsec_${tag#v}_linux_amd64.tar.gz"
+          dir="$RUNNER_TEMP/releases/$tag"
+          mkdir -p "$dir"
+          gh release download "$tag" -p "$archive" -p checksums.txt -D "$dir" --clobber
+          cd "$dir"
+          grep " ${archive}\$" checksums.txt | sha256sum -c --strict -
+          tar -xzf "$archive" glsec
+          EOF
+
+      - name: Measure this commit against the latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          latest=$(gh release view --json tagName --jq .tagName)
+          bash "$RUNNER_TEMP/fetch-release.sh" "$latest"
           go build -o "$RUNNER_TEMP/glsec" ./cmd/glsec
           (cd cmd/glsec && go test -run '^$' -bench 'BenchmarkRules|BenchmarkRun' -benchmem -count 5 .) \
             > "$RUNNER_TEMP/go-bench.txt"
           python3 .github/scripts/bench-record.py "$RUNNER_TEMP/glsec" "$RUNNER_TEMP/synthetic.yml" \
-            "$RUNNER_TEMP/benchmarks.jsonl" --kind main --commit "$GITHUB_SHA" \
+            "$RUNNER_TEMP/out/records.jsonl" --kind main --commit "$GITHUB_SHA" \
             --date "$(git log -1 --format=%cI)" --input-version "$INPUT_VERSION" \
-            --go-bench "$RUNNER_TEMP/go-bench.txt"
+            --go-bench "$RUNNER_TEMP/go-bench.txt" \
+            --ref-binary "$RUNNER_TEMP/releases/$latest/glsec" --ref-tag "$latest"
 
-      # Each archive is checked against the release's checksums.txt before it
-      # runs. A release that can't be measured is skipped with a warning.
+      # A release that can't be verified or measured is skipped with a warning.
       - name: Measure every release
         if: inputs.backfill
         env:
@@ -80,30 +103,72 @@ jobs:
           gh release list --limit 500 --exclude-drafts --exclude-pre-releases \
             --json tagName --jq '.[].tagName' | tac > "$RUNNER_TEMP/tags"
           while read -r tag; do
-            version=${tag#v}
-            archive="glsec_${version}_linux_amd64.tar.gz"
-            dir="$RUNNER_TEMP/releases/$tag"
-            mkdir -p "$dir"
-            if ! gh release download "$tag" -p "$archive" -p checksums.txt -D "$dir" ||
-              ! (cd "$dir" && grep " ${archive}\$" checksums.txt | sha256sum -c --strict - &&
-                tar -xzf "$archive" glsec); then
+            if ! bash "$RUNNER_TEMP/fetch-release.sh" "$tag"; then
               echo "::warning::$tag: no verified linux_amd64 binary, skipped"
               continue
             fi
-            python3 .github/scripts/bench-record.py "$dir/glsec" "$RUNNER_TEMP/synthetic.yml" \
-              "$RUNNER_TEMP/benchmarks.jsonl" --kind release --commit "$(git rev-list -n 1 "$tag")" \
-              --date "$(git log -1 --format=%cI "$tag")" --input-version "$INPUT_VERSION" ||
+            python3 .github/scripts/bench-record.py "$RUNNER_TEMP/releases/$tag/glsec" \
+              "$RUNNER_TEMP/synthetic.yml" "$RUNNER_TEMP/out/records.jsonl" --kind release \
+              --commit "$(git rev-list -n 1 "$tag")" --date "$(git log -1 --format=%cI "$tag")" \
+              --input-version "$INPUT_VERSION" ||
               echo "::warning::$tag: measurement failed, skipped"
           done < "$RUNNER_TEMP/tags"
 
-      - name: Store the records
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: benchmark-records
+          path: ${{ runner.temp }}/out/records.jsonl
+          retention-days: 7
+          if-no-files-found: error
+
+  record:
+    name: Record
+    needs: measure
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write # update data/benchmarks.jsonl on the benchmarks branch
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: benchmark-records
+          path: ${{ runner.temp }}/in
+
+      # The records come from a job that ran repository and release code;
+      # check every line before anything is written.
+      - name: Check the records
+        run: |
+          set -euo pipefail
+          in="$RUNNER_TEMP/in/records.jsonl"
+          lines=$(wc -l < "$in")
+          [[ $lines -ge 1 && $lines -le 100 ]] || { echo "unexpected record count: $lines" >&2; exit 1; }
+          # One JSON object per line: as many objects as lines, and all parse.
+          objects=$(jq -c . "$in" | wc -l)
+          [[ $objects -eq $lines ]] || { echo "records are not one JSON object per line" >&2; exit 1; }
+          jq -e -s 'all(.[];
+              type == "object"
+              and .schema == 2
+              and (.kind | IN("main", "release"))
+              and (.commit | type == "string" and test("^[0-9a-f]{40}$"))
+              and (.date | type == "string" and test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T"))
+              and (.input_version | type == "number")
+              and (.cli.median_ms | type == "number")
+              and (.cli.ratio == null or (.cli.ratio | type == "number"))
+              and (.ref == null or (.ref | type == "string" and test("^v[0-9]+\\.[0-9]+\\.[0-9]+$"))))' \
+            "$in" > /dev/null || { echo "a record has an unexpected shape" >&2; exit 1; }
+
+      - name: Append to data/benchmarks.jsonl
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         run: |
-          sha=$(gh api "repos/$REPO/contents/data/benchmarks.jsonl?ref=benchmarks" --jq .sha)
+          set -euo pipefail
+          url="repos/$REPO/contents/data/benchmarks.jsonl"
+          sha=$(gh api "$url?ref=benchmarks" --jq .sha)
+          gh api -H "Accept: application/vnd.github.raw" "$url?ref=benchmarks" > "$RUNNER_TEMP/benchmarks.jsonl"
+          cat "$RUNNER_TEMP/in/records.jsonl" >> "$RUNNER_TEMP/benchmarks.jsonl"
           base64 -w0 "$RUNNER_TEMP/benchmarks.jsonl" > "$RUNNER_TEMP/content.b64"
-          gh api -X PUT "repos/$REPO/contents/data/benchmarks.jsonl" \
+          gh api -X PUT "$url" \
             -f branch=benchmarks -f sha="$sha" \
             -f message="Record benchmarks for ${GITHUB_SHA::7}" \
             -F content=@"$RUNNER_TEMP/content.b64"

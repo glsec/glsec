@@ -4,6 +4,7 @@
 
     bench-record.py BINARY INPUT OUT.jsonl --kind main|release --commit SHA
         --date ISO-DATE --input-version N [--runs N] [--go-bench FILE]
+        [--ref-binary BINARY --ref-tag TAG]
 
 Scans INPUT with BINARY RUNS times from an empty directory, so no
 .glsec.yml or ignore file is read, and appends one JSON record to OUT.jsonl.
@@ -14,6 +15,10 @@ the repository config and the ignore files are passed only when the binary's
 --go-bench adds the medians of `go test -bench -benchmem` output, available
 for commits since #843. Allocations don't depend on the machine; time does,
 so each record also names the Go version and the CPU.
+
+--ref-binary measures a release binary as well, taking turns with BINARY so a
+runner that slows down part way affects both, and records the ratio of the
+two medians (#879). Unlike the times, the ratio compares across runners.
 """
 
 import argparse
@@ -58,17 +63,19 @@ def rule_count(binary, cwd):
     return n or None
 
 
-def cli_times(binary, input_path, runs, cwd):
-    args = [binary, *flags_for(binary, cwd), input_path]
-    times = []
+def cli_times(binaries, input_path, runs, cwd):
+    """Run each binary RUNS times, taking turns; return flags and times per binary."""
+    args = [[b, *flags_for(b, cwd), input_path] for b in binaries]
+    times = [[] for _ in binaries]
     for _ in range(runs):
-        start = time.perf_counter()
-        out = run(args, cwd)
-        elapsed = time.perf_counter() - start
-        if out.returncode not in (0, 1):
-            sys.exit(f"error: {' '.join(args)} exited {out.returncode}: {out.stderr.strip()[:300]}")
-        times.append(round(elapsed * 1000, 1))
-    return args[1:-1], times
+        for i, a in enumerate(args):
+            start = time.perf_counter()
+            out = run(a, cwd)
+            elapsed = time.perf_counter() - start
+            if out.returncode not in (0, 1):
+                sys.exit(f"error: {' '.join(a)} exited {out.returncode}: {out.stderr.strip()[:300]}")
+            times[i].append(round(elapsed * 1000, 1))
+    return [a[1:-1] for a in args], times
 
 
 def go_bench(path):
@@ -118,14 +125,24 @@ def main(argv):
     p.add_argument("--input-version", type=int, required=True)
     p.add_argument("--runs", type=int, default=7)
     p.add_argument("--go-bench")
+    p.add_argument("--ref-binary", help="a release binary to measure alongside, for the ratio")
+    p.add_argument("--ref-tag", help="the release the ref binary is, e.g. v1.24.1")
     a = p.parse_args(argv[1:])
+    if bool(a.ref_binary) != bool(a.ref_tag):
+        p.error("--ref-binary and --ref-tag go together")
 
     binary = os.path.abspath(a.binary)
     input_path = os.path.abspath(a.input)
+    binaries = [binary] + ([os.path.abspath(a.ref_binary)] if a.ref_binary else [])
     with tempfile.TemporaryDirectory() as empty:
-        flags, times = cli_times(binary, input_path, a.runs, empty)
+        flags, times = cli_times(binaries, input_path, a.runs, empty)
+        median = statistics.median(times[0])
+        cli = {"median_ms": median, "runs_ms": times[0], "flags": flags[0], "ratio": None}
+        if a.ref_binary:
+            ref_median = statistics.median(times[1])
+            cli.update(ratio=round(median / ref_median, 3), ref_median_ms=ref_median, ref_runs_ms=times[1])
         record = {
-            "schema": 1,
+            "schema": 2,
             "kind": a.kind,
             "commit": a.commit,
             "date": a.date,
@@ -133,7 +150,8 @@ def main(argv):
             "rules": rule_count(binary, empty),
             "input": os.path.splitext(os.path.basename(input_path))[0],
             "input_version": a.input_version,
-            "cli": {"median_ms": statistics.median(times), "runs_ms": times, "flags": flags},
+            "ref": a.ref_tag,
+            "cli": cli,
             "go_bench": go_bench(a.go_bench) if a.go_bench else None,
             "go_version": go_version(),
             "cpu": cpu_model(),
