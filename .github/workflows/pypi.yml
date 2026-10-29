@@ -46,6 +46,8 @@ jobs:
         with:
           egress-policy: block
           disable-telemetry: true
+          # tmaproduction.blob.core.windows.net: gh attestation verify fetches
+          # the attestation bundles from there.
           allowed-endpoints: >
             api.github.com:443
             github.com:443
@@ -53,7 +55,6 @@ jobs:
             objects.githubusercontent.com:443
             *.actions.githubusercontent.com:443
             tuf-repo-cdn.sigstore.dev:443
-            # gh attestation verify fetches the attestation bundles from here.
             tmaproduction.blob.core.windows.net:443
             productionresultssa0.blob.core.windows.net:443
             productionresultssa1.blob.core.windows.net:443
