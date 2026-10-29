@@ -196,6 +196,8 @@ glsec --new-only .gitlab-ci.yml                       # diff against .glsec-igno
 glsec --new-only --baseline main.json .gitlab-ci.yml  # diff against a saved JSON snapshot
 ```
 
+`--generate-ignore` rewrites only the entries the run could have reported: those for a file it scanned and a rule that ran. Entries for other pipeline files, and for rules left out with `--only`, `--skip` or `.glsec.yml`, stay as they are, and so do comments and an entry's `exp:` date when the finding is still there. `glsec --generate-ignore --only GL001 .gitlab-ci.yml` refreshes the GL001 entries and keeps the rest.
+
 ### Exit codes
 
 | Code | Meaning |

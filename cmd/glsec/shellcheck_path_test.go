@@ -34,7 +34,7 @@ func fakeShellCheck(t *testing.T) (bin, marker string) {
 }
 
 func ran(marker string) bool {
-	_, err := os.Stat(marker)
+	_, err := os.Stat(marker) //nolint:gosec // G703: marker is a path in the test's temp dir
 	return err == nil
 }
 
