@@ -90,6 +90,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	baselineFlag := flags.String("baseline", "", "path to a baseline to diff against in --new-only mode: a glsec JSON snapshot (--format json) or a .glsec-ignore file (implies --new-only)")
 	requireReasonFlag := flags.Bool("require-ignore-reason", false, "treat an inline # glsec:ignore without a \"-- reason\" as a policy violation (exit 2)")
 	noCacheFlag := flags.Bool("no-cache", false, "disable result cache for this run")
+	cacheFlag := flags.Bool("cache", false, "use the result cache in CI (CI=true), where it is off by default; --no-cache wins")
 	clearCacheFlag := flags.Bool("clear-cache", false, "remove all cached results and exit")
 	noColorFlag := flags.Bool("no-color", false, "disable colored output")
 	shellcheckPathFlag := flags.String("shellcheck-path", "", "path to the ShellCheck binary (default: shellcheck from PATH)")
@@ -253,6 +254,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 	// it and silently drop the per-suppression messages. Opt-in policy, so paying
 	// with a cold scan is the right trade.
 	useCache := !*noCacheFlag && !*generateIgnoreFlag && !*noIgnoresFlag && !newOnly && !cfg.RequireIgnoreReason
+	// A CI job starts fresh, so the cache only helps if the project persists
+	// it between pipelines, which costs more than the scan and shares a file
+	// that decides what glsec reports (#898).
+	if os.Getenv("CI") == "true" && !*cacheFlag {
+		useCache = false
+	}
 
 	scanOpts := scanOptions{
 		stderr:         stderr,

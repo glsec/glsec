@@ -303,6 +303,8 @@ With the GitLab component, set the inputs `no_repo_config: true` and `no_ignores
 
 glsec caches results in `$XDG_CACHE_HOME/glsec` (`~/.cache/glsec` by default), keyed on the glsec version, the date, the scanned files, the config and the suppressions, so an unchanged pipeline is not scanned twice on the same day. `--no-cache` skips it for one run; `--clear-cache` empties it.
 
+In CI (`CI=true`) glsec doesn't use the cache: a job starts in a fresh container, so the cache would only help if the project kept it between pipelines with `cache:`, which takes longer than the scan and shares a file that decides what glsec reports. `--cache` turns it on for such a run anyway; `--no-cache` wins over it.
+
 A cached result decides what glsec reports, so glsec only uses a cache directory that belongs to the current user and that nobody else can write to, reads only regular files from it, and never uses a cache that lies inside the directory of the pipeline being scanned (as with `XDG_CACHE_HOME=$CI_PROJECT_DIR/.cache`), where the repository could ship entries of its own.
 
 ## Rules
