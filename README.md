@@ -68,9 +68,10 @@ It adds a `glsec` job that runs in the `test` stage (set the `stage` input to ch
 brew install glsec/tap/glsec        # Homebrew (macOS and Linux)
 aqua g -i glsec/glsec && aqua i     # aqua
 mise use github:glsec/glsec         # mise
+pipx install glsec                  # PyPI (or: uv tool install glsec, uvx glsec)
 ```
 
-The [Homebrew tap](https://github.com/glsec/homebrew-tap) takes each release only after its archives pass the provenance check described under [Verifying a release](#verifying-a-release). glsec is in the [aqua](https://aquaproj.github.io/) standard registry from v4.578.0 on; aqua checks each download against `checksums.txt` and the provenance of glsec's release workflow. [mise](https://mise.jdx.dev/) installs the release archive from GitHub.
+The [Homebrew tap](https://github.com/glsec/homebrew-tap) takes each release only after its archives pass the provenance check described under [Verifying a release](#verifying-a-release). glsec is in the [aqua](https://aquaproj.github.io/) standard registry from v4.578.0 on; aqua checks each download against `checksums.txt` and the provenance of glsec's release workflow. [mise](https://mise.jdx.dev/) installs the release archive from GitHub. The [PyPI package](https://pypi.org/project/glsec/) is a wheel per platform that carries the release binary, taken from the archive after the same checksum and provenance check; it has no Python code and downloads nothing at install time.
 
 **Go install (requires Go 1.26+):**
 
