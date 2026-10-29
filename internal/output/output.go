@@ -260,9 +260,7 @@ func writeJSON(w io.Writer, findings []finding.Finding, owasp, asvs func(string)
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
 	enc.SetIndent("", "  ")
-	if err := enc.Encode(out); err != nil {
-		return err
-	}
+	_ = enc.Encode(out) // a bytes.Buffer never fails and jsonOutput always marshals
 	_, err := io.WriteString(w, escapeBidiJSON(buf.String()))
 	return err
 }
