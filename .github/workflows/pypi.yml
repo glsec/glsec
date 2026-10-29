@@ -53,6 +53,8 @@ jobs:
             objects.githubusercontent.com:443
             *.actions.githubusercontent.com:443
             tuf-repo-cdn.sigstore.dev:443
+            # gh attestation verify fetches the attestation bundles from here.
+            tmaproduction.blob.core.windows.net:443
             productionresultssa0.blob.core.windows.net:443
             productionresultssa1.blob.core.windows.net:443
             productionresultssa2.blob.core.windows.net:443
