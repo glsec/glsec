@@ -165,10 +165,10 @@ glsec --no-color .gitlab-ci.yml
 # exclude a file or directory from scanning
 glsec --exclude vendor/ .gitlab-ci.yml
 
-# run only specific rules (comma-separated or repeated)
+# run only specific rules (comma-separated or repeated); an unknown rule ID is an error
 glsec --only GL001,GL003 .gitlab-ci.yml
 
-# skip specific rules
+# skip specific rules; an unknown rule ID only warns
 glsec --skip GL008,GL022 .gitlab-ci.yml
 
 # CycloneDX BOM of the images and includes the pipeline pulls in (see Pipeline inventory)
@@ -204,7 +204,7 @@ glsec --new-only --baseline main.json .gitlab-ci.yml  # diff against a saved JSO
 |------|---------|
 | 0 | No `error`-severity findings (warn-only findings exit 0 by default) |
 | 1 | One or more `error` findings; or any finding when `--strict` is set |
-| 2 | Usage error, file could not be parsed, a suppression policy violation, or with `--strict`, every file excluded |
+| 2 | Usage error (including an unknown rule ID in `--only`, or `--only` and `--skip` that leave no rule), file could not be parsed, a suppression policy violation, or with `--strict`, every file excluded |
 
 Use `--strict` to treat `warn` findings as hard failures (exit 1). Use `--no-exit-codes` to always exit 0 regardless of findings (advisory/informational mode). All flags can also be set in `.glsec.yml`:
 

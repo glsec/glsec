@@ -217,9 +217,38 @@ func TestRun_OnlyAndSkip(t *testing.T) {
 		t.Errorf("--skip gl001 should drop GL001 (case-insensitive) and exit 0, got %d:\n%s", code, stdout)
 	}
 
-	_, _, stderr := runCLI(t, files, "--only", "GL01,GL001", "error.yml")
-	if !strings.Contains(stderr, `unknown rule ID "GL01"`) {
-		t.Errorf("a typo in --only should warn, stderr:\n%s", stderr)
+}
+
+// A typo in --only drops a rule the user asked for, so it stops the scan; a
+// typo in --skip leaves the rule running and only warns (#900).
+func TestRun_UnknownRuleIDs(t *testing.T) {
+	files := map[string]string{"error.yml": errorPipeline}
+	for _, tc := range []struct {
+		name     string
+		args     []string
+		wantCode int
+		wantErr  string
+	}{
+		{"typo alone in --only", []string{"--only", "GL0O1"}, 2, `error: --only: unknown rule ID "GL0O1"`},
+		{"typo next to a valid ID", []string{"--only", "GL01,GL001"}, 2, `error: --only: unknown rule ID "GL01"`},
+		{"two typos, both named", []string{"--only", "GLX,GL01"}, 2, `unknown rule ID "GL01", "GLX"`},
+		{"--only and --skip cancel out", []string{"--skip", "GL001", "--only", "GL001"}, 2, "leave no rule to run"},
+		{"typo in --skip only warns", []string{"--skip", "GL01"}, 1, `warning: --skip: unknown rule ID "GL01"`},
+		{"ShellCheck code is accepted", []string{"--only", "GL001,SC2086"}, 1, ""},
+		{"--skip narrows --only", []string{"--only", "GL001,GL053", "--skip", "GL053"}, 1, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			code, _, stderr := runCLI(t, files, append(tc.args, "error.yml")...)
+			if code != tc.wantCode {
+				t.Errorf("exit %d, want %d; stderr:\n%s", code, tc.wantCode, stderr)
+			}
+			if tc.wantErr != "" && !strings.Contains(stderr, tc.wantErr) {
+				t.Errorf("stderr lacks %q:\n%s", tc.wantErr, stderr)
+			}
+			if tc.wantErr == "" && strings.Contains(stderr, "unknown rule ID") {
+				t.Errorf("unexpected unknown-ID message:\n%s", stderr)
+			}
+		})
 	}
 }
 

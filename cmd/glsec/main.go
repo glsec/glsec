@@ -12,8 +12,10 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"runtime/debug"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -209,13 +211,24 @@ func run(args []string, stdout, stderr io.Writer) int {
 		cfg.ShellCheck.Path = *shellcheckPathFlag
 	}
 
+	// A typo in --skip leaves the rule running; a typo in --only drops a
+	// rule the user asked for and, alone, turns the scan off with exit 0 (#900).
 	if len(onlyArgs) > 0 {
 		cfg.Only = ruleIDSet(onlyArgs)
-		warnUnknownRuleIDs(stderr, "--only", cfg.Only)
+		if unknown := unknownRuleIDs(cfg.Only); len(unknown) > 0 {
+			_, _ = fmt.Fprintf(stderr, "error: --only: unknown rule ID %s\n", strings.Join(unknown, ", "))
+			return 2
+		}
 	}
 	if len(skipArgs) > 0 {
 		cfg.Skip = ruleIDSet(skipArgs)
-		warnUnknownRuleIDs(stderr, "--skip", cfg.Skip)
+		for _, id := range unknownRuleIDs(cfg.Skip) {
+			_, _ = fmt.Fprintf(stderr, "warning: --skip: unknown rule ID %s\n", id)
+		}
+	}
+	if len(cfg.Only) > 0 && !anyRuleSelected(cfg) {
+		_, _ = fmt.Fprintf(stderr, "error: --only and --skip together leave no rule to run\n")
+		return 2
 	}
 
 	rules.GL016.SetTrustedHosts(cfg.TrustedHosts)
@@ -517,18 +530,33 @@ func ruleIDSet(ids []string) map[string]bool {
 	return set
 }
 
-// warnUnknownRuleIDs prints a stderr warning for any ID in set that is not a
-// known rule, so typos (e.g. --only GL01) do not silently match nothing.
-func warnUnknownRuleIDs(w io.Writer, flagName string, set map[string]bool) {
+// unknownRuleIDs returns the IDs in set that name neither a glsec rule nor a
+// ShellCheck check (SCnnnn), quoted and sorted.
+func unknownRuleIDs(set map[string]bool) []string {
 	known := make(map[string]bool, len(rules.All()))
 	for _, r := range rules.All() {
 		known[r.ID()] = true
 	}
+	var out []string
 	for id := range set {
-		if !known[id] {
-			_, _ = fmt.Fprintf(w, "warning: %s: unknown rule ID %q\n", flagName, id)
+		if !known[id] && !shellCheckIDRe.MatchString(id) {
+			out = append(out, strconv.Quote(id))
 		}
 	}
+	sort.Strings(out)
+	return out
+}
+
+var shellCheckIDRe = regexp.MustCompile(`^SC[0-9]{4}$`)
+
+// anyRuleSelected reports whether --only and --skip leave a rule to run.
+func anyRuleSelected(cfg *config.Config) bool {
+	for id := range cfg.Only {
+		if !cfg.Skip[id] {
+			return true
+		}
+	}
+	return false
 }
 
 // resolveTargets turns the positional arguments into a list of pipeline files
