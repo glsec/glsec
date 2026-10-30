@@ -30,6 +30,10 @@ type Document struct {
 	// A root .gitlab-ci.yml with a `spec:` header declares pipeline inputs and
 	// is still a whole pipeline.
 	ComponentTemplate bool
+	// IncludedBy is set when the file was scanned because a pipeline pulls it
+	// in with `include: local` (#810): the pipeline's root document. The file
+	// is a fragment of that pipeline, like a component template.
+	IncludedBy *Document
 	// DuplicateKeys lists the keys the parser removed because the same
 	// mapping has them again later, in the spec: header and the body.
 	DuplicateKeys []DuplicateKey

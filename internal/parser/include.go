@@ -4,6 +4,7 @@
 package parser
 
 import (
+	"regexp"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -51,4 +52,88 @@ func shorthandInclude(value *yaml.Node) *yaml.Node {
 		Column:  value.Column,
 		Content: []*yaml.Node{{Kind: yaml.ScalarNode, Tag: "!!str", Value: key, Line: value.Line, Column: value.Column}, value},
 	}
+}
+
+// LocalIncludePaths returns the files a pipeline pulls in with a top-level
+// `include:` of local files (#810): `local:` entries and the string
+// shorthand, whatever their `rules:` say, since the file may be included.
+// A path with a variable or an input can't be resolved without the
+// pipeline's context and is left out. Paths may contain GitLab's wildcards;
+// see MatchIncludeGlob.
+func LocalIncludePaths(doc *yaml.Node) []string {
+	if doc.Kind == yaml.DocumentNode && len(doc.Content) > 0 {
+		doc = doc.Content[0]
+	}
+	var paths []string
+	for _, item := range IncludeItems(FindKey(doc, "include")) {
+		local := FindKey(item, "local")
+		if local == nil || local.Kind != yaml.ScalarNode || local.Value == "" {
+			continue
+		}
+		if strings.Contains(local.Value, "$") {
+			continue
+		}
+		paths = append(paths, local.Value)
+	}
+	return paths
+}
+
+// IncludeGlob compiles a wildcard `include: local` path the way GitLab
+// matches it against the repository's files: `*` stays within a directory,
+// `**` crosses directories (`ci/**.yml`, `ci/**/*.yml`), `?` is one character
+// and `{a,b}` either. The pattern is relative to the repository root, without
+// a leading `/`. It returns nil for a path without wildcards.
+func IncludeGlob(pattern string) *regexp.Regexp {
+	if !strings.ContainsAny(pattern, "*?{") {
+		return nil
+	}
+	var re strings.Builder
+	re.WriteString(`^`)
+	depth := 0
+	for i := 0; i < len(pattern); i++ {
+		switch c := pattern[i]; {
+		case strings.HasPrefix(pattern[i:], "**/"):
+			re.WriteString(`(?:.*/)?`)
+			i += 2
+		case strings.HasPrefix(pattern[i:], "**"):
+			re.WriteString(`.*`)
+			i++
+		case c == '*':
+			re.WriteString(`[^/]*`)
+		case c == '?':
+			re.WriteString(`[^/]`)
+		case c == '{':
+			re.WriteString(`(?:`)
+			depth++
+		case c == '}' && depth > 0:
+			re.WriteString(`)`)
+			depth--
+		case c == ',' && depth > 0:
+			re.WriteString(`|`)
+		default:
+			re.WriteString(regexp.QuoteMeta(string(c)))
+		}
+	}
+	if depth > 0 {
+		return nil
+	}
+	re.WriteString(`$`)
+	compiled, err := regexp.Compile(re.String())
+	if err != nil {
+		return nil
+	}
+	return compiled
+}
+
+// IncludeGlobDir returns the directory a wildcard pattern's matches are in:
+// the part before the first wildcard, up to its last `/`.
+func IncludeGlobDir(pattern string) string {
+	static := pattern
+	if i := strings.IndexAny(pattern, "*?{"); i >= 0 {
+		static = pattern[:i]
+	}
+	if i := strings.LastIndexByte(static, '/'); i >= 0 {
+		return static[:i]
+	}
+	return ""
 }

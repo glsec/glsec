@@ -271,6 +271,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		useCache:       useCache,
 		generateIgnore: *generateIgnoreFlag,
 		scannedFiles:   map[string]bool{},
+		included:       map[string]bool{},
 		noIgnores:      *noIgnoresFlag,
 		newOnly:        newOnly,
 	}
@@ -287,6 +288,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 			continue
 		}
 		scanned++
+		// Already scanned as part of an earlier pipeline that includes it,
+		// with that pipeline's configuration around it (#810).
+		if abs, err := filepath.Abs(file); err == nil && scanOpts.included[abs] {
+			continue
+		}
 		findings, jobCount, unjustified, scanErr := scanRoot(file, scanOpts)
 		if scanErr != nil {
 			_, _ = fmt.Fprintf(stderr, "error: %s\n", scanErr.Message)
@@ -360,8 +366,11 @@ type scanOptions struct {
 	// scannedFiles collects every pipeline file scanned, child pipelines
 	// included, for --generate-ignore; nil otherwise.
 	scannedFiles map[string]bool
-	noIgnores    bool
-	newOnly      bool
+	// included collects the absolute paths of the files scanned because a
+	// pipeline includes them with include: local.
+	included  map[string]bool
+	noIgnores bool
+	newOnly   bool
 }
 
 // scanRoot parses one root pipeline file (and its child pipelines), runs the
@@ -402,6 +411,11 @@ func scanRoot(file string, opt scanOptions) (findings []finding.Finding, jobCoun
 			opt.scannedFiles[d.File] = true
 		}
 	}
+	for _, d := range allDocs {
+		if abs, err := filepath.Abs(d.File); err == nil && d.IncludedBy != nil && opt.included != nil {
+			opt.included[abs] = true
+		}
+	}
 
 	jobCount = parser.CountJobs(doc.Root)
 	for _, d := range allDocs[1:] {
@@ -427,7 +441,7 @@ func scanRoot(file string, opt scanOptions) (findings []finding.Finding, jobCoun
 	}
 
 	skipSuppress := opt.generateIgnore || opt.noIgnores
-	for _, d := range allDocs {
+	for _, d := range withPipelineContext(allDocs) {
 		f, u, err := collectFindings(d, d.File, opt.cfg, opt.gitlabVersion, skipSuppress, opt.newOnly)
 		if err != nil {
 			return fail(d.File, err)
@@ -726,30 +740,120 @@ func matchesExclude(file string, patterns []string) bool {
 // or unparsable child, or one outside rootDir, is reported to w and skipped.
 func collectDocuments(w io.Writer, doc *parser.Document, rootDir string, excludePaths []string, seen map[string]bool) []*parser.Document {
 	all := []*parser.Document{doc}
-	for _, child := range parser.ChildPipelinePaths(doc.Root) {
-		childPath := filepath.Join(rootDir, strings.TrimPrefix(child, "/"))
+	pipeline := doc
+	if doc.IncludedBy != nil {
+		pipeline = doc.IncludedBy
+	}
+	follow := func(kind, path string, included bool) {
+		childPath := filepath.Join(rootDir, strings.TrimPrefix(path, "/"))
 		if matchesExclude(childPath, excludePaths) {
-			continue
+			return
 		}
 		abs, err := filepath.Abs(childPath)
 		if err != nil || seen[abs] {
-			continue
+			return
 		}
 		seen[abs] = true
 		// GitLab rejects local includes outside the project; reading them would
 		// let a pipeline file print lines of other files on the runner.
 		if !withinRoot(rootDir, childPath) {
-			_, _ = fmt.Fprintf(w, "warning: child pipeline %s: outside the repository, skipped\n", output.Sanitize(filepath.ToSlash(childPath)))
-			continue
+			_, _ = fmt.Fprintf(w, "warning: %s %s: outside the repository, skipped\n", kind, output.Sanitize(filepath.ToSlash(childPath)))
+			return
 		}
 		childDoc, err := parser.ParseFile(childPath)
 		if err != nil {
-			_, _ = fmt.Fprintf(w, "warning: child pipeline %s: %s\n", output.Sanitize(filepath.ToSlash(childPath)), output.Sanitize(err.Error()))
-			continue
+			_, _ = fmt.Fprintf(w, "warning: %s %s: %s\n", kind, output.Sanitize(filepath.ToSlash(childPath)), output.Sanitize(err.Error()))
+			return
+		}
+		if included {
+			childDoc.IncludedBy = pipeline
 		}
 		all = append(all, collectDocuments(w, childDoc, rootDir, excludePaths, seen)...)
 	}
+	for _, child := range parser.ChildPipelinePaths(doc.Root) {
+		follow("child pipeline", child, false)
+	}
+	// Files pulled in with include: local are part of this pipeline (#810).
+	for _, include := range parser.LocalIncludePaths(doc.Root) {
+		pattern := strings.TrimPrefix(include, "/")
+		re := parser.IncludeGlob(pattern)
+		if re == nil {
+			follow("include", pattern, true)
+			continue
+		}
+		for _, path := range globIncludes(w, rootDir, pattern, re) {
+			follow("include", path, true)
+		}
+	}
 	return all
+}
+
+// withPipelineContext gives each file of a pipeline the global keywords and
+// hidden jobs of the files it includes or is included by (#810), so rules see
+// the configuration GitLab merges. A child pipeline is a pipeline of its own.
+func withPipelineContext(docs []*parser.Document) []*parser.Document {
+	members := map[*parser.Document][]*parser.Document{}
+	for _, d := range docs {
+		if d.IncludedBy != nil {
+			members[d.IncludedBy] = append(members[d.IncludedBy], d)
+		}
+	}
+	if len(members) == 0 {
+		return docs
+	}
+	out := make([]*parser.Document, len(docs))
+	for i, d := range docs {
+		root := d
+		if d.IncludedBy != nil {
+			root = d.IncludedBy
+		}
+		group := append([]*parser.Document{root}, members[root]...)
+		others := make([]*parser.Document, 0, len(group)-1)
+		for _, o := range group {
+			if o != d {
+				others = append(others, o)
+			}
+		}
+		out[i] = parser.WithContext(d, others)
+	}
+	return out
+}
+
+// maxIncludes is GitLab's default limit of included files per pipeline.
+const maxIncludes = 150
+
+// globIncludes returns the files under rootDir a wildcard include: local
+// path matches, relative to rootDir, in lexical order. Symbolic links to
+// directories aren't followed, and .git is skipped.
+func globIncludes(w io.Writer, rootDir, pattern string, re *regexp.Regexp) []string {
+	dir := filepath.Join(rootDir, filepath.FromSlash(parser.IncludeGlobDir(pattern)))
+	if !withinRoot(rootDir, dir) {
+		_, _ = fmt.Fprintf(w, "warning: include %s: outside the repository, skipped\n", output.Sanitize(pattern))
+		return nil
+	}
+	var paths []string
+	_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil //nolint:nilerr // an unreadable directory has no files to include
+		}
+		if d.IsDir() {
+			if d.Name() == ".git" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		rel, err := filepath.Rel(rootDir, path)
+		if err != nil || !re.MatchString(filepath.ToSlash(rel)) {
+			return nil
+		}
+		if len(paths) == maxIncludes {
+			_, _ = fmt.Fprintf(w, "warning: include %s: more than %d files match, the rest is skipped\n", output.Sanitize(pattern), maxIncludes)
+			return filepath.SkipAll
+		}
+		paths = append(paths, rel)
+		return nil
+	})
+	return paths
 }
 
 // withinRoot reports whether path, after resolving symbolic links, lies inside
@@ -814,6 +918,11 @@ func collectFindings(doc *parser.Document, path string, cfg *config.Config, gitl
 	// expired suppression is announced, so a finding that suddenly reappears is
 	// traceable to the date rather than looking like a new violation.
 	keep := func(f finding.Finding) bool {
+		// On configuration another file of the pipeline contributes (#810):
+		// that file reports it.
+		if f.Line <= parser.ContextLine/2 {
+			return false
+		}
 		if skipSuppress {
 			return true
 		}
@@ -837,7 +946,7 @@ func collectFindings(doc *parser.Document, path string, cfg *config.Config, gitl
 		if !rules.EnabledFor(rule.ID(), gitlabVersion) {
 			continue
 		}
-		if doc.ComponentTemplate && !rules.AppliesToComponentTemplate(rule.ID()) {
+		if (doc.ComponentTemplate || doc.IncludedBy != nil) && !rules.AppliesToComponentTemplate(rule.ID()) {
 			continue
 		}
 		for _, f := range rules.Check(rule, doc, path) {
@@ -887,7 +996,7 @@ func reportUnjustified(sm suppress.Map, path string) int {
 	})
 	n := 0
 	for _, e := range entries {
-		if e.Reason != "" {
+		if e.Reason != "" || e.Line <= parser.ContextLine/2 {
 			continue
 		}
 		n++
