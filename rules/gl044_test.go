@@ -56,6 +56,7 @@ scan:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
   before_script:
     - git fetch origin $CI_MERGE_REQUEST_SOURCE_BRANCH_SHA
+    - git checkout FETCH_HEAD
   script:
     - ./analyze.sh
 `)
@@ -154,8 +155,8 @@ test:
     - git fetch origin $env:CI_MERGE_REQUEST_SOURCE_BRANCH_SHA
     - git checkout $env:CI_MERGE_REQUEST_SOURCE_BRANCH_SHA
 `)
-	if len(f) != 2 {
-		t.Fatalf("expected 2 findings for PowerShell $env:CI_MERGE_REQUEST_SOURCE_BRANCH_SHA, got %d: %v", len(f), f)
+	if len(f) != 1 || f[0].Line != 8 {
+		t.Fatalf("expected 1 finding on the checkout for PowerShell $env:CI_MERGE_REQUEST_SOURCE_BRANCH_SHA, got %d: %v", len(f), f)
 	}
 }
 
@@ -210,5 +211,33 @@ scan:
 `)
 	if len(f) != 1 {
 		t.Fatalf("expected 1 finding for ${VAR} syntax, got %d", len(f))
+	}
+}
+
+// Reading history with the SHA checks out nothing (#980).
+func TestGL044_HistoryOnly(t *testing.T) {
+	for _, line := range []string{
+		`git log "$CI_MERGE_REQUEST_DIFF_BASE_SHA..$CI_MERGE_REQUEST_SOURCE_BRANCH_SHA"`,
+		`git rev-list --count $CI_MERGE_REQUEST_TARGET_BRANCH_SHA..$CI_MERGE_REQUEST_SOURCE_BRANCH_SHA`,
+		`commitlint --from "$CI_MERGE_REQUEST_DIFF_BASE_SHA" --to "$CI_MERGE_REQUEST_SOURCE_BRANCH_SHA"`,
+		`git diff --name-only $CI_MERGE_REQUEST_DIFF_BASE_SHA $CI_MERGE_REQUEST_SOURCE_BRANCH_SHA`,
+		`git fetch origin $CI_MERGE_REQUEST_SOURCE_BRANCH_SHA`,
+		`echo "testing ${CI_MERGE_REQUEST_SOURCE_BRANCH_SHA:-$CI_COMMIT_SHA}"`,
+	} {
+		f := findings044(t, "lint:\n  rules:\n    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\"\n  script:\n    - '"+line+"'\n")
+		if len(f) != 0 {
+			t.Errorf("%s: got %v, want no finding", line, f)
+		}
+	}
+	for _, line := range []string{
+		`git checkout "$CI_MERGE_REQUEST_SOURCE_BRANCH_SHA"`,
+		`git -C src switch --detach $CI_MERGE_REQUEST_SOURCE_BRANCH_SHA`,
+		`git reset --hard ${CI_MERGE_REQUEST_SOURCE_BRANCH_SHA}`,
+		`git worktree add ../mr $CI_MERGE_REQUEST_SOURCE_BRANCH_SHA`,
+	} {
+		f := findings044(t, "lint:\n  rules:\n    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\"\n  script:\n    - '"+line+"'\n")
+		if len(f) != 1 {
+			t.Errorf("%s: got %v, want one finding", line, f)
+		}
 	}
 }

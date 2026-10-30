@@ -107,12 +107,13 @@ func checkScriptForMRSourceSHA(node *yaml.Node, file string) []finding.Finding {
 		return nil
 	}
 	var findings []finding.Finding
+	fetched := false
 	for _, item := range node.Content {
 		if item.Kind != yaml.ScalarNode {
 			continue
 		}
-		if loc := mrSourceSHARe.FindStringIndex(item.Value); loc != nil {
-			line, col := scriptMatchPos(item, loc[0])
+		if at, ok := checksOutMRSourceSHA(item.Value, &fetched); ok {
+			line, col := scriptLinePos(item, at)
 			findings = append(findings, finding.Finding{
 				RuleID:   "GL044",
 				Severity: finding.Warn,
@@ -124,6 +125,52 @@ func checkScriptForMRSourceSHA(node *yaml.Node, file string) []finding.Finding {
 		}
 	}
 	return findings
+}
+
+// gitCheckoutSubcommands are the git subcommands that put a revision in the
+// working tree. Reading history with the SHA (git log, rev-list, diff,
+// commitlint --to) checks out nothing (#980).
+var gitCheckoutSubcommands = map[string]bool{"checkout": true, "switch": true, "reset": true, "restore": true, "worktree": true}
+
+// checksOutMRSourceSHA reports whether a script item checks out the MR source
+// SHA, directly or through FETCH_HEAD after an earlier item fetched it
+// (*fetched carries that across items), and the index of the item line that
+// does.
+func checksOutMRSourceSHA(item string, fetched *bool) (int, bool) {
+	if !*fetched && !mrSourceSHARe.MatchString(item) {
+		return 0, false
+	}
+	for _, cmd := range shellCommands(item) {
+		words := commandWords(cmd.text)
+		if commandName(words) != "git" {
+			continue
+		}
+		sub := gitSubcommand(words[1:])
+		hasSHA := mrSourceSHARe.MatchString(cmd.text)
+		switch {
+		case sub == "fetch" && hasSHA:
+			*fetched = true
+		case gitCheckoutSubcommands[sub] && (hasSHA || *fetched && strings.Contains(cmd.text, "FETCH_HEAD")):
+			return cmd.line, true
+		}
+	}
+	return 0, false
+}
+
+// gitSubcommand returns git's subcommand from the words after "git",
+// skipping global options such as -C dir and -c key=value.
+func gitSubcommand(words []string) string {
+	for i := 0; i < len(words); i++ {
+		w := words[i]
+		switch {
+		case w == "-C" || w == "-c" || w == "--git-dir" || w == "--work-tree":
+			i++
+		case strings.HasPrefix(w, "-"):
+		default:
+			return w
+		}
+	}
+	return ""
 }
 
 func checkImageForMRSourceSHA(node *yaml.Node, file, job string) *finding.Finding {
