@@ -23,7 +23,8 @@ func (r *gl062) ID() string { return "GL062" }
 // environment. The command must sit at a shell command boundary and be
 // followed immediately by end-of-line or a shell separator, so
 // `printenv VAR` and `env VAR=v cmd` are not matched.
-var envFullDumpRe = regexp.MustCompile(`(?:^|[;&|(])\s*(?:/usr/bin/|/bin/)?(?:printenv|env)\s*(?:$|[;&|#)])`)
+// (?m): in a multi-line block the command can be on any line (#975).
+var envFullDumpRe = regexp.MustCompile(`(?m)(?:^|[;&|(])\s*(?:/usr/bin/|/bin/)?(?:printenv|env)\s*(?:$|[;&|#)])`)
 
 func (r *gl062) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding

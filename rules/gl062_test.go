@@ -131,3 +131,15 @@ debug:
 		t.Fatalf("expected no findings for word containing env, got %d", len(f))
 	}
 }
+
+// A dump on a later line of a block is reported on its line (#975).
+func TestGL062_LaterLineOfABlock(t *testing.T) {
+	doc, err := parser.Parse([]byte("debug:\n  script:\n    - |\n      echo start\n      env\n      printenv | sort\n"), "test.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := GL062.Check(doc.Root, "test.yml")
+	if len(f) != 1 || f[0].Line != 5 {
+		t.Fatalf("got %+v, want one finding on line 5", f)
+	}
+}
