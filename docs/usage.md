@@ -149,7 +149,7 @@ Two examples to start from: [`docs/templates/csv.tmpl`](templates/csv.tmpl) (one
 | Code | Meaning |
 |------|---------|
 | 0 | No `error`-severity findings (warn-only findings exit 0 by default) |
-| 1 | One or more `error` findings; or any finding when `--strict` is set |
+| 1 | One or more `error` findings; or a `warn` finding when `--strict` is set (`info` findings never fail the run) |
 | 2 | Usage error (including an unknown rule ID in `--only`, or `--only` and `--skip` that leave no rule), file could not be parsed, a suppression policy violation, or with `--strict`, every file excluded |
 
 On exit 2 after the scan started, the machine-readable reports still list the findings of the files that were scanned and say which file failed and why, so a failed scan doesn't read as a clean one: an `errors` array in `json`, a `blocker` issue with check name `glsec-error` in `codeclimate`, an unsuccessful invocation with the error as a notification in `sarif`, a test case with an `<error>` in `junit`, `scan.status: failure` with a `fatal` message in `gitlab-sast`, and `.Errors` in a template. A usage or config error stops glsec before it writes a report.
