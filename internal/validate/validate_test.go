@@ -163,3 +163,15 @@ func TestFile_IgnoredDocumentWarning(t *testing.T) {
 		t.Errorf("warnings = %q, want [%q]", warns, want)
 	}
 }
+
+func TestFile_KeywordJobWarning(t *testing.T) {
+	doc := parse(t, "default:\n  script: [./deploy.sh]\nreal:\n  script: [x]\n")
+	warns, err := File("test.yml", doc)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := `test.yml:1: default: has job keywords, so GitLab runs it as a job named "default" and it sets no defaults; glsec scans it as that job`
+	if len(warns) != 1 || warns[0] != want {
+		t.Errorf("warnings = %q, want [%q]", warns, want)
+	}
+}

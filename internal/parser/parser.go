@@ -83,6 +83,7 @@ func Parse(data []byte, file string) (*Document, error) {
 	ExpandAliases(doc.Root)
 	ExpandAliases(doc.Spec)
 	ResolveReferences(doc.Root)
+	markKeywordJobs(doc.Root)
 	NormalizeScripts(doc.Root)
 	return doc, nil
 }
@@ -117,6 +118,32 @@ func hasSpecHeader(doc *yaml.Node) bool {
 	return false
 }
 
+// keywordJobTag marks the key of a top-level default: or workflow: that
+// holds script:, run: or trigger:. GitLab makes such a mapping a job of that
+// name, and it no longer sets defaults or workflow rules (#937): EachJob
+// visits it, FindKey and FindKeyNode skip it.
+const keywordJobTag = "!glsec/keyword-job"
+
+func markKeywordJobs(doc *yaml.Node) {
+	top := Unwrap(doc)
+	if top.Kind != yaml.MappingNode {
+		return
+	}
+	for i := 0; i+1 < len(top.Content); i += 2 {
+		key, val := top.Content[i], top.Content[i+1]
+		if (key.Value == "default" || key.Value == "workflow") && val.Kind == yaml.MappingNode &&
+			(FindKey(val, "script") != nil || FindKey(val, "run") != nil || FindKey(val, "trigger") != nil) {
+			key.Tag = keywordJobTag
+		}
+	}
+}
+
+// IsKeywordJob reports whether key is a top-level default: or workflow:
+// that GitLab runs as a job (#937).
+func IsKeywordJob(key *yaml.Node) bool {
+	return key.Tag == keywordJobTag
+}
+
 // MappingNode returns the top-level mapping node of the document.
 func (d *Document) MappingNode() *yaml.Node {
 	if d.Root.Kind == yaml.DocumentNode && len(d.Root.Content) > 0 {
@@ -131,7 +158,7 @@ func FindKey(node *yaml.Node, key string) *yaml.Node {
 		return nil
 	}
 	for i := 0; i+1 < len(node.Content); i += 2 {
-		if node.Content[i].Value == key {
+		if node.Content[i].Value == key && node.Content[i].Tag != keywordJobTag {
 			return node.Content[i+1]
 		}
 	}
@@ -144,7 +171,7 @@ func FindKeyNode(node *yaml.Node, key string) (keyNode, valueNode *yaml.Node) {
 		return nil, nil
 	}
 	for i := 0; i+1 < len(node.Content); i += 2 {
-		if node.Content[i].Value == key {
+		if node.Content[i].Value == key && node.Content[i].Tag != keywordJobTag {
 			return node.Content[i], node.Content[i+1]
 		}
 	}
@@ -253,7 +280,7 @@ func EachJob(doc *yaml.Node, fn func(name *yaml.Node, job *yaml.Node)) {
 	for i := 0; i+1 < len(mapping.Content); i += 2 {
 		key := mapping.Content[i]
 		val := mapping.Content[i+1]
-		if reservedKeys[key.Value] || val.Kind != yaml.MappingNode {
+		if (reservedKeys[key.Value] && !IsKeywordJob(key)) || val.Kind != yaml.MappingNode {
 			continue
 		}
 		fn(key, val)

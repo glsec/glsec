@@ -26,6 +26,11 @@ func File(path string, doc *parser.Document) (warnings []string, err error) {
 	}
 
 	mapping := doc.MappingNode()
+	for i := 0; mapping.Kind == yaml.MappingNode && i+1 < len(mapping.Content); i += 2 {
+		if key := mapping.Content[i]; parser.IsKeywordJob(key) {
+			warnings = append(warnings, fmt.Sprintf("%s:%d: %s: has job keywords, so GitLab runs it as a job named %q and it sets no %s; glsec scans it as that job", path, key.Line, key.Value, key.Value, map[string]string{"default": "defaults", "workflow": "workflow rules"}[key.Value]))
+		}
+	}
 	if mapping.Kind != yaml.MappingNode {
 		return warnings, fmt.Errorf("%s: not a valid GitLab CI file: expected a top-level mapping", path)
 	}

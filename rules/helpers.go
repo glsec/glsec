@@ -88,7 +88,7 @@ func (in *Inheritance) Key(job *yaml.Node, key string) *yaml.Node {
 		return v
 	}
 	if inheritsDefault(job, key) {
-		if def := in.jobs["default"]; def != nil {
+		if def := parser.FindKey(in.mapping, "default"); def != nil {
 			if v := parser.FindKey(def, key); v != nil {
 				return v
 			}

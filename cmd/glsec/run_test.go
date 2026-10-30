@@ -521,3 +521,28 @@ func TestRun_SpecHeaderScansLastDocument(t *testing.T) {
 		t.Errorf("stderr does not warn about the ignored document:\n%s", stderr)
 	}
 }
+
+// The example of #937: GitLab runs workflow: and default: as jobs here.
+func TestRun_KeywordJobsAreScanned(t *testing.T) {
+	src := "workflow:\n  image: node:latest\n  script: [./build.sh]\ndefault:\n  image: ruby:latest\n  script: [./deploy.sh]\nreal:\n  script: [x]\n"
+	_, stdout, stderr := runCLI(t, map[string]string{".gitlab-ci.yml": src},
+		"--no-cache", "--no-repo-config", "--only", "GL001", "--format", "json", ".gitlab-ci.yml")
+	var out struct {
+		Findings []struct {
+			Job string `json:"job"`
+		} `json:"findings"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &out); err != nil {
+		t.Fatalf("parse JSON output: %v\n%s", err, stdout)
+	}
+	jobs := map[string]bool{}
+	for _, f := range out.Findings {
+		jobs[f.Job] = true
+	}
+	if !jobs["workflow"] || !jobs["default"] || jobs["real"] || len(jobs) != 2 {
+		t.Errorf("GL001 findings for jobs %v, want workflow and default only (real must not inherit ruby:latest)", jobs)
+	}
+	if !strings.Contains(stderr, `GitLab runs it as a job named "workflow"`) {
+		t.Errorf("stderr does not warn about the keyword job:\n%s", stderr)
+	}
+}

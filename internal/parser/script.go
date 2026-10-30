@@ -26,7 +26,7 @@ func NormalizeScripts(doc *yaml.Node) {
 		case key == "before_script" || key == "after_script":
 			top.Content[i+1] = scriptList(value)
 		case value.Kind != yaml.MappingNode:
-		case key == "default" || !reservedKeys[key]:
+		case key == "default" || !reservedKeys[key] || IsKeywordJob(top.Content[i]):
 			normalizeContainer(value)
 		}
 	}

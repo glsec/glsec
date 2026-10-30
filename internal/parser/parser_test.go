@@ -465,3 +465,40 @@ func TestParseFileNamesAReadFailureOnce(t *testing.T) {
 		t.Fatalf("path appears %d times in %q, want 1", got, err)
 	}
 }
+
+// A default: or workflow: with job keywords is a job to GitLab, not defaults
+// or workflow rules (#937).
+func TestParse_KeywordJobs(t *testing.T) {
+	src := "workflow:\n  stage: build\n  script: [./build.sh]\ndefault:\n  image: alpine:3.20.3\n  trigger:\n    include: child.yml\nreal:\n  script: [x]\n"
+	doc, err := Parse([]byte(src), ".gitlab-ci.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var jobs []string
+	EachJob(doc.Root, func(name, _ *yaml.Node) { jobs = append(jobs, name.Value) })
+	if strings.Join(jobs, ",") != "workflow,default,real" {
+		t.Errorf("jobs = %v, want workflow, default and real", jobs)
+	}
+	if FindKey(doc.MappingNode(), "default") != nil || FindKey(doc.MappingNode(), "workflow") != nil {
+		t.Error("FindKey must not return a default: or workflow: that is a job")
+	}
+	if k, v := FindKeyNode(doc.MappingNode(), "workflow"); k != nil || v != nil {
+		t.Error("FindKeyNode must not return a workflow: that is a job")
+	}
+	if got := CountJobs(doc.Root); got != 3 {
+		t.Errorf("CountJobs = %d, want 3", got)
+	}
+}
+
+func TestParse_PlainDefaultAndWorkflowStayKeywords(t *testing.T) {
+	doc, err := Parse([]byte("workflow:\n  rules:\n    - when: always\ndefault:\n  image: alpine:3.20.3\nreal:\n  script: [x]\n"), ".gitlab-ci.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if FindKey(doc.MappingNode(), "default") == nil || FindKey(doc.MappingNode(), "workflow") == nil {
+		t.Error("a default: and workflow: without job keywords are keywords")
+	}
+	if got := CountJobs(doc.Root); got != 1 {
+		t.Errorf("CountJobs = %d, want 1", got)
+	}
+}
