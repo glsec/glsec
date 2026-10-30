@@ -9,6 +9,7 @@ import (
 	"encoding/xml"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -55,6 +56,10 @@ func TestReportPaths(t *testing.T) {
 					}
 					location := out.Runs[0].Results[0].Locations[0].PhysicalLocation.ArtifactLocation
 					got = location.URI
+					if want := sarifURI(tc.want); got != want {
+						t.Errorf("uri = %q, want %q", got, want)
+					}
+					got = tc.want
 					if hasBase := location.URIBaseID == "%SRCROOT%"; hasBase != tc.local {
 						t.Errorf("SRCROOT present = %v, want %v", hasBase, tc.local)
 					}
@@ -141,5 +146,24 @@ func TestReportPathWithoutWorkingDirectory(t *testing.T) {
 	abs := filepath.Join(t.TempDir(), "ci.yml")
 	if got, local := reportPath(abs, ""); got != abs || local {
 		t.Errorf("without cwd: got (%q, %v), want original absolute path", got, local)
+	}
+}
+
+func TestSARIFURI(t *testing.T) {
+	cases := map[string]string{
+		"ci/build.yml":               "ci/build.yml",
+		"ci/my pipelines/deploy.yml": "ci/my%20pipelines/deploy.yml",
+		"../outside.yml":             "../outside.yml",
+		"ci/50%.yml":                 "ci/50%25.yml",
+	}
+	if runtime.GOOS == "windows" {
+		cases[`C:\Users\ci\my file.yml`] = "file:///C:/Users/ci/my%20file.yml"
+	} else {
+		cases["/home/ci/my file.yml"] = "file:///home/ci/my%20file.yml"
+	}
+	for in, want := range cases {
+		if got := sarifURI(in); got != want {
+			t.Errorf("sarifURI(%q) = %q, want %q", in, got, want)
+		}
 	}
 }

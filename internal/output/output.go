@@ -13,6 +13,7 @@ import (
 	"io"
 	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -492,8 +493,16 @@ func sortTaxa(taxa []sarifTaxon) {
 }
 
 // sarifURI writes a report path as the URI reference SARIF requires: a space
-// or another character a URI can't hold is percent-encoded, / stays.
+// or another character a URI can't hold is percent-encoded, / stays. An
+// absolute path, one outside the working directory, becomes a file:// URI.
 func sarifURI(path string) string {
+	if filepath.IsAbs(path) {
+		slash := filepath.ToSlash(path)
+		if !strings.HasPrefix(slash, "/") {
+			slash = "/" + slash // C:/x
+		}
+		return (&url.URL{Scheme: "file", Path: slash}).String()
+	}
 	return (&url.URL{Path: path}).EscapedPath()
 }
 

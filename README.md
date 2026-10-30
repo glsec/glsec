@@ -202,7 +202,7 @@ glsec --new-only .gitlab-ci.yml                       # diff against .glsec-igno
 glsec --new-only --baseline main.json .gitlab-ci.yml  # diff against a saved JSON snapshot
 ```
 
-JSON, SARIF, Code Quality, JUnit and GitLab SAST reports write absolute file paths inside the working directory as relative paths, using `/` separators. Paths outside that directory retain their supplied spelling. SARIF marks locations inside the working directory with `uriBaseId: "%SRCROOT%"` so code scanning can resolve them against the source root. This avoids publishing runner directory names for files inside the checkout.
+JSON, SARIF, Code Quality, JUnit and GitLab SAST reports write absolute file paths inside the working directory as relative paths, using `/` separators. Paths outside that directory retain their supplied spelling; SARIF, whose locations are URIs, writes an absolute one as a `file://` URI and percent-encodes characters such as spaces. SARIF marks locations inside the working directory with `uriBaseId: "%SRCROOT%"` so code scanning can resolve them against the source root. This avoids publishing runner directory names for files inside the checkout.
 
 `--generate-ignore` rewrites only the entries the run could have reported: those for a file it scanned and a rule that ran. Entries for other pipeline files, and for rules left out with `--only`, `--skip` or `.glsec.yml`, stay as they are, and so do comments and an entry's `exp:` date when the finding is still there. `glsec --generate-ignore --only GL001 .gitlab-ci.yml` refreshes the GL001 entries and keeps the rest.
 
