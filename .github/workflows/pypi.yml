@@ -163,7 +163,10 @@ jobs:
           python -m venv venv
           bin=venv/bin
           [ -d "$bin" ] || bin=venv/Scripts
-          "$bin/python" -m pip install --no-index --find-links wheels "glsec==$VERSION"
+          # Pin the install to the hashes of the wheels the build job made, so
+          # pip takes exactly those (and Scorecard sees a hash-pinned install).
+          "$bin/python" -c 'import glob, hashlib, sys; print("glsec==" + sys.argv[1], *("--hash=sha256:" + hashlib.sha256(open(w, "rb").read()).hexdigest() for w in sorted(glob.glob("wheels/*.whl"))))' "$VERSION" > smoke-requirements.txt
+          "$bin/python" -m pip install --require-hashes --no-index --find-links wheels -r smoke-requirements.txt
           .github/scripts/smoke-test.sh "$VERSION" "$bin/glsec"
       - name: Install the musl wheel in Alpine and run
         if: runner.os == 'Linux'
@@ -172,7 +175,7 @@ jobs:
         run: |
           docker run --rm -v "$PWD:/src" -w /src -e VERSION \
             python:3.13-alpine@sha256:7984cf56ceaddebe4fefeb75d64000b9f45d8b77b11a09b24524da6cdc3af0c8 \
-            sh -c 'apk add --no-cache bash >/dev/null && python -m venv /venv && /venv/bin/pip install -q --no-index --find-links wheels "glsec==$VERSION" && .github/scripts/smoke-test.sh "$VERSION" /venv/bin/glsec'
+            sh -c 'apk add --no-cache bash >/dev/null && python -m venv /venv && /venv/bin/pip install -q --require-hashes --no-index --find-links wheels -r smoke-requirements.txt && .github/scripts/smoke-test.sh "$VERSION" /venv/bin/glsec'
 
   publish:
     name: Publish to PyPI
