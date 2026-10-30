@@ -726,3 +726,28 @@ third:
 		}
 	}
 }
+
+// A case arm's pattern list and print-only pipelines inside a command
+// substitution are not pipelines that need pipefail (#983).
+func TestGL024_CasePatternsAndSubstitutions(t *testing.T) {
+	for _, tc := range []struct {
+		script string
+		want   int
+	}{
+		{"case \"$REF\" in\n  main | release-* ) echo yes ;;\n  feat | fix) echo no ;;\nesac", 0},
+		{"case \"$REF\" in (a|b) make ;; esac", 0},
+		{"case \"$REF\" in\n  main) curl -fsSL https://example.com/x | sh ;;\nesac", 1},
+		{`echo "built $(echo "$VERSION" | cut -d. -f1)"`, 0},
+		{`[ "$(echo -n "$VERSION" | wc -c)" -gt 0 ]`, 0},
+		{"MAJOR=`echo $VERSION | cut -d. -f1`", 0},
+		{`echo "$(git log --oneline | head -1)"`, 1},
+	} {
+		doc, err := parser.Parse([]byte("job:\n  script:\n    - "+strconv.Quote(tc.script)+"\n"), "t.yml")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := len(GL024.Check(doc.Root, "t.yml")); got != tc.want {
+			t.Errorf("%q: got %d findings, want %d", tc.script, got, tc.want)
+		}
+	}
+}

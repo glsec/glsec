@@ -22,8 +22,6 @@ func (r *gl024) ID() string { return "GL024" }
 var (
 	// pipefailRe matches a line that enables pipefail.
 	pipefailRe = regexp.MustCompile(`\bpipefail\b`)
-	// The assignment's quotes are outside the substituted command's context.
-	printCommandSubstRe = regexp.MustCompile(`^(?:(?:export|local|readonly|declare)\s+)?[A-Za-z_][A-Za-z0-9_]*="?\$\(`)
 )
 
 func (r *gl024) Check(doc *yaml.Node, file string) []finding.Finding {
@@ -77,7 +75,7 @@ func (r *gl024) Check(doc *yaml.Node, file string) []finding.Finding {
 			pl := pipes.get(l, func() pipedLines {
 				var result pipedLines
 				pipelineLine, lastCountedLine := -1, -1
-				for _, cmd := range shellCommands(l.Value) {
+				for _, cmd := range shellCommands(maskCasePatterns(l.Value)) {
 					if !cmd.piped {
 						pipelineLine = -1
 						continue
@@ -126,8 +124,11 @@ func (r *gl024) Check(doc *yaml.Node, file string) []finding.Finding {
 
 // isSimplePrintCommand recognises commands that only write an existing value.
 func isSimplePrintCommand(text string) bool {
-	if at := printCommandSubstRe.FindStringIndex(text); at != nil {
-		text = text[at[1]:]
+	// A pipeline inside a command substitution starts after its $( or
+	// backtick: X=$(echo … | cut …), echo "$(echo … | cut …)", [ "$(…)" ]
+	// (#983).
+	if i := lastSubstitutionStart(text); i >= 0 {
+		text = text[i:]
 	}
 	words := commandWords(text)
 	if len(words) == 0 || words[0] != "echo" && words[0] != "printf" {
@@ -160,4 +161,87 @@ func isSimplePrintCommand(text string) bool {
 		}
 	}
 	return true
+}
+
+// maskCasePatterns blanks the | between the patterns of a case arm
+// (`main | release-* )`), which separates alternatives, not commands (#983).
+func maskCasePatterns(script string) string {
+	if !strings.Contains(script, "case") {
+		return script
+	}
+	b := []byte(script)
+	const (
+		outside = iota
+		header  // after case, until in
+		pattern // before the ) of an arm
+		body    // the arm's commands, until ;; or esac
+	)
+	mode := outside
+	var quote byte
+	word := func(i int, w string) bool {
+		if !strings.HasPrefix(script[i:], w) || i > 0 && !isWordBoundary(script[i-1]) {
+			return false
+		}
+		end := i + len(w)
+		return end == len(script) || isWordBoundary(script[end])
+	}
+	for i := 0; i < len(b); i++ {
+		c := b[i]
+		switch {
+		case quote != 0:
+			if c == quote {
+				quote = 0
+			}
+		case c == '\\':
+			i++
+		case c == '\'' || c == '"':
+			quote = c
+		case mode == outside && word(i, "case"):
+			mode = header
+		case mode == header && word(i, "in"):
+			mode = pattern
+		case mode == pattern && word(i, "esac"):
+			mode = outside
+		case mode == pattern && c == '|':
+			b[i] = ' '
+		case mode == pattern && c == ')':
+			mode = body
+		case mode == body && c == ';' && i+1 < len(b) && (b[i+1] == ';' || b[i+1] == '&'):
+			mode = pattern
+			i++
+		case mode == body && word(i, "esac"):
+			mode = outside
+		}
+	}
+	return string(b)
+}
+
+func isWordBoundary(c byte) bool {
+	return isShellSpace(c) || c == '\n' || c == ';' || c == '(' || c == ')'
+}
+
+// lastSubstitutionStart returns the index after the last $( or backtick of
+// text that isn't inside single quotes, or -1.
+func lastSubstitutionStart(text string) int {
+	last := -1
+	var quote byte
+	for i := 0; i < len(text); i++ {
+		c := text[i]
+		switch {
+		case quote == '\'':
+			if c == '\'' {
+				quote = 0
+			}
+		case c == '\\':
+			i++
+		case c == '\'':
+			quote = c
+		case c == '$' && i+1 < len(text) && text[i+1] == '(':
+			last = i + 2
+			i++
+		case c == '`':
+			last = i + 1
+		}
+	}
+	return last
 }
