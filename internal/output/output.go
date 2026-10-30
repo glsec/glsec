@@ -20,6 +20,7 @@ import (
 
 	"github.com/glsec/glsec/internal/color"
 	"github.com/glsec/glsec/internal/finding"
+	"github.com/glsec/glsec/internal/parser"
 )
 
 type Format string
@@ -205,7 +206,7 @@ func newSourceCache() *sourceCache { return &sourceCache{files: make(map[string]
 func (c *sourceCache) line(path string, n int) (string, bool) {
 	lines, cached := c.files[path]
 	if !cached {
-		data, err := os.ReadFile(path) //nolint:gosec // reads the file that was just scanned
+		data, err := parser.ReadFile(path)
 		if err == nil {
 			lines = strings.Split(string(data), "\n")
 		}

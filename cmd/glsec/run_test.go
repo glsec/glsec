@@ -50,6 +50,16 @@ job:
 // runs don't leak into each other or into the user's cache.
 func runCLI(t *testing.T, files map[string]string, args ...string) (code int, stdout, stderr string) {
 	t.Helper()
+	setupCLI(t, files)
+	var out, errOut bytes.Buffer
+	code = run(args, &out, &errOut)
+	return code, out.String(), errOut.String()
+}
+
+// setupCLI writes files into a temporary directory and changes into it, with
+// the environment runCLI runs glsec in.
+func setupCLI(t *testing.T, files map[string]string) {
+	t.Helper()
 	dir := t.TempDir()
 	for name, content := range files {
 		path := filepath.Join(dir, name)
@@ -64,10 +74,6 @@ func runCLI(t *testing.T, files map[string]string, args ...string) (code int, st
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	t.Setenv("FORCE_COLOR", "")
 	t.Setenv("CLICOLOR_FORCE", "")
-
-	var out, errOut bytes.Buffer
-	code = run(args, &out, &errOut)
-	return code, out.String(), errOut.String()
 }
 
 func TestRun_ExitCodes(t *testing.T) {

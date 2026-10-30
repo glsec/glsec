@@ -5,10 +5,10 @@ package rules
 
 import (
 	"fmt"
-	"os"
 	"unicode"
 
 	"github.com/glsec/glsec/internal/finding"
+	"github.com/glsec/glsec/internal/parser"
 	"gopkg.in/yaml.v3"
 )
 
@@ -149,7 +149,7 @@ func joinerFitsText(runes []rune, i int) bool {
 // Check scans the raw file bytes (not the parsed YAML tree) because these
 // control characters are invisible in the node values a tree walk would see.
 func (r *gl078) Check(_ *yaml.Node, file string) []finding.Finding {
-	data, err := os.ReadFile(file) //nolint:gosec // G304: scanning the file glsec was asked to lint
+	data, err := parser.ReadFile(file)
 	if err != nil {
 		return nil
 	}

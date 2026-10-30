@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 
 	"gopkg.in/yaml.v3"
@@ -36,9 +35,9 @@ type Document struct {
 }
 
 func ParseFile(path string) (*Document, error) {
-	data, err := os.ReadFile(path) //nolint:gosec // G304: intentional, reads user-supplied files
+	data, err := ReadFile(path)
 	if err != nil {
-		// os.ReadFile's *os.PathError already names the file and the operation.
+		// The error already names the file.
 		return nil, err
 	}
 	return Parse(data, path)
