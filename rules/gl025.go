@@ -96,9 +96,9 @@ func userVarInRequest(script string) (string, int) {
 		// Only the curl/wget commands of the line make the request: a variable
 		// passed to jq or another command of the same pipeline doesn't.
 		var parts []string
-		for _, cmd := range shellCommands(line) {
-			if name := commandName(withoutSudo(commandWords(cmd.text))); name == "curl" || name == "wget" {
-				parts = append(parts, cmd.text)
+		for _, text := range commandsWithSubstitutions(line) {
+			if name := commandName(withoutSudo(commandWords(text))); name == "curl" || name == "wget" {
+				parts = append(parts, text)
 			}
 		}
 		if len(parts) == 0 {
@@ -127,4 +127,53 @@ func taintedRef(s string, tainted map[string]string) string {
 		}
 	}
 	return ""
+}
+
+// commandsWithSubstitutions returns the commands of a script line and those
+// inside its $( … ) substitutions, also double-quoted ones such as
+// ID="$(curl …)" (#1002).
+func commandsWithSubstitutions(line string) []string {
+	var out []string
+	for _, cmd := range shellCommands(line) {
+		out = append(out, cmd.text)
+	}
+	for _, inner := range substitutionBodies(line) {
+		out = append(out, commandsWithSubstitutions(inner)...)
+	}
+	return out
+}
+
+// substitutionBodies returns the text inside each outermost $( … ) of s that
+// isn't in single quotes.
+func substitutionBodies(s string) []string {
+	var bodies []string
+	var quote byte
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case quote == '\'':
+			if c == '\'' {
+				quote = 0
+			}
+		case c == '\\':
+			i++
+		case c == '\'':
+			quote = c
+		case c == '$' && i+1 < len(s) && s[i+1] == '(' && !strings.HasPrefix(s[i:], "$(("):
+			depth, j := 1, i+2
+			for ; j < len(s) && depth > 0; j++ {
+				switch s[j] {
+				case '(':
+					depth++
+				case ')':
+					depth--
+				}
+			}
+			if depth == 0 {
+				bodies = append(bodies, s[i+2:j-1])
+				i = j - 1
+			}
+		}
+	}
+	return bodies
 }

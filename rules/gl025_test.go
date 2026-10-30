@@ -4,6 +4,7 @@
 package rules
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 
@@ -239,5 +240,25 @@ notify:
 `)
 	if len(f) != 1 {
 		t.Fatalf("expected 1 finding for the raw value next to the encoded one, got %d", len(f))
+	}
+}
+
+// A request inside a double-quoted command substitution counts like an
+// unquoted one (#1002).
+func TestGL025_QuotedSubstitution(t *testing.T) {
+	for line, want := range map[string]int{
+		`ID="$(curl -fsS "https://api.example.com/releases/${CI_COMMIT_TAG}")"`:     1,
+		`OTHER=$(curl -fsS "https://api.example.com/releases/${CI_COMMIT_TAG}")`:    1,
+		`echo "id: $(curl -fsS https://api.example.com/x?ref=$CI_COMMIT_REF_NAME)"`: 1,
+		`ID="$(curl -fsS https://api.example.com/releases/latest)"`:                 0,
+		`echo '$(curl https://api.example.com/$CI_COMMIT_TAG)'`:                     0,
+	} {
+		doc, err := parser.Parse([]byte("job:\n  script:\n    - "+strconv.Quote(line)+"\n"), "test.yml")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := len(GL025.Check(doc.Root, "test.yml")); got != want {
+			t.Errorf("%s: got %d findings, want %d", line, got, want)
+		}
 	}
 }
