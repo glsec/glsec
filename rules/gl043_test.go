@@ -234,3 +234,28 @@ func TestIsLiteralNamespacePrefix(t *testing.T) {
 		}
 	}
 }
+
+// Patterns that can't be widened: a when: never rule, a trailing .+ or
+// (.*), and an escaped slash read the way GitLab's lexer reads it (#987).
+func TestGL043_NoBypassPossible(t *testing.T) {
+	for _, tc := range []struct {
+		rule string
+		want int
+	}{
+		{"- if: $CI_COMMIT_BRANCH =~ /wip/\n      when: never", 0},
+		{`- if: $CI_COMMIT_BRANCH =~ /^prerelease\/.+/`, 0},
+		{`- if: $CI_COMMIT_BRANCH =~ /^release\/(.*)/`, 0},
+		{`- if: $CI_COMMIT_BRANCH =~ /^(fix|hotfix)((-|\\/)[a-z-]+)?$/`, 0},
+		{`- if: $CI_COMMIT_BRANCH =~ /^release\.+/`, 1},
+		{`- if: $CI_COMMIT_BRANCH =~ /^release/`, 1},
+		{"- if: $CI_COMMIT_BRANCH =~ /wip/\n      when: always", 1},
+	} {
+		doc, err := parser.Parse([]byte("workflow:\n  rules:\n    "+tc.rule+"\njob:\n  script: [x]\n"), "test.yml")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := len(GL043.Check(doc.Root, "test.yml")); got != tc.want {
+			t.Errorf("%s: got %d findings, want %d", tc.rule, got, tc.want)
+		}
+	}
+}

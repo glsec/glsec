@@ -30,9 +30,11 @@ var gl043Vars = []string{
 
 // gl043Re matches "$VAR =~ /pattern/" in a rules:if condition string.
 // Group 1: variable name, Group 2: regex pattern content (between slashes).
-// An escaped slash (\/) is part of the pattern, not its end (#700).
+// A slash right after a backslash is part of the pattern, not its end (#700),
+// also after an escaped backslash, as GitLab's lexer reads it
+// (lib/gitlab/ci/pipeline/expression/lexeme/pattern.rb, #987).
 var gl043Re = regexp.MustCompile(
-	`\$\{?(` + strings.Join(gl043Vars, "|") + `)\}?\s*=~\s*/((?:[^/\\]|\\.)*)/`,
+	`\$\{?(` + strings.Join(gl043Vars, "|") + `)\}?\s*=~\s*/((?:\\/|[^/])*)/`,
 )
 
 func (r *gl043) Check(doc *yaml.Node, file string) []finding.Finding {
@@ -70,6 +72,11 @@ func checkRulesIfNodes(node *yaml.Node, file, job string) []finding.Finding {
 		}
 		ifNode := parser.FindKey(item, "if")
 		if ifNode == nil || ifNode.Kind != yaml.ScalarNode {
+			continue
+		}
+		// A broader match of a when: never rule only excludes more
+		// pipelines (#987).
+		if when := parser.FindKey(item, "when"); when != nil && when.Value == "never" {
 			continue
 		}
 		findings = append(findings, checkIfCondition(ifNode, file)...)
@@ -126,8 +133,7 @@ func checkIfCondition(node *yaml.Node, file string) []finding.Finding {
 		// \A and \z are anchors too, and a trailing .* already runs to the end
 		// of the value, so it needs no $.
 		hasStart := strings.HasPrefix(pattern, "^") || strings.HasPrefix(pattern, `\A`)
-		hasEnd := strings.HasSuffix(pattern, "$") || strings.HasSuffix(pattern, `\z`) ||
-			strings.HasSuffix(pattern, ".*") && !strings.HasSuffix(pattern, `\.*`)
+		hasEnd := strings.HasSuffix(pattern, "$") || strings.HasSuffix(pattern, `\z`) || runsToEnd(pattern)
 
 		if hasEnd {
 			continue
@@ -147,12 +153,20 @@ func checkIfCondition(node *yaml.Node, file string) []finding.Finding {
 		}
 
 		var msg string
-		if hasStart {
+		prefix := strings.ReplaceAll(strings.TrimPrefix(strings.TrimPrefix(pattern, "^"), `\A`), `\/`, "/")
+		switch {
+		case hasStart && strings.ContainsAny(prefix, `|()[]{}*+?.\`):
+			// Regex syntax isn't a literal prefix to quote (#987).
+			msg = fmt.Sprintf(
+				"rules:if uses $%s =~ /%s/ — no trailing $ anchor; any longer value that starts with a match also matches",
+				varName, pattern,
+			)
+		case hasStart:
 			msg = fmt.Sprintf(
 				"rules:if uses $%s =~ /%s/ — no trailing $ anchor; a value starting with \"%s\" also matches",
-				varName, pattern, strings.ReplaceAll(strings.TrimPrefix(strings.TrimPrefix(pattern, "^"), `\A`), `\/`, "/"),
+				varName, pattern, prefix,
 			)
-		} else {
+		default:
 			msg = fmt.Sprintf(
 				"rules:if uses $%s =~ /%s/ — no ^ or $ anchors; any value containing \"%s\" matches",
 				varName, pattern, strings.ReplaceAll(pattern, `\/`, "/"),
@@ -169,4 +183,15 @@ func checkIfCondition(node *yaml.Node, file string) []finding.Finding {
 		})
 	}
 	return findings
+}
+
+// runsToEnd reports whether a pattern ends in .* or .+, also as a group
+// ((.*), (.+)): it already matches up to the end of the value (#987).
+func runsToEnd(pattern string) bool {
+	for _, tail := range []string{".*", ".+", "(.*)", "(.+)"} {
+		if strings.HasSuffix(pattern, tail) && !strings.HasSuffix(pattern, `\`+tail) {
+			return true
+		}
+	}
+	return false
 }
