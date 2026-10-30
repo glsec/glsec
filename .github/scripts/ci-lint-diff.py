@@ -106,14 +106,27 @@ def scanned_jobs(glsec, path, cwd):
 # GitLab names the copies of a parallel: job "build 1/3" and of a
 # parallel:matrix job "build: [linux, amd64]"; glsec scans the job once. A
 # pipeline may also name its jobs "build 1/3" itself, which GitLab groups the
-# same way, so both sides are compared without the suffix.
-PARALLEL_SUFFIX = re.compile(r"(?: \d+/\d+|: \[.*\])$")
+# same way, so both sides drop a matrix part, then one "N/M".
+MATRIX_SUFFIX = re.compile(r": \[.*\]$", re.DOTALL)
+PARALLEL_SUFFIX = re.compile(r" \d+/\d+$")
+# GitLab fills spec:inputs into a job name; glsec keeps $[[ inputs.x ]].
+INPUT_REF = re.compile(r"\$\[\[[^\]]*\]\]")
+
+
+def base_name(name):
+    return PARALLEL_SUFFIX.sub("", MATRIX_SUFFIX.sub("", name))
 
 
 def job_diff(gitlab, glsec, include):
     """The jobs only one side has, or None when the sets agree."""
-    gitlab = {PARALLEL_SUFFIX.sub("", name) for name in gitlab}
-    glsec = {PARALLEL_SUFFIX.sub("", name) for name in glsec}
+    gitlab = {base_name(name) for name in gitlab}
+    glsec = {base_name(name) for name in glsec}
+    for name in [n for n in glsec if INPUT_REF.search(n)]:
+        pattern = re.compile(".+".join(map(re.escape, INPUT_REF.split(name))) + "$", re.DOTALL)
+        filled = {n for n in gitlab if pattern.match(n)}
+        if filled or include:
+            glsec.discard(name)
+            gitlab -= filled
     glsec_only = sorted(glsec - gitlab)
     gitlab_only = [] if include else sorted(gitlab - glsec)
     if not glsec_only and not gitlab_only:
