@@ -47,16 +47,16 @@ func (r *gl060) Check(doc *yaml.Node, file string) []finding.Finding {
 		if !containerRunRe.MatchString(v) {
 			return
 		}
-		for _, m := range volumeFlagRe.FindAllStringSubmatch(v, -1) {
-			src := volumeSource(m[1])
-			findings = append(findings, mountFinding(src, file, job, line)...)
+		for _, m := range volumeFlagRe.FindAllStringSubmatchIndex(v, -1) {
+			src := volumeSource(v[m[2]:m[3]])
+			findings = append(findings, mountFinding(src, file, job, line, m[0])...)
 		}
-		for _, m := range mountFlagRe.FindAllStringSubmatch(v, -1) {
-			src, ok := mountBindSource(m[1])
+		for _, m := range mountFlagRe.FindAllStringSubmatchIndex(v, -1) {
+			src, ok := mountBindSource(v[m[2]:m[3]])
 			if !ok {
 				continue
 			}
-			findings = append(findings, mountFinding(src, file, job, line)...)
+			findings = append(findings, mountFinding(src, file, job, line, m[0])...)
 		}
 	})
 	return findings
@@ -66,11 +66,12 @@ func (r *gl060) Check(doc *yaml.Node, file string) []finding.Finding {
 // path is not sensitive. This rule owns bind mounts in scripts, including
 // socket mounts, so a socket mount yields this one finding; GL055 covers
 // DOCKER_HOST references only.
-func mountFinding(src, file, job string, line *yaml.Node) []finding.Finding {
+func mountFinding(src, file, job string, line *yaml.Node, off int) []finding.Finding {
 	sev, ok := hostMountSeverity(src)
 	if !ok {
 		return nil
 	}
+	ln, col := scriptMatchPos(line, off)
 	return []finding.Finding{{
 		RuleID:   "GL060",
 		Severity: sev,
@@ -79,7 +80,7 @@ func mountFinding(src, file, job string, line *yaml.Node) []finding.Finding {
 			"container run mounts sensitive host path %q — breaks container isolation; the job can read/write host files outside the container. Mount only $CI_PROJECT_DIR or a named volume",
 			src,
 		),
-		File: file, Line: line.Line, Col: line.Column,
+		File: file, Line: ln, Col: col,
 	}}
 }
 

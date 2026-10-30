@@ -24,15 +24,16 @@ var sshStrictHostCheckingRe = regexp.MustCompile(`StrictHostKeyChecking[=\s]+(no
 func (r *gl048) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
 	EachScriptLine(doc, file, func(line *yaml.Node, file, job string) {
-		if sshStrictHostCheckingRe.MatchString(line.Value) {
+		if m := sshStrictHostCheckingRe.FindStringIndex(line.Value); m != nil {
+			ln, col := scriptMatchPos(line, m[0])
 			findings = append(findings, finding.Finding{
 				RuleID:   "GL048",
 				Severity: finding.Error,
 				Job:      job,
 				Message:  "StrictHostKeyChecking disabled — host identity is not verified, enabling MITM attacks on shared runner networks; use a pre-verified known_hosts entry instead",
 				File:     file,
-				Line:     line.Line,
-				Col:      line.Column,
+				Line:     ln,
+				Col:      col,
 			})
 		}
 	})

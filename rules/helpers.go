@@ -467,3 +467,24 @@ func eachRuleVariables(container *yaml.Node, fn func(vars, rule *yaml.Node)) {
 		}
 	}
 }
+
+// scriptMatchPos returns where to report a match that starts at byte off of
+// a script item's value: the source line of the match, so a finding inside a
+// `|` block points at its command (#974), and the item's column when the
+// match is on the item's own line.
+func scriptMatchPos(item *yaml.Node, off int) (line, col int) {
+	line = parser.ScalarOffsetLine(item, off)
+	if line == item.Line {
+		col = item.Column
+	}
+	return line, col
+}
+
+// scriptLinePos is scriptMatchPos for the i-th line of a script item.
+func scriptLinePos(item *yaml.Node, i int) (line, col int) {
+	line = parser.ScalarContentLine(item, i)
+	if line == item.Line {
+		col = item.Column
+	}
+	return line, col
+}

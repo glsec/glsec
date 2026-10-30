@@ -27,18 +27,19 @@ func (r *gl068) Check(doc *yaml.Node, file string) []finding.Finding {
 		if strings.HasPrefix(strings.TrimSpace(line.Value), "#") {
 			return
 		}
-		msg, ok := scriptLineXtraceMessage(line.Value)
+		msg, at, ok := scriptLineXtraceMessage(line.Value)
 		if !ok {
 			return
 		}
+		ln, col := scriptLinePos(line, at)
 		findings = append(findings, finding.Finding{
 			RuleID:   "GL068",
 			Severity: finding.Warn,
 			Job:      job,
 			Message:  msg,
 			File:     file,
-			Line:     line.Line,
-			Col:      line.Column,
+			Line:     ln,
+			Col:      col,
 		})
 	})
 	eachVariablesBlock(doc, func(vars *yaml.Node, job string, _ *yaml.Node) {
@@ -74,29 +75,34 @@ func (r *gl068) Check(doc *yaml.Node, file string) []finding.Finding {
 // invoked with tracing, or a SHELLOPTS assignment enabling xtrace, flags the
 // item regardless of what follows it, since the traced shell or the exported
 // option outlives the line.
-func scriptLineXtraceMessage(item string) (string, bool) {
+// It also returns the index of the item line the enabling command is on.
+func scriptLineXtraceMessage(item string) (string, int, bool) {
 	enabled := false
 	touched := false
+	at := 0
 	for _, cmd := range shellCommands(item) {
 		if on, ok := setCommandXtrace(cmd.text); ok {
 			enabled = on
 			touched = true
+			if on {
+				at = cmd.line
+			}
 		}
 	}
 	if touched && enabled {
-		return xtraceSetMessage, true
+		return xtraceSetMessage, at, true
 	}
 	for _, cmd := range shellCommands(item) {
 		if name, ok := shellInvocationXtrace(cmd.text); ok {
-			return "invoking " + name + " with xtrace enabled" + xtraceLeakTail + "; drop the x from the invocation", true
+			return "invoking " + name + " with xtrace enabled" + xtraceLeakTail + "; drop the x from the invocation", cmd.line, true
 		}
 	}
 	for _, cmd := range shellCommands(item) {
 		if scriptShellOptsXtrace(cmd.text) {
-			return "SHELLOPTS containing xtrace enables shell xtrace" + xtraceLeakTail + "; remove xtrace from SHELLOPTS", true
+			return "SHELLOPTS containing xtrace enables shell xtrace" + xtraceLeakTail + "; remove xtrace from SHELLOPTS", cmd.line, true
 		}
 	}
-	return "", false
+	return "", 0, false
 }
 
 // setCommandXtrace parses one simple command and reports whether it is a

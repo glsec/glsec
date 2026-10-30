@@ -30,14 +30,15 @@ func (r *gl061) Check(doc *yaml.Node, file string) []finding.Finding {
 		if !dockerRunRe.MatchString(v) || !pidHostRe.MatchString(v) {
 			return
 		}
+		ln, col := scriptMatchPos(line, pidHostRe.FindStringIndex(v)[0])
 		findings = append(findings, finding.Finding{
 			RuleID:   "GL061",
 			Severity: finding.Warn,
 			Job:      job,
 			Message:  "docker run --pid host shares the host PID namespace — the container can see, signal, and read memory of all host processes (other jobs, the runner agent); omit --pid or scope it with --pid container:<id>",
 			File:     file,
-			Line:     line.Line,
-			Col:      line.Column,
+			Line:     ln,
+			Col:      col,
 		})
 	})
 	return findings

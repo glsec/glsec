@@ -30,14 +30,15 @@ func (r *gl077) Check(doc *yaml.Node, file string) []finding.Finding {
 		if !dockerRunRe.MatchString(v) || !ipcHostRe.MatchString(v) {
 			return
 		}
+		ln, col := scriptMatchPos(line, ipcHostRe.FindStringIndex(v)[0])
 		findings = append(findings, finding.Finding{
 			RuleID:   "GL077",
 			Severity: finding.Warn,
 			Job:      job,
 			Message:  "docker run --ipc host shares the host IPC namespace — the container can read the host's shared memory and POSIX message queues and signal host processes; omit --ipc or scope it with --ipc container:<id>",
 			File:     file,
-			Line:     line.Line,
-			Col:      line.Column,
+			Line:     ln,
+			Col:      col,
 		})
 	})
 	return findings

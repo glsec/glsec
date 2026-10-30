@@ -30,14 +30,15 @@ func (r *gl058) Check(doc *yaml.Node, file string) []finding.Finding {
 		if !dockerRunRe.MatchString(v) || !networkHostRe.MatchString(v) {
 			return
 		}
+		ln, col := scriptMatchPos(line, networkHostRe.FindStringIndex(v)[0])
 		findings = append(findings, finding.Finding{
 			RuleID:   "GL058",
 			Severity: finding.Warn,
 			Job:      job,
 			Message:  "docker run --network host removes network isolation — the container shares the runner's network stack and can reach localhost services (metadata APIs, internal DBs) and bind any port; use a named network or the default bridge",
 			File:     file,
-			Line:     line.Line,
-			Col:      line.Column,
+			Line:     ln,
+			Col:      col,
 		})
 	})
 	return findings

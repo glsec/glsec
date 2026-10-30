@@ -118,17 +118,19 @@ func (r *gl069) Check(doc *yaml.Node, file string) []finding.Finding {
 			return
 		}
 		for _, c := range pkgAuthChecks {
-			if !c.re.MatchString(line.Value) {
+			loc := c.re.FindStringIndex(line.Value)
+			if loc == nil {
 				continue
 			}
+			ln, col := scriptMatchPos(line, loc[0])
 			findings = append(findings, finding.Finding{
 				RuleID:   "GL069",
 				Severity: finding.Warn,
 				Job:      job,
 				Message:  c.msg,
 				File:     file,
-				Line:     line.Line,
-				Col:      line.Column,
+				Line:     ln,
+				Col:      col,
 			})
 			break
 		}

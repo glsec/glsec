@@ -111,14 +111,15 @@ func checkScriptForMRSourceSHA(node *yaml.Node, file string) []finding.Finding {
 		if item.Kind != yaml.ScalarNode {
 			continue
 		}
-		if mrSourceSHARe.MatchString(item.Value) {
+		if loc := mrSourceSHARe.FindStringIndex(item.Value); loc != nil {
+			line, col := scriptMatchPos(item, loc[0])
 			findings = append(findings, finding.Finding{
 				RuleID:   "GL044",
 				Severity: finding.Warn,
 				Message:  "MR-triggered job checks out $CI_MERGE_REQUEST_SOURCE_BRANCH_SHA — executes attacker-controlled code with access to $CI_JOB_TOKEN and protected variables",
 				File:     file,
-				Line:     item.Line,
-				Col:      item.Column,
+				Line:     line,
+				Col:      col,
 			})
 		}
 	}

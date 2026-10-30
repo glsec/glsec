@@ -99,14 +99,15 @@ func (r *gl026) Check(doc *yaml.Node, file string) []finding.Finding {
 				findings = append(findings, f)
 			}
 			if all[i].bareClone && !hasSHACheckout {
+				ln, col := scriptMatchPos(l, all[i].cloneAt)
 				findings = append(findings, finding.Finding{
 					RuleID:   "GL026",
 					Severity: finding.Warn,
 					Job:      name.Value,
 					Message:  "git clone without --branch clones HEAD of the default branch — follow with git checkout <sha> to pin the revision",
 					File:     file,
-					Line:     l.Line,
-					Col:      l.Column,
+					Line:     ln,
+					Col:      col,
 				})
 			}
 		}
@@ -119,6 +120,7 @@ func (r *gl026) Check(doc *yaml.Node, file string) []finding.Finding {
 type gl026Facts struct {
 	shaCheckout bool              // checks out a commit SHA
 	bareClone   bool              // git clone without --branch
+	cloneAt     int               // byte offset of the git clone in the item
 	findings    []finding.Finding // the findings that don't depend on the job, without Job
 }
 
@@ -126,7 +128,9 @@ type gl026Facts struct {
 func gl026Line(l *yaml.Node, file string) (lf gl026Facts) {
 	line := l.Value
 	lf.shaCheckout = gitCheckoutRe.MatchString(line) && shaRe.MatchString(line)
-	if gitCloneRe.MatchString(line) {
+	if loc := gitCloneRe.FindStringIndex(line); loc != nil {
+		lf.cloneAt = loc[0]
+		ln, col := scriptMatchPos(l, loc[0])
 		m := branchFlagRe.FindStringSubmatch(line)
 		switch {
 		case len(m) < 2:
@@ -137,8 +141,8 @@ func gl026Line(l *yaml.Node, file string) (lf gl026Facts) {
 				Severity: finding.Warn,
 				Message:  "git clone uses mutable ref \"" + m[1] + "\" — pin to a full commit SHA with git checkout after cloning",
 				File:     file,
-				Line:     l.Line,
-				Col:      l.Column,
+				Line:     ln,
+				Col:      col,
 			})
 		}
 		return lf

@@ -126,10 +126,12 @@ func checkTLSLines(node *yaml.Node, file, job string) []finding.Finding {
 			continue
 		}
 		for _, check := range tlsChecks {
-			m := check.re.FindString(item.Value)
-			if m == "" {
+			loc := check.re.FindStringIndex(item.Value)
+			if loc == nil {
 				continue
 			}
+			m := item.Value[loc[0]:loc[1]]
+			line, col := scriptMatchPos(item, loc[0])
 			msg := check.msg
 			if check.tool == "curl" {
 				flag := regexp.MustCompile(`-k|--insecure`).FindString(m)
@@ -141,21 +143,22 @@ func checkTLSLines(node *yaml.Node, file, job string) []finding.Finding {
 				Job:      job,
 				Message:  msg,
 				File:     file,
-				Line:     item.Line,
-				Col:      item.Column,
+				Line:     line,
+				Col:      col,
 			})
 			break
 		}
 
-		if gitSSLNoVerifyRe.MatchString(item.Value) {
+		if loc := gitSSLNoVerifyRe.FindStringIndex(item.Value); loc != nil {
+			line, col := scriptMatchPos(item, loc[0])
 			findings = append(findings, finding.Finding{
 				RuleID:   "GL042",
 				Severity: finding.Warn,
 				Job:      job,
 				Message:  `GIT_SSL_NO_VERIFY=true in script — TLS certificate verification disabled for all git operations in this step`,
 				File:     file,
-				Line:     item.Line,
-				Col:      item.Column,
+				Line:     line,
+				Col:      col,
 			})
 		}
 	}

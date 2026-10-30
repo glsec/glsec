@@ -41,8 +41,9 @@ func (r *gl057) Check(doc *yaml.Node, file string) []finding.Finding {
 		if !dockerRunRe.MatchString(v) {
 			return
 		}
-		for _, m := range capAddRe.FindAllStringSubmatch(v, -1) {
-			cap := strings.ToUpper(strings.TrimPrefix(strings.ToUpper(m[1]), "CAP_"))
+		for _, m := range capAddRe.FindAllStringSubmatchIndex(v, -1) {
+			cap := strings.ToUpper(strings.TrimPrefix(strings.ToUpper(v[m[2]:m[3]]), "CAP_"))
+			ln, col := scriptMatchPos(line, m[0])
 			switch {
 			case cap == "ALL":
 				findings = append(findings, finding.Finding{
@@ -50,7 +51,7 @@ func (r *gl057) Check(doc *yaml.Node, file string) []finding.Finding {
 					Severity: finding.Error,
 					Job:      job,
 					Message:  "docker run --cap-add ALL grants every Linux capability — equivalent to --privileged; grant only the specific capability required",
-					File:     file, Line: line.Line, Col: line.Column,
+					File:     file, Line: ln, Col: col,
 				})
 			case dangerousCaps[cap]:
 				findings = append(findings, finding.Finding{
@@ -61,7 +62,7 @@ func (r *gl057) Check(doc *yaml.Node, file string) []finding.Finding {
 						"docker run --cap-add %s grants a dangerous capability that can be abused to escape the container or affect the runner host — grant only the minimal capability required",
 						cap,
 					),
-					File: file, Line: line.Line, Col: line.Column,
+					File: file, Line: ln, Col: col,
 				})
 			}
 		}

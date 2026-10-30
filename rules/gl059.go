@@ -37,12 +37,13 @@ func (r *gl059) Check(doc *yaml.Node, file string) []finding.Finding {
 		if !dockerBuildRe.MatchString(v) {
 			return
 		}
-		for _, m := range buildArgRe.FindAllStringSubmatch(v, -1) {
-			name := m[1]
+		for _, m := range buildArgRe.FindAllStringSubmatchIndex(v, -1) {
+			name := v[m[2]:m[3]]
 			upper := strings.ToUpper(name)
 			if !secretArgNameRe.MatchString(upper) || nonSecretSuffixRe.MatchString(upper) {
 				continue
 			}
+			ln, col := scriptMatchPos(line, m[0])
 			findings = append(findings, finding.Finding{
 				RuleID:   "GL059",
 				Severity: finding.Warn,
@@ -51,7 +52,7 @@ func (r *gl059) Check(doc *yaml.Node, file string) []finding.Finding {
 					"docker build --build-arg %s embeds a secret into image layer metadata (visible via `docker history --no-trunc`) — use BuildKit secret mounts (--secret id=...) instead",
 					name,
 				),
-				File: file, Line: line.Line, Col: line.Column,
+				File: file, Line: ln, Col: col,
 			})
 		}
 	})

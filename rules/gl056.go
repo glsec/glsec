@@ -36,14 +36,15 @@ func (r *gl056) Check(doc *yaml.Node, file string) []finding.Finding {
 		if !privilegedFlagRe.MatchString(v) || privilegedDisabledRe.MatchString(v) {
 			return
 		}
+		ln, col := scriptMatchPos(line, privilegedFlagRe.FindStringIndex(v)[0])
 		findings = append(findings, finding.Finding{
 			RuleID:   "GL056",
 			Severity: finding.Warn,
 			Job:      job,
 			Message:  "docker run --privileged grants the container full host kernel access (all capabilities, unrestricted devices) — use --cap-add for the specific capabilities needed, or a rootless tool like Podman/Buildah",
 			File:     file,
-			Line:     line.Line,
-			Col:      line.Column,
+			Line:     ln,
+			Col:      col,
 		})
 	})
 	return findings

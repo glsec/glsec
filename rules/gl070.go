@@ -102,14 +102,22 @@ func (r *gl070) Check(doc *yaml.Node, file string) []finding.Finding {
 			if sts[job] && (i == awsConfigCheck || i == awsEnvCheck) {
 				continue
 			}
+			at := 0
+			for _, l := range logicalLines(line.Value) {
+				if c.match(l.text) {
+					at = l.line
+					break
+				}
+			}
+			ln, col := scriptLinePos(line, at)
 			findings = append(findings, finding.Finding{
 				RuleID:   "GL070",
 				Severity: finding.Warn,
 				Job:      job,
 				Message:  c.msg,
 				File:     file,
-				Line:     line.Line,
-				Col:      line.Column,
+				Line:     ln,
+				Col:      col,
 			})
 			break
 		}

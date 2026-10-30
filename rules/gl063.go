@@ -34,18 +34,19 @@ func (r *gl063) Check(doc *yaml.Node, file string) []finding.Finding {
 		if strings.HasPrefix(strings.TrimSpace(v), "#") {
 			return
 		}
-		for _, m := range chmodModeRe.FindAllStringSubmatch(v, -1) {
-			if !worldWritableMode(m[2]) {
+		for _, m := range chmodModeRe.FindAllStringSubmatchIndex(v, -1) {
+			if !worldWritableMode(v[m[4]:m[5]]) {
 				continue
 			}
+			ln, col := scriptMatchPos(line, m[0])
 			findings = append(findings, finding.Finding{
 				RuleID:   "GL063",
 				Severity: finding.Warn,
 				Job:      job,
 				Message:  "chmod grants world-writable permissions — on shared runners other processes can modify the file, risking a TOCTOU race if it is later executed; use the minimal permission (e.g. chmod +x) instead",
 				File:     file,
-				Line:     line.Line,
-				Col:      line.Column,
+				Line:     ln,
+				Col:      col,
 			})
 		}
 	})

@@ -38,15 +38,16 @@ func checkGitCredURL(node *yaml.Node, file, job string) []finding.Finding {
 		if item.Kind != yaml.ScalarNode {
 			continue
 		}
-		if gitCredURLRe.MatchString(item.Value) {
+		if m := gitCredURLRe.FindStringIndex(item.Value); m != nil {
+			line, col := scriptMatchPos(item, m[0])
 			findings = append(findings, finding.Finding{
 				RuleID:   "GL035",
 				Severity: finding.Warn,
 				Job:      job,
 				Message:  "git command uses URL with embedded credentials (user:token@host) — the credential sits in the runner's process table and in .git/config, and reaches the job log if CI_DEBUG_TRACE is enabled or the tool does not redact it (git redacts its own output, many tools do not); use a credential helper, an auth header, or an SSH remote instead of embedding it in the URL",
 				File:     file,
-				Line:     item.Line,
-				Col:      item.Column,
+				Line:     line,
+				Col:      col,
 			})
 		}
 	}

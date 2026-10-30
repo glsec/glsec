@@ -32,8 +32,9 @@ func (r *gl076) Check(doc *yaml.Node, file string) []finding.Finding {
 		if !dockerRunRe.MatchString(v) {
 			return
 		}
-		for _, m := range unconfinedRe.FindAllStringSubmatch(v, -1) {
-			profile := strings.ToLower(m[1])
+		for _, m := range unconfinedRe.FindAllStringSubmatchIndex(v, -1) {
+			profile := strings.ToLower(v[m[2]:m[3]])
+			ln, col := scriptMatchPos(line, m[0])
 			findings = append(findings, finding.Finding{
 				RuleID:   "GL076",
 				Severity: finding.Warn,
@@ -43,8 +44,8 @@ func (r *gl076) Check(doc *yaml.Node, file string) []finding.Finding {
 					profile, profile,
 				),
 				File: file,
-				Line: line.Line,
-				Col:  line.Column,
+				Line: ln,
+				Col:  col,
 			})
 		}
 	})

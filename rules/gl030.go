@@ -35,15 +35,16 @@ func checkSSHKeyscan(node *yaml.Node, file, job string) []finding.Finding {
 		if item.Kind != yaml.ScalarNode {
 			continue
 		}
-		if sshKeyscanRe.MatchString(item.Value) {
+		if m := sshKeyscanRe.FindStringIndex(item.Value); m != nil {
+			line, col := scriptMatchPos(item, m[0])
 			findings = append(findings, finding.Finding{
 				RuleID:   "GL030",
 				Severity: finding.Warn,
 				Job:      job,
 				Message:  "ssh-keyscan trusts whatever key the remote host presents — store a pre-verified known-hosts entry in a protected CI variable instead: echo \"$SSH_KNOWN_HOSTS\" >> ~/.ssh/known_hosts",
 				File:     file,
-				Line:     item.Line,
-				Col:      item.Column,
+				Line:     line,
+				Col:      col,
 			})
 		}
 	}
