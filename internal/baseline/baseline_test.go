@@ -123,7 +123,7 @@ func TestLoad_InvalidJSON(t *testing.T) {
 // --no-redact, and one written now both match the same finding.
 func TestJSONSnapshot_MaskedAndUnmaskedMessagesMatch(t *testing.T) {
 	raw := "pipes https://u:" + "pw12345678" + "@example.com into bash"
-	masked := "pipes https://u:**********@example.com into bash"
+	masked := "pipes https://u:" + "**********" + "@example.com into bash"
 	for _, snapMsg := range []string{raw, masked} {
 		data, err := json.Marshal(map[string]any{"findings": []map[string]any{{"rule": "GL011", "file": "ci.yml", "message": snapMsg}}})
 		if err != nil {

@@ -52,12 +52,13 @@ func TestString(t *testing.T) {
 }
 
 func TestFindings(t *testing.T) {
-	in := []finding.Finding{{RuleID: "GL011", Message: "pipes https://u:pw12345678@example.com into bash", Line: 3, Col: 7}}
+	msg := "pipes https://u:" + "pw12345678" + "@example.com into bash"
+	in := []finding.Finding{{RuleID: "GL011", Message: msg, Line: 3, Col: 7}}
 	out := Findings(in)
 	if strings.Contains(out[0].Message, "pw12345678") || out[0].Line != 3 || out[0].Col != 7 {
 		t.Errorf("Findings = %+v", out[0])
 	}
-	if in[0].Message != "pipes https://u:pw12345678@example.com into bash" {
+	if in[0].Message != msg {
 		t.Error("Findings must not change its input")
 	}
 }
