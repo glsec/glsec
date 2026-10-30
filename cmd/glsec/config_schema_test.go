@@ -27,7 +27,8 @@ type schemaNode struct {
 }
 
 // ruleIDEnum is the generated line in the schema that lists the rule IDs.
-var ruleIDEnum = regexp.MustCompile(`("ruleId": \{\n\s*"description": "[^"]*",\n\s*"enum": )\[[^\]]*\]`)
+// \r?: Windows checks the file out with CRLF line endings.
+var ruleIDEnum = regexp.MustCompile(`("ruleId": \{\r?\n\s*"description": "[^"]*",\r?\n\s*"enum": )\[[^\]]*\]`)
 
 // TestConfigSchema keeps schema/glsec.schema.json in step with the config
 // parser and the rule registry (#832). A new rule only needs
