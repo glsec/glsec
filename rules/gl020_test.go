@@ -5,6 +5,7 @@ package rules
 
 import (
 	"strings"
+	"strconv"
 	"testing"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -269,6 +270,27 @@ func TestGL020_APICalls(t *testing.T) {
 	} {
 		if f := findings020(t, "job:\n  script:\n    - '"+strings.ReplaceAll(tc.script, "'", "''")+"'\n"); len(f) != tc.want {
 			t.Errorf("%s: expected %d, got %d", tc.script, tc.want, len(f))
+		}
+	}
+}
+
+// A curl that writes out the status code is a probe, also when it keeps the
+// body for an error message (#990).
+func TestGL020_StatusProbe(t *testing.T) {
+	for _, tc := range []struct {
+		line string
+		want int
+	}{
+		{`code=$(curl -sS -o /tmp/response.json -w '%{http_code}' https://api.example.com/health)`, 0},
+		{`curl -s --output body.txt --write-out "%{response_code}" https://api.example.com/health`, 0},
+		{`curl -sSLo tool.tar.gz https://example.com/tool.tar.gz`, 1},
+	} {
+		doc, err := parser.Parse([]byte("job:\n  script:\n    - "+strconv.Quote(tc.line)+"\n"), "test.yml")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := len(GL020.Check(doc.Root, "test.yml")); got != tc.want {
+			t.Errorf("%s: got %d findings, want %d", tc.line, got, tc.want)
 		}
 	}
 }

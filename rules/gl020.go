@@ -158,6 +158,9 @@ var extractors = map[string]bool{
 }
 
 func curlSaves(args []string) bool {
+	if curlStatusProbe(args) {
+		return false
+	}
 	for i, a := range args {
 		switch {
 		case a == "-O" || a == "--remote-name" || a == "--remote-name-all":
@@ -184,6 +187,27 @@ func curlSaves(args []string) bool {
 					return true
 				}
 			}
+		}
+	}
+	return false
+}
+
+// curlStatusProbe reports a curl that writes out the HTTP status code
+// (-w '%{http_code}'): it checks a service, and the body it saves is at most
+// read back on failure, the same as the -o /dev/null probe (#990).
+func curlStatusProbe(args []string) bool {
+	for i, a := range args {
+		v := ""
+		switch {
+		case (a == "-w" || a == "--write-out") && i+1 < len(args):
+			v = args[i+1]
+		case strings.HasPrefix(a, "--write-out="):
+			v = strings.TrimPrefix(a, "--write-out=")
+		case strings.HasPrefix(a, "-w") && len(a) > 2:
+			v = a[2:]
+		}
+		if strings.Contains(v, "%{http_code}") || strings.Contains(v, "%{response_code}") {
+			return true
 		}
 	}
 	return false
