@@ -4,6 +4,7 @@
 package rules
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -197,5 +198,30 @@ test:
 `)
 	if len(f) != 0 {
 		t.Fatalf("expected no findings for commented line, got %d", len(f))
+	}
+}
+
+// Read-only mounts of world-readable identity files expose nothing; other
+// read-only mounts say read, not read/write (#995).
+func TestGL060_ReadOnlyMounts(t *testing.T) {
+	for _, tc := range []struct {
+		line, want string
+	}{
+		{`docker run --rm -v /etc/passwd:/etc/passwd:ro -v /etc/group:/etc/group:ro example/tool`, ""},
+		{`docker run --rm --mount type=bind,source=/etc/passwd,target=/etc/passwd,readonly example/tool`, ""},
+		{`docker run --rm -v /etc/passwd:/etc/passwd example/tool`, "read/write"},
+		{`docker run --rm -v /var/run/docker.sock:/var/run/docker.sock:ro example/tool`, "can read host"},
+	} {
+		doc, err := parser.Parse([]byte("job:\n  script:\n    - '"+tc.line+"'\n"), "test.yml")
+		if err != nil {
+			t.Fatal(err)
+		}
+		f := GL060.Check(doc.Root, "test.yml")
+		switch {
+		case tc.want == "" && len(f) != 0:
+			t.Errorf("%s: got %v, want no finding", tc.line, f)
+		case tc.want != "" && (len(f) != 1 || !strings.Contains(f[0].Message, tc.want)):
+			t.Errorf("%s: got %v, want one finding saying %q", tc.line, f, tc.want)
+		}
 	}
 }

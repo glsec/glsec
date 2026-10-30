@@ -48,15 +48,16 @@ func (r *gl060) Check(doc *yaml.Node, file string) []finding.Finding {
 			return
 		}
 		for _, m := range volumeFlagRe.FindAllStringSubmatchIndex(v, -1) {
-			src := volumeSource(v[m[2]:m[3]])
-			findings = append(findings, mountFinding(src, file, job, line, m[0])...)
+			spec := strings.Trim(v[m[2]:m[3]], `"'`)
+			findings = append(findings, mountFinding(volumeSource(spec), volumeReadOnly(spec), file, job, line, m[0])...)
 		}
 		for _, m := range mountFlagRe.FindAllStringSubmatchIndex(v, -1) {
-			src, ok := mountBindSource(v[m[2]:m[3]])
+			spec := v[m[2]:m[3]]
+			src, ok := mountBindSource(spec)
 			if !ok {
 				continue
 			}
-			findings = append(findings, mountFinding(src, file, job, line, m[0])...)
+			findings = append(findings, mountFinding(src, mountReadOnly(spec), file, job, line, m[0])...)
 		}
 	})
 	return findings
@@ -66,10 +67,19 @@ func (r *gl060) Check(doc *yaml.Node, file string) []finding.Finding {
 // path is not sensitive. This rule owns bind mounts in scripts, including
 // socket mounts, so a socket mount yields this one finding; GL055 covers
 // DOCKER_HOST references only.
-func mountFinding(src, file, job string, line *yaml.Node, off int) []finding.Finding {
+func mountFinding(src string, readOnly bool, file, job string, line *yaml.Node, off int) []finding.Finding {
 	sev, ok := hostMountSeverity(src)
 	if !ok {
 		return nil
+	}
+	// World-readable identity files mounted read-only, to map the runner's
+	// user into the container, expose nothing the job can't read (#995).
+	if readOnly && readOnlyIdentityFiles[strings.TrimSuffix(src, "/")] {
+		return nil
+	}
+	access := "read/write"
+	if readOnly {
+		access = "read"
 	}
 	ln, col := scriptMatchPos(line, off)
 	return []finding.Finding{{
@@ -77,8 +87,8 @@ func mountFinding(src, file, job string, line *yaml.Node, off int) []finding.Fin
 		Severity: sev,
 		Job:      job,
 		Message: fmt.Sprintf(
-			"container run mounts sensitive host path %q — breaks container isolation; the job can read/write host files outside the container. Mount only $CI_PROJECT_DIR or a named volume",
-			src,
+			"container run mounts sensitive host path %q — breaks container isolation; the job can %s host files outside the container. Mount only $CI_PROJECT_DIR or a named volume",
+			src, access,
 		),
 		File: file, Line: ln, Col: col,
 	}}
@@ -107,6 +117,37 @@ func mountBindSource(spec string) (string, bool) {
 		return "", false
 	}
 	return src, true
+}
+
+// readOnlyIdentityFiles are world-readable host files containers commonly
+// get read-only to see the runner's users or time zone.
+var readOnlyIdentityFiles = map[string]bool{
+	"/etc/passwd": true, "/etc/group": true, "/etc/localtime": true, "/etc/timezone": true,
+}
+
+// volumeReadOnly reports whether a -v spec SRC:DST:opts mounts read-only.
+func volumeReadOnly(spec string) bool {
+	parts := strings.Split(spec, ":")
+	if len(parts) < 3 {
+		return false
+	}
+	for _, o := range strings.Split(parts[len(parts)-1], ",") {
+		if o == "ro" || o == "readonly" {
+			return true
+		}
+	}
+	return false
+}
+
+// mountReadOnly reports whether a --mount spec has readonly (or ro).
+func mountReadOnly(spec string) bool {
+	for _, kv := range strings.Split(strings.Trim(spec, `"'`), ",") {
+		k, v, _ := strings.Cut(kv, "=")
+		if (k == "readonly" || k == "ro") && v != "false" && v != "0" {
+			return true
+		}
+	}
+	return false
 }
 
 // volumeSource returns the host (source) side of a bind-mount spec SRC:DST[:opts].
