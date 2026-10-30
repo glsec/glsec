@@ -209,6 +209,14 @@ func All() []rule.Rule {
 }
 ```
 
+Then add its ID to the rule IDs the `.glsec.yml` schema lists, so editors accept `rules: {GL0NN: …}`:
+
+```sh
+go test ./cmd/glsec -run TestConfigSchema -update
+```
+
+A new config key goes into `schema/glsec.schema.json` by hand, with a description, and into `docs/glsec.example.yml`; `TestConfigSchema` and `TestConfigExampleLoads` fail until both have it.
+
 ### Step 4 — satisfy the consistency tests
 
 `rules/consistency_test.go` and `rules/docexamples_test.go` run as part of `go test ./rules/` and check every rule returned by `All()`:

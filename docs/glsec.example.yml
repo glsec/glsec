@@ -1,0 +1,67 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/glsec/glsec/main/schema/glsec.schema.json
+#
+# Every key glsec reads from .glsec.yml, with an example value. All are
+# optional; leave out what you don't need. CI checks this file against
+# schema/glsec.schema.json and loads it with glsec.
+
+# Per-rule overrides: a severity (error, warn, info) or off.
+rules:
+  GL001: warn
+  GL024:
+    severity: info
+  GL053: off
+  SC2086: off # ShellCheck codes, with shellcheck.enabled
+
+# Report only findings of this severity or higher.
+min-severity: warn
+
+# The GitLab version the pipeline runs on; newer keywords' rules are skipped.
+gitlab-version: "17.4"
+
+# Plain http:// URLs to these hosts or ranges aren't reported (GL016).
+trusted-hosts:
+  - mirror.internal.example.com
+  - 10.0.0.0/8
+
+# Container registries images may come from (GL065). Empty permits any.
+allowed_registries:
+  - registry.gitlab.com/my-group
+  - docker.io/library
+
+# Also report version tags without a sha256 digest (GL001).
+require_image_digest: false
+
+# Sources include:project, include:component and include:remote may use (GL075).
+allowed_include_sources:
+  - my-group/ci-templates
+  - gitlab.com/components
+
+shellcheck:
+  enabled: true
+  # path: /opt/bin/shellcheck # only in a file passed with --config
+
+# An inline "# glsec:ignore" needs a "-- reason".
+require_ignore_reason: true
+
+# Warn findings exit 1 too.
+strict: false
+
+# Always exit 0 (advisory runs); overrides strict.
+no-exit-codes: false
+
+# Files not to scan.
+exclude_paths:
+  - legacy/.gitlab-ci.yml
+  - vendor/
+
+# More files --recursive scans besides .gitlab-ci.yml.
+recursive_patterns:
+  - '*.gitlab-ci.yml'
+  - ci/pipeline.yml
+
+# Run only, or skip, the rules of these OWASP CI/CD categories.
+owasp:
+  - CICD-SEC-1
+  - CICD-SEC-6
+owasp_exclude:
+  - CICD-SEC-10

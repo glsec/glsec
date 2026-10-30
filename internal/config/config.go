@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"reflect"
+	"sort"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -169,21 +171,26 @@ func parse(data []byte, path string) (*Config, error) {
 	return &cfg, nil
 }
 
-var allowedTopLevelKeys = map[string]bool{
-	"rules":                   true,
-	"min-severity":            true,
-	"gitlab-version":          true,
-	"trusted-hosts":           true,
-	"allowed_registries":      true,
-	"require_image_digest":    true,
-	"allowed_include_sources": true,
-	"strict":                  true,
-	"no-exit-codes":           true,
-	"exclude_paths":           true,
-	"owasp":                   true,
-	"owasp_exclude":           true,
-	"shellcheck":              true,
-	"require_ignore_reason":   true,
+// allowedTopLevelKeys are the YAML keys of Config's fields, taken from the
+// struct tags so a new field can't be left out (recursive_patterns was, #832).
+var allowedTopLevelKeys = func() map[string]bool {
+	keys := map[string]bool{}
+	for _, f := range reflect.VisibleFields(reflect.TypeFor[Config]()) {
+		if name, _, _ := strings.Cut(f.Tag.Get("yaml"), ","); name != "" && name != "-" {
+			keys[name] = true
+		}
+	}
+	return keys
+}()
+
+// Keys returns the top-level keys a config file may have.
+func Keys() []string {
+	keys := make([]string, 0, len(allowedTopLevelKeys))
+	for k := range allowedTopLevelKeys {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func checkUnknownKeys(mapping *yaml.Node, path string) error {

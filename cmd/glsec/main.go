@@ -198,6 +198,16 @@ func run(args []string, stdout, stderr io.Writer) int {
 			return 2
 		}
 	}
+	// A typo such as GL10 for GL010 would leave the rule as it is without a
+	// word (#832). A warning, not an error: a config written for a newer glsec
+	// keeps working with an older one.
+	configured := make(map[string]bool, len(cfg.Rules))
+	for id := range cfg.Rules {
+		configured[id] = true
+	}
+	for _, id := range unknownRuleIDs(configured) {
+		_, _ = fmt.Fprintf(stderr, "warning: %s: rules: unknown rule ID %s; this glsec has no such rule\n", output.Sanitize(configPath), output.Sanitize(id))
+	}
 
 	// CLI flags take precedence over config file values.
 	if *strictFlag {

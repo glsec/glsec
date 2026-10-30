@@ -252,7 +252,7 @@ On exit 2 after the scan started, the machine-readable reports still list the fi
 
 glsec reads only regular files of up to 64 MB as pipelines: a FIFO, a device, a directory or a larger file is an exit 2 for the file named on the command line, and a child pipeline file like that is skipped with a warning.
 
-Use `--strict` to treat `warn` findings as hard failures (exit 1). Use `--no-exit-codes` to always exit 0 regardless of findings (advisory/informational mode). All flags can also be set in `.glsec.yml`:
+Use `--strict` to treat `warn` findings as hard failures (exit 1). Use `--no-exit-codes` to always exit 0 regardless of findings (advisory/informational mode). All flags can also be set in [`.glsec.yml`](#configuration-file):
 
 ```yaml
 strict: true        # warn findings cause exit 1
@@ -273,6 +273,16 @@ recursive_patterns:    # extra CI-config names/paths for --recursive (default: .
 ```
 
 If the exclusions cover every file glsec was asked to scan, it says so on stderr instead of finishing silently; with `--strict` that is an error (exit 2).
+
+### Configuration file
+
+glsec reads `.glsec.yml` from the working directory, or the file passed with `--config`. [`docs/glsec.example.yml`](docs/glsec.example.yml) shows every key with an example value. An unknown key, severity or value type stops glsec with exit 2; an unknown rule ID under `rules:` only gets a warning, so a file written for a newer glsec still works with an older one.
+
+[`schema/glsec.schema.json`](schema/glsec.schema.json) is a JSON schema of the file, for completion and validation in editors. Editors with the YAML language server (VS Code's YAML extension, Neovim, JetBrains IDEs) pick it up from a comment on the first line:
+
+```yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/glsec/glsec/main/schema/glsec.schema.json
+```
 
 ### Baseline diff (`--new-only`)
 

@@ -388,6 +388,12 @@ jobs:
           curl -fsSL --retry 3 -o "$RUNNER_TEMP/sarif-schema-2.1.0.json" "$SCHEMA_URL"
           echo "$SCHEMA_SHA256  $RUNNER_TEMP/sarif-schema-2.1.0.json" | sha256sum -c -
           check-jsonschema --schemafile "$RUNNER_TEMP/sarif-schema-2.1.0.json" internal/output/testdata/sarif.golden.json
+      # The .glsec.yml schema has to be a valid schema, and the documented
+      # example has to match it (#832).
+      - name: Validate the example .glsec.yml against the config schema
+        run: |
+          check-jsonschema --check-metaschema schema/glsec.schema.json
+          check-jsonschema --schemafile schema/glsec.schema.json docs/glsec.example.yml
       - name: Validate the Code Quality report against GitLab's documented fields
         run: check-jsonschema --schemafile internal/output/testdata/codequality.schema.json internal/output/testdata/codequality.golden.json
       - name: Validate the JUnit report against the JUnit XSD

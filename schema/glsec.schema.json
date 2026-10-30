@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/glsec/glsec/main/schema/glsec.schema.json",
+  "title": "glsec configuration",
+  "description": "The .glsec.yml configuration file of glsec, the security linter for GitLab CI/CD pipelines. https://github.com/glsec/glsec#configuration-file",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "rules": {
+      "description": "Per-rule overrides: a severity (error, warn, info) or off, as a plain value or as {severity: …}. Keys are glsec rule IDs (GL001 …) or ShellCheck codes (SC2086 …).",
+      "type": "object",
+      "propertyNames": {
+        "anyOf": [
+          { "$ref": "#/$defs/ruleId" },
+          { "type": "string", "pattern": "^SC[0-9]{4}$", "description": "A ShellCheck code, with shellcheck.enabled." }
+        ]
+      },
+      "additionalProperties": {
+        "oneOf": [
+          { "$ref": "#/$defs/ruleSeverity" },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["severity"],
+            "properties": { "severity": { "$ref": "#/$defs/ruleSeverity" } }
+          }
+        ]
+      }
+    },
+    "min-severity": {
+      "description": "Report only findings of this severity or higher.",
+      "enum": ["error", "warn", "info"]
+    },
+    "gitlab-version": {
+      "description": "The GitLab version the pipeline runs on: a major or major.minor version such as 17.4. Rules for keywords newer than this version are skipped. Same as --gitlab-version.",
+      "anyOf": [
+        { "type": "string", "pattern": "^[1-9][0-9]*(\\.[0-9]+)?$" },
+        { "type": "number", "exclusiveMinimum": 0 }
+      ]
+    },
+    "trusted-hosts": {
+      "description": "Hostnames or CIDR ranges whose plain http:// URLs are not reported (GL016), such as an internal mirror.",
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "allowed_registries": {
+      "description": "Container registries (host, or host/namespace prefix) images and services may come from. When set, GL065 reports any other registry. Empty permits any registry.",
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "require_image_digest": {
+      "description": "Also report images pinned to a version tag without a sha256 digest (GL001). Off by default.",
+      "type": "boolean"
+    },
+    "allowed_include_sources": {
+      "description": "Sources include:project, include:component and include:remote may use (project namespaces, component hosts or paths, remote hosts). When set, GL075 reports any other source. Empty disables the check.",
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "shellcheck": {
+      "description": "ShellCheck integration: lint the shell in script:, before_script: and after_script:.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "description": "Run ShellCheck on every job's scripts.", "type": "boolean" },
+        "path": {
+          "description": "The shellcheck binary. Honoured only in a file passed with --config; in a .glsec.yml glsec finds by itself it is ignored with a warning. Use --shellcheck-path instead.",
+          "type": "string"
+        }
+      }
+    },
+    "require_ignore_reason": {
+      "description": "Make an inline # glsec:ignore without a -- reason a policy violation (exit 2). The .glsec-ignore baseline is not affected.",
+      "type": "boolean"
+    },
+    "strict": {
+      "description": "Warn findings also exit 1. Same as --strict.",
+      "type": "boolean"
+    },
+    "no-exit-codes": {
+      "description": "Always exit 0 when the scan succeeds, whatever it finds (advisory runs). Overrides strict. Same as --no-exit-codes.",
+      "type": "boolean"
+    },
+    "exclude_paths": {
+      "description": "Files not to scan: glob patterns, and directories ending in / or /**.",
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "recursive_patterns": {
+      "description": "More file names or paths that --recursive scans besides .gitlab-ci.yml. A pattern without / matches the file name, one with / the path relative to the scanned directory.",
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "owasp": {
+      "description": "Run only the rules in these OWASP Top 10 CI/CD Security Risks categories.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/owaspCategory" }
+    },
+    "owasp_exclude": {
+      "description": "Skip the rules in these OWASP Top 10 CI/CD Security Risks categories.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/owaspCategory" }
+    }
+  },
+  "$defs": {
+    "ruleSeverity": {
+      "description": "error, warn or info sets the rule's severity; off turns the rule off.",
+      "enum": ["error", "warn", "info", "off"]
+    },
+    "owaspCategory": {
+      "enum": ["CICD-SEC-1", "CICD-SEC-2", "CICD-SEC-3", "CICD-SEC-4", "CICD-SEC-5", "CICD-SEC-6", "CICD-SEC-7", "CICD-SEC-8", "CICD-SEC-9", "CICD-SEC-10"]
+    },
+    "ruleId": {
+      "description": "A glsec rule ID. Generated from the rule registry: go test ./cmd/glsec -run TestConfigSchema -update",
+      "enum": ["GL001", "GL002", "GL003", "GL004", "GL005", "GL006", "GL007", "GL008", "GL009", "GL010", "GL011", "GL012", "GL013", "GL014", "GL015", "GL016", "GL017", "GL018", "GL019", "GL020", "GL021", "GL022", "GL023", "GL024", "GL025", "GL026", "GL027", "GL028", "GL029", "GL030", "GL031", "GL032", "GL033", "GL034", "GL035", "GL036", "GL037", "GL038", "GL039", "GL040", "GL041", "GL042", "GL043", "GL044", "GL045", "GL046", "GL047", "GL048", "GL049", "GL050", "GL051", "GL052", "GL053", "GL054", "GL055", "GL056", "GL057", "GL058", "GL059", "GL060", "GL061", "GL062", "GL063", "GL064", "GL065", "GL066", "GL067", "GL068", "GL069", "GL070", "GL071", "GL072", "GL073", "GL074", "GL075", "GL076", "GL077", "GL078", "GL079", "GL080", "GL081", "GL082", "GL083", "GL084", "GL085", "GL086", "GL087", "GL088", "GL089"]
+    }
+  }
+}
