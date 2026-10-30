@@ -159,3 +159,23 @@ variables:
 		t.Fatalf("expected 2 findings (API_TOKEN and SSH_KEY), got %d", len(f))
 	}
 }
+
+// Values written as a placeholder are not committed secrets (#991).
+func TestGL027_PlaceholderShapes(t *testing.T) {
+	for value, want := range map[string]int{
+		"_api_token_":         0,
+		"<your admin token>":  0,
+		"{{ api_token }}":     0,
+		"xxxxxxxx":            0,
+		"TODO":                0,
+		"replace-me":          0,
+		"API_TOKEN":           0,
+		"s3cr3t-Value-91x":    1,
+		"prod_token_9f8e7d6c": 1,
+	} {
+		f := findings027(t, "variables:\n  API_TOKEN:\n    value: \""+value+"\"\n    description: the API token\nbuild:\n  script: [echo ok]\n")
+		if len(f) != want {
+			t.Errorf("%q: got %d findings, want %d", value, len(f), want)
+		}
+	}
+}

@@ -46,6 +46,10 @@ func checkCommittedSecretVariables(node *yaml.Node, file, job string) []finding.
 		if v == nil || v.Kind != yaml.ScalarNode || !committedSecretValue(v.Value) {
 			continue
 		}
+		// A value that repeats the variable's name is a placeholder (#991).
+		if strings.EqualFold(strings.Trim(v.Value, "_-<> "), varName) {
+			continue
+		}
 
 		findings = append(findings, finding.Finding{
 			RuleID:   "GL027",
