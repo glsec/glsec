@@ -39,13 +39,14 @@ func (r *gl081) Check(doc *yaml.Node, file string) []finding.Finding {
 		if strings.HasPrefix(name.Value, ".") {
 			return
 		}
-		// A base in another file may hold the guard or the id_tokens: skip
+		// A base in another file may hold the guard or the credential: skip
 		// the job. A chain within this file is merged in.
-		if !in.Has(job, "id_tokens") || !in.ExtendsResolved(job) {
+		if (!in.Has(job, "id_tokens") && !in.Has(job, "identity")) || !in.ExtendsResolved(job) {
 			return
 		}
 		job = in.Effective(job)
-		if !hasIDTokens(job) {
+		cred := jobCredential(job)
+		if cred == credNone {
 			return
 		}
 
@@ -53,7 +54,7 @@ func (r *gl081) Check(doc *yaml.Node, file string) []finding.Finding {
 		// only: merge_requests) lets any MR mint the token, even one that is
 		// otherwise an "effective" restriction on some other ref.
 		if jobAdmitsMR(job) {
-			findings = append(findings, gl081Finding(name, file, gl081ReasonAdmits))
+			findings = append(findings, gl081Finding(name, file, cred, gl081ReasonAdmits))
 			return
 		}
 
@@ -62,7 +63,7 @@ func (r *gl081) Check(doc *yaml.Node, file string) []finding.Finding {
 		// effective guard (restricted to a protected ref, tag, or branch) is
 		// accepted.
 		if jobGuardState(job) != guardEffective {
-			findings = append(findings, gl081Finding(name, file, gl081ReasonUnguarded))
+			findings = append(findings, gl081Finding(name, file, cred, gl081ReasonUnguarded))
 		}
 	})
 	return findings
@@ -73,6 +74,26 @@ func hasIDTokens(job *yaml.Node) bool {
 	return t != nil && t.Kind == yaml.MappingNode
 }
 
+type gl081Credential int
+
+const (
+	credNone gl081Credential = iota
+	credIDTokens
+	// credIdentity is identity: google_cloud, Google Cloud credentials
+	// through workload identity federation without an id_tokens: block.
+	credIdentity
+)
+
+func jobCredential(job *yaml.Node) gl081Credential {
+	if hasIDTokens(job) {
+		return credIDTokens
+	}
+	if id := parser.FindKey(job, "identity"); id != nil && id.Kind == yaml.ScalarNode && id.Value != "" {
+		return credIdentity
+	}
+	return credNone
+}
+
 type gl081Reason int
 
 const (
@@ -80,19 +101,31 @@ const (
 	gl081ReasonUnguarded
 )
 
-func gl081Finding(name *yaml.Node, file string, reason gl081Reason) finding.Finding {
+func gl081Finding(name *yaml.Node, file string, cred gl081Credential, reason gl081Reason) finding.Finding {
 	return finding.Finding{
 		RuleID:   "GL081",
 		Severity: finding.Warn,
 		Job:      name.Value,
-		Message:  gl081Message(name.Value, reason),
+		Message:  gl081Message(name.Value, cred, reason),
 		File:     file,
 		Line:     name.Line,
 		Col:      name.Column,
 	}
 }
 
-func gl081Message(job string, reason gl081Reason) string {
+func gl081Message(job string, cred gl081Credential, reason gl081Reason) string {
+	if cred == credIdentity {
+		if reason == gl081ReasonAdmits {
+			return fmt.Sprintf(
+				"job %q gets Google Cloud credentials through identity: and its guard admits merge_request_event — any merge request can use them; restrict the job to protected refs and add the attribute condition assertion.ref_protected == \"true\" to the workload identity provider",
+				job,
+			)
+		}
+		return fmt.Sprintf(
+			"job %q gets Google Cloud credentials through identity: with no guard restricting $CI_PIPELINE_SOURCE or the ref — any branch or merge request can use them; add a rules:if that restricts to protected refs and the attribute condition assertion.ref_protected == \"true\" to the workload identity provider",
+			job,
+		)
+	}
 	if reason == gl081ReasonAdmits {
 		return fmt.Sprintf(
 			"job %q issues an OIDC id_tokens: credential and its guard admits merge_request_event — any merge request can mint a cloud-federating token; restrict the job to protected refs and condition the cloud trust policy on the ref_protected claim",

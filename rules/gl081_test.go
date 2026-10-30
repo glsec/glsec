@@ -4,6 +4,7 @@
 package rules
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -288,5 +289,82 @@ deploy-prod:
 `)
 	if len(f) != 2 {
 		t.Fatalf("expected 2 findings (aws-test + vault-plan), got %d", len(f))
+	}
+}
+
+// identity: google_cloud gets Google Cloud credentials without id_tokens:
+// (#933).
+func TestGL081_Identity(t *testing.T) {
+	for _, tc := range []struct {
+		name, yaml, want string
+	}{
+		{"no guard", `
+deploy:
+  identity: google_cloud
+  script: [gcloud compute instances list]
+`, "with no guard"},
+		{"guard admits MRs", `
+deploy:
+  identity: google_cloud
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  script: [gcloud compute instances list]
+`, "admits merge_request_event"},
+		{"from a template in this file", `
+.gcp:
+  identity: google_cloud
+deploy:
+  extends: .gcp
+  script: [gcloud compute instances list]
+`, "with no guard"},
+		{"protected ref", `
+deploy:
+  identity: google_cloud
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  script: [gcloud compute instances list]
+`, ""},
+		{"template from another file", `
+deploy:
+  extends: .from-include
+  identity: google_cloud
+  script: [gcloud compute instances list]
+`, ""},
+		{"in default: only", `
+default:
+  identity: google_cloud
+deploy:
+  script: [gcloud compute instances list]
+`, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := findings081(t, tc.yaml)
+			if tc.want == "" {
+				if len(f) != 0 {
+					t.Fatalf("expected no finding, got %v", f)
+				}
+				return
+			}
+			if len(f) != 1 {
+				t.Fatalf("expected 1 finding, got %v", f)
+			}
+			if !strings.Contains(f[0].Message, "identity:") || !strings.Contains(f[0].Message, tc.want) {
+				t.Errorf("message %q should name identity: and say %q", f[0].Message, tc.want)
+			}
+		})
+	}
+}
+
+func TestGL081_IDTokensAndIdentityReportOnce(t *testing.T) {
+	f := findings081(t, `
+deploy:
+  identity: google_cloud
+  id_tokens:
+    ID_TOKEN:
+      aud: https://sts.amazonaws.com
+  script: [./run.sh]
+`)
+	if len(f) != 1 || !strings.Contains(f[0].Message, "id_tokens:") {
+		t.Errorf("expected one id_tokens: finding, got %v", f)
 	}
 }

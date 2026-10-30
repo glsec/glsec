@@ -1,0 +1,32 @@
+# lint: skip — identity: needs the Google Cloud IAM integration, which the lint project has not set up
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+# identity: google_cloud gets Google Cloud credentials through workload
+# identity federation, without an id_tokens: block (#933).
+gcp-deploy:
+  stage: deploy
+  image: google/cloud-sdk:497.0.0-slim
+  identity: google_cloud
+  script:
+    - gcloud run deploy my-service --image "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHA"
+
+gcp-preview:
+  stage: test
+  image: google/cloud-sdk:497.0.0-slim
+  identity: google_cloud
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  script:
+    - gcloud storage ls gs://my-preview-bucket/
+
+gcp-release:
+  stage: deploy
+  image: google/cloud-sdk:497.0.0-slim
+  identity: google_cloud
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  script:
+    - gcloud run deploy my-service --image "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHA"
