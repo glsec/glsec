@@ -33,7 +33,7 @@ func TestScriptRulesReportTheLineInsideABlock(t *testing.T) {
 		{GL063, "chmod 777 out"},
 		{GL068, "set -x"},
 		{GL069, "apt-get install -y --allow-unauthenticated pkg"},
-		{GL070, `echo "AWS_SECRET_ACCESS_KEY=$AWS_SECRET" > .env`},
+		{GL070, "export AWS_SECRET_ACCESS_KEY=$AWS_SECRET"},
 		{GL076, "docker run --security-opt seccomp=unconfined example/img"},
 		{GL077, "docker run --ipc host example/img"},
 	} {

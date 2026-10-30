@@ -4,6 +4,7 @@
 package rules
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -94,5 +95,27 @@ static:
 				t.Fatalf("expected %d findings, got %d", tc.want, len(f))
 			}
 		})
+	}
+}
+
+// AWS_SECRET_ACCESS_KEY= counts as an assignment, not as text inside an
+// argument (#998).
+func TestGL070_AssignmentOnly(t *testing.T) {
+	for line, want := range map[string]int{
+		`curl --request POST --form "AWS_SECRET_ACCESS_KEY=$OTHER_SECRET" https://hooks.example.com/build`: 0,
+		`echo '{"AWS_SECRET_ACCESS_KEY=": 1}' > x.json`:                                                    0,
+		`export AWS_SECRET_ACCESS_KEY=$PROD_SECRET`:                                                        1,
+		`AWS_SECRET_ACCESS_KEY=$S aws s3 ls`:                                                               1,
+		`AWS_ACCESS_KEY_ID=$I AWS_SECRET_ACCESS_KEY=$S aws s3 ls`:                                          1,
+		`env AWS_SECRET_ACCESS_KEY=$S terraform apply`:                                                     1,
+		`cd infra && AWS_SECRET_ACCESS_KEY=$S terraform apply`:                                             1,
+	} {
+		doc, err := parser.Parse([]byte("job:\n  script:\n    - '"+strings.ReplaceAll(line, "'", "''")+"'\n"), "test.yml")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := len(GL070.Check(doc.Root, "test.yml")); got != want {
+			t.Errorf("%s: got %d findings, want %d", line, got, want)
+		}
 	}
 }

@@ -29,7 +29,10 @@ var (
 	// aws configure set aws_secret_access_key …
 	awsConfigRe = regexp.MustCompile(`\baws\s+configure\s+set\s+aws_secret_access_key\b`)
 	// AWS_SECRET_ACCESS_KEY=… assigned/exported in a script line.
-	awsEnvRe = regexp.MustCompile(`\bAWS_SECRET_ACCESS_KEY\s*=`)
+	// Only as an assignment at a command boundary, also after export, env
+	// or other assignments: a form field or JSON key named
+	// AWS_SECRET_ACCESS_KEY inside a quoted argument is neither (#998).
+	awsEnvRe = regexp.MustCompile(`(?m)(?:^|[;&|({]|\$\()\s*(?:(?:export|env|declare|local|readonly)\s+(?:-\w+\s+)*)?(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*AWS_SECRET_ACCESS_KEY\s*=`)
 )
 
 // Indexes of the AWS checks in staticCredChecks.
