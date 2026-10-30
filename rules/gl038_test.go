@@ -4,6 +4,7 @@
 package rules
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/glsec/glsec/internal/parser"
@@ -294,6 +295,67 @@ job:
 				for _, f := range findings {
 					t.Logf("  finding: %s", f.Message)
 				}
+			}
+		})
+	}
+}
+
+// curl -u, an Authorization header and an assignment to a secret-like name
+// with a literal (#910).
+func TestGL038_CurlAuthAndAssignments(t *testing.T) {
+	for _, tc := range []struct {
+		line string
+		want string // tool in the message, "" for no finding
+	}{
+		{`curl -u admin:S3cr3tPassw0rd https://api.example.com`, "curl -u"},
+		{`curl --user=admin:S3cr3tPassw0rd https://api.example.com`, "curl -u"},
+		{`curl -sf -u 'deploy:Hunter2Hunter2' https://api.example.com`, "curl -u"},
+		{`curl -u admin:$API_PASSWORD https://api.example.com`, ""},
+		{`curl -u "$API_USER:${API_PASSWORD}" https://api.example.com`, ""},
+		{`curl -u admin: https://api.example.com`, ""},
+		{`curl -u : --negotiate https://api.example.com`, ""},
+		{`curl -u admin:changeme https://api.example.com`, ""},
+
+		{`curl -H "Authorization: Bearer a8f3k2l9q0w7e6r5t4y3u2i1o0p9" https://api.example.com`, "Authorization header"},
+		{`wget --header="Authorization: Token a8f3k2l9q0w7e6r5t4" https://api.example.com`, "Authorization header"},
+		{`curl --header 'authorization: basic YWRtaW46czNjcjN0' https://api.example.com`, "Authorization header"},
+		{`curl -H "Authorization: Bearer $API_TOKEN" https://api.example.com`, ""},
+		{`curl -H "Authorization: Bearer ${API_TOKEN}" https://api.example.com`, ""},
+		{`curl -H "Authorization: Bearer <token>" https://api.example.com`, ""},
+		{`curl -H "Authorization: Bearer your-token-here" https://api.example.com`, ""},
+
+		{`export OKTA_API_TOKEN=00aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789AbCd`, "export"},
+		{`DB_PASSWORD=S3cr3tPassw0rd ./migrate.sh`, "export"},
+		{`set -e; export SERVICE_SECRET="k8s9d7f6g5h4j3"`, "export"},
+		{`export OKTA_API_TOKEN=$OKTA_TOKEN`, ""},
+		{`export OKTA_API_TOKEN="${OKTA_TOKEN}"`, ""},
+		{`export DEPLOY_TOKEN=$(cat /run/secrets/token)`, ""},
+		{`export DB_PASSWORD=changeme123`, ""},
+		{`export MYSQL_ROOT_PASSWORD=root`, ""},
+		{`export POSTGRES_PASSWORD=postgres`, ""},
+		{`export SSH_KEY=~/.ssh/id_ed25519`, ""},
+		{`export GOOGLE_CREDENTIAL=/tmp/sa.json`, ""},
+		{`export BUILD_NUMBER=12345678`, ""},
+		{`docker build --build-arg API_KEY=a8f3k2l9q0w7e6 .`, ""},
+		{`COVERAGE_KEY=ruby-32-pg-coverage bundle exec rake`, ""},
+		{`export TEST_SECRET=test_secret_value`, ""},
+		{`APP_SECRET_KEY=Local-only-ci-instance-secret! ./run`, ""},
+		{`export API_TOKEN=1-a8f3k2l9q0w7e6r5t4y3u2i1o0p9`, "export"},
+	} {
+		t.Run(tc.line, func(t *testing.T) {
+			doc, err := parser.Parse([]byte("job:\n  script:\n    - '"+strings.ReplaceAll(tc.line, "'", "''")+"'\n"), "test.yml")
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := GL038.Check(doc.Root, "test.yml")
+			if tc.want == "" {
+				if len(got) != 0 {
+					t.Fatalf("expected no finding, got %v", got)
+				}
+				return
+			}
+			if len(got) != 1 || !strings.HasPrefix(got[0].Message, "["+tc.want+"]") {
+				t.Fatalf("expected one [%s] finding, got %v", tc.want, got)
 			}
 		})
 	}

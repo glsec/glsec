@@ -28,6 +28,8 @@ type credCheck struct {
 	// job has services. Only those checks are suppressed for own-service
 	// targets (#800, part 1).
 	db bool
+	// A check whose regexp has a group captures the literal in it; a
+	// placeholder such as changeme there is not reported.
 }
 
 var credChecks = []credCheck{
@@ -67,6 +69,19 @@ var credChecks = []credCheck{
 		tool: "docker login",
 		re:   regexp.MustCompile(`\b(?:docker|podman)\s+login\b[^;&|\n]*\s(?:-p|--password)(?:\s+|=)["']?[^$"'\s\\-]`),
 		msg:  "script passes a hardcoded password to docker login — anyone who can read the repository can use it; store it in a masked CI/CD variable and pipe it to --password-stdin",
+	},
+	{
+		// user:password with a literal password. $VAR or ${VAR} after the
+		// colon, user: (curl prompts) and : (Kerberos/NTLM) are not.
+		tool: "curl -u",
+		re:   regexp.MustCompile(`\bcurl\b[^;&|\n]*\s(?:-u|--user)(?:\s+|=)["']?[^\s"':]*:([^$\s"'\\][^\s"']*)`),
+		msg:  "script passes a hardcoded password to curl -u — anyone who can read the repository can use it; use a masked CI/CD variable, e.g. -u \"$API_USER:$API_PASSWORD\"",
+	},
+	{
+		// A literal after Bearer, Basic or Token, not $VAR or <token>.
+		tool: "Authorization header",
+		re:   regexp.MustCompile(`(?i)\b(?:curl|wget)\b[^\n]*(?:-H|--header)(?:\s+|=)["']?Authorization:\s*(?:Bearer|Basic|Token)\s+([^$<\s"'\\]{8,})`),
+		msg:  "script sends a hardcoded credential in an Authorization header — anyone who can read the repository can use it; use a masked CI/CD variable, e.g. \"Authorization: Bearer $API_TOKEN\"",
 	},
 	{
 		tool: "sed",
@@ -250,8 +265,10 @@ func checkHardcodedCredScript(node *yaml.Node, file, job string, aliases map[str
 		if item.Kind != yaml.ScalarNode {
 			continue
 		}
+		reported := false
 		for _, check := range credChecks {
-			if !check.re.MatchString(item.Value) {
+			m := check.re.FindStringSubmatch(item.Value)
+			if m == nil || (len(m) > 1 && looksLikePlaceholder(m[1])) {
 				continue
 			}
 			if check.db && targetsOwnService(item.Value, aliases, hasServices) {
@@ -269,8 +286,68 @@ func checkHardcodedCredScript(node *yaml.Node, file, job string, aliases map[str
 				Line:     item.Line,
 				Col:      item.Column,
 			})
+			reported = true
 			break
+		}
+		if name, ok := exportedSecret(item.Value); ok && !reported {
+			findings = append(findings, finding.Finding{
+				RuleID:   "GL038",
+				Severity: finding.Error,
+				Job:      job,
+				Message:  fmt.Sprintf("[export] script sets %q, a secret-like name, to a hardcoded value — anyone who can read the repository can use it; store it as a masked CI/CD variable, which the job gets without an export", name),
+				File:     file,
+				Line:     item.Line,
+				Col:      item.Column,
+			})
 		}
 	}
 	return findings
+}
+
+// secretAssignmentRe matches a shell assignment in command position: at the start
+// of a command, or after export. An assignment inside an argument, such as
+// --build-arg API_KEY=…, is not one (GL059 covers build args).
+var secretAssignmentRe = regexp.MustCompile(`(?:^|[;&|(]\s*|\bexport\s+)([A-Za-z_][A-Za-z0-9_]*)=("[^"$]*"|'[^']*'|[^\s;&|"'$]*)(?:[\s;&|)]|$)`)
+
+// exportedSecret reports whether a script line assigns a literal to a
+// variable with a secret-like name (#910), with the name GL027 would use and
+// its placeholder handling. Values that are rarely a secret are left out: a
+// reference ($VAR, $(cmd)), a path or URL, and a short or single-kind value
+// such as root, 1 or postgres, which are mostly throwaway passwords for
+// service containers.
+func exportedSecret(line string) (string, bool) {
+	for _, m := range secretAssignmentRe.FindAllStringSubmatch(line, -1) {
+		name, v := m[1], strings.Trim(m[2], `"'`)
+		if !hasSecretSuffix(name) || !committedSecretValue(v) || strings.ContainsAny(v, "/~`\\") {
+			continue
+		}
+		mixed := strings.ContainsAny(v, "0123456789") && strings.IndexFunc(v, isLetter) >= 0
+		if len(v) < 8 || (!mixed && len(v) < 16) || wordLike(v) {
+			continue
+		}
+		return name, true
+	}
+	return "", false
+}
+
+func isLetter(r rune) bool { return r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' }
+
+// wordLike reports whether v is words or numbers joined by -, _ or ., such
+// as ruby-32-pg-coverage or test_secret_value: an identifier, a label or a
+// throwaway passphrase, not a generated secret, whose parts mix letters and
+// digits.
+func wordLike(v string) bool {
+	parts := strings.FieldsFunc(v, func(r rune) bool { return r == '-' || r == '_' || r == '.' })
+	if len(parts) < 2 {
+		return false
+	}
+	for _, p := range parts {
+		p = strings.TrimRight(p, "!?#%*+")
+		letters := strings.IndexFunc(p, func(r rune) bool { return !isLetter(r) }) < 0
+		digits := strings.IndexFunc(p, func(r rune) bool { return r < '0' || r > '9' }) < 0
+		if p == "" || (!letters && !digits) {
+			return false
+		}
+	}
+	return true
 }
