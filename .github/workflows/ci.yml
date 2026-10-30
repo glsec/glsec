@@ -308,6 +308,9 @@ jobs:
           persist-credentials: false
       - name: Build image
         run: docker build -t glsec:ci .
+      # The image starts and finds something, the way users run it (#929).
+      - name: Smoke-test the image
+        run: .github/scripts/smoke-test.sh dev docker run --rm -v "$PWD/testdata:/src/testdata:ro" -w /src glsec:ci
       - name: Scan image
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:

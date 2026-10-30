@@ -99,6 +99,25 @@ jobs:
         id: date
         run: echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
+      # Build once into the local Docker and run it before anything is
+      # pushed (#929): an image that doesn't start or finds nothing never gets
+      # a tag. The push below reuses this build from the builder's cache.
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          load: true
+          push: false
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
+            COMMIT=${{ github.sha }}
+            DATE=${{ steps.date.outputs.date }}
+          tags: glsec:smoke
+
+      - name: Smoke-test the image
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: .github/scripts/smoke-test.sh "$VERSION" docker run --rm -v "$PWD/testdata:/src/testdata:ro" -w /src glsec:smoke
+
       - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         id: build
         with:

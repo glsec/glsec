@@ -25,6 +25,7 @@ glsec decides what a security review of a pipeline reports, so a wrong answer co
 | Race detector, Linux/macOS/Windows | data races, platform-specific bugs | every pull request |
 | [Coverage](CONTRIBUTING.md#coverage): statement and branch coverage with thresholds | code no test exercises | every pull request |
 | Reproducible build | a release binary that differs from what the source builds | pull requests touching the build, `main` |
+| Package smoke tests: the image, each release archive and each PyPI wheel installed and run on its platform, version checked and a fixture scanned | a package that doesn't start, reports the wrong version or finds nothing | the image on every pull request and before it is pushed; archives with the reproducible build; wheels before the PyPI upload |
 | Static analysis: [golangci-lint](CONTRIBUTING.md#linting), CodeQL, govulncheck, dependency and workflow scanners | bugs and vulnerabilities in the code, its dependencies and its CI | every pull request, CodeQL also weekly |
 | Real pipelines: new rules against public pipelines, the parser against GitLab's CI Lint ([`ci-lint-diff.py`](CONTRIBUTING.md#fixture-validation)) | false positives that crafted fixtures don't show; files GitLab runs but glsec can't scan | before each release, see [RELEASING.md](RELEASING.md) |
 

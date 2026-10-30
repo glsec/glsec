@@ -63,3 +63,55 @@ jobs:
           fi
           echo "identical:"
           cat first/dist/checksums.txt
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: archives
+          path: |
+            first/dist/*.tar.gz
+            first/dist/*.zip
+          if-no-files-found: error
+          retention-days: 3
+
+  # Each release archive starts and finds something on its own platform
+  # (#929). These are release builds of the same source, so a broken archive
+  # shows up here before a tag is pushed. darwin_amd64 has no hosted runner
+  # left to run it on.
+  smoke:
+    name: Smoke-test the ${{ matrix.platform }} archive
+    needs: rebuild
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, platform: linux_amd64, ext: tar.gz }
+          - { os: ubuntu-24.04-arm, platform: linux_arm64, ext: tar.gz }
+          - { os: macos-latest, platform: darwin_arm64, ext: tar.gz }
+          - { os: windows-latest, platform: windows_amd64, ext: zip }
+          - { os: windows-11-arm, platform: windows_arm64, ext: zip }
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: archives
+          path: archives
+      - name: Unpack and run
+        env:
+          ARCHIVE: archives/glsec_0.0.0-repro_${{ matrix.platform }}.${{ matrix.ext }}
+        run: |
+          set -euo pipefail
+          mkdir unpacked
+          if [[ "$ARCHIVE" == *.zip ]]; then
+            # Git Bash's tar can't read zip files.
+            pwsh -NoProfile -Command "Expand-Archive -Path '$ARCHIVE' -DestinationPath unpacked"
+          else
+            tar -xzf "$ARCHIVE" -C unpacked
+          fi
+          bin=unpacked/glsec
+          [ -f "$bin" ] || bin=unpacked/glsec.exe
+          .github/scripts/smoke-test.sh 0.0.0-repro "$bin"
