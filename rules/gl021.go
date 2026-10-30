@@ -123,6 +123,10 @@ func printedSecret(line string) (string, bool) {
 			continue
 		}
 		start, end := loc[0], loc[1]
+		// \$NAME prints the text $NAME, not the value (#982).
+		if start > 0 && s[start-1] == '\\' {
+			continue
+		}
 
 		// Find the command segment the secret belongs to (split on shell
 		// command separators).
@@ -169,6 +173,11 @@ func printedSecret(line string) (string, bool) {
 		// Inside `$(…)` or `<(…)` command/process substitution: captured, not
 		// logged. A bare `(` is a subshell, whose output does reach the log.
 		if left > 0 && s[left] == '(' && (s[left-1] == '$' || s[left-1] == '<') {
+			continue
+		}
+		// Inside a { …; } group or ( … ) subshell whose output is redirected
+		// or piped after the closing bracket (#982).
+		if groupOutputDiverted(s, start) {
 			continue
 		}
 		return varRefText(s[start:end]), true
@@ -283,4 +292,48 @@ func varRefText(ref string) string {
 		return ref + "}"
 	}
 	return ref
+}
+
+// groupOutputDiverted reports whether the position pos of a script line is
+// inside a `{ …; }` group or a `( … )` subshell whose output goes to a file
+// or a pipe: `{ echo …; } >> .npmrc`, `( echo … ) | ssh-add -`. Brackets of
+// ${…}, $(…) and quoted text don't count.
+func groupOutputDiverted(s string, pos int) bool {
+	type open struct {
+		at    int
+		brace bool
+	}
+	var stack []open
+	var quote byte
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case quote != 0:
+			if c == quote {
+				quote = 0
+			} else if c == '\\' && quote == '"' {
+				i++
+			}
+		case c == '\\':
+			i++
+		case c == '\'' || c == '"':
+			quote = c
+		case (c == '{' || c == '(') && i > 0 && s[i-1] == '$':
+			stack = append(stack, open{at: -1, brace: c == '{'})
+		case c == '{' || c == '(':
+			stack = append(stack, open{at: i, brace: c == '{'})
+		case (c == '}' || c == ')') && len(stack) > 0:
+			o := stack[len(stack)-1]
+			stack = stack[:len(stack)-1]
+			if o.at < 0 || o.at > pos || i < pos {
+				continue
+			}
+			rest := strings.TrimLeft(s[i+1:], " \t")
+			if strings.HasPrefix(rest, ">") || strings.HasPrefix(rest, "1>") || strings.HasPrefix(rest, "&>") ||
+				(strings.HasPrefix(rest, "|") && !strings.HasPrefix(rest, "||")) {
+				return true
+			}
+		}
+	}
+	return false
 }

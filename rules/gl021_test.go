@@ -451,3 +451,29 @@ func TestGL021_SubstringExpansionName(t *testing.T) {
 		t.Errorf("got %v, want a message naming ${PUBLISH_TOKEN}", f)
 	}
 }
+
+// An escaped reference prints its name, and a group or subshell whose output
+// is redirected or piped doesn't print to the log (#982).
+func TestGL021_EscapesAndDivertedGroups(t *testing.T) {
+	for _, tc := range []struct {
+		line string
+		want int
+	}{
+		{`echo "//registry.example.com/:_authToken=\${CI_JOB_TOKEN}" >> .npmrc`, 0},
+		{`echo "token is \$CI_JOB_TOKEN"`, 0},
+		{`{ echo "//registry.example.com/:_authToken=${CI_JOB_TOKEN}"; } >> .npmrc`, 0},
+		{`( echo "$SSH_PRIVATE_KEY" ) | ssh-add -`, 0},
+		{`{ echo "$GPG_PRIVATE_KEY"; } | gpg --import`, 0},
+		{`{ echo "$API_TOKEN"; }`, 1},
+		{`( echo "$API_TOKEN" ) || true`, 1},
+		{`echo "$API_TOKEN"`, 1},
+	} {
+		doc, err := parser.Parse([]byte("job:\n  script:\n    - '"+tc.line+"'\n"), "test.yml")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := len(GL021.Check(doc.Root, "test.yml")); got != tc.want {
+			t.Errorf("%s: got %d findings, want %d", tc.line, got, tc.want)
+		}
+	}
+}
