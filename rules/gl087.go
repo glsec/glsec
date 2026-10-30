@@ -23,7 +23,7 @@ func (r *gl087) Check(*yaml.Node, string) []finding.Finding { return nil }
 
 func gl087Message(d parser.DuplicateKey) string {
 	if d.Anchor != "" {
-		return fmt.Sprintf("duplicate key %q — the key at line %d replaces this one here; its value is still used through the anchor &%s, so give it a key of its own", d.Key.Value, d.Winner.Line, d.Anchor)
+		return fmt.Sprintf("duplicate key %q — the key at line %d replaces this one here; the anchor &%s in its value is still used through its aliases, so give it a key of its own", d.Key.Value, d.Winner.Line, d.Anchor)
 	}
 	return fmt.Sprintf("duplicate key %q — GitLab ignores this value and uses the one at line %d", d.Key.Value, d.Winner.Line)
 }

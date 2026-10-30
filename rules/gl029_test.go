@@ -4,6 +4,7 @@
 package rules
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/glsec/glsec/internal/parser"
@@ -65,5 +66,17 @@ func TestGL029(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// The message names podman or docker as written (#1005).
+func TestGL029_PodmanName(t *testing.T) {
+	doc, err := parser.Parse([]byte("job:\n  script:\n    - podman login -u ci -p \"$REGISTRY_PASSWORD\" registry.example.com\n"), "t.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := GL029.Check(doc.Root, "t.yml")
+	if len(f) != 1 || !strings.HasPrefix(f[0].Message, "podman login") || strings.Contains(f[0].Message, "docker") {
+		t.Errorf("got %v, want a podman message", f)
 	}
 }

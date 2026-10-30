@@ -795,3 +795,20 @@ job:
 		t.Fatalf("expected 1 finding, got %d", len(f))
 	}
 }
+
+// The message names apt or apt-get as written (#1005).
+func TestGL022_AptName(t *testing.T) {
+	for line, want := range map[string]string{
+		"apt install -y curl":     "apt install without",
+		"apt-get install -y curl": "apt-get install without",
+	} {
+		doc, err := parser.Parse([]byte("job:\n  image: debian:12\n  script:\n    - "+line+"\n"), "t.yml")
+		if err != nil {
+			t.Fatal(err)
+		}
+		f := GL022.Check(doc.Root, "t.yml")
+		if len(f) != 1 || !strings.HasPrefix(f[0].Message, want) {
+			t.Errorf("%s: got %v, want a message starting %q", line, f, want)
+		}
+	}
+}

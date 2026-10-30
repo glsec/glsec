@@ -273,9 +273,13 @@ func checkPMLine(line, file string, lineNum, col int) *finding.Finding {
 		if varPinnedRe.MatchString(args) || localPackageRe.MatchString(args) {
 			continue
 		}
-		msg := fmt.Sprintf("%s install without version pin — use an exact version to make the pipeline reproducible", ic.manager)
+		manager := ic.manager
+		if manager == "apt-get" && strings.HasPrefix(ic.trigger.FindString(probe), "apt ") {
+			manager = "apt" // name the command as written (#1005)
+		}
+		msg := fmt.Sprintf("%s install without version pin — use an exact version to make the pipeline reproducible", manager)
 		if ic.run {
-			msg = fmt.Sprintf("%s fetches and runs a package without version pin — use an exact version to make the pipeline reproducible", ic.manager)
+			msg = fmt.Sprintf("%s fetches and runs a package without version pin — use an exact version to make the pipeline reproducible", manager)
 		}
 		f := finding.Finding{
 			RuleID:   "GL022",

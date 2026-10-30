@@ -4,7 +4,9 @@
 package rules
 
 import (
+	"fmt"
 	"regexp"
+	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
 	"gopkg.in/yaml.v3"
@@ -36,15 +38,20 @@ func checkDockerLoginPassword(node *yaml.Node, file, job string) []finding.Findi
 		if item.Kind != yaml.ScalarNode {
 			continue
 		}
-		if dockerLoginPasswordRe.MatchString(item.Value) {
+		if loc := dockerLoginPasswordRe.FindStringIndex(item.Value); loc != nil {
+			tool := "docker"
+			if strings.HasPrefix(item.Value[loc[0]:], "podman") {
+				tool = "podman" // name the command as written (#1005)
+			}
+			line, col := scriptMatchPos(item, loc[0])
 			findings = append(findings, finding.Finding{
 				RuleID:   "GL029",
 				Severity: finding.Warn,
 				Job:      job,
-				Message:  "docker login passes the password with -p or --password — it is visible in the process table; use --password-stdin instead: echo \"$PASSWORD\" | docker login --password-stdin",
+				Message:  fmt.Sprintf("%s login passes the password with -p or --password — it is visible in the process table; use --password-stdin instead: echo \"$PASSWORD\" | %s login --password-stdin", tool, tool),
 				File:     file,
-				Line:     item.Line,
-				Col:      item.Column,
+				Line:     line,
+				Col:      col,
 			})
 		}
 	}

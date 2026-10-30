@@ -103,7 +103,27 @@ job:
 		t.Fatal(err)
 	}
 	f := GL087.CheckDocument(doc, "t.yml")
-	if len(f) != 1 || !strings.Contains(f[0].Message, "still used through the anchor &a") {
+	if len(f) != 1 || !strings.Contains(f[0].Message, "the anchor &a in its value is still used") {
+		t.Fatalf("unexpected findings: %v", f)
+	}
+}
+
+// An anchor inside the dropped value is still used by its aliases (#1005).
+func TestGL087_NestedAnchor(t *testing.T) {
+	doc, err := parser.Parse([]byte(`.base:
+  cache: &c
+    paths: [.cache/]
+.base:
+  image: alpine:3.20
+build:
+  cache: *c
+  script: [make]
+`), "t.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := GL087.CheckDocument(doc, "t.yml")
+	if len(f) != 1 || !strings.Contains(f[0].Message, "the anchor &c in its value is still used") {
 		t.Fatalf("unexpected findings: %v", f)
 	}
 }

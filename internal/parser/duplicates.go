@@ -27,6 +27,23 @@ type DuplicateKey struct {
 // keys (<<) are left alone; ExpandAliases lets explicit keys override them
 // whatever their order. It must run before ExpandAliases, so that an anchor is
 // collapsed once and every alias of it sees the result.
+// firstAnchor returns the anchor on n or, depth first, on a node inside it
+// (#1005): an alias of a nested anchor still uses that part of the value.
+func firstAnchor(n *yaml.Node) string {
+	if n == nil {
+		return ""
+	}
+	if n.Anchor != "" {
+		return n.Anchor
+	}
+	for _, c := range n.Content {
+		if a := firstAnchor(c); a != "" {
+			return a
+		}
+	}
+	return ""
+}
+
 func CollapseDuplicateKeys(doc *yaml.Node) []DuplicateKey {
 	if doc == nil {
 		return nil
@@ -37,7 +54,7 @@ func CollapseDuplicateKeys(doc *yaml.Node) []DuplicateKey {
 			job = ""
 		}
 		return func(key, value, winner *yaml.Node) {
-			dups = append(dups, DuplicateKey{Key: key, Winner: winner, Job: job, Anchor: value.Anchor})
+			dups = append(dups, DuplicateKey{Key: key, Winner: winner, Job: job, Anchor: firstAnchor(value)})
 		}
 	}
 	top := Unwrap(doc)

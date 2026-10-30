@@ -4,6 +4,7 @@
 package rules
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/glsec/glsec/internal/parser"
@@ -163,5 +164,18 @@ build:
 				}
 			}
 		})
+	}
+}
+
+// The message shows the value as written (#1005).
+func TestGL042_GitSSLValueAsWritten(t *testing.T) {
+	doc, err := parser.Parse([]byte("job:\n  variables:\n    GIT_SSL_NO_VERIFY: \"1\"\n  script:\n    - export GIT_SSL_NO_VERIFY=1 && git clone https://example.com/r.git\n"), "t.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range GL042.Check(doc.Root, "t.yml") {
+		if strings.Contains(f.Message, "true") {
+			t.Errorf("message says true for the value 1: %s", f.Message)
+		}
 	}
 }

@@ -6,6 +6,7 @@ package rules
 import (
 	"fmt"
 	"regexp"
+	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
 	"github.com/glsec/glsec/internal/parser"
@@ -151,11 +152,13 @@ func checkTLSLines(node *yaml.Node, file, job string) []finding.Finding {
 
 		if loc := gitSSLNoVerifyRe.FindStringIndex(item.Value); loc != nil {
 			line, col := scriptMatchPos(item, loc[0])
+			// The value as written: =1 or =true (#1005).
+			setting := strings.Join(strings.Fields(item.Value[loc[0]:loc[1]]), "")
 			findings = append(findings, finding.Finding{
 				RuleID:   "GL042",
 				Severity: finding.Warn,
 				Job:      job,
-				Message:  `GIT_SSL_NO_VERIFY=true in script — TLS certificate verification disabled for all git operations in this step`,
+				Message:  setting + ` in script — TLS certificate verification disabled for all git operations in this step`,
 				File:     file,
 				Line:     line,
 				Col:      col,
@@ -178,7 +181,7 @@ func checkGitSSLNoVerifyVars(node *yaml.Node, file, job string) []finding.Findin
 				RuleID:   "GL042",
 				Severity: finding.Warn,
 				Job:      job,
-				Message:  `GIT_SSL_NO_VERIFY set to "true" in variables — TLS certificate verification disabled for all git operations in affected jobs`,
+				Message:  fmt.Sprintf("GIT_SSL_NO_VERIFY set to %q in variables — TLS certificate verification disabled for all git operations in affected jobs", val.Value),
 				File:     file,
 				Line:     key.Line,
 				Col:      key.Column,
