@@ -5,6 +5,7 @@ package main
 
 import (
 	"encoding/json"
+	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
@@ -28,7 +29,7 @@ func scanIncludes(t *testing.T, files map[string]string, args ...string) ([]stri
 	}
 	var got []string
 	for _, f := range report.Findings {
-		got = append(got, f.File+" "+f.Rule)
+		got = append(got, filepath.ToSlash(f.File)+" "+f.Rule)
 	}
 	sort.Strings(got)
 	return got, stderr
