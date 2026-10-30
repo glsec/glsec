@@ -393,3 +393,31 @@ build:
 		})
 	}
 }
+
+// A protected-only job's cache is kept apart from unprotected refs unless it
+// sets unprotect: true (#1003).
+func TestGL046_ProtectedOnlyKey(t *testing.T) {
+	for _, tc := range []struct {
+		cache string
+		want  int
+	}{
+		{"    key: \"$CI_COMMIT_REF_NAME\"\n    paths: [.cache/]\n", 0},
+		{"    key: \"$CI_COMMIT_REF_NAME\"\n    unprotect: true\n    paths: [.cache/]\n", 1},
+	} {
+		doc, err := parser.Parse([]byte("build:\n  rules:\n    - if: $CI_COMMIT_REF_PROTECTED == \"true\"\n  cache:\n"+tc.cache+"  script: [make]\n"), "test.yml")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := len(GL046.Check(doc.Root, "test.yml")); got != tc.want {
+			t.Errorf("%q: got %d findings, want %d", tc.cache, got, tc.want)
+		}
+	}
+	// A job that runs on any ref is still reported.
+	doc, err := parser.Parse([]byte("build:\n  cache:\n    key: \"$CI_COMMIT_REF_NAME\"\n    paths: [.cache/]\n  script: [make]\n"), "test.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := len(GL046.Check(doc.Root, "test.yml")); got != 1 {
+		t.Errorf("unrestricted job: got %d findings, want 1", got)
+	}
+}

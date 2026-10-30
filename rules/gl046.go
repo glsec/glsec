@@ -42,9 +42,15 @@ func (r *gl046) Check(doc *yaml.Node, file string) []finding.Finding {
 			return
 		}
 		job = in.Effective(job)
-		for _, f := range checkCacheNode(parser.FindKey(job, "cache"), file, "") {
-			f.Job = name.Value
-			findings = append(findings, f)
+		// Without unprotect: true GitLab keeps the caches of protected and
+		// unprotected refs apart, so a key a branch name can steer can't
+		// reach a job that only runs on protected refs (#1003).
+		cache := parser.FindKey(job, "cache")
+		if !gl046ProtectedOnly(job) || cacheUnprotected(cache) {
+			for _, f := range checkCacheNode(cache, file, "") {
+				f.Job = name.Value
+				findings = append(findings, f)
+			}
 		}
 		// A hidden job is a template: the job that extends it decides where it
 		// runs. A job that only runs on protected refs writes the shared cache
@@ -213,4 +219,14 @@ func gl046ProtectedOnly(job *yaml.Node) bool {
 		running++
 	}
 	return running > 0
+}
+
+// cacheUnprotected reports whether any entry of a cache: sets unprotect: true.
+func cacheUnprotected(node *yaml.Node) bool {
+	for _, entry := range cacheEntries(node) {
+		if u := parser.FindKey(entry, "unprotect"); u != nil && u.Value == "true" {
+			return true
+		}
+	}
+	return false
 }
