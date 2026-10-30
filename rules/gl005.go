@@ -137,7 +137,7 @@ func checkArtifactPath(item *yaml.Node, file string, sensitive bool) []finding.F
 			message = fmt.Sprintf("artifact path %q matches sensitive file pattern %q — exclude secrets from artifacts", path, pat)
 		} else if isWholeProjectArtifactPath(path) {
 			message = fmt.Sprintf("artifact path %q uploads the whole working directory, potentially including generated secrets — list only required artifact paths", path)
-		} else if strings.Contains("/"+path+"/", "/.git/") {
+		} else if strings.Contains("/"+path+"/", "/.git/") && !gitLogOnlyPath(path) {
 			message = fmt.Sprintf("artifact path %q includes a .git directory — artifacts can expose repository history and Git configuration; exclude .git from artifact paths", path)
 		}
 		if message != "" {
@@ -176,4 +176,17 @@ func matchesSensitivePattern(path string) string {
 		}
 	}
 	return ""
+}
+
+// gitLogOnlyPath reports a path inside .git that holds only logs, such as
+// Git LFS's error logs (.git/lfs/logs): no history and no configuration
+// (#999).
+func gitLogOnlyPath(path string) bool {
+	p := "/" + strings.Trim(path, "/") + "/"
+	i := strings.Index(p, "/.git/")
+	if i < 0 {
+		return false
+	}
+	rest := p[i+len("/.git/"):]
+	return strings.HasPrefix(rest, "lfs/logs/")
 }

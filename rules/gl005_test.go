@@ -450,3 +450,22 @@ func TestGL005_ExistingPathFindingsUnchanged(t *testing.T) {
 		})
 	}
 }
+
+// Git LFS's logs under .git hold no history or configuration (#999).
+func TestGL005_GitLFSLogs(t *testing.T) {
+	for path, want := range map[string]int{
+		"source/.git/lfs/logs/": 0,
+		".git/lfs/logs/*.log":   0,
+		".git/":                 1,
+		"source/.git/config":    1,
+		".git/lfs/objects/":     1,
+	} {
+		doc, err := parser.Parse([]byte("build:\n  script: [make]\n  artifacts:\n    paths:\n      - '"+path+"'\n    expire_in: 1 day\n"), "test.yml")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := len(GL005.Check(doc.Root, "test.yml")); got != want {
+			t.Errorf("%s: got %d findings, want %d", path, got, want)
+		}
+	}
+}
