@@ -146,17 +146,18 @@ func joinerFitsText(runes []rune, i int) bool {
 	return inAnyScript(prev, joinerScripts) && inAnyScript(next, joinerScripts)
 }
 
-// Check scans the raw file bytes (not the parsed YAML tree) because these
-// control characters are invisible in the node values a tree walk would see.
-func (r *gl078) Check(_ *yaml.Node, file string) []finding.Finding {
-	data, err := parser.ReadFile(file)
-	if err != nil {
-		return nil
-	}
+// Check does nothing: the rule needs the raw text, which only
+// CheckDocument gets.
+func (r *gl078) Check(*yaml.Node, string) []finding.Finding { return nil }
 
+// CheckDocument scans the raw bytes (not the parsed YAML tree) because these
+// control characters are invisible in the node values a tree walk would see.
+// They are the bytes glsec parsed, not the file read again: for stdin input
+// with --stdin-filename the file on disk holds something else (#833).
+func (r *gl078) CheckDocument(doc *parser.Document, file string) []finding.Finding {
 	var findings []finding.Finding
 	line, col := 1, 1
-	runes := []rune(string(data))
+	runes := []rune(string(doc.Source))
 	for i, ch := range runes {
 		switch ch {
 		case '\n':

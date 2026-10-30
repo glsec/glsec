@@ -11,20 +11,16 @@ import (
 	"testing"
 
 	"github.com/glsec/glsec/internal/finding"
+	"github.com/glsec/glsec/internal/parser"
 )
 
-// findings078 writes content to a temp file and runs GL078 against it, since the
-// rule scans raw file bytes by path rather than the parsed YAML tree. The
-// control characters under test are written as \u escapes so this source file
-// itself stays clean (and does not trip GL078-style scanners).
+// findings078 runs GL078 on content as the document's source, since the rule
+// scans the raw bytes rather than the parsed YAML tree. The control characters
+// under test are written as \u escapes so this source file itself stays clean
+// (and does not trip GL078-style scanners).
 func findings078(t *testing.T, content string) []finding.Finding {
 	t.Helper()
-	dir := t.TempDir()
-	path := filepath.Join(dir, "gitlab-ci.yml")
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatalf("write temp file: %v", err)
-	}
-	return GL078.Check(nil, path)
+	return GL078.CheckDocument(&parser.Document{Source: []byte(content)}, "gitlab-ci.yml")
 }
 
 func TestGL078_ZeroWidthSpace(t *testing.T) {
@@ -137,9 +133,19 @@ func TestGL078_Column(t *testing.T) {
 	}
 }
 
-func TestGL078_MissingFile(t *testing.T) {
-	if f := GL078.Check(nil, filepath.Join(t.TempDir(), "does-not-exist.yml")); f != nil {
-		t.Errorf("expected nil for unreadable file, got %d findings", len(f))
+// The rule reads the bytes glsec parsed, not the file again: with stdin input
+// and --stdin-filename the file on disk holds something else (#833).
+func TestGL078_ReadsDocumentSourceNotDisk(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".gitlab-ci.yml")
+	if err := os.WriteFile(path, []byte("build:\n  script: [make]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	doc := &parser.Document{Source: []byte("build:\n  script: [\"ma\u202eke\"]\n")}
+	if f := GL078.CheckDocument(doc, path); len(f) != 1 {
+		t.Errorf("expected 1 finding from the document source, got %d", len(f))
+	}
+	if f := GL078.Check(nil, path); f != nil {
+		t.Errorf("Check reads nothing itself, got %d findings", len(f))
 	}
 }
 

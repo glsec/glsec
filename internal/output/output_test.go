@@ -685,6 +685,24 @@ func TestWriteSARIF_WithASVS(t *testing.T) {
 	}
 }
 
+// The source lines come from what was parsed, not the file read again: for
+// stdin input with --stdin-filename the file on disk holds something else.
+func TestWriteText_SourceFromSources(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".gitlab-ci.yml")
+	if err := os.WriteFile(path, []byte("build:\n  script: [make clean]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	f := []finding.Finding{{RuleID: "GL001", Severity: finding.Error, File: path, Line: 2, Col: 10, Message: "mutable image tag"}}
+	sources := map[string][]byte{path: []byte("build:\n  image: node:latest\n")}
+	var buf bytes.Buffer
+	if err := Write(&buf, FormatText, f, 1, false, false, WithSources(sources)); err != nil {
+		t.Fatal(err)
+	}
+	if got := buf.String(); !strings.Contains(got, "2 |   image: node:latest") || strings.Contains(got, "make clean") {
+		t.Errorf("source line not taken from the sources: %q", got)
+	}
+}
+
 func TestWriteText_SourceContext(t *testing.T) {
 	dir := t.TempDir()
 	path := dir + "/.gitlab-ci.yml"

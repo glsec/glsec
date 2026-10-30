@@ -59,6 +59,14 @@ type writeConfig struct {
 	errors       []ScanError
 	template     *template.Template
 	templateMeta TemplateMeta
+	sources      map[string][]byte
+}
+
+// WithSources gives the text output the content each file was parsed from,
+// by path, for its source lines. Without it they are read from disk, which
+// for stdin input doesn't hold what was scanned (#833).
+func WithSources(sources map[string][]byte) WriteOption {
+	return func(c *writeConfig) { c.sources = sources }
 }
 
 // NoRedact shows the source lines of the text output as they are, secrets
@@ -89,7 +97,7 @@ func Write(w io.Writer, format Format, findings []finding.Finding, jobCount int,
 	case FormatTable:
 		return writeTable(w, findings, jobCount, colorEnabled, isTTY)
 	default:
-		return writeText(w, findings, jobCount, colorEnabled, isTTY, !cfg.noRedact)
+		return writeText(w, findings, jobCount, colorEnabled, isTTY, !cfg.noRedact, cfg.sources)
 	}
 }
 
@@ -159,8 +167,8 @@ func colorTableSeverity(line string, sev finding.Severity) string {
 // severity, rule and message, the location, then the offending source line with
 // a caret at the recorded column. When the source cannot be read the header is
 // still printed, so output never depends on the file still being there.
-func writeText(w io.Writer, findings []finding.Finding, jobCount int, col, isTTY, redactSource bool) error {
-	src := newSourceCache(redactSource)
+func writeText(w io.Writer, findings []finding.Finding, jobCount int, col, isTTY, redactSource bool, sources map[string][]byte) error {
+	src := newSourceCache(redactSource, sources)
 	for i, f := range findings {
 		if i > 0 {
 			if _, err := fmt.Fprintln(w); err != nil {
@@ -224,22 +232,28 @@ func writeDiagnostic(w io.Writer, f finding.Finding, src *sourceCache, colorOn b
 	return nil
 }
 
-// sourceCache reads files lazily so several findings in one file cost a single
-// read. A file that cannot be read is remembered as absent rather than retried.
+// sourceCache takes a file's lines from the parsed sources, or reads the file
+// lazily, so several findings in one file cost a single read. A file that
+// cannot be read is remembered as absent rather than retried.
 // With redact set, secret values in the lines are masked (#831).
 type sourceCache struct {
-	files  map[string][]string
-	redact bool
+	files   map[string][]string
+	sources map[string][]byte
+	redact  bool
 }
 
-func newSourceCache(redact bool) *sourceCache {
-	return &sourceCache{files: make(map[string][]string), redact: redact}
+func newSourceCache(redact bool, sources map[string][]byte) *sourceCache {
+	return &sourceCache{files: make(map[string][]string), sources: sources, redact: redact}
 }
 
 func (c *sourceCache) line(path string, n int) (string, bool) {
 	lines, cached := c.files[path]
 	if !cached {
-		data, err := parser.ReadFile(path)
+		data, ok := c.sources[path]
+		var err error
+		if !ok {
+			data, err = parser.ReadFile(path)
+		}
 		if err == nil {
 			lines = strings.Split(string(data), "\n")
 			if c.redact {

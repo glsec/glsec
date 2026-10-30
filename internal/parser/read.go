@@ -16,6 +16,10 @@ import (
 // minute, so the limit only stops input such as /dev/zero.
 var MaxFileSize int64 = 64 << 20
 
+// StdinName is the file name of a pipeline read from stdin without
+// --stdin-filename (#833).
+const StdinName = "<stdin>"
+
 // ErrNotRegular is the error for a FIFO, device, socket or directory.
 var ErrNotRegular = errors.New("not a regular file")
 
@@ -43,12 +47,18 @@ func ReadFile(path string) ([]byte, error) {
 	if err := checkFile(path, fi); err != nil {
 		return nil, err
 	}
-	data, err := io.ReadAll(io.LimitReader(f, MaxFileSize+1))
+	return ReadAll(f, path)
+}
+
+// ReadAll reads r, a pipeline file or stdin, up to MaxFileSize; name is the
+// file name in the error.
+func ReadAll(r io.Reader, name string) ([]byte, error) {
+	data, err := io.ReadAll(io.LimitReader(r, MaxFileSize+1))
 	if err != nil {
 		return nil, err
 	}
 	if int64(len(data)) > MaxFileSize {
-		return nil, tooLarge(path, int64(len(data)))
+		return nil, tooLarge(name, int64(len(data)))
 	}
 	return data, nil
 }

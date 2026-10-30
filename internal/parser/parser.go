@@ -37,6 +37,10 @@ type Document struct {
 	// DuplicateKeys lists the keys the parser removed because the same
 	// mapping has them again later, in the spec: header and the body.
 	DuplicateKeys []DuplicateKey
+	// Source is the content the document was parsed from. Whatever needs the
+	// raw text reads it here rather than the file again, which for stdin
+	// input doesn't exist or holds something else (#833).
+	Source []byte
 }
 
 func ParseFile(path string) (*Document, error) {
@@ -74,7 +78,7 @@ func Parse(data []byte, file string) (*Document, error) {
 		recordScalarLines(d, src)
 	}
 
-	doc := &Document{Root: docs[0], File: file}
+	doc := &Document{Root: docs[0], File: file, Source: data}
 	if len(docs) > 1 && hasSpecHeader(docs[0]) {
 		doc.Spec = docs[0]
 		doc.Root = docs[len(docs)-1]
@@ -106,7 +110,11 @@ func documentLine(d *yaml.Node) int {
 
 // isRootPipelineFile reports whether file is named like a project's root CI
 // configuration, the only place GitLab accepts pipeline-level `spec:inputs`.
+// Unnamed stdin input counts as one (#833).
 func isRootPipelineFile(file string) bool {
+	if file == StdinName {
+		return true
+	}
 	base := filepath.Base(file)
 	return base == ".gitlab-ci.yml" || base == ".gitlab-ci.yaml"
 }

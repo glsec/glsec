@@ -115,6 +115,9 @@ glsec pipelines/*.yml
 # scan a directory: its .gitlab-ci.yml (an error names the directory when it has none)
 glsec sub
 
+# read the pipeline from stdin, e.g. the staged version in a git hook
+git show :.gitlab-ci.yml | glsec --stdin-filename .gitlab-ci.yml -
+
 # recursively scan a tree for all .gitlab-ci.yml files
 glsec --recursive .
 
@@ -206,6 +209,8 @@ glsec --new-only --baseline main.json .gitlab-ci.yml  # diff against a saved JSO
 ```
 
 JSON, SARIF, Code Quality, JUnit and GitLab SAST reports write absolute file paths inside the working directory as relative paths, using `/` separators. Paths outside that directory retain their supplied spelling; SARIF, whose locations are URIs, writes an absolute one as a `file://` URI and percent-encodes characters such as spaces. SARIF marks locations inside the working directory with `uriBaseId: "%SRCROOT%"` so code scanning can resolve them against the source root. This avoids publishing runner directory names for files inside the checkout.
+
+A file named `-` reads the pipeline from stdin, with the same size limit as a file. `--stdin-filename` gives it a path: the one reports name, `exclude_paths` and `.glsec-ignore` entries match, and component-template detection uses; `include: local` files and child pipelines are read relative to it, from disk, so in a git hook they come from the working tree, not the index. Without `--stdin-filename` the input is named `<stdin>`, treated as a root pipeline, and its local includes are not read (glsec says so on stderr). `.glsec.yml` is looked up as usual. Stdin input never uses the result cache, and `-` can't be combined with other files or `--recursive`.
 
 `--generate-ignore` rewrites only the entries the run could have reported: those for a file it scanned and a rule that ran. Entries for other pipeline files, and for rules left out with `--only`, `--skip` or `.glsec.yml`, stay as they are, and so do comments and an entry's `exp:` date when the finding is still there. `glsec --generate-ignore --only GL001 .gitlab-ci.yml` refreshes the GL001 entries and keeps the rest.
 

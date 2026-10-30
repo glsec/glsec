@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime/debug"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -45,6 +46,9 @@ var (
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }
+
+// stdin is where - reads the pipeline from; tests replace it.
+var stdin io.Reader = os.Stdin
 
 // run is the whole CLI: it parses args, scans, writes the report to stdout and
 // returns the process exit code instead of exiting, so tests can drive it.
@@ -86,6 +90,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	noColorFlag := flags.Bool("no-color", false, "disable colored output")
 	shellcheckPathFlag := flags.String("shellcheck-path", "", "path to the ShellCheck binary (default: shellcheck from PATH)")
 	recursiveFlag := flags.Bool("recursive", false, "recursively scan the given directories for .gitlab-ci.yml files")
+	stdinFilenameFlag := flags.String("stdin-filename", "", "with - as the file, the path to report stdin under and resolve local includes from")
 	var nameArgs []string
 	flags.Func("name", "additional filename/path glob to treat as a CI config during --recursive walks (may be repeated)", func(s string) error {
 		nameArgs = append(nameArgs, s)
@@ -111,6 +116,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		_, _ = fmt.Fprintln(stderr, "       glsec list [--format text|json] [--owasp CICD-SEC-N]")
 		_, _ = fmt.Fprintln(stderr, "       glsec inventory [--format cyclonedx] [file]")
 		_, _ = fmt.Fprintln(stderr, "       If no file is given, glsec looks for .gitlab-ci.yml in the current directory.")
+		_, _ = fmt.Fprintln(stderr, "       A file named - reads the pipeline from stdin; --stdin-filename names it.")
 		_, _ = fmt.Fprintln(stderr, "       Flags may appear before or after files; -- ends flag parsing.")
 		flags.PrintDefaults()
 	}
@@ -260,10 +266,31 @@ func run(args []string, stdout, stderr io.Writer) int {
 		_, _ = fmt.Fprintln(stderr, "warning: --name / recursive_patterns only apply with --recursive; ignoring")
 	}
 
-	targets, err := resolveTargets(flags.Args(), *recursiveFlag, recursivePatterns)
-	if err != nil {
-		_, _ = fmt.Fprintf(stderr, "error: %s\n", output.Sanitize(err.Error()))
+	var targets []string
+	var stdinData []byte
+	readStdin := slices.Contains(flags.Args(), "-")
+	switch {
+	case readStdin && (len(flags.Args()) > 1 || *recursiveFlag):
+		_, _ = fmt.Fprintln(stderr, "error: - (stdin) can't be combined with other files or --recursive")
 		return 2
+	case !readStdin && *stdinFilenameFlag != "":
+		_, _ = fmt.Fprintln(stderr, "error: --stdin-filename requires - as the file")
+		return 2
+	case readStdin:
+		name := parser.StdinName
+		if *stdinFilenameFlag != "" {
+			name = *stdinFilenameFlag
+		}
+		if stdinData, err = parser.ReadAll(stdin, name); err != nil {
+			_, _ = fmt.Fprintf(stderr, "error: %s\n", output.Sanitize(err.Error()))
+			return 2
+		}
+		targets = []string{name}
+	default:
+		if targets, err = resolveTargets(flags.Args(), *recursiveFlag, recursivePatterns); err != nil {
+			_, _ = fmt.Fprintf(stderr, "error: %s\n", output.Sanitize(err.Error()))
+			return 2
+		}
 	}
 
 	colorEnabled := color.IsEnabled(*noColorFlag, stdout)
@@ -279,6 +306,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if os.Getenv("CI") == "true" && !*cacheFlag {
 		useCache = false
 	}
+	// The cache key hashes the files on disk, which aren't what stdin holds.
+	if readStdin {
+		useCache = false
+	}
 
 	scanOpts := scanOptions{
 		stderr:         stderr,
@@ -292,8 +323,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 		generateIgnore: *generateIgnoreFlag,
 		scannedFiles:   map[string]bool{},
 		included:       map[string]bool{},
+		sources:        map[string][]byte{},
 		noIgnores:      *noIgnoresFlag,
 		newOnly:        newOnly,
+		stdin:          stdinData,
+		readStdin:      readStdin,
 	}
 
 	var allFindings []finding.Finding
@@ -362,7 +396,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		Version: resolvedVersion(), Files: len(scanOpts.scannedFiles),
 		OWASP: rules.OWASPCategories, ASVS: rules.ASVSRequirements,
 	})
-	if err := writeOutput(stdout, format, allFindings, scanErrors, totalJobCount, colorEnabled, stdoutIsTTY, !*noRedactFlag, templateOpt); err != nil {
+	if err := writeOutput(stdout, format, allFindings, scanErrors, totalJobCount, colorEnabled, stdoutIsTTY, !*noRedactFlag, templateOpt, output.WithSources(scanOpts.sources)); err != nil {
 		_, _ = fmt.Fprintf(stderr, "error: %v\n", err)
 		return 2
 	}
@@ -392,9 +426,15 @@ type scanOptions struct {
 	scannedFiles map[string]bool
 	// included collects the absolute paths of the files scanned because a
 	// pipeline includes them with include: local.
-	included  map[string]bool
+	included map[string]bool
+	// sources holds the content each scanned file was parsed from, for the
+	// text output's source lines (#833).
+	sources   map[string][]byte
 	noIgnores bool
 	newOnly   bool
+	// With readStdin, the root pipeline is stdin, read into stdin (#833).
+	stdin     []byte
+	readStdin bool
 }
 
 // scanRoot parses one root pipeline file (and its child pipelines), runs the
@@ -404,13 +444,20 @@ func scanRoot(file string, opt scanOptions) (findings []finding.Finding, jobCoun
 	fail := func(path string, err error) (findings []finding.Finding, jobCount, unjustified int, scanErr *output.ScanError) {
 		return nil, 0, 0, &output.ScanError{File: path, Message: output.Sanitize(err.Error())}
 	}
-	// Child pipelines must stay inside the directory of the pipeline file, and
-	// so must the file itself: a symbolic link out of it would make glsec read
-	// and quote a file outside the repository.
-	if !withinRoot(filepath.Dir(file), file) {
-		return fail(file, fmt.Errorf("%s: symbolic link to a file outside its directory", file))
+	var doc *parser.Document
+	var err error
+	if opt.readStdin {
+		// Nothing is read from file itself: it only names stdin.
+		doc, err = parser.Parse(opt.stdin, file)
+	} else {
+		// Child pipelines must stay inside the directory of the pipeline file,
+		// and so must the file itself: a symbolic link out of it would make
+		// glsec read and quote a file outside the repository.
+		if !withinRoot(filepath.Dir(file), file) {
+			return fail(file, fmt.Errorf("%s: symbolic link to a file outside its directory", file))
+		}
+		doc, err = parser.ParseFile(file)
 	}
-	doc, err := parser.ParseFile(file)
 	if err != nil {
 		return fail(file, err)
 	}
@@ -429,10 +476,18 @@ func scanRoot(file string, opt scanOptions) (findings []finding.Finding, jobCoun
 	}
 	// GitLab resolves trigger:include paths from the repository root, taken
 	// here as the directory of the pipeline being scanned.
-	allDocs := collectDocuments(opt.stderr, doc, filepath.Dir(file), opt.cfg.ExcludePaths, seen)
-	if opt.scannedFiles != nil {
-		for _, d := range allDocs {
+	allDocs := []*parser.Document{doc}
+	if file != parser.StdinName {
+		allDocs = collectDocuments(opt.stderr, doc, filepath.Dir(file), opt.cfg.ExcludePaths, seen)
+	} else if len(parser.LocalIncludePaths(doc.Root)) > 0 || len(parser.ChildPipelinePaths(doc.Root)) > 0 {
+		_, _ = fmt.Fprintf(opt.stderr, "note: %s: local includes and child pipelines are not read; name the file with --stdin-filename to resolve them\n", file)
+	}
+	for _, d := range allDocs {
+		if opt.scannedFiles != nil {
 			opt.scannedFiles[d.File] = true
+		}
+		if opt.sources != nil {
+			opt.sources[d.File] = d.Source
 		}
 	}
 	for _, d := range allDocs {

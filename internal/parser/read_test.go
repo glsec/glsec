@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"testing/iotest"
 	"time"
 )
 
@@ -85,6 +86,23 @@ func TestReadFile_SizeLimit(t *testing.T) {
 	}
 	if data, err := ReadFile(exact); err != nil || len(data) != 2<<20 {
 		t.Errorf("a file of exactly the limit: %d bytes, err %v", len(data), err)
+	}
+}
+
+func TestReadAll(t *testing.T) {
+	old := MaxFileSize
+	MaxFileSize = 4
+	t.Cleanup(func() { MaxFileSize = old })
+
+	if data, err := ReadAll(strings.NewReader("a: 1"), StdinName); err != nil || string(data) != "a: 1" {
+		t.Errorf("input of exactly the limit: %q, err %v", data, err)
+	}
+	if _, err := ReadAll(strings.NewReader("a: 12"), StdinName); err == nil || !strings.Contains(err.Error(), "read <stdin>:") {
+		t.Errorf("err = %v, want the limit error naming <stdin>", err)
+	}
+	broken := errors.New("broken pipe")
+	if _, err := ReadAll(iotest.ErrReader(broken), StdinName); !errors.Is(err, broken) {
+		t.Errorf("err = %v, want the reader's error", err)
 	}
 }
 

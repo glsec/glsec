@@ -155,7 +155,7 @@ scan-job:
 
 func TestParse_RootPipelineWithInputsIsNotComponentTemplate(t *testing.T) {
 	src := []byte("spec:\n  inputs:\n    env:\n      default: dev\n---\nbuild:\n  script: [make]\n")
-	for _, file := range []string{".gitlab-ci.yml", "repo/.gitlab-ci.yaml"} {
+	for _, file := range []string{".gitlab-ci.yml", "repo/.gitlab-ci.yaml", StdinName} {
 		doc, err := Parse(src, file)
 		if err != nil {
 			t.Fatalf("parse: %v", err)

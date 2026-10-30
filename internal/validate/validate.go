@@ -17,7 +17,7 @@ import (
 // cannot be linted meaningfully.
 func File(path string, doc *parser.Document) (warnings []string, err error) {
 	ext := strings.ToLower(filepath.Ext(path))
-	if ext != ".yml" && ext != ".yaml" {
+	if ext != ".yml" && ext != ".yaml" && path != parser.StdinName {
 		warnings = append(warnings, fmt.Sprintf("%s: file does not have a .yml or .yaml extension", path))
 	}
 
