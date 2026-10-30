@@ -11,10 +11,13 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/glsec/glsec/internal/output"
+	"github.com/glsec/glsec/internal/shellcheck"
 	"github.com/glsec/glsec/rules"
 )
 
@@ -581,5 +584,50 @@ func TestRun_SecretsAreMaskedInEveryFormat(t *testing.T) {
 	_, raw, _ := runCLI(t, files, "--no-cache", "--no-repo-config", "--no-redact", ".gitlab-ci.yml")
 	if !strings.Contains(raw, ghp) {
 		t.Errorf("--no-redact should show the value:\n%s", raw)
+	}
+}
+
+// #907: with ShellCheck turned on, a ShellCheck that crashes or hangs fails
+// the scan with exit 2 and says why; a missing binary still only warns.
+func TestRun_FailingShellcheckFailsTheScan(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("stand-ins are shell scripts")
+	}
+	old := shellcheck.Timeout
+	shellcheck.Timeout = 300 * time.Millisecond
+	t.Cleanup(func() { shellcheck.Timeout = old })
+	files := map[string]string{
+		".glsec.yml": "shellcheck:\n  enabled: true\n",
+		"ci.yml":     "j1:\n  script: [echo $X]\nj2:\n  script: [echo $Y]\n",
+		"sc-crash":   "#!/bin/sh\necho boom >&2; exit 3\n",
+		// Without exec: sleep is a child of the killed shell and keeps the
+		// output pipe open.
+		"sc-hang": "#!/bin/sh\nsleep 30\n",
+	}
+	for _, tc := range []struct {
+		bin, want string
+		code      int
+	}{
+		{"./sc-crash", `error: ci.yml: shellcheck: job "j1": exit status 3: boom`, 2},
+		{"./sc-hang", `error: ci.yml: shellcheck: job "j1": did not finish within 300ms`, 2},
+		{"./no-such-shellcheck", "", 0}, // warns on stderr and goes on
+	} {
+		t.Run(tc.bin, func(t *testing.T) {
+			setupCLI(t, files)
+			for _, f := range []string{"sc-crash", "sc-hang"} {
+				if err := os.Chmod(f, 0o700); err != nil { //nolint:gosec // G302: a test stand-in must be executable
+					t.Fatal(err)
+				}
+			}
+			start := time.Now()
+			var out, errOut bytes.Buffer
+			code := run([]string{"--no-cache", "--shellcheck-path", tc.bin, "ci.yml"}, &out, &errOut)
+			if code != tc.code || !strings.Contains(errOut.String(), tc.want) {
+				t.Errorf("exit %d, stderr:\n%s\nwant exit %d and %q", code, errOut.String(), tc.code, tc.want)
+			}
+			if d := time.Since(start); d > 5*time.Second {
+				t.Errorf("the scan took %s", d)
+			}
+		})
 	}
 }

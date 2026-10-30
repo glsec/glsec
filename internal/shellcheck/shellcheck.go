@@ -4,11 +4,15 @@
 package shellcheck
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/glsec/glsec/internal/finding"
 	"github.com/glsec/glsec/internal/parser"
@@ -40,14 +44,21 @@ type scriptBlock struct {
 	lines   []scriptLine
 }
 
+// Timeout is how long one ShellCheck call may take (#907). A script block is a
+// few hundred lines at most, which ShellCheck checks in well under a second.
+var Timeout = 30 * time.Second
+
 // Run extracts all script blocks from doc and passes them to shellcheck.
 // binPath is the path to the shellcheck binary; if empty, PATH is searched.
-// Returns an empty slice and logs a warning to stderr if the binary is not found.
-func Run(doc *yaml.Node, file string, binPath string) []finding.Finding {
+// A missing binary only logs a warning to stderr, as documented. A ShellCheck
+// that fails, prints something that isn't its JSON, or runs past Timeout is an
+// error (#907): ShellCheck was turned on, so a run without its findings must
+// not pass as clean.
+func Run(doc *yaml.Node, file string, binPath string) ([]finding.Finding, error) {
 	bin, err := resolveBinary(binPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "warning: shellcheck: %v — skipping\n", err)
-		return nil
+		return nil, nil
 	}
 
 	mapping := parser.Unwrap(doc)
@@ -101,8 +112,7 @@ func Run(doc *yaml.Node, file string, binPath string) []finding.Finding {
 	for _, block := range blocks {
 		comments, err := invoke(bin, block.lines)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "warning: shellcheck: job %q: %v\n", block.jobName, err)
-			continue
+			return nil, fmt.Errorf("shellcheck: job %q: %w", block.jobName, err)
 		}
 		for _, c := range comments {
 			idx := c.Line - 1
@@ -124,7 +134,7 @@ func Run(doc *yaml.Node, file string, binPath string) []finding.Finding {
 			})
 		}
 	}
-	return findings
+	return findings, nil
 }
 
 func invoke(bin string, lines []scriptLine) ([]scComment, error) {
@@ -145,11 +155,22 @@ func invoke(bin string, lines []scriptLine) ([]scComment, error) {
 	}
 	_ = tmp.Close()
 
-	out, execErr := exec.Command(bin, "--format=json1", "--shell=bash", "--norc", tmp.Name()).Output() //nolint:gosec
+	ctx, cancel := context.WithTimeout(context.Background(), Timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, bin, "--format=json1", "--shell=bash", "--norc", tmp.Name()) //nolint:gosec
+	// A child process the binary started may keep the output pipes open after
+	// the kill; stop waiting for it after a second.
+	cmd.WaitDelay = time.Second
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, execErr := cmd.Output()
+	if ctx.Err() != nil {
+		return nil, fmt.Errorf("did not finish within %s", Timeout)
+	}
 	if execErr != nil {
-		exit, ok := execErr.(*exec.ExitError)
-		if !ok || exit.ExitCode() > 1 {
-			return nil, execErr
+		var exit *exec.ExitError
+		if !errors.As(execErr, &exit) || exit.ExitCode() > 1 {
+			return nil, withStderr(execErr, stderr.String())
 		}
 		// exit code 1 = findings found — expected
 	}
@@ -158,9 +179,22 @@ func invoke(bin string, lines []scriptLine) ([]scComment, error) {
 	}
 	var result scOutput
 	if err := json.Unmarshal(out, &result); err != nil {
-		return nil, fmt.Errorf("parse output: %w", err)
+		return nil, withStderr(fmt.Errorf("parse output: %w", err), stderr.String())
 	}
 	return result.Comments, nil
+}
+
+// withStderr adds the start of ShellCheck's stderr to err: it usually says why
+// the run failed. The caller sanitizes the message before printing it.
+func withStderr(err error, stderr string) error {
+	msg := strings.Join(strings.Fields(stderr), " ")
+	if msg == "" {
+		return err
+	}
+	if len(msg) > 300 {
+		msg = msg[:300] + "…"
+	}
+	return fmt.Errorf("%w: %s", err, msg)
 }
 
 func resolveBinary(path string) (string, error) {

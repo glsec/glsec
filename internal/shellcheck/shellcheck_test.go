@@ -155,7 +155,11 @@ func runOn(t *testing.T, bin, src string) []finding.Finding {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return Run(doc.Root, "test.yml", bin)
+	got, err := Run(doc.Root, "test.yml", bin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return got
 }
 
 func TestRun_JobHooks(t *testing.T) {

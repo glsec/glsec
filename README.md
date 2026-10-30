@@ -373,7 +373,7 @@ ShellCheck findings are reported alongside GL findings and use `SC` rule IDs:
 WARN   .gitlab-ci.yml:12  SC2086  [build]  Double quote to prevent globbing and word splitting.
 ```
 
-If the ShellCheck binary is not found, glsec prints a warning to stderr and continues scanning normally.
+If the ShellCheck binary is not found, glsec prints a warning to stderr and continues scanning normally. A ShellCheck that is there but fails (an exit code above 1, or output that isn't its JSON) or takes longer than 30 seconds for one job stops the scan with exit 2, with the job and ShellCheck's error message: ShellCheck was turned on, so a run without its findings must not pass as clean.
 
 **Suppressing specific codes** — inline:
 

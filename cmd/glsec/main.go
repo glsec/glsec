@@ -445,7 +445,7 @@ func scanRoot(file string, opt scanOptions) (findings []finding.Finding, jobCoun
 	for _, d := range allDocs {
 		f, u, err := collectFindings(d, d.File, opt.cfg, opt.gitlabVersion, skipSuppress, opt.newOnly)
 		if err != nil {
-			_, _ = fmt.Fprintf(opt.stderr, "error: %s: %v\n", suppress.IgnoreFile, output.Sanitize(err.Error()))
+			_, _ = fmt.Fprintf(opt.stderr, "error: %s\n", output.Sanitize(err.Error()))
 			return nil, 0, 0, false
 		}
 		findings = append(findings, f...)
@@ -813,7 +813,7 @@ func collectFindings(doc *parser.Document, path string, cfg *config.Config, gitl
 	if !skipIgnoreFile {
 		ignore, err := suppress.LoadIgnoreFile(suppress.IgnoreFile, path)
 		if err != nil {
-			return nil, 0, err
+			return nil, 0, fmt.Errorf("%s: %w", suppress.IgnoreFile, err)
 		}
 		sm.Merge(ignore)
 	}
@@ -862,7 +862,11 @@ func collectFindings(doc *parser.Document, path string, cfg *config.Config, gitl
 	}
 
 	if cfg.ShellCheck.Enabled {
-		for _, f := range shellcheck.Run(doc.Root, path, cfg.ShellCheck.Path) {
+		scFindings, err := shellcheck.Run(doc.Root, path, cfg.ShellCheck.Path)
+		if err != nil {
+			return nil, 0, fmt.Errorf("%s: %w", path, err)
+		}
+		for _, f := range scFindings {
 			if !cfg.RuleEnabled(f.RuleID) {
 				continue
 			}
