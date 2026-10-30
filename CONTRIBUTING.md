@@ -400,7 +400,7 @@ GITLAB_LINT_TOKEN=... GITLAB_LINT_PROJECT=<id> \
   python3 .github/scripts/ci-lint-diff.py /tmp/glsec /tmp/ci-lint-diff pipelines/*.yml
 ```
 
-`/tmp/ci-lint-diff/results.jsonl` lists the group, glsec's exit code and error, and GitLab's errors for every file. The GitLab answers are cached by content, so a rerun only sends new files.
+It also compares the jobs: for files both accept, the jobs GitLab's lint API lists against `glsec inventory --format jobs` (#930). A job only glsec scans, or one only GitLab creates in a file without `include:`, puts the file in the group "both accept, jobs differ". `/tmp/ci-lint-diff/results.jsonl` lists the group, glsec's exit code and error, GitLab's errors and the job difference for every file. The GitLab answers are cached by content, so a rerun only sends new files.
 
 ## Regression corpus
 

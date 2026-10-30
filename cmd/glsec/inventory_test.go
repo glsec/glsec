@@ -36,6 +36,32 @@ func TestRunInventory(t *testing.T) {
 	}
 }
 
+// --format jobs lists the visible jobs of the scanned document: no hidden
+// templates, no top-level keywords, the body after a spec: header (#930).
+func TestRunInventory_Jobs(t *testing.T) {
+	src := "spec:\n  inputs: {}\n---\nstages: [a]\n.tpl:\n  image: alpine:3.20.3\nbuild:\n  extends: .tpl\n  script: [x]\npages:\n  script: [x]\n"
+	code, stdout, stderr := runCLI(t, map[string]string{".gitlab-ci.yml": src}, "inventory", "--format", "jobs")
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, stderr)
+	}
+	var out struct {
+		Jobs []struct {
+			Name string `json:"name"`
+			Line int    `json:"line"`
+		} `json:"jobs"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &out); err != nil {
+		t.Fatalf("not JSON: %v\n%s", err, stdout)
+	}
+	if len(out.Jobs) != 2 || out.Jobs[0].Name != "build" || out.Jobs[0].Line != 7 || out.Jobs[1].Name != "pages" {
+		t.Errorf("jobs = %+v, want build (line 7) and pages", out.Jobs)
+	}
+
+	if _, stdout, _ := runCLI(t, map[string]string{".gitlab-ci.yml": "stages: [a]\n"}, "inventory", "--format", "jobs"); !strings.Contains(stdout, `"jobs": []`) {
+		t.Errorf("a file without jobs must give an empty list, got %s", stdout)
+	}
+}
+
 func TestRunInventory_Errors(t *testing.T) {
 	files := map[string]string{".gitlab-ci.yml": "job:\n  script: [x]\n"}
 	for _, args := range [][]string{
