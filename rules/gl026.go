@@ -50,7 +50,12 @@ func checksOutMutableRef(words []string) bool {
 	}
 	args := words[1:]
 	// Global options before the subcommand: -C dir, -c key=value, --git-dir=….
+	// With -C or --git-dir the checkout may be in another repository.
+	otherRepo := false
 	for len(args) > 0 && strings.HasPrefix(args[0], "-") {
+		if args[0] == "-C" || strings.HasPrefix(args[0], "--git-dir") || strings.HasPrefix(args[0], "--work-tree") {
+			otherRepo = true
+		}
 		if (args[0] == "-C" || args[0] == "-c") && len(args) > 1 {
 			args = args[1:]
 		}
@@ -72,7 +77,39 @@ func checksOutMutableRef(words []string) bool {
 	if len(refs) == 0 || refs[0] == "." || len(refs) > 1 {
 		return false // no ref, or files: git checkout . / git checkout file1 file2
 	}
+	if !otherRepo && ownBranchVarRe.MatchString(refs[0]) {
+		return false
+	}
 	return !shaRe.MatchString(refs[0]) && !shaVarRe.MatchString(refs[0])
+}
+
+// ownBranchVarRe matches a branch of the project the pipeline runs for,
+// optionally on the origin remote. Checking it out in the project's own
+// clone brings in no third-party code (#984).
+var ownBranchVarRe = regexp.MustCompile(`^["']?(?:origin/)?\$\{?(?:CI_DEFAULT_BRANCH|CI_COMMIT_REF_NAME|CI_COMMIT_BRANCH|CI_MERGE_REQUEST_SOURCE_BRANCH_NAME|CI_MERGE_REQUEST_TARGET_BRANCH_NAME)\}?["']?$`)
+
+// ownRepoSourceRe matches a clone source that is the project's own
+// repository: the checkout (., $CI_PROJECT_DIR) or its remote
+// ($CI_REPOSITORY_URL).
+var ownRepoSourceRe = regexp.MustCompile(`^(?:\.|\./|\$\{?CI_PROJECT_DIR\}?|\$\{?CI_REPOSITORY_URL\}?)$`)
+
+// localCloneSource reports whether a git clone copies the project's own
+// repository.
+func localCloneSource(words []string) bool {
+	seenClone := false
+	for i := 1; i < len(words); i++ {
+		w := strings.Trim(words[i], `"'`)
+		switch {
+		case !seenClone:
+			seenClone = w == "clone"
+		case w == "-b" || w == "--branch" || w == "--depth" || w == "-o" || w == "--origin" || w == "-c" || w == "--config":
+			i++
+		case strings.HasPrefix(w, "-"):
+		default:
+			return ownRepoSourceRe.MatchString(w)
+		}
+	}
+	return false
 }
 
 func (r *gl026) Check(doc *yaml.Node, file string) []finding.Finding {
@@ -129,6 +166,11 @@ func gl026Line(l *yaml.Node, file string) (lf gl026Facts) {
 	line := l.Value
 	lf.shaCheckout = gitCheckoutRe.MatchString(line) && shaRe.MatchString(line)
 	if loc := gitCloneRe.FindStringIndex(line); loc != nil {
+		for _, cmd := range shellCommands(line) {
+			if words := commandWords(cmd.text); commandName(words) == "git" && localCloneSource(words) {
+				return lf
+			}
+		}
 		lf.cloneAt = loc[0]
 		ln, col := scriptMatchPos(l, loc[0])
 		m := branchFlagRe.FindStringSubmatch(line)
@@ -139,7 +181,7 @@ func gl026Line(l *yaml.Node, file string) (lf gl026Facts) {
 			lf.findings = append(lf.findings, finding.Finding{
 				RuleID:   "GL026",
 				Severity: finding.Warn,
-				Message:  "git clone uses mutable ref \"" + m[1] + "\" — pin to a full commit SHA with git checkout after cloning",
+				Message:  "git clone uses mutable ref \"" + strings.Trim(m[1], `"'`) + "\" — pin to a full commit SHA with git checkout after cloning",
 				File:     file,
 				Line:     ln,
 				Col:      col,

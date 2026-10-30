@@ -4,6 +4,7 @@
 package rules
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -200,5 +201,40 @@ build:
 	}
 	if f[0].Line == 0 {
 		t.Error("expected non-zero line number")
+	}
+}
+
+// Checking out the project's own branch, or cloning the local repository,
+// brings in no third-party code (#984).
+func TestGL026_OwnRepository(t *testing.T) {
+	for _, tc := range []struct {
+		line string
+		want int
+	}{
+		{`git fetch origin && git checkout $CI_DEFAULT_BRANCH`, 0},
+		{`git checkout "${CI_COMMIT_REF_NAME}"`, 0},
+		{`git checkout origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME`, 0},
+		{`git clone -b 1.0 . copy`, 0},
+		{`git clone --branch main "$CI_PROJECT_DIR" /tmp/copy`, 0},
+		{`git clone --depth 1 --branch "$CI_MERGE_REQUEST_TARGET_BRANCH_NAME" "$CI_REPOSITORY_URL" /tmp/base`, 0},
+		{`git -C vendor/lib checkout $CI_DEFAULT_BRANCH`, 1},
+		{`git checkout develop`, 1},
+		{`git clone --branch main https://github.com/org/tools.git`, 1},
+	} {
+		doc, err := parser.Parse([]byte("job:\n  script:\n    - '"+tc.line+"'\n"), "test.yml")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := len(GL026.Check(doc.Root, "test.yml")); got != tc.want {
+			t.Errorf("%s: got %d findings, want %d", tc.line, got, tc.want)
+		}
+	}
+	// A quoted ref is named once quoted in the message.
+	doc, err := parser.Parse([]byte("job:\n  script:\n    - 'git clone --branch \"$BRANCH\" https://example.com/lib.git'\n"), "test.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f := GL026.Check(doc.Root, "test.yml"); len(f) != 1 || !strings.Contains(f[0].Message, `ref "$BRANCH"`) {
+		t.Errorf("got %v, want the ref quoted once", f)
 	}
 }
