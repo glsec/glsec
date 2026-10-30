@@ -530,3 +530,22 @@ func TestGL002_BracedVariableBefore(t *testing.T) {
 		}
 	}
 }
+
+// commandStart stops at a { that opens a group, not one of ${, and at a }
+// that closes a group (#976).
+func TestCommandStart_Braces(t *testing.T) {
+	for _, tc := range []struct {
+		s    string
+		want int
+	}{
+		{"{ echo $X", 1},
+		{"x{ echo $X", 2},
+		{"}echo $X", 1},
+		{"a; } echo $X", 4},
+		{"echo ${A}b $X", 0},
+	} {
+		if got := commandStart(tc.s, strings.LastIndex(tc.s, "$X")); got != tc.want {
+			t.Errorf("commandStart(%q) = %d, want %d", tc.s, got, tc.want)
+		}
+	}
+}

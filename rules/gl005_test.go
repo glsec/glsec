@@ -469,3 +469,9 @@ func TestGL005_GitLFSLogs(t *testing.T) {
 		}
 	}
 }
+
+func TestGitLogOnlyPath_NoGitDir(t *testing.T) {
+	if gitLogOnlyPath("build/lfs/logs/") {
+		t.Error("a path outside .git is not a .git log path")
+	}
+}

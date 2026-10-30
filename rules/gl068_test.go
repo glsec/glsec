@@ -4,6 +4,7 @@
 package rules
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -225,5 +226,14 @@ func TestGL068_MultiLineSubshellStillCounts(t *testing.T) {
 	}
 	if got := len(GL068.Check(doc.Root, "test.yml")); got != 1 {
 		t.Errorf("got %d findings, want 1", got)
+	}
+}
+
+// An escaped quote outside quotes doesn't open one, so the subshell after it
+// is still blanked (#997).
+func TestBlankSubshells_Escape(t *testing.T) {
+	got := blankSubshells(`echo \"; (set -x; make)`)
+	if strings.Contains(got, "set -x") {
+		t.Errorf("subshell not blanked: %q", got)
 	}
 }

@@ -238,3 +238,9 @@ func TestGL026_OwnRepository(t *testing.T) {
 		t.Errorf("got %v, want the ref quoted once", f)
 	}
 }
+
+func TestLocalCloneSource_NoSource(t *testing.T) {
+	if localCloneSource([]string{"git", "clone", "--depth", "1"}) {
+		t.Error("a clone without a source isn't a local clone")
+	}
+}

@@ -4,6 +4,7 @@
 package rules
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -238,6 +239,18 @@ func TestGL044_HistoryOnly(t *testing.T) {
 		f := findings044(t, "lint:\n  rules:\n    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\"\n  script:\n    - '"+line+"'\n")
 		if len(f) != 1 {
 			t.Errorf("%s: got %v, want one finding", line, f)
+		}
+	}
+}
+
+func TestGitSubcommand(t *testing.T) {
+	for words, want := range map[string]string{
+		"-C dir --no-pager checkout": "checkout",
+		"-c a=b fetch":               "fetch",
+		"--version":                  "",
+	} {
+		if got := gitSubcommand(strings.Fields(words)); got != want {
+			t.Errorf("gitSubcommand(%q) = %q, want %q", words, got, want)
 		}
 	}
 }

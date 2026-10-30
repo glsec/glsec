@@ -294,3 +294,18 @@ func TestGL020_StatusProbe(t *testing.T) {
 		}
 	}
 }
+
+func TestCurlStatusProbe_Forms(t *testing.T) {
+	for _, args := range [][]string{
+		{"-s", "--write-out=%{http_code}", "http://app"},
+		{"-s", "-w%{response_code}", "http://app"},
+		{"-w", "%{http_code}", "http://app"},
+	} {
+		if !curlStatusProbe(args) {
+			t.Errorf("%v: not a status probe", args)
+		}
+	}
+	if curlStatusProbe([]string{"-w", "%{size_download}", "http://app"}) {
+		t.Error("-w without a status code is not a probe")
+	}
+}

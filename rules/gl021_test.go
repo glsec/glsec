@@ -477,3 +477,11 @@ func TestGL021_EscapesAndDivertedGroups(t *testing.T) {
 		}
 	}
 }
+
+// An escaped character outside quotes doesn't open a quote (#982).
+func TestGroupOutputDiverted_Escape(t *testing.T) {
+	s := `{ echo \"$NPM_TOKEN; } >> .npmrc`
+	if !groupOutputDiverted(s, strings.Index(s, "$NPM_TOKEN")) {
+		t.Error("the group's output goes to .npmrc")
+	}
+}

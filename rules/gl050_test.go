@@ -213,3 +213,17 @@ func TestGL050_SudoAsAnotherUser(t *testing.T) {
 		}
 	}
 }
+
+func TestSudoDropsPrivileges_Forms(t *testing.T) {
+	for args, want := range map[string]bool{
+		"-unobody make":  true,
+		"-uroot make":    false,
+		"-E":             false,
+		"-Hu":            false,
+		"--user=builder": true,
+	} {
+		if got := sudoDropsPrivileges(strings.Fields(args)); got != want {
+			t.Errorf("sudoDropsPrivileges(%q) = %v, want %v", args, got, want)
+		}
+	}
+}

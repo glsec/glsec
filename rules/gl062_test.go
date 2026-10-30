@@ -169,3 +169,16 @@ func TestGL062_GrepFilter(t *testing.T) {
 		}
 	}
 }
+
+func TestGrepPattern(t *testing.T) {
+	for cmd, want := range map[string]string{
+		"grep -e THREADS": "THREADS",
+		"grep -i THREADS": "THREADS",
+		"grep -v":         "",
+		"sort":            "",
+	} {
+		if got, _ := grepPattern(cmd); got != want {
+			t.Errorf("grepPattern(%q) = %q, want %q", cmd, got, want)
+		}
+	}
+}

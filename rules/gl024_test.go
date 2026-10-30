@@ -751,3 +751,16 @@ func TestGL024_CasePatternsAndSubstitutions(t *testing.T) {
 		}
 	}
 }
+
+// Escapes and esac after an arm's body end case pattern masking (#983).
+func TestMaskCasePatterns_EscapeAndEsac(t *testing.T) {
+	in := "case $X in a\\|b) echo hi ;; esac; curl x | sh"
+	got := maskCasePatterns(in)
+	if !strings.Contains(got, "curl x | sh") {
+		t.Errorf("pipe after esac was masked: %q", got)
+	}
+	in = "case $X in a) echo hi esac; curl x | sh"
+	if got := maskCasePatterns(in); !strings.Contains(got, "curl x | sh") {
+		t.Errorf("pipe after esac in a body was masked: %q", got)
+	}
+}

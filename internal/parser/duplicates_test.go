@@ -230,3 +230,9 @@ build:
 		t.Errorf("unexpected duplicates: %+v", doc.DuplicateKeys)
 	}
 }
+
+func TestFirstAnchor_Nil(t *testing.T) {
+	if got := firstAnchor(nil); got != "" {
+		t.Errorf("firstAnchor(nil) = %q", got)
+	}
+}

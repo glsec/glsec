@@ -359,3 +359,20 @@ func TestGL008_RunByExtendingJob(t *testing.T) {
 		}
 	}
 }
+
+// A child that extends other jobs, or inherits a lone when: manual without
+// rules, doesn't run the switched-off scan (#1000).
+func TestGL008_ExtendingJobEdgeCases(t *testing.T) {
+	for yml, want := range map[string]int{
+		"include:\n  - template: Jobs/Secret-Detection.gitlab-ci.yml\nsecret_detection:\n  when: manual\nsecrets-scan:\n  extends: secret_detection\n":                                                                  1,
+		"include:\n  - template: Jobs/Secret-Detection.gitlab-ci.yml\nsecret_detection:\n  rules:\n    - when: never\n.base:\n  stage: test\nother:\n  extends: [.base]\n  rules:\n    - when: always\n  script: [x]\n": 1,
+	} {
+		doc, err := parser.Parse([]byte(yml), "test.yml")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := len(GL008.Check(doc.Root, "test.yml")); got != want {
+			t.Errorf("%q: got %d findings, want %d", yml, got, want)
+		}
+	}
+}

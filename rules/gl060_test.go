@@ -225,3 +225,15 @@ func TestGL060_ReadOnlyMounts(t *testing.T) {
 		}
 	}
 }
+
+func TestMountReadOnly(t *testing.T) {
+	for spec, want := range map[string]bool{
+		"type=bind,source=/etc/passwd,target=/etc/passwd,readonly": true,
+		"type=bind,src=/etc,dst=/etc,ro=false":                     false,
+		"type=bind,source=/etc,target=/etc":                        false,
+	} {
+		if got := mountReadOnly(spec); got != want {
+			t.Errorf("mountReadOnly(%q) = %v, want %v", spec, got, want)
+		}
+	}
+}
