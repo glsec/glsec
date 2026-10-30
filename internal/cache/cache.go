@@ -172,9 +172,39 @@ func Store(key string, entry *Entry) {
 	if werr != nil || cerr != nil || os.Rename(tmp.Name(), filepath.Join(dir, key+".json")) != nil {
 		_ = os.Remove(tmp.Name())
 	}
+	sweep(dir, time.Now())
 }
 
-// Clear removes all cached entries. It lists the directory instead of
+// staleAfter is the age at which sweep removes a file. An entry stored on an
+// earlier day can't be hit again, since the day is part of the key, and a
+// temporary file that old was left by a write that was interrupted.
+const staleAfter = 24 * time.Hour
+
+// sweep removes stale entries and temporary files from dir. Without it the
+// cache would grow by one entry per pipeline and day, for good.
+func sweep(dir string, now time.Time) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if !isCacheFile(e.Name()) || !e.Type().IsRegular() {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil || now.Sub(info.ModTime()) < staleAfter {
+			continue
+		}
+		_ = os.Remove(filepath.Join(dir, e.Name()))
+	}
+}
+
+func isCacheFile(name string) bool {
+	ext := filepath.Ext(name)
+	return ext == ".json" || ext == ".tmp"
+}
+
+// Clear removes all cached entries and temporary files. It lists the directory instead of
 // globbing it: a cache path with glob characters such as [ ] would otherwise
 // be read as a pattern and match nothing (#734).
 func Clear() error {
@@ -190,7 +220,7 @@ func Clear() error {
 		return err
 	}
 	for _, e := range entries {
-		if filepath.Ext(e.Name()) != ".json" {
+		if !isCacheFile(e.Name()) {
 			continue
 		}
 		if err := os.Remove(filepath.Join(dir, e.Name())); err != nil && !os.IsNotExist(err) {
