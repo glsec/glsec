@@ -21,7 +21,7 @@ go build ./...
 go test ./...
 ```
 
-No code generation, no build scripts — `go build` is all you need.
+No code generation — `go build` is all you need. The `Makefile` has shortcuts (`make build`, `make test`, `make lint`).
 
 ## Dependencies
 
@@ -29,7 +29,7 @@ glsec keeps its dependencies few and checked:
 
 - **Go modules.** `go.mod` lists the direct dependencies (currently only `gopkg.in/yaml.v3`) and `go.sum` pins their hashes; CI runs `go mod verify` and fails if `go mod tidy` would change either file. A new dependency needs a reason in the pull request: prefer the standard library, and pick maintained, widely used modules.
 - **Updates.** Dependabot proposes updates for Go modules, GitHub Actions, the CI's Python tools and the Docker base images. Version updates wait 7 days after an upstream release (`cooldown` in `.github/dependabot.yml`), the window in which a compromised release is usually caught; security updates and base images are not delayed. Updates go through the same pull request checks as any change.
-- **Pinning.** GitHub Actions are pinned to commit SHAs, the CI's Python tools (zizmor, check-jsonschema) to versions with hashes (`.github/requirements/`), Docker base images to digests, and GoReleaser to an exact version.
+- **Pinning.** GitHub Actions are pinned to commit SHAs, the CI's Python tools (zizmor, check-jsonschema, reuse) to versions with hashes (`.github/requirements/`), Docker base images to digests, and GoReleaser to an exact version.
 - **Checks.** govulncheck and OSV-Scanner run on every pull request and push, and dependency review on every pull request; all three are required checks. OSV-Scanner covers `go.mod` and the CI's Python requirements against known vulnerabilities and known malicious packages. Trivy scans the container image.
 
 What blocks a merge or a release:
@@ -44,7 +44,7 @@ What blocks a merge or a release:
 
 ```sh
 go test ./...                   # all packages
-go test -race ./...             # with race detector (what CI runs)
+go test -race ./...             # with race detector, as CI does on Linux, macOS and Windows
 go test ./rules/... -v -run GL001  # single rule
 ```
 
@@ -53,8 +53,9 @@ go test ./rules/... -v -run GL001  # single rule
 Each machine-readable format has a golden report in `internal/output/testdata/` (`sarif.golden.json`, `codequality.golden.json`, `junit.golden.xml`, `gitlab-sast.golden.json`) and the inventory one in `internal/inventory/testdata/`. The Go tests compare the writers' output with them, and CI validates them against the formats' schemas, pinned by URL and SHA-256: SARIF 2.1.0, GitLab's SAST report schema, the JUnit XSD of Jenkins' xUnit plugin and CycloneDX 1.6. GitLab publishes no schema for Code Quality; `codequality.schema.json` encodes the fields it documents as required. When a writer changes on purpose, regenerate the golden files and check the diff:
 
 ```sh
-go test ./internal/output -run 'TestSchemaGoldenReports|TestWriteGitLabSAST' -update
-git diff -- internal/output/testdata/
+go test ./internal/output -run 'TestSchemaGoldenReports|TestWriteGitLabSAST|TestTemplateExamples' -update
+go test ./internal/inventory -run TestWriteCycloneDX -update
+git diff -- internal/output/testdata/ internal/inventory/testdata/
 ```
 
 ### Finding identity snapshots
@@ -99,8 +100,8 @@ The `Fuzz` workflow runs each target for 45 s on pull requests and pushes to `ma
 CI runs [golangci-lint](https://golangci-lint.run/) v2. To run it locally:
 
 ```sh
-go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
-golangci-lint run
+go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
+golangci-lint run   # or: make lint
 ```
 
 Enabled linters: `errcheck`, `govet`, `staticcheck`, `revive`, `gosec`, `misspell`, plus the `gofmt` formatter. The full config is in `.golangci.yml`.
@@ -133,7 +134,7 @@ Once it is clear that a new rule is needed, pick the next available `GLNNN` numb
 ### Step 2 — create the rule file
 
 ```go
-// rules/gl006.go
+// rules/glNNN.go
 package rules
 
 import (
@@ -142,13 +143,13 @@ import (
     "gopkg.in/yaml.v3"
 )
 
-type gl006 struct{}
+type glNNN struct{}
 
-var GL006 = &gl006{}
+var GLNNN = &glNNN{}
 
-func (r *gl006) ID() string { return "GL006" }
+func (r *glNNN) ID() string { return "GLNNN" }
 
-func (r *gl006) Check(doc *yaml.Node, file string) []finding.Finding {
+func (r *glNNN) Check(doc *yaml.Node, file string) []finding.Finding {
     var findings []finding.Finding
     mapping := parser.Unwrap(doc)
 
@@ -167,11 +168,13 @@ Key helpers in `internal/parser`:
 | `parser.FindKeyNode(node, "key")` | Returns both key and value nodes (use when you need the line number of the key itself) |
 | `parser.EachJob(doc, fn)` | Calls fn for each job definition, skipping reserved top-level keys |
 
-Every `finding.Finding` needs `RuleID`, `Severity`, `Message`, `File`, `Line`. Set `Col` when you have it.
+A rule that needs the `spec:` header of a component template implements `rule.SpecRule` (`CheckWithSpec`), and one that needs the whole parsed `Document` implements `rule.DocumentRule` (`CheckDocument`), both in `internal/rule`. `rules.Check(r, doc, file)` calls the right method, so tests of such a rule go through it.
+
+Every `finding.Finding` needs `RuleID`, `Severity`, `Message`, `File`, `Line`, and `Job` when the finding belongs to a job: the corpus snapshots, the metamorphic test and the finding identities include it. Set `Col` when you have it.
 
 Severities: `finding.Error` (must fix), `finding.Warn` (should fix), `finding.Info` (informational).
 
-Shared helpers live in `rules/helpers.go` and `rules/shell.go`. Check there before writing a new helper function. Most bugs fixed in 1.24.0 came from rules that skipped one of these:
+Shared helpers live in `rules/helpers.go` and `rules/shell.go` (and `runsInheritedJob` in `rules/gl017.go`). Check there before writing a new helper function. Most bugs fixed in 1.24.0 came from rules that skipped one of these:
 
 **Jobs and inheritance.** GitLab merges keys from `extends:` and `default:` into a job, and never runs hidden jobs (names starting with `.`).
 
@@ -179,6 +182,7 @@ Shared helpers live in `rules/helpers.go` and `rules/shell.go`. Check there befo
 |--------|-------------|
 | `NewInheritance(doc)` | Indexes the file once; build it at the start of `Check` |
 | `in.Key(job, "key")` | The value of a key that applies to the job: its own, else from the jobs it extends in this file, else from `default:` |
+| `in.Effective(job, "key")` / `in.Has(job, "key")` | The value with `extends:` deep-merged as GitLab does, for mappings such as `rules:` targets or `id_tokens:`; `Has` checks cheaply whether any template sets the key |
 | `in.Chain(job, "key")` | The values of a key along the `extends:` chain, for keys GitLab deep-merges (`artifacts:`, `trigger:`) |
 | `in.ExtendsResolved(job)` | Whether every template the job extends is in this file, so `Key` sees everything it inherits |
 | `runsInheritedJob(in, name, job)` | Not a hidden template and `ExtendsResolved`: the usual guard for job-level rules that read inherited keys |
@@ -205,7 +209,11 @@ Add it to `rules/all.go`:
 
 ```go
 func All() []rule.Rule {
-    return []rule.Rule{GL001, GL002, GL003, GL004, GL005, GL006}
+    return []rule.Rule{
+        GL001,
+        // ...
+        GLNNN,
+    }
 }
 ```
 
@@ -223,49 +231,50 @@ A new config key goes into `schema/glsec.schema.json` by hand, with a descriptio
 
 | Check | Requirement |
 |-------|-------------|
-| ID format | Matches `GL\d{3}` (e.g. `GL006`) and is not registered twice |
+| ID format | Matches `GL\d{3}` (e.g. `GL089`) and is not registered twice |
 | Fixture | At least one `testdata/fixtures/glnnn-*.yml` (lowercase rule ID as prefix), and the fixtures produce at least one finding for the rule |
 | OWASP | An entry in `rules/owasp.go`, and a `**OWASP:**` line in `docs/rules/GLNNN.md` naming the same categories |
 | CWE | An entry in `rules/cwe.go`, with the CWE's name in `cweNames` |
 | Rules overview | A `[GLNNN](rules/GLNNN.md)` link in `docs/rules.md`, under the `##` section of the rule's OWASP category |
 | README | The "N rules across …" count equals the number of registered rules, and the rule's ID appears once, in the row of the README category table for its OWASP category |
-| Doc examples | Every YAML block under `## Trigger example(s)` in the rule doc produces a finding for the rule; every block under `## Safe alternative(s)` produces none. Each block must be a pipeline glsec accepts, without a script line YAML reads as a mapping (GL086) or a duplicate key (GL087) |
+| Doc sections | The rule doc has a `## Risk` or `## What glsec checks` section and a `## Safe alternative(s)` section; a doc with safe alternatives also has a YAML trigger example |
+| Doc examples | Every YAML block under `## Trigger example(s)` in the rule doc produces a finding for the rule; every block under `## Safe alternative(s)` produces none, unless it contains `glsec:ignore GLNNN`. Each block must be a pipeline glsec accepts, without a script line YAML reads as a mapping (GL086) or a duplicate key (GL087) |
 
 Steps 6 and 7 add the fixture, docs and README entries these checks look for.
 
 ### Step 5 — write unit tests
 
 ```go
-// rules/gl006_test.go
+// rules/glNNN_test.go
 package rules
 
 import (
     "testing"
+
+    "github.com/glsec/glsec/internal/finding"
     "github.com/glsec/glsec/internal/parser"
 )
 
-func checkGL006(t *testing.T, src []byte) []finding.Finding {
+func findingsNNN(t *testing.T, yaml string) []finding.Finding {
     t.Helper()
-    doc, err := parser.Parse(src, "test.yml")
+    doc, err := parser.Parse([]byte(yaml), "test.yml")
     if err != nil {
         t.Fatalf("parse error: %v", err)
     }
-    return GL006.Check(doc.Root, "test.yml")
+    return GLNNN.Check(doc.Root, "test.yml")
 }
 
-func TestGL006_Flagged(t *testing.T) {
-    src := []byte(`...`)  // YAML that should trigger the rule
-    findings := checkGL006(t, src)
-    if len(findings) == 0 {
+func TestGLNNN_Flagged(t *testing.T) {
+    f := findingsNNN(t, `...`) // YAML that should trigger the rule
+    if len(f) == 0 {
         t.Fatal("expected at least one finding")
     }
 }
 
-func TestGL006_Clean(t *testing.T) {
-    src := []byte(`...`)  // YAML that should be clean
-    findings := checkGL006(t, src)
-    if len(findings) != 0 {
-        t.Fatalf("expected no findings, got %v", findings)
+func TestGLNNN_Clean(t *testing.T) {
+    f := findingsNNN(t, `...`) // YAML that should be clean
+    if len(f) != 0 {
+        t.Fatalf("expected no findings, got %v", f)
     }
 }
 ```
@@ -301,8 +310,8 @@ Ask: _is there a realistic, benign configuration that would trigger this finding
 Every rule must have at least one test that asserts _zero_ findings for a realistic, valid config. Name it `TestGLNNN_<CommonPattern>NoFinding` or `TestGLNNN_Clean` so its intent is clear:
 
 ```go
-func TestGL006_CommonPatternNoFinding(t *testing.T) {
-    f := findings006(t, `
+func TestGLNNN_CommonPatternNoFinding(t *testing.T) {
+    f := findingsNNN(t, `
 build:
   script: [make]
   artifacts:
@@ -320,7 +329,7 @@ build:
 
 Create `testdata/fixtures/glNNN-short-name.yml` with a realistic example that exercises the rule. The fixture must be valid GitLab CI YAML — CI validates all fixtures against the GitLab CI JSON schema via `check-jsonschema`. Only a rule that reports something the schema itself rejects may skip this: start its fixture with a `# schema: skip` comment that says why, and put `<!-- schema: skip … -->` before the trigger example in its docs file.
 
-After the schema check, CI also sends every fixture and every trigger and safe example to GitLab's CI Lint API, which rejects things the schema can't see: a `stage:` missing from `stages:`, a `needs:` on a job that doesn't exist, a file without a visible job. So a fixture or example is a complete pipeline, not a fragment. Where GitLab can't accept a block by design (a placeholder include, a component template whose inputs have no values, invalid YAML the rule is about), start the fixture with `# lint: skip — reason` or put `<!-- lint: skip — reason -->` before the block. This job needs a repository secret, so on a pull request from a fork it is skipped and the files are linted after the merge. Examples that use a recent GitLab feature should name the minimum version in the text, since the lint runs against the current gitlab.com release.
+After the schema check, CI also sends every fixture and every trigger and safe example to GitLab's CI Lint API, which rejects things the schema can't see: a `stage:` missing from `stages:`, a `needs:` on a job that doesn't exist, a file without a visible job. So a fixture or example is a complete pipeline, not a fragment. Where GitLab can't accept a block by design (a placeholder include, a component template whose inputs have no values, invalid YAML the rule is about), add a `# lint: skip — reason` line to the fixture's header comment (after `# schema: skip` if it has both) or put `<!-- lint: skip — reason -->` before the block. This job needs a repository secret, so on a pull request from a fork it is skipped and the files are linted after the merge. Examples that use a recent GitLab feature should name the minimum version in the text, since the lint runs against the current gitlab.com release.
 
 ### Step 7 — add a docs file and update the overviews
 
@@ -383,8 +392,8 @@ The reviewer leaves comments on anything that needs to change; a pull request is
 
 ## Commit and PR conventions
 
-- **Commit messages:** one short line (`feat: add GL006 rule`, `fix: GL002 false positive on quoted vars`), signed off with `-s` (see above). No other body, no `Co-Authored-By` trailers.
-- **Branch names:** `<type>/issue-<N>-<slug>` — e.g. `feat/issue-13-gl006-rule`.
+- **Commit messages:** one short line (`feat: add GL090 rule`, `fix: GL002 false positive on quoted vars`), signed off with `-s` (see above). No other body, no `Co-Authored-By` trailers.
+- **Branch names:** `<type>/issue-<N>-<slug>` — e.g. `feat/issue-13-gl090-rule`; for a change without an issue, `<type>/<slug>`.
 - **PR descriptions:** write the context here — what the rule detects, why it matters, how to test it, any edge cases considered.
 - One branch per issue; one PR per branch.
 - **Tests:** new functionality and bug fixes come with tests in the same PR. A new rule needs its fixture and unit tests (see above); a bug fix needs a test that fails without the fix. CI (tests on Linux, macOS and Windows, lint, fuzzing, CodeQL) must pass before merging.
@@ -403,16 +412,20 @@ The sign-off works the same way: with it you certify that you have the right to 
 
 ## Fixture validation
 
-Fixtures are validated in CI with:
+Fixtures, the rule doc examples and the example `.glsec.yml` are validated in CI with:
 
 ```sh
-pip install check-jsonschema
-check-jsonschema --builtin-schema gitlab-ci testdata/fixtures/*.yml
+pip install --require-hashes --no-deps -r .github/requirements/check-jsonschema.txt
+mapfile -t fixtures < <(grep -L '^# schema: skip' testdata/fixtures/*.yml)
+check-jsonschema --builtin-schema gitlab-ci "${fixtures[@]}"
+python3 .github/scripts/doc-examples.py /tmp/doc-examples
+check-jsonschema --builtin-schema gitlab-ci /tmp/doc-examples/*.yml
+check-jsonschema --schemafile schema/glsec.schema.json docs/glsec.example.yml
 ```
 
-Run this locally before pushing if you add or change a fixture.
+Run this locally before pushing if you add or change a fixture, a rule doc or the config. The report golden files are validated in the same job; see [Report schemas](#report-schemas).
 
-The GitLab lint runs with a project access token of a gitlab.com project (`GITLAB_LINT_TOKEN`, `GITLAB_LINT_PROJECT`). With your own token and project:
+The GitLab lint runs with a token for a gitlab.com project (`GITLAB_LINT_TOKEN`, `GITLAB_LINT_PROJECT`) that may only validate CI configuration. With your own token and project:
 
 ```sh
 python3 .github/scripts/doc-examples.py /tmp/doc-examples lint

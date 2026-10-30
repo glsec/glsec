@@ -12,7 +12,7 @@ Fixes #
 ## Checklist
 
 - [ ] Tests cover the change (a bug fix has a test that fails without it)
-- [ ] User-visible behaviour is documented (README, `docs/rules/GLNNN.md`, rule table)
+- [ ] User-visible behaviour is documented (`docs/usage.md` or another page in `docs/`, `docs/rules/GLNNN.md`, rule table)
 - [ ] Commits are signed off (`git commit -s`)
 
 ## AI assistance
