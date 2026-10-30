@@ -278,7 +278,7 @@ If the exclusions cover every file glsec was asked to scan, it says so on stderr
 
 glsec reads `.glsec.yml` from the working directory, or the file passed with `--config`. [`docs/glsec.example.yml`](docs/glsec.example.yml) shows every key with an example value. An unknown key, severity or value type stops glsec with exit 2; an unknown rule ID under `rules:` only gets a warning, so a file written for a newer glsec still works with an older one.
 
-[`schema/glsec.schema.json`](schema/glsec.schema.json) is a JSON schema of the file, for completion and validation in editors. Editors with the YAML language server (VS Code's YAML extension, Neovim, JetBrains IDEs) pick it up from a comment on the first line:
+[`schema/glsec.schema.json`](schema/glsec.schema.json) is a JSON schema of the file, for completion and validation in editors. It is listed in the [SchemaStore](https://www.schemastore.org) catalog, so editors that use it (VS Code's YAML extension, JetBrains IDEs, Neovim with the YAML language server and SchemaStore) apply it to `.glsec.yml` on their own. For a config file with another name, or an editor without the catalog, name the schema in a comment on the first line:
 
 ```yaml
 # yaml-language-server: $schema=https://raw.githubusercontent.com/glsec/glsec/main/schema/glsec.schema.json
