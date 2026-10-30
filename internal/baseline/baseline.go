@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
+	"github.com/glsec/glsec/internal/redact"
 )
 
 // Baseline is a multiset of accepted findings. Matching by count (not set
@@ -102,11 +103,14 @@ func key(rule, file, message string) string {
 // JSON reports use working-directory-relative paths. Resolve both snapshots
 // and current findings against cwd so absolute CLI arguments still match, as
 // do snapshots saved before report paths became relative.
+//
+// Reports mask secret values (#831), so the message is masked on both sides:
+// a snapshot written with or without --no-redact matches the same finding.
 func snapshotKey(rule, file, message string) string {
 	if abs, err := filepath.Abs(file); err == nil {
 		file = abs
 	}
-	return key(rule, file, message)
+	return key(rule, file, redact.String(message))
 }
 
 // IsNew reports whether f is absent from the baseline. When f matches a baseline

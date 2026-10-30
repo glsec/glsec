@@ -334,6 +334,12 @@ A cached result decides what glsec reports, so glsec only uses a cache directory
 
 **Not covered:** [CICD-SEC-2](https://owasp.org/www-project-top-10-ci-cd-security-risks/CICD-SEC-02-Inadequate-Identity-And-Access-Management) (Identity & Access Management) and [CICD-SEC-10](https://owasp.org/www-project-top-10-ci-cd-security-risks/CICD-SEC-10-Insufficient-Logging-And-Visibility) (Insufficient Logging & Visibility) are not detectable from static `.gitlab-ci.yml` analysis — they require platform-level context such as GitLab group/project settings, audit logs, or API access.
 
+### Secrets in reports
+
+glsec masks the secret values it recognises before it writes a report, in every format, in finding messages and in the source lines of the text output: the token formats GL006 knows, the password in `scheme://user:password@host`, `Authorization: Bearer|Basic|Token …`, `PRIVATE-TOKEN:` / `JOB-TOKEN:` headers, `curl -u user:password`, `--password …`, and the value of a variable whose name ends in `_TOKEN`, `_SECRET`, `_PASSWORD`, `_KEY` and the like. A masked value keeps its length and a short prefix (`ghp_************`), so the caret under the source line still points at the right column. Variable references such as `$TOKEN` stay as they are.
+
+The value is in the repository anyway, but a report travels further: into job logs, which are often public, Code Quality and JUnit artifacts, code scanning, and pasted bug reports. GitLab's log masking doesn't catch it, since it isn't a CI/CD variable. `--no-redact` shows the values for local debugging. It is a command-line flag only: `.glsec.yml` comes from the repository being scanned, so it can't turn masking off.
+
 ### Shell assumptions
 
 The script-analysis rules (e.g. GL002, GL024, GL025, GL047, GL048, GL050) assume **POSIX shell** (`bash`/`sh`) semantics — the default for Linux and macOS runners. PowerShell pipelines on Windows runners use different syntax (`$env:VAR` instead of `$VAR`, `Invoke-WebRequest` instead of `curl`, etc.), so these rules will not match them. GL011 also recognises PowerShell download-and-execute (`iwr URL | iex`, `iex (irm URL)`), and GL021 recognises secret variables printed by PowerShell commands such as `Write-Host` and `Write-Output`. **A Windows-runner job that emits no findings has not been meaningfully checked for shell issues** — don't treat the absence of findings there as a clean bill of health. GL024 skips jobs whose runner tags contain `windows`, because PowerShell has no `pipefail`.

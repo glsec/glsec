@@ -21,6 +21,7 @@ import (
 	"github.com/glsec/glsec/internal/color"
 	"github.com/glsec/glsec/internal/finding"
 	"github.com/glsec/glsec/internal/parser"
+	"github.com/glsec/glsec/internal/redact"
 )
 
 type Format string
@@ -44,10 +45,23 @@ func ParseFormat(s string) (Format, bool) {
 	}
 }
 
+// WriteOption changes how Write renders.
+type WriteOption func(*writeConfig)
+
+type writeConfig struct{ noRedact bool }
+
+// NoRedact shows the source lines of the text output as they are, secrets
+// included (--no-redact, #831). Messages are masked by the caller.
+func NoRedact() WriteOption { return func(c *writeConfig) { c.noRedact = true } }
+
 // Write renders findings in the given format. isTTY reports whether w is an
 // interactive terminal; the text format uses it to decide whether to print the
 // clean-run summary line (suppressed when piped, e.g. in CI).
-func Write(w io.Writer, format Format, findings []finding.Finding, jobCount int, colorEnabled, isTTY bool) error {
+func Write(w io.Writer, format Format, findings []finding.Finding, jobCount int, colorEnabled, isTTY bool, opts ...WriteOption) error {
+	var cfg writeConfig
+	for _, o := range opts {
+		o(&cfg)
+	}
 	switch format {
 	case FormatJSON:
 		return writeJSON(w, findings, nil, nil)
@@ -62,7 +76,7 @@ func Write(w io.Writer, format Format, findings []finding.Finding, jobCount int,
 	case FormatTable:
 		return writeTable(w, findings, jobCount, colorEnabled, isTTY)
 	default:
-		return writeText(w, findings, jobCount, colorEnabled, isTTY)
+		return writeText(w, findings, jobCount, colorEnabled, isTTY, !cfg.noRedact)
 	}
 }
 
@@ -132,8 +146,8 @@ func colorTableSeverity(line string, sev finding.Severity) string {
 // severity, rule and message, the location, then the offending source line with
 // a caret at the recorded column. When the source cannot be read the header is
 // still printed, so output never depends on the file still being there.
-func writeText(w io.Writer, findings []finding.Finding, jobCount int, col, isTTY bool) error {
-	src := newSourceCache()
+func writeText(w io.Writer, findings []finding.Finding, jobCount int, col, isTTY, redactSource bool) error {
+	src := newSourceCache(redactSource)
 	for i, f := range findings {
 		if i > 0 {
 			if _, err := fmt.Fprintln(w); err != nil {
@@ -199,9 +213,15 @@ func writeDiagnostic(w io.Writer, f finding.Finding, src *sourceCache, colorOn b
 
 // sourceCache reads files lazily so several findings in one file cost a single
 // read. A file that cannot be read is remembered as absent rather than retried.
-type sourceCache struct{ files map[string][]string }
+// With redact set, secret values in the lines are masked (#831).
+type sourceCache struct {
+	files  map[string][]string
+	redact bool
+}
 
-func newSourceCache() *sourceCache { return &sourceCache{files: make(map[string][]string)} }
+func newSourceCache(redact bool) *sourceCache {
+	return &sourceCache{files: make(map[string][]string), redact: redact}
+}
 
 func (c *sourceCache) line(path string, n int) (string, bool) {
 	lines, cached := c.files[path]
@@ -209,6 +229,11 @@ func (c *sourceCache) line(path string, n int) (string, bool) {
 		data, err := parser.ReadFile(path)
 		if err == nil {
 			lines = strings.Split(string(data), "\n")
+			if c.redact {
+				for i := range lines {
+					lines[i] = redact.String(lines[i])
+				}
+			}
 		}
 		c.files[path] = lines
 	}

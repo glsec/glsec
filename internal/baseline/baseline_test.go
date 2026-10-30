@@ -118,3 +118,23 @@ func TestLoad_InvalidJSON(t *testing.T) {
 		t.Error("a truncated JSON snapshot must fail to load, not become an empty baseline")
 	}
 }
+
+// Reports mask secrets (#831): a snapshot written before that, or with
+// --no-redact, and one written now both match the same finding.
+func TestJSONSnapshot_MaskedAndUnmaskedMessagesMatch(t *testing.T) {
+	raw := "pipes https://u:" + "pw12345678" + "@example.com into bash"
+	masked := "pipes https://u:**********@example.com into bash"
+	for _, snapMsg := range []string{raw, masked} {
+		data, err := json.Marshal(map[string]any{"findings": []map[string]any{{"rule": "GL011", "file": "ci.yml", "message": snapMsg}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, err := loadJSON(data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if b.IsNew(finding.Finding{RuleID: "GL011", File: "ci.yml", Message: raw}) {
+			t.Errorf("snapshot message %q should match the finding", snapMsg)
+		}
+	}
+}

@@ -180,3 +180,24 @@ func checkSecretValue(node *yaml.Node, varName, file string) *finding.Finding {
 	}
 	return nil
 }
+
+// TokenPatterns returns GL006's token formats without their ^…$ anchors, to
+// find a token inside a longer text such as a source line or a message
+// (#831). The PEM and GCP service account entries are markers next to a
+// secret, not the secret itself, and are left out.
+func TokenPatterns() []*regexp.Regexp {
+	var out []*regexp.Regexp
+	for _, p := range secretPatterns {
+		if p.name == "PEM private key" || p.name == "GCP service account key" {
+			continue
+		}
+		src := p.re.String()
+		flags := ""
+		if strings.HasPrefix(src, "(?i)") {
+			flags, src = "(?i)", strings.TrimPrefix(src, "(?i)")
+		}
+		src = strings.TrimSuffix(strings.TrimPrefix(src, "^"), "$")
+		out = append(out, regexp.MustCompile(flags+src))
+	}
+	return out
+}

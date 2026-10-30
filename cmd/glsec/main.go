@@ -26,6 +26,7 @@ import (
 	"github.com/glsec/glsec/internal/finding"
 	"github.com/glsec/glsec/internal/output"
 	"github.com/glsec/glsec/internal/parser"
+	"github.com/glsec/glsec/internal/redact"
 	"github.com/glsec/glsec/internal/shellcheck"
 	"github.com/glsec/glsec/internal/suppress"
 	"github.com/glsec/glsec/internal/validate"
@@ -93,6 +94,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	baselineFlag := flags.String("baseline", "", "path to a baseline to diff against in --new-only mode: a glsec JSON snapshot (--format json) or a .glsec-ignore file (implies --new-only)")
 	requireReasonFlag := flags.Bool("require-ignore-reason", false, "treat an inline # glsec:ignore without a \"-- reason\" as a policy violation (exit 2)")
 	noCacheFlag := flags.Bool("no-cache", false, "disable result cache for this run")
+	// Only a flag: .glsec.yml comes from the scanned repository, which must
+	// not be able to turn masking off (#831).
+	noRedactFlag := flags.Bool("no-redact", false, "show secret values in findings and source lines instead of masking them (local debugging only)")
 	cacheFlag := flags.Bool("cache", false, "use the result cache in CI (CI=true), where it is off by default; --no-cache wins")
 	clearCacheFlag := flags.Bool("clear-cache", false, "remove all cached results and exit")
 	noColorFlag := flags.Bool("no-color", false, "disable colored output")
@@ -343,7 +347,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 
-	if err := writeOutput(stdout, format, allFindings, totalJobCount, colorEnabled, stdoutIsTTY); err != nil {
+	if err := writeOutput(stdout, format, allFindings, totalJobCount, colorEnabled, stdoutIsTTY, !*noRedactFlag); err != nil {
 		_, _ = fmt.Fprintf(stderr, "error: %v\n", err)
 		return 2
 	}
@@ -458,8 +462,15 @@ func scanRoot(file string, opt scanOptions) (findings []finding.Finding, jobCoun
 // scanStart is when glsec started, the scan start time in a GitLab SAST report.
 var scanStart = time.Now()
 
-// writeOutput renders findings in the requested format.
-func writeOutput(w io.Writer, format output.Format, findings []finding.Finding, jobCount int, colorEnabled, isTTY bool) error {
+// writeOutput renders findings in the requested format. With mask set, secret
+// values in messages and source lines are masked in every format (#831).
+func writeOutput(w io.Writer, format output.Format, findings []finding.Finding, jobCount int, colorEnabled, isTTY, mask bool) error {
+	var opts []output.WriteOption
+	if mask {
+		findings = redact.Findings(findings)
+	} else {
+		opts = append(opts, output.NoRedact())
+	}
 	switch format {
 	case output.FormatSARIF:
 		return output.WriteSARIF(w, findings, output.SARIFTool{Version: version, Rule: sarifRuleInfo}, rules.CWEID, rules.CWEName, rules.OWASPCategories, rules.OWASPCategoryName, rules.ASVSRequirements, rules.ASVSRequirementName)
@@ -471,7 +482,7 @@ func writeOutput(w io.Writer, format output.Format, findings []finding.Finding, 
 			OWASP: rules.OWASPCategories, OWASPName: rules.OWASPCategoryName, Start: scanStart,
 		})
 	default:
-		return output.Write(w, format, findings, jobCount, colorEnabled, isTTY)
+		return output.Write(w, format, findings, jobCount, colorEnabled, isTTY, opts...)
 	}
 }
 

@@ -552,3 +552,34 @@ func TestRun_KeywordJobsAreScanned(t *testing.T) {
 		t.Errorf("stderr does not warn about the keyword job:\n%s", stderr)
 	}
 }
+
+// #831: no format prints a detected secret, and positions stay the same.
+// Values are built at run time, so the file holds no real-looking token.
+func TestRun_SecretsAreMaskedInEveryFormat(t *testing.T) {
+	ghp := "ghp_" + strings.Repeat("aB3", 12)
+	pw := "hunter2" + "pass99"
+	src := "variables:\n  GH: \"" + ghp + "\"\njob:\n  script:\n    - curl -fsSL https://user:" + pw + "@example.com/install.sh | bash\n    - curl -u admin:" + pw + " https://api.example.com\n    - 'curl -H \"Authorization: Bearer $API_TOKEN\" https://api.example.com'\n"
+	files := map[string]string{".gitlab-ci.yml": src}
+	for _, format := range []string{"text", "table", "json", "sarif", "codeclimate", "junit", "gitlab-sast"} {
+		_, stdout, _ := runCLI(t, files, "--no-cache", "--no-repo-config", "--format", format, ".gitlab-ci.yml")
+		if strings.Contains(stdout, ghp) || strings.Contains(stdout, pw) {
+			t.Errorf("%s output shows a secret:\n%s", format, stdout)
+		}
+		if !strings.Contains(stdout, "GL006") {
+			t.Errorf("%s output has no GL006 finding:\n%s", format, stdout)
+		}
+	}
+
+	_, text, _ := runCLI(t, files, "--no-cache", "--no-repo-config", ".gitlab-ci.yml")
+	if !strings.Contains(text, `GH: "ghp_`+strings.Repeat("*", 36)+`"`) {
+		t.Errorf("text output should mask the token and keep its prefix:\n%s", text)
+	}
+	if !strings.Contains(text, ".gitlab-ci.yml:2:7") {
+		t.Errorf("the GL006 position moved:\n%s", text)
+	}
+
+	_, raw, _ := runCLI(t, files, "--no-cache", "--no-repo-config", "--no-redact", ".gitlab-ci.yml")
+	if !strings.Contains(raw, ghp) {
+		t.Errorf("--no-redact should show the value:\n%s", raw)
+	}
+}
