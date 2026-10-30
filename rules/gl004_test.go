@@ -213,6 +213,30 @@ pages:
 	}
 }
 
+// The advice only fits URLs shaped like a GitLab instance's. A job-token
+// clone of another forge keeps the original message (#864 review).
+func TestGL004_SelfHostedGitLabAdviceShapes(t *testing.T) {
+	for _, tc := range []struct {
+		line   string
+		gitlab bool
+	}{
+		{`curl -fsSL -o a.zip "https://ci.example.org/group/project/-/jobs/artifacts/main/download?job=build&job_token=$CI_JOB_TOKEN"`, true},
+		{`curl --header "JOB-TOKEN: $CI_JOB_TOKEN" https://GitLab.Example.Org/API/V4/projects/42/packages`, true},
+		{`curl -X POST -F "token=$CI_JOB_TOKEN" https://ci.example.org/api/v4/projects/42/Trigger/Pipeline`, true},
+		{`git clone https://gitlab-ci-token:${CI_JOB_TOKEN}@github.com/org/repo.git`, false},
+		{`curl --header "JOB-TOKEN: $CI_JOB_TOKEN" https://external-registry.example.com/upload`, false},
+	} {
+		f := findings004(t, "job:\n  script:\n    - '"+strings.ReplaceAll(tc.line, "'", "''")+"'\n")
+		if len(f) != 1 {
+			t.Errorf("%s: got %d findings, want 1", tc.line, len(f))
+			continue
+		}
+		if got := strings.Contains(f[0].Message, "hardcoded GitLab host"); got != tc.gitlab {
+			t.Errorf("%s: GitLab advice = %v, want %v\n%s", tc.line, got, tc.gitlab, f[0].Message)
+		}
+	}
+}
+
 func TestGL004_LineNumbers(t *testing.T) {
 	f := findings004(t, `
 upload:

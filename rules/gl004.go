@@ -134,9 +134,10 @@ var (
 	hostRe    = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.\-]*$`)
 )
 
-// gitLabShapes are the markers of a GitLab API, job-artifact or trigger URL,
-// and of the gitlab-ci-token userinfo used by git over HTTPS.
-var gitLabShapes = []string{"/api/v4/", "/-/jobs/artifacts/", "/trigger/pipeline", "gitlab-ci-token:"}
+// gitLabShapes are the markers of a GitLab API, job-artifact or trigger URL.
+// The gitlab-ci-token userinfo is not one: every job-token clone uses it,
+// also of a repository on GitHub, so it says nothing about the host.
+var gitLabShapes = []string{"/api/v4/", "/-/jobs/artifacts/", "/trigger/pipeline"}
 
 // hasGitLabShape reports whether a URL word has the shape of a GitLab
 // instance's URL, which suggests a self-hosted instance rather than an
