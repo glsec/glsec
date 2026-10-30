@@ -34,7 +34,7 @@ glsec keeps its dependencies few and checked:
 
 What blocks a merge or a release:
 
-- **Vulnerabilities.** Any known vulnerability, of any severity, in a dependency added or changed by a pull request; any vulnerability that govulncheck finds reachable from glsec's code; any OSV finding; any HIGH or CRITICAL finding in the image for which a fix exists. A finding that doesn't affect glsec (for example, unreachable code) may be accepted only with a written reason in the pull request and a VEX statement as described in [SECURITY.md](SECURITY.md#vulnerabilities-that-dont-affect-glsec).
+- **Vulnerabilities.** Any known vulnerability, of any severity, in a dependency added or changed by a pull request; any vulnerability that govulncheck finds reachable from glsec's code; any OSV finding; any HIGH or CRITICAL finding in the image for which a fix exists. A finding that doesn't affect glsec (for example, unreachable code) may be accepted only with a written reason in the pull request and, once it reaches users, a VEX statement as described in [SECURITY.md](SECURITY.md#vulnerabilities-that-dont-affect-glsec).
 - **Malicious packages.** Always. The dependency is removed, and if a release contained it, the release is withdrawn and a security advisory is published.
 - **Licenses.** Dependencies must be under a permissive or weak-copyleft license compatible with glsec's Apache-2.0 license: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, MPL-2.0, PSF-2.0, Unlicense or 0BSD. Dependency review fails on any other license; adding one needs a maintainer decision, recorded in the pull request.
 
