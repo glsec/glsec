@@ -88,11 +88,13 @@ var configurationOnlyJobs = map[string]bool{
 
 func (r *gl008) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
+	in := NewInheritance(doc)
 
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
 		if !securityScanJobs[name.Value] || configurationOnlyJobs[name.Value] {
 			return
 		}
+		job = in.Effective(job)
 		if !templateAllowFailureJobs[name.Value] {
 			findings = append(findings, r.checkAllowFailure(name, job, file)...)
 		}

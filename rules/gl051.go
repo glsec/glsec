@@ -27,8 +27,9 @@ func (r *gl051) Check(doc *yaml.Node, file string) []finding.Finding {
 // CheckWithSpec reads the input declarations from spec and their uses from doc.
 func (r *gl051) CheckWithSpec(spec, doc *yaml.Node, file string) []finding.Finding {
 	findings := gl051SpecInputs(spec, doc, file)
+	in := NewInheritance(doc)
 	parser.EachJob(doc, func(name, job *yaml.Node) {
-		findings = append(findings, gl051JobInputs(name.Value, job, file)...)
+		findings = append(findings, gl051JobInputs(name.Value, in.Effective(job), file)...)
 	})
 	return findings
 }

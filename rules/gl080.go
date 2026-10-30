@@ -28,18 +28,20 @@ func (r *gl080) Check(doc *yaml.Node, file string) []finding.Finding {
 		return nil
 	}
 
+	in := NewInheritance(doc)
 	var findings []finding.Finding
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
 		// Hidden jobs (names starting with ".") are templates GitLab never runs.
 		if strings.HasPrefix(name.Value, ".") {
 			return
 		}
-		// A job that pulls config in via extends: or a YAML merge (<<:) may
-		// inherit its guard from a base glsec does not resolve — skip it rather
-		// than report a guard that is present but invisible here.
-		if inheritsConfig(job) {
+		// A base in another file may hold the guard: skip the job rather than
+		// report a guard that is present but invisible here. A chain within
+		// this file is merged in.
+		if !in.ExtendsResolved(job) {
 			return
 		}
+		job = in.Effective(job)
 		if !gl080Sensitive(name.Value, job) {
 			return
 		}
@@ -100,12 +102,6 @@ func gl080Sensitive(name string, job *yaml.Node) bool {
 		}
 	}
 	return false
-}
-
-// inheritsConfig reports whether a job draws configuration from a base via
-// extends:, which glsec does not resolve.
-func inheritsConfig(job *yaml.Node) bool {
-	return parser.FindKey(job, "extends") != nil
 }
 
 func jobStageName(job *yaml.Node) string {

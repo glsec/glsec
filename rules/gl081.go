@@ -32,18 +32,20 @@ func (r *gl081) Check(doc *yaml.Node, file string) []finding.Finding {
 		return nil
 	}
 
+	in := NewInheritance(doc)
 	var findings []finding.Finding
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
 		// Hidden jobs (names starting with ".") are templates GitLab never runs.
 		if strings.HasPrefix(name.Value, ".") {
 			return
 		}
-		if !hasIDTokens(job) {
+		// A base in another file may hold the guard or the id_tokens: skip
+		// the job. A chain within this file is merged in.
+		if !in.ExtendsResolved(job) {
 			return
 		}
-		// A job that pulls config in via extends: or a YAML merge (<<:) may
-		// inherit its guard from a base glsec does not resolve — skip it.
-		if inheritsConfig(job) {
+		job = in.Effective(job)
+		if !hasIDTokens(job) {
 			return
 		}
 

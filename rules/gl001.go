@@ -142,7 +142,7 @@ func (r *gl001) checkRefResolved(ref string, line, col int, file string, resolve
 // extends: (not resolved by glsec), or when inherit:variables excludes the name.
 func jobVarResolver(jobName string, job *yaml.Node, resolveGlobal varResolver) varResolver {
 	jobVars := parser.FindKey(job, "variables")
-	useGlobal := !strings.HasPrefix(jobName, ".") && !inheritsConfig(job)
+	useGlobal := !strings.HasPrefix(jobName, ".") && parser.FindKey(job, "extends") == nil
 	return func(name string) []string {
 		if input, ok := strings.CutPrefix(name, jobInputPrefix); ok {
 			return jobInputValues(job, input)

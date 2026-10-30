@@ -35,8 +35,10 @@ var projectDirPrefixRe = regexp.MustCompile(`^\$\{?CI_PROJECT_DIR\}?/`)
 func (r *gl014) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
 	def := parser.FindKey(parser.Unwrap(doc), "default")
+	in := NewInheritance(doc)
 
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
+		job = in.Effective(job)
 		artifacts := parser.FindKey(job, "artifacts")
 		if artifacts == nil && def != nil {
 			artifacts = parser.FindKey(def, "artifacts")

@@ -31,8 +31,15 @@ func (r *gl037) Check(doc *yaml.Node, file string) []finding.Finding {
 		return nil
 	}
 
+	in := NewInheritance(doc)
 	var findings []finding.Finding
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
+		// A hidden job is a template: the jobs that extend or merge it are
+		// reported, with what they inherit.
+		if strings.HasPrefix(name.Value, ".") {
+			return
+		}
+		job = in.Effective(job)
 		trigger := parser.FindKey(job, "trigger")
 		if trigger == nil {
 			return

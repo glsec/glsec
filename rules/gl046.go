@@ -36,7 +36,9 @@ func (r *gl046) Check(doc *yaml.Node, file string) []finding.Finding {
 		findings = append(findings, checkCacheUnprotect(parser.FindKey(def, "cache"), file, "", finding.Warn)...)
 	}
 
+	in := NewInheritance(doc)
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
+		job = in.Effective(job)
 		for _, f := range checkCacheNode(parser.FindKey(job, "cache"), file, "") {
 			f.Job = name.Value
 			findings = append(findings, f)

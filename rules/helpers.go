@@ -159,6 +159,62 @@ func (in *Inheritance) chain(job *yaml.Node, key string, depth int, seen map[*ya
 	}
 }
 
+// Effective returns the job with what it inherits through extends: in this
+// file merged in, the way GitLab merges it: mappings key by key and
+// recursively, any other value replaced by the inheriting job's own; of
+// several extends: entries the later one wins. default: is not merged in. A
+// job without extends: is returned as is. Check ExtendsResolved first where a
+// base in another file could change the answer.
+func (in *Inheritance) Effective(job *yaml.Node) *yaml.Node {
+	return in.effective(job, 0, map[*yaml.Node]bool{})
+}
+
+func (in *Inheritance) effective(job *yaml.Node, depth int, seen map[*yaml.Node]bool) *yaml.Node {
+	if job == nil || job.Kind != yaml.MappingNode || seen[job] || depth >= maxExtendsDepth {
+		return job
+	}
+	ext := parser.FindKey(job, "extends")
+	if ext == nil {
+		return job
+	}
+	seen[job] = true
+	defer delete(seen, job)
+	parents := []*yaml.Node{ext}
+	if ext.Kind == yaml.SequenceNode {
+		parents = ext.Content
+	}
+	var merged *yaml.Node
+	for _, p := range parents {
+		if base := in.jobs[p.Value]; p.Kind == yaml.ScalarNode && base != nil {
+			merged = mergeMappings(merged, in.effective(base, depth+1, seen))
+		}
+	}
+	return mergeMappings(merged, job)
+}
+
+// mergeMappings returns over merged on top of base, without changing either.
+func mergeMappings(base, over *yaml.Node) *yaml.Node {
+	if base == nil || base.Kind != yaml.MappingNode || over.Kind != yaml.MappingNode {
+		return over
+	}
+	out := &yaml.Node{Kind: yaml.MappingNode, Tag: over.Tag, Line: over.Line, Column: over.Column}
+	at := map[string]int{}
+	for i := 0; i+1 < len(base.Content); i += 2 {
+		at[base.Content[i].Value] = len(out.Content)
+		out.Content = append(out.Content, base.Content[i], base.Content[i+1])
+	}
+	for i := 0; i+1 < len(over.Content); i += 2 {
+		k, v := over.Content[i], over.Content[i+1]
+		if j, ok := at[k.Value]; ok {
+			out.Content[j] = k
+			out.Content[j+1] = mergeMappings(out.Content[j+1], v)
+			continue
+		}
+		out.Content = append(out.Content, k, v)
+	}
+	return out
+}
+
 // ExtendsResolved reports whether every job in the job's extends: chain is
 // defined in this file, so Key sees everything the job inherits.
 func (in *Inheritance) ExtendsResolved(job *yaml.Node) bool {

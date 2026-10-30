@@ -96,17 +96,7 @@ func TestMetamorphic(t *testing.T) {
 // knownDifferences lists "transform/rule" pairs whose findings change under a
 // rewrite for a known reason: a rule gap with its issue, or a rewrite that
 // isn't equivalent for that rule.
-var knownDifferences = map[string]string{
-	"extends/GL008":       "#919: reads the job's own rules: and allow_failure: only",
-	"extends/GL014":       "#919: reads the job's own artifacts: only",
-	"extends/GL044":       "#919: reads the job's own rules: only",
-	"extends/GL046":       "#919: reads the job's own cache: only",
-	"extends/GL051":       "#919: reads the job's own inputs: only",
-	"extends/GL071":       "#919: reads the job's own when: only",
-	"extends/GL080":       "#919: skips every job with extends:",
-	"extends/GL081":       "#919: skips every job with extends:",
-	"merge-anchors/GL037": "#919: also reports the hidden job a trigger: is merged from",
-}
+var knownDifferences = map[string]string{}
 
 var errNotApplicable = errors.New("not applicable")
 
@@ -396,7 +386,8 @@ func moveIntoAnchor(root *yaml.Node) bool {
 // splitScript splits a visible job into its script: pair and everything
 // else; base is nil when the job has nothing to move.
 func splitScript(name, job *yaml.Node) (base *yaml.Node, keep []*yaml.Node) {
-	if strings.HasPrefix(name.Value, ".") {
+	// spec: in the pipeline document itself looks like a job to EachJob.
+	if strings.HasPrefix(name.Value, ".") || name.Value == "spec" {
 		return nil, nil
 	}
 	base = &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
