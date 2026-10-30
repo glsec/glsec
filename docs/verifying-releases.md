@@ -1,6 +1,6 @@
 # Verifying a release
 
-Every release is signed and carries build provenance, so you can confirm an artifact really came from this repository's workflow before trusting it. Signing is keyless through [Sigstore](https://www.sigstore.dev/), so there is no public key to fetch or rotate.
+Every release is signed and carries build provenance, so you can confirm an artifact really came from this repository's workflow before trusting it. Signing is keyless through [Sigstore](https://www.sigstore.dev/), so there is no public key to fetch or rotate for the artifacts; only the release tags carry an SSH signature (see below).
 
 The release binaries and the container image meet [SLSA](https://slsa.dev/spec/v1.0/levels) **Build Level 3** from 1.21.0 on: they are built in reusable workflows (`build-release.yml`, `build-image.yml`) that the workflows a tag push triggers (`release.yml` and `docker.yml`) only call, so the build workflow, not the triggered one, signs the provenance. That is the isolation GitHub documents as [SLSA v1 Build Level 3 for artifact attestations](https://docs.github.com/actions/security-guides/using-artifact-attestations-and-reusable-workflows-to-achieve-slsa-v1-build-level-3). Releases 1.11.0 to 1.20.0 meet Build Level 2: their provenance is signed by GitHub's hosted build platform, but by the release workflow itself.
 
@@ -58,6 +58,21 @@ sha256sum -c checksums.txt --ignore-missing
 
 ```sh
 gh attestation verify checksums.txt --owner glsec
+```
+
+**Release tags** are signed from 1.25.0 on, with an SSH key on a maintainer's GitHub account; GitHub shows them as Verified. Earlier tags are annotated but unsigned. Check a tag with the GitHub API:
+
+```sh
+gh api repos/glsec/glsec/git/tags/$(git rev-parse v1.25.0) --jq .verification.verified
+```
+
+or locally with `git tag -v`, after listing the signing keys:
+
+```sh
+cat > allowed_signers <<'EOF'
+245527909+predictor2718@users.noreply.github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL1+/OrXYSV3zgQyQpGMVNLvyap5C3Qb7XvpfJaflSGf
+EOF
+git -c gpg.ssh.allowedSignersFile=allowed_signers tag -v v1.25.0
 ```
 
 **Reproducing a release**: release builds are reproducible from 1.21.0 on. Check out the tag and build it with the Go version from `go.mod` (the `toolchain` line from 1.24.1 on, before that the `go` line) and exactly the GoReleaser version pinned in `.github/workflows/build-release.yml` (v2.18.3 for 1.21.0); another GoReleaser version packs the archives differently. The archives must match the published `checksums.txt`:
