@@ -176,3 +176,26 @@ func TestGL039_InstallStepsNotScanners(t *testing.T) {
 		}
 	}
 }
+
+// A silenced report run followed by a run that gates the job is fine, and
+// `|| echo` silences like `|| true` unless a failing exit follows (#988).
+func TestGL039_GatingRerunAndEcho(t *testing.T) {
+	for _, tc := range []struct {
+		script string
+		want   int
+	}{
+		{"- trivy fs . --format json --output report.json || true\n    - trivy fs . --severity HIGH,CRITICAL --exit-code 1", 0},
+		{"- trivy fs . --format json --output report.json || true\n    - echo done", 1},
+		{`- uv run bandit -r src || echo "issues found"`, 1},
+		{`- bandit -r src || echo "issues found" && exit 1`, 0},
+		{`- bandit -r src || echo "issues found"; exit 2`, 0},
+	} {
+		doc, err := parser.Parse([]byte("scan:\n  script:\n    "+tc.script+"\n"), "test.yml")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := len(GL039.Check(doc.Root, "test.yml")); got != tc.want {
+			t.Errorf("%q: got %d findings, want %d", tc.script, got, tc.want)
+		}
+	}
+}

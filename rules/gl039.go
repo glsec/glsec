@@ -5,6 +5,7 @@ package rules
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -17,9 +18,26 @@ var GL039 = &gl039{}
 
 func (r *gl039) ID() string { return "GL039" }
 
-// silencedRe matches "|| true", "|| exit 0" or "|| :" at end of a pipeline
-// segment.
-var silencedRe = mustCompilePrefiltered(`\|\|\s*(?:(?:true|exit\s+0)\b|:(?:[\s;)]|$))`)
+// silencedRe matches "|| true", "|| exit 0", "|| :" or "|| echo …" at end of
+// a pipeline segment. An echo is a silencer only when no failing exit
+// follows it (#988), which silencerAt checks.
+var silencedRe = mustCompilePrefiltered(`\|\|\s*(?:(?:true|exit\s+0)\b|:(?:[\s;)]|$)|echo\b[^;&|\n]*)`)
+
+// failingExitRe matches what makes `|| echo …` fail after all: && exit 1,
+// ; exit 2.
+var failingExitRe = regexp.MustCompile(`^\s*(?:&&|;)\s*exit\s+[1-9]`)
+
+// silencerAt returns the silencer of a script item and where it starts.
+func silencerAt(item string) (string, int) {
+	for _, loc := range silencedRe.FindAllStringIndex(item, -1) {
+		m := item[loc[0]:loc[1]]
+		if strings.Contains(m, "echo") && failingExitRe.MatchString(item[loc[1]:]) {
+			continue
+		}
+		return m, loc[0]
+	}
+	return "", -1
+}
 
 // scannerCmd builds the pattern for a scanner that has to be in command
 // position, so an install step (pip install pip-audit) doesn't count: at the
@@ -91,13 +109,22 @@ func checkAuditSilenced(node *yaml.Node, file, job string) []finding.Finding {
 		if item.Kind != yaml.ScalarNode {
 			continue
 		}
-		silencer := silencedRe.FindString(item.Value)
+		silencer, at := silencerAt(item.Value)
 		if silencer == "" {
 			continue
 		}
 		silencer = strings.Join(strings.Fields(strings.TrimRight(silencer, ";)")), " ")
+		if strings.HasPrefix(silencer, "|| echo") {
+			silencer = "|| echo"
+		}
 		for _, tool := range auditTools {
 			if tool.re.MatchString(item.Value) {
+				// A report run silenced on purpose, with the same tool run
+				// again without silencing to fail the job (#988).
+				if gatedElsewhere(node, item, tool) {
+					break
+				}
+				line, col := scriptMatchPos(item, at)
 				findings = append(findings, finding.Finding{
 					RuleID:   "GL039",
 					Severity: finding.Warn,
@@ -107,12 +134,26 @@ func checkAuditSilenced(node *yaml.Node, file, job string) []finding.Finding {
 						tool.name, silencer,
 					),
 					File: file,
-					Line: item.Line,
-					Col:  item.Column,
+					Line: line,
+					Col:  col,
 				})
 				break
 			}
 		}
 	}
 	return findings
+}
+
+// gatedElsewhere reports whether another item of the same script runs tool
+// without a silencer.
+func gatedElsewhere(node, silenced *yaml.Node, tool auditTool) bool {
+	for _, other := range node.Content {
+		if other == silenced || other.Kind != yaml.ScalarNode || !tool.re.MatchString(other.Value) {
+			continue
+		}
+		if s, _ := silencerAt(other.Value); s == "" {
+			return true
+		}
+	}
+	return false
 }
