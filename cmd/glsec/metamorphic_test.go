@@ -121,7 +121,8 @@ type transform struct {
 var transforms = []transform{
 	{name: "reencode", apply: rewrite(func(*yaml.Node) bool { return true })},
 	{name: "crlf", apply: func(src string) (string, error) {
-		return strings.ReplaceAll(src, "\n", "\r\n"), nil
+		// Git may already check the file out with CRLF on Windows.
+		return strings.ReplaceAll(strings.ReplaceAll(src, "\r\n", "\n"), "\n", "\r\n"), nil
 	}},
 	{name: "flow-style", apply: rewrite(flowStyle)},
 	{name: "requote", apply: rewrite(requote)},
