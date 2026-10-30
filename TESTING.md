@@ -28,7 +28,7 @@ glsec decides what a security review of a pipeline reports, so a wrong answer co
 | Static analysis: [golangci-lint](CONTRIBUTING.md#linting), CodeQL, govulncheck, dependency and workflow scanners | bugs and vulnerabilities in the code, its dependencies and its CI | every pull request, CodeQL also weekly |
 | Real pipelines: new rules against public pipelines, the parser against GitLab's CI Lint ([`ci-lint-diff.py`](CONTRIBUTING.md#fixture-validation)) | false positives that crafted fixtures don't show; files GitLab runs but glsec can't scan | before each release, see [RELEASING.md](RELEASING.md) |
 
-Scheduled jobs also watch what glsec depends on from outside: the example projects' version pins, the CI/CD Catalog list GL064 compares against, and new releases of the security frameworks glsec maps to. They open an issue when something drifts.
+Scheduled jobs also watch what glsec depends on from outside: the example projects' version pins, the CI/CD Catalog list GL064 compares against, new releases of the security frameworks glsec maps to, and the keywords in GitLab's CI schema, so a new keyword doesn't go unnoticed by the rules. They open an issue when something drifts.
 
 ## Adding a rule
 

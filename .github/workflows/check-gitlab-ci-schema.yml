@@ -1,0 +1,89 @@
+name: Check GitLab CI schema
+
+# Weekly check for keywords GitLab adds to or removes from its CI
+# configuration (#931). GitLab ships new keywords in most releases; until
+# someone notices, a rule may skip a job it should check, or miss a value that
+# arrives through the new keyword.
+#
+# Compares the keyword paths of GitLab's editor schema with the reviewed
+# snapshot in .github/gitlab-ci-keywords.txt and opens an issue on a
+# difference, or updates the open one. After reviewing, regenerate the
+# snapshot with .github/scripts/gitlab-ci-keywords.py and commit it. Not run on
+# pull requests, so this repository's CI doesn't depend on gitlab.com.
+
+on:
+  schedule:
+    - cron: "0 8 * * 2" # 08:00 UTC every Tuesday
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  check:
+    name: Compare GitLab's CI keywords with the reviewed snapshot
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write # open or update the issue
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Compare the keywords
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SCHEMA_URL: https://gitlab.com/gitlab-org/gitlab/-/raw/master/app/assets/javascripts/editor/schema/ci.json
+          SNAPSHOT: .github/gitlab-ci-keywords.txt
+        run: |
+          set -euo pipefail
+          export LC_ALL=C
+
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/ci.json" "$SCHEMA_URL"
+          python3 -I .github/scripts/gitlab-ci-keywords.py "$RUNNER_TEMP/ci.json" > "$RUNNER_TEMP/keywords.txt"
+
+          added=$(comm -13 "$SNAPSHOT" "$RUNNER_TEMP/keywords.txt")
+          removed=$(comm -23 "$SNAPSHOT" "$RUNNER_TEMP/keywords.txt")
+          echo "added: $(grep -c . <<< "$added" || true), removed: $(grep -c . <<< "$removed" || true)"
+          if [ -z "$added" ] && [ -z "$removed" ]; then
+            echo "GitLab's CI keywords match the reviewed snapshot."
+            exit 0
+          fi
+
+          # The paths only contain [a-z0-9_.*[]], checked by the script.
+          list() { sed -e 's/^/- `/' -e 's/$/`/' | head -n 200; }
+          {
+            echo "GitLab's CI schema ([ci.json](https://gitlab.com/gitlab-org/gitlab/-/blob/master/app/assets/javascripts/editor/schema/ci.json)) differs from the reviewed keywords in \`$SNAPSHOT\`."
+            echo
+            if [ -n "$added" ]; then
+              echo "## New in GitLab"
+              echo
+              list <<< "$added"
+              echo
+            fi
+            if [ -n "$removed" ]; then
+              echo "## No longer in GitLab's schema"
+              echo
+              list <<< "$removed"
+              echo
+            fi
+            echo "## What to do"
+            echo
+            echo "For each new keyword, check the [GitLab CI/CD YAML reference](https://docs.gitlab.com/ci/yaml/) and decide whether a rule should read it: a new way to get credentials, run a command, pull an image or include configuration usually matters. File an issue for each one that does. Then regenerate the snapshot and close this issue with the commit:"
+            echo
+            echo '```sh'
+            echo "curl -fsSL -o /tmp/ci.json $SCHEMA_URL"
+            echo "python3 .github/scripts/gitlab-ci-keywords.py /tmp/ci.json > $SNAPSHOT"
+            echo '```'
+          } > "$RUNNER_TEMP/body.md"
+
+          title="GitLab CI schema changed"
+          existing=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            # REST, not gh issue edit: that one also queries the retired
+            # classic projects and fails.
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/$existing" -F "body=@$RUNNER_TEMP/body.md" --silent
+            echo "Updated #$existing."
+          else
+            gh issue create --title "$title" --label enhancement --label rule --body-file "$RUNNER_TEMP/body.md"
+          fi
