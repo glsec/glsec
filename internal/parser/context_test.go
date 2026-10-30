@@ -149,3 +149,35 @@ func TestWithContext_NoTracedLines(t *testing.T) {
 		t.Errorf("line = %d, want ContextLine", line)
 	}
 }
+
+// A document or another file that isn't a mapping has nothing to add or to
+// take; GitLab rejects such a file anyway.
+func TestWithContext_NotAMapping(t *testing.T) {
+	list := mustParse(t, "- a\n- b\n")
+	root := mustParse(t, "workflow:\n  rules:\n    - when: always\n")
+	if WithContext(list, []*Document{root}) != list {
+		t.Error("a list document was given context")
+	}
+	job := mustParse(t, "job:\n  script: [x]\n")
+	if WithContext(job, []*Document{list}) != job {
+		t.Error("a list document gave context")
+	}
+}
+
+// A node that expanded aliases share is copied once, so the copy stays as
+// small as the original.
+func TestWithContext_SharedNodesCopiedOnce(t *testing.T) {
+	root := mustParse(t, ".base: &base\n  image: alpine\n.a:\n  <<: *base\n.b: *base\n")
+	got := WithContext(mustParse(t, "job:\n  script: [x]\n"), []*Document{root})
+	m := got.MappingNode()
+	a, b := FindKey(m, ".base"), FindKey(m, ".b")
+	if a == nil || b == nil {
+		t.Fatal("templates not added")
+	}
+	if a != b {
+		t.Error("the node .base and .b share was copied twice")
+	}
+	if a == FindKey(root.MappingNode(), ".base") {
+		t.Error("the original node was added instead of a copy")
+	}
+}

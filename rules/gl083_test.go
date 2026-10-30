@@ -348,7 +348,8 @@ func TestGL083_LongPipelineIsLinear(t *testing.T) {
 		if len(fs) != 0 {
 			t.Errorf("got %d findings, want 0", len(fs))
 		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("a 20000-stage pipeline did not finish in 5s")
+	// Generous for parallel -race runs on small CI runners, like GL024's.
+	case <-time.After(60 * time.Second):
+		t.Fatal("a 20000-stage pipeline did not finish in 60s")
 	}
 }

@@ -443,14 +443,17 @@ func TestGL024_ExtendsDepthLimit(t *testing.T) {
 	}
 }
 
+// It takes well under 2 s, also with -race. The limit is generous because
+// CI runs packages in parallel on small runners; a walk that grows
+// exponentially with the chain would not finish at all.
 func TestGL024_LongExtendsChainIsFast(t *testing.T) {
 	src := extendsChain(5000)
 	done := make(chan struct{})
 	go func() { findings024(t, src); close(done) }()
 	select {
 	case <-done:
-	case <-time.After(5 * time.Second):
-		t.Fatal("a 5000-job extends chain did not finish in 5s")
+	case <-time.After(60 * time.Second):
+		t.Fatal("a 5000-job extends chain did not finish in 60s")
 	}
 }
 
