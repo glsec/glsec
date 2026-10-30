@@ -21,6 +21,10 @@ func File(path string, doc *parser.Document) (warnings []string, err error) {
 		warnings = append(warnings, fmt.Sprintf("%s: file does not have a .yml or .yaml extension", path))
 	}
 
+	for _, line := range doc.IgnoredDocuments {
+		warnings = append(warnings, fmt.Sprintf("%s:%d: document ignored: after a spec: header GitLab runs only the last document", path, line))
+	}
+
 	mapping := doc.MappingNode()
 	if mapping.Kind != yaml.MappingNode {
 		return warnings, fmt.Errorf("%s: not a valid GitLab CI file: expected a top-level mapping", path)

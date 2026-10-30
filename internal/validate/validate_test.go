@@ -151,3 +151,15 @@ downstream:
 		t.Errorf("unexpected error for a trigger-only pipeline: %v", err)
 	}
 }
+
+func TestFile_IgnoredDocumentWarning(t *testing.T) {
+	doc := parse(t, "spec:\n  inputs: {}\n---\njob:\n  script: [a]\n---\njob2:\n  script: [b]\n")
+	warns, err := File("test.yml", doc)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := "test.yml:4: document ignored: after a spec: header GitLab runs only the last document"
+	if len(warns) != 1 || warns[0] != want {
+		t.Errorf("warnings = %q, want [%q]", warns, want)
+	}
+}

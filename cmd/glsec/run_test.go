@@ -500,3 +500,24 @@ func TestRun_FormatGitLabSAST(t *testing.T) {
 		t.Errorf("no titled High GL001 vulnerability in %s", stdout)
 	}
 }
+
+// The example of #908: GitLab runs job2 and never sees job.
+func TestRun_SpecHeaderScansLastDocument(t *testing.T) {
+	src := "spec:\n  inputs: {}\n---\njob:\n  image: node:latest\n  script: [a]\n---\njob2:\n  image: ruby:latest\n  script: [b]\n"
+	_, stdout, stderr := runCLI(t, map[string]string{".gitlab-ci.yml": src},
+		"--no-cache", "--no-repo-config", "--only", "GL001", "--format", "json", ".gitlab-ci.yml")
+	var out struct {
+		Findings []struct {
+			Job string `json:"job"`
+		} `json:"findings"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &out); err != nil {
+		t.Fatalf("parse JSON output: %v\n%s", err, stdout)
+	}
+	if len(out.Findings) != 1 || out.Findings[0].Job != "job2" {
+		t.Errorf("GL001 findings = %+v, want one for job2", out.Findings)
+	}
+	if !strings.Contains(stderr, ".gitlab-ci.yml:4: document ignored") {
+		t.Errorf("stderr does not warn about the ignored document:\n%s", stderr)
+	}
+}

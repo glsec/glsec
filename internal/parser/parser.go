@@ -17,9 +17,13 @@ import (
 type Document struct {
 	Root *yaml.Node
 	File string
-	// Spec is the `spec:` header of a two-document file (input declarations,
-	// then the body), or nil. Root then points at the body.
+	// Spec is the `spec:` header of a multi-document file (input
+	// declarations, then the body), or nil. Root then points at the body:
+	// the last document, the one GitLab runs.
 	Spec *yaml.Node
+	// IgnoredDocuments holds the start lines of documents between the spec:
+	// header and the body. GitLab ignores them, and so does glsec (#908).
+	IgnoredDocuments []int
 	// ComponentTemplate reports whether the file is a GitLab CI/CD component
 	// template or an included file with a `spec:` header. Such a file is a
 	// fragment, so rules that reason about a whole pipeline do not apply to it.
@@ -65,7 +69,10 @@ func Parse(data []byte, file string) (*Document, error) {
 	doc := &Document{Root: docs[0], File: file}
 	if len(docs) > 1 && hasSpecHeader(docs[0]) {
 		doc.Spec = docs[0]
-		doc.Root = docs[1]
+		doc.Root = docs[len(docs)-1]
+		for _, d := range docs[1 : len(docs)-1] {
+			doc.IgnoredDocuments = append(doc.IgnoredDocuments, documentLine(d))
+		}
 		doc.ComponentTemplate = !isRootPipelineFile(file)
 	}
 	for _, d := range CollapseDuplicateKeys(doc.Spec) {
@@ -78,6 +85,14 @@ func Parse(data []byte, file string) (*Document, error) {
 	ResolveReferences(doc.Root)
 	NormalizeScripts(doc.Root)
 	return doc, nil
+}
+
+// documentLine returns the line a document's content starts on.
+func documentLine(d *yaml.Node) int {
+	if d.Kind == yaml.DocumentNode && len(d.Content) > 0 {
+		return d.Content[0].Line
+	}
+	return d.Line
 }
 
 // isRootPipelineFile reports whether file is named like a project's root CI

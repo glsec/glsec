@@ -199,6 +199,35 @@ func TestParse_MultiDocumentWithoutSpecUsesFirst(t *testing.T) {
 	}
 }
 
+// GitLab runs the last document after a spec: header and ignores the ones in
+// between (#908).
+func TestParse_SpecHeaderUsesLastDocument(t *testing.T) {
+	src := "spec:\n  inputs: {}\n---\njob:\n  script: [a]\n---\njob2:\n  script: [b]\n"
+	doc, err := Parse([]byte(src), ".gitlab-ci.yml")
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if FindKey(doc.MappingNode(), "job2") == nil || FindKey(doc.MappingNode(), "job") != nil {
+		t.Error("expected the last document to be linted, not the first after the header")
+	}
+	if len(doc.IgnoredDocuments) != 1 || doc.IgnoredDocuments[0] != 4 {
+		t.Errorf("IgnoredDocuments = %v, want [4]", doc.IgnoredDocuments)
+	}
+}
+
+func TestParse_SpecHeaderAndOneDocumentIgnoresNothing(t *testing.T) {
+	doc, err := Parse([]byte("spec:\n  inputs: {}\n---\njob:\n  script: [a]\n"), ".gitlab-ci.yml")
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if FindKey(doc.MappingNode(), "job") == nil {
+		t.Error("expected the document after the header to be linted")
+	}
+	if len(doc.IgnoredDocuments) != 0 {
+		t.Errorf("IgnoredDocuments = %v, want none", doc.IgnoredDocuments)
+	}
+}
+
 func TestRunStepScripts(t *testing.T) {
 	doc, err := Parse([]byte(`
 build:
