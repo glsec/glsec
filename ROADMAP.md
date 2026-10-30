@@ -16,7 +16,6 @@ This is where glsec is heading over the next 12 months (until October 2027). It 
 - Custom rules written in a simple YAML format, with a command to test them against example files.
 
 **Project**
-- A second maintainer, so that reviews and releases don't depend on one person.
 - Signed release tags, in addition to the signed release artifacts.
 
 ## Not planned
