@@ -21,7 +21,7 @@ func templateFixture() ([]finding.Finding, []ScanError, TemplateMeta) {
 		{RuleID: "GL001", Severity: finding.Error, Job: "build", File: ".gitlab-ci.yml", Line: 3, Message: `image "node:latest" uses mutable tag "latest"`},
 		{RuleID: "GL053", Severity: finding.Warn, File: ".gitlab-ci.yml", Line: 1, Message: "no top-level workflow:rules"},
 		{RuleID: "GL070", Severity: finding.Info, Job: "@all", File: "ci/child.yml", Line: 5, Message: "see #1 and `make`"},
-		{RuleID: "GL011", Severity: finding.Error, Job: "=HYPERLINK(\"http://x\")", File: ".gitlab-ci.yml", Line: 7, Message: "a|b <img src=x> *c* \"q\", d\nnext ‮evil"},
+		{RuleID: "GL011", Severity: finding.Error, Job: "=HYPERLINK(\"http://x\")", File: ".gitlab-ci.yml", Line: 7, Message: "a|b <img src=x> *c* \"q\", d\nnext \u202eevil"},
 	}
 	errs := []ScanError{{File: "broken.yml", Message: "broken.yml: yaml: line 2: <bad> | input"}}
 	meta := TemplateMeta{
@@ -140,7 +140,7 @@ func TestEscapeMarkdown(t *testing.T) {
 		`[link](http://x)`:   `\[link\](http://x)`,
 		"*bold* _it_ `code`": "\\*bold\\* \\_it\\_ \\`code\\`",
 		"line\nbreak":        `line\\x0abreak`,
-		"a‮b":                `a\\u202eb`,
+		"a\u202eb":                `a\\u202eb`,
 		`it's "q" & co`:      `it's "q" &amp; co`,
 		`back\slash`:         `back\\slash`,
 	} {
