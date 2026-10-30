@@ -66,13 +66,11 @@ gh attestation verify checksums.txt --owner glsec
 gh api repos/glsec/glsec/git/tags/$(git rev-parse v1.25.0) --jq .verification.verified
 ```
 
-or locally with `git tag -v`, after listing the signing keys:
+or locally with `git tag -v` against the maintainers' keys in [`.github/allowed_signers`](../.github/allowed_signers), the list the Release and Docker workflows check every tag against before they publish anything:
 
 ```sh
-cat > allowed_signers <<'EOF'
-245527909+predictor2718@users.noreply.github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL1+/OrXYSV3zgQyQpGMVNLvyap5C3Qb7XvpfJaflSGf
-EOF
-git -c gpg.ssh.allowedSignersFile=allowed_signers tag -v v1.25.0
+curl -sSLo allowed_signers https://raw.githubusercontent.com/glsec/glsec/main/.github/allowed_signers
+git -c gpg.format=ssh -c gpg.ssh.allowedSignersFile=allowed_signers tag -v v1.25.0
 ```
 
 **Reproducing a release**: release builds are reproducible from 1.21.0 on. Check out the tag and build it with the Go version from `go.mod` (the `toolchain` line from 1.24.1 on, before that the `go` line) and exactly the GoReleaser version pinned in `.github/workflows/build-release.yml` (v2.18.3 for 1.21.0); another GoReleaser version packs the archives differently. The archives must match the published `checksums.txt`:

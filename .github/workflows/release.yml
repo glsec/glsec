@@ -12,10 +12,11 @@ jobs:
   # Tags can point at any commit, so require that CI actually passed for it
   # before publishing. Fails closed: no completed CI run means no release.
   gate:
-    name: Require green CI
+    name: Require green CI and a signed tag
     runs-on: ubuntu-latest
     permissions:
       actions: read
+      contents: read # read .github/allowed_signers from the default branch
     steps:
       - name: Require a successful CI run for this commit
         env:
@@ -29,6 +30,30 @@ jobs:
           echo "CI conclusion for $SHA: $conclusion"
           if [ "$conclusion" != "success" ]; then
             echo "::error::Release blocked: CI for $SHA concluded '$conclusion', expected 'success'. Wait for CI to finish, then re-run this workflow."
+            exit 1
+          fi
+
+      # The workflow file comes from the tagged commit, so the list of keys
+      # allowed to sign comes from the default branch instead (#1042).
+      - name: Require a tag signed by a listed maintainer key
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          gh api "repos/$REPO/contents/.github/allowed_signers?ref=$DEFAULT_BRANCH" \
+            -H "Accept: application/vnd.github.raw" > "$RUNNER_TEMP/allowed_signers"
+          git init -q "$RUNNER_TEMP/tag"
+          cd "$RUNNER_TEMP/tag"
+          git fetch -q --depth=1 "https://github.com/$REPO" "+refs/tags/$TAG:refs/tags/$TAG"
+          if [ "$(git rev-parse "$TAG^{commit}")" != "$SHA" ]; then
+            echo "::error::Release blocked: tag $TAG no longer points at $SHA."
+            exit 1
+          fi
+          if ! git -c gpg.format=ssh -c gpg.ssh.allowedSignersFile="$RUNNER_TEMP/allowed_signers" verify-tag "$TAG"; then
+            echo "::error::Release blocked: $TAG is not signed by a key in .github/allowed_signers on $DEFAULT_BRANCH. Sign it with git tag -s (see RELEASING.md)."
             exit 1
           fi
 

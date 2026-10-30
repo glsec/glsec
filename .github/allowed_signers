@@ -1,0 +1,4 @@
+# Keys allowed to sign release tags (git verify-tag, gpg.format ssh).
+# The Release and Docker workflows read this file from the default branch,
+# so a new key takes effect once its pull request is merged (#1042).
+245527909+predictor2718@users.noreply.github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL1+/OrXYSV3zgQyQpGMVNLvyap5C3Qb7XvpfJaflSGf
