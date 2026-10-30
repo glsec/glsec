@@ -79,6 +79,23 @@ func NewInheritance(doc *yaml.Node) *Inheritance {
 	return in
 }
 
+// IncludedOverride reports whether job can only be a partial override of a
+// job from an included file (#978): the file has an include:, and neither the
+// job nor a template it extends in this file has a script:, trigger: or run:.
+// GitLab merges such a job into the included job of the same name, so a key
+// it lacks here, such as rules:, may come from there.
+func (in *Inheritance) IncludedOverride(job *yaml.Node) bool {
+	if parser.FindKey(in.mapping, "include") == nil {
+		return false
+	}
+	for _, key := range []string{"script", "trigger", "run"} {
+		if in.Key(job, key) != nil {
+			return false
+		}
+	}
+	return true
+}
+
 // Key returns the value of key that applies to job: its own, else from the
 // jobs it extends in the same file (later entries of an extends: list override
 // earlier ones), else from default:, else from the top-level

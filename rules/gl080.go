@@ -38,7 +38,7 @@ func (r *gl080) Check(doc *yaml.Node, file string) []finding.Finding {
 		// A base in another file may hold the guard: skip the job rather than
 		// report a guard that is present but invisible here. A chain within
 		// this file is merged in.
-		if !in.ExtendsResolved(job) {
+		if !in.ExtendsResolved(job) || in.IncludedOverride(job) {
 			return
 		}
 		job = in.Effective(job)

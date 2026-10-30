@@ -131,7 +131,7 @@ func containsAny(s string, words []string) bool {
 // inherited keys are all visible here: not a hidden template, and not
 // extending a template from another file.
 func runsInheritedJob(in *Inheritance, name, job *yaml.Node) bool {
-	return !strings.HasPrefix(name.Value, ".") && in.ExtendsResolved(job)
+	return !strings.HasPrefix(name.Value, ".") && in.ExtendsResolved(job) && !in.IncludedOverride(job)
 }
 
 // isSensitiveJob reports a job that deploys through its environment: or its

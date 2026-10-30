@@ -41,7 +41,7 @@ func (r *gl081) Check(doc *yaml.Node, file string) []finding.Finding {
 		}
 		// A base in another file may hold the guard or the credential: skip
 		// the job. A chain within this file is merged in.
-		if (!in.Has(job, "id_tokens") && !in.Has(job, "identity")) || !in.ExtendsResolved(job) {
+		if (!in.Has(job, "id_tokens") && !in.Has(job, "identity")) || !in.ExtendsResolved(job) || in.IncludedOverride(job) {
 			return
 		}
 		job = in.Effective(job)

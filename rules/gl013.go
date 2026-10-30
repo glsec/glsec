@@ -45,8 +45,9 @@ func (r *gl013) Check(doc *yaml.Node, file string) []finding.Finding {
 		if in.Key(job, "rules") != nil || in.Key(job, "only") != nil {
 			return
 		}
-		// A base in another file may carry the guard.
-		if !in.ExtendsResolved(job) {
+		// A base in another file, or the included job this one overrides,
+		// may carry the guard.
+		if !in.ExtendsResolved(job) || in.IncludedOverride(job) {
 			return
 		}
 		line, col := name.Line, name.Column
