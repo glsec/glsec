@@ -50,13 +50,13 @@ func checkArtifactExposure(node *yaml.Node, file string) []finding.Finding {
 
 	severity := finding.Warn
 	msg := fmt.Sprintf(
-		"artifacts exposed to unauthenticated users (%s) — anyone can download them without a GitLab account; restrict with artifacts:access: developer (or none)",
+		"artifacts readable by everyone who can see the pipeline (%s) — in a public project that includes anonymous users, without a GitLab account; restrict with artifacts:access: developer (or none)",
 		exposeDesc,
 	)
 	if sensitive := sensitiveArtifactPath(node); sensitive != "" {
 		severity = finding.Error
 		msg = fmt.Sprintf(
-			"artifacts exposed to unauthenticated users (%s) and include a sensitive path %q — secrets are downloadable without a GitLab account; restrict with artifacts:access: developer (or none)",
+			"artifacts readable by everyone who can see the pipeline (%s) include a sensitive path %q — in a public project anyone can download the secrets without a GitLab account; restrict with artifacts:access: developer (or none)",
 			exposeDesc, sensitive,
 		)
 	}
