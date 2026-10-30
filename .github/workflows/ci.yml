@@ -480,7 +480,7 @@ jobs:
       # (#557), and the README loads its descriptor from the release tag (#649).
       # The GitLab component version
       # (gitlab.com/glsec-io/...@vX.Y.Z) is released separately and excluded.
-      - name: Compare plugin pins against README
+      - name: Compare plugin pins against README and docs
         run: |
           set -euo pipefail
 
@@ -502,7 +502,7 @@ jobs:
                 -e 'rev: v[0-9]+\.[0-9]+\.[0-9]+' \
                 -e 'GLSEC_VERSION: "[0-9]+\.[0-9]+\.[0-9]+"' \
                 -e '`[0-9]+\.[0-9]+\.[0-9]+`, not `:latest`' \
-                README.md | grep -oE '[0-9]+\.[0-9]+\.[0-9]+'
+                README.md docs/*.md | grep -oE '[0-9]+\.[0-9]+\.[0-9]+'
             } | sort -u
           )
 
@@ -544,14 +544,14 @@ jobs:
           echo "docs agree on Go $want+"
 
       # The GitLab component is versioned separately from glsec, but every
-      # reference to it in the README must name the same release (#587).
-      - name: Compare GitLab component references in README
+      # reference to it in the README and docs must name the same release (#587).
+      - name: Compare GitLab component references in README and docs
         run: |
           set -euo pipefail
-          found=$(grep -oE 'gitlab\.com/glsec-io/glsec/[a-z-]+@v[0-9]+\.[0-9]+\.[0-9]+' README.md |
+          found=$(grep -hoE 'gitlab\.com/glsec-io/glsec/[a-z-]+@v[0-9]+\.[0-9]+\.[0-9]+' README.md docs/*.md |
             grep -oE '@v[0-9]+\.[0-9]+\.[0-9]+' | sort -u)
           if [ "$(printf '%s\n' "$found" | grep -c .)" -ne 1 ]; then
-            echo "::error::README references more than one GitLab component version:"
+            echo "::error::README and docs reference more than one GitLab component version:"
             printf '%s\n' "$found"
             exit 1
           fi

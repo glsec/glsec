@@ -61,8 +61,8 @@ These hold for the current release and are worth knowing before spending time pr
 - **No network access.** glsec makes no HTTP or TLS calls. It does not resolve `include:` targets, fetch remote templates, or contact any service.
 - **No catastrophic backtracking.** Rules use Go's standard `regexp` package (RE2), which matches in linear time. Linear regular expressions alone do not bound a scan, though: the rules' own loops and the expansion of aliases and `!reference` tags have to stay bounded too, and a case where they don't is in scope.
 - **No shell invocation.** The only external process is ShellCheck, and only when it is explicitly enabled. Its arguments are passed as a list with no shell involved, and the script under analysis is handed over in a temporary file rather than on a command line. Its path comes only from `--shellcheck-path` or a config file passed with `--config`, never from a `.glsec.yml` that glsec finds in the scanned directory.
-- **A repository's `.glsec.yml` is not fully trusted, but it does shape the scan.** It cannot make glsec run anything, but it can turn rules off, lower severities and exclude paths. When the repository is untrusted, run glsec with `--no-repo-config` (and `--config` for your own settings) and `--no-ignores`, so neither its configuration nor its suppressions apply. See [Scanning repositories you don't trust](README.md#scanning-repositories-you-dont-trust).
+- **A repository's `.glsec.yml` is not fully trusted, but it does shape the scan.** It cannot make glsec run anything, but it can turn rules off, lower severities and exclude paths. When the repository is untrusted, run glsec with `--no-repo-config` (and `--config` for your own settings) and `--no-ignores`, so neither its configuration nor its suppressions apply. See [Scanning repositories you don't trust](docs/usage.md#scanning-repositories-you-dont-trust).
 
 ## Verifying releases
 
-Releases are signed and carry build provenance. See [Verifying a release](README.md#verifying-a-release).
+Releases are signed and carry build provenance. See [Verifying a release](docs/verifying-releases.md).

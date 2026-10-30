@@ -37,3 +37,21 @@ func TestSARIFRuleInfoWithoutDoc(t *testing.T) {
 		t.Errorf("docSection = %q", got)
 	}
 }
+
+// Links to the README and the docs pages are relative in a rule doc and
+// become GitHub URLs in a SARIF rule's help, which code scanning shows
+// outside the repository.
+func TestDocSection_LinksToDocsPages(t *testing.T) {
+	doc := "## Risk\n\nSee [ShellCheck](../shellcheck.md), [usage](../usage.md#exit-codes), [the README](../../README.md#install) and [GL002](GL002.md).\n"
+	got := docSection(doc, "Risk")
+	for _, want := range []string{
+		"](https://github.com/glsec/glsec/blob/main/docs/shellcheck.md)",
+		"](https://github.com/glsec/glsec/blob/main/docs/usage.md#exit-codes)",
+		"](https://github.com/glsec/glsec/blob/main/README.md#install)",
+		"](" + output.RuleURL("GL002") + ")",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %s in\n%s", want, got)
+		}
+	}
+}

@@ -376,7 +376,7 @@ Every change to `main` goes through a pull request. Before it is merged, the rev
 - **False positives.** A new or changed rule has been run against real pipelines, and the pull request says how many findings it adds or removes (see [Avoiding false positives](#avoiding-false-positives)).
 - **Security.** glsec reads untrusted pipeline files: input is never executed, paths stay inside the scanned repository, regular expressions are RE2, and error and log output does not print more of a file than a finding needs. [ARCHITECTURE.md](ARCHITECTURE.md) has the threat model; a change that touches one of its boundaries says so in the pull request.
 - **Dependencies.** A new or updated dependency meets the [dependency rules](#dependencies).
-- **Docs.** User-visible behaviour is documented in the same pull request: README, `docs/rules/GLNNN.md`, and the rule table.
+- **Docs.** User-visible behaviour is documented in the same pull request: [Using glsec](docs/usage.md) or the other pages in `docs/`, `docs/rules/GLNNN.md`, and the rule table in the README.
 - **Conventions.** Branch name, signed-off commits and a pull request description that says what changed, why, and how to test it.
 
 The reviewer leaves comments on anything that needs to change; a pull request is merged only when none are open.

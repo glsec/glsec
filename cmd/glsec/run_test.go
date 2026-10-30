@@ -416,13 +416,22 @@ func TestParseExplainDoc_CRLF(t *testing.T) {
 	}
 }
 
-// Every flag glsec accepts is documented in the README (#696).
+// Every flag glsec accepts is documented in the README or the pages in docs/
+// (#696); docs/usage.md describes the command line.
 func TestReadmeDocumentsEveryFlag(t *testing.T) {
 	var stderr bytes.Buffer
 	run([]string{"-h"}, io.Discard, &stderr)
-	readme, err := os.ReadFile(filepath.Join("..", "..", "README.md"))
-	if err != nil {
-		t.Fatal(err)
+	pages, err := filepath.Glob(filepath.Join("..", "..", "docs", "*.md"))
+	if err != nil || len(pages) == 0 {
+		t.Fatalf("no docs pages: %v", err)
+	}
+	var readme []byte
+	for _, p := range append(pages, filepath.Join("..", "..", "README.md")) {
+		data, err := os.ReadFile(p) //nolint:gosec // G304: the repository's own docs
+		if err != nil {
+			t.Fatal(err)
+		}
+		readme = append(append(readme, data...), '\n')
 	}
 	flags := regexp.MustCompile(`(?m)^\s+-([a-z][a-z-]*)`).FindAllStringSubmatch(stderr.String(), -1)
 	if len(flags) < 10 {
@@ -430,7 +439,7 @@ func TestReadmeDocumentsEveryFlag(t *testing.T) {
 	}
 	for _, m := range flags {
 		if !regexp.MustCompile(`--` + m[1] + `(?:[^a-z-]|$)`).Match(readme) {
-			t.Errorf("--%s is not mentioned in README.md", m[1])
+			t.Errorf("--%s is not mentioned in the README or docs/*.md", m[1])
 		}
 	}
 }

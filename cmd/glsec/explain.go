@@ -238,12 +238,14 @@ func docSection(doc string, names ...string) string {
 			}
 		}
 		if s := strings.TrimSpace(strings.Join(out, "\n")); s != "" {
-			// Links between rule docs and to the README only work in the
-			// repository; code scanning shows the text elsewhere.
+			// Links between rule docs, to the README and to the other docs
+			// only work in the repository; code scanning shows the text
+			// elsewhere.
 			s = docRuleLinkRe.ReplaceAllStringFunc(s, func(m string) string {
 				return "](" + output.RuleURL(docRuleLinkRe.FindStringSubmatch(m)[1]) + ")"
 			})
-			return strings.ReplaceAll(s, "](../../README.md", "](https://github.com/glsec/glsec/blob/main/README.md")
+			s = strings.ReplaceAll(s, "](../../README.md", "](https://github.com/glsec/glsec/blob/main/README.md")
+			return strings.ReplaceAll(s, "](../", "](https://github.com/glsec/glsec/blob/main/docs/")
 		}
 	}
 	return ""
