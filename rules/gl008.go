@@ -5,6 +5,7 @@ package rules
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
 	"github.com/glsec/glsec/internal/parser"
@@ -98,10 +99,54 @@ func (r *gl008) Check(doc *yaml.Node, file string) []finding.Finding {
 		if !templateAllowFailureJobs[name.Value] {
 			findings = append(findings, r.checkAllowFailure(name, job, file)...)
 		}
-		findings = append(findings, r.checkNeverRuns(name, job, file)...)
+		// Switched off under its template name but run by a job that
+		// extends it with rules of its own: the scan still runs (#1000).
+		if !runByExtendingJob(doc, in, name.Value) {
+			findings = append(findings, r.checkNeverRuns(name, job, file)...)
+		}
 	})
 
 	return findings
+}
+
+// runByExtendingJob reports whether a visible job in the file extends the
+// job named scan and runs: its effective rules aren't a lone when: never or
+// when: manual.
+func runByExtendingJob(doc *yaml.Node, in *Inheritance, scan string) bool {
+	runs := false
+	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
+		if runs || name.Value == scan || strings.HasPrefix(name.Value, ".") || !extendsJob(job, scan) {
+			return
+		}
+		rules := parser.FindKey(in.Effective(job), "rules")
+		if rules == nil {
+			return // inherits the scan job's own rules
+		}
+		if entry := soleUnconditionalRule(rules); entry != nil {
+			if w := parser.FindKey(entry, "when"); w != nil && (w.Value == "never" || w.Value == "manual") {
+				return
+			}
+		}
+		runs = true
+	})
+	return runs
+}
+
+// extendsJob reports whether job's extends: names target.
+func extendsJob(job *yaml.Node, target string) bool {
+	ext := parser.FindKey(job, "extends")
+	if ext == nil {
+		return false
+	}
+	if ext.Kind == yaml.ScalarNode {
+		return ext.Value == target
+	}
+	for _, e := range ext.Content {
+		if e.Kind == yaml.ScalarNode && e.Value == target {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *gl008) checkAllowFailure(name, job *yaml.Node, file string) []finding.Finding {

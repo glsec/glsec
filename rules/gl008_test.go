@@ -338,3 +338,24 @@ dast:
 		t.Fatalf("expected both findings, got %d", len(f))
 	}
 }
+
+// A scan job switched off under its template name but run by a job that
+// extends it keeps scanning (#1000).
+func TestGL008_RunByExtendingJob(t *testing.T) {
+	const base = "include:\n  - template: Jobs/Secret-Detection.gitlab-ci.yml\nsecret_detection:\n  rules:\n    - when: never\n"
+	for child, want := range map[string]int{
+		"secrets-scan:\n  extends: secret_detection\n  stage: test\n  rules:\n    - if: $CI_COMMIT_BRANCH\n": 0,
+		"secrets-scan:\n  extends: [secret_detection]\n  rules:\n    - when: always\n":                       0,
+		"secrets-scan:\n  extends: secret_detection\n":                                                       1,
+		"secrets-scan:\n  extends: secret_detection\n  rules:\n    - when: never\n":                          1,
+		"": 1,
+	} {
+		doc, err := parser.Parse([]byte(base+child), "test.yml")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := len(GL008.Check(doc.Root, "test.yml")); got != want {
+			t.Errorf("%q: got %d findings, want %d", child, got, want)
+		}
+	}
+}
