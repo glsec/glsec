@@ -267,8 +267,8 @@ func checkHardcodedCredScript(node *yaml.Node, file, job string, aliases map[str
 		}
 		reported := false
 		for _, check := range credChecks {
-			m := check.re.FindStringSubmatchIndex(item.Value)
-			if m == nil || (len(m) > 2 && looksLikePlaceholder(item.Value[m[2]:m[3]])) {
+			line, ok := check.find(item)
+			if !ok {
 				continue
 			}
 			if check.db && targetsOwnService(item.Value, aliases, hasServices) {
@@ -283,7 +283,7 @@ func checkHardcodedCredScript(node *yaml.Node, file, job string, aliases map[str
 				Job:      job,
 				Message:  fmt.Sprintf("[%s] %s", check.tool, check.msg),
 				File:     file,
-				Line:     parser.ScalarOffsetLine(item, credentialOffset(m)),
+				Line:     line,
 				Col:      item.Column,
 			})
 			reported = true
@@ -302,6 +302,42 @@ func checkHardcodedCredScript(node *yaml.Node, file, job string, aliases map[str
 		}
 	}
 	return findings
+}
+
+// find returns the source line of the check's match in a script item. A
+// database client check is matched one shell command at a time, so the
+// client and its -p flag have to be in the same command: "for pkg in mysql
+// mail; do find … -print; done" holds no mysql password (#985).
+func (c credCheck) find(item *yaml.Node) (int, bool) {
+	match := func(text string) ([]int, bool) {
+		m := c.re.FindStringSubmatchIndex(text)
+		if m == nil || (len(m) > 2 && looksLikePlaceholder(text[m[2]:m[3]])) {
+			return nil, false
+		}
+		return m, true
+	}
+	if !c.db {
+		m, ok := match(item.Value)
+		if !ok {
+			return 0, false
+		}
+		return parser.ScalarOffsetLine(item, credentialOffset(m)), true
+	}
+	if !c.re.MatchString(item.Value) {
+		return 0, false
+	}
+	for _, cmd := range shellCommands(item.Value) {
+		m, ok := match(cmd.text)
+		if !ok {
+			continue
+		}
+		// The line of the credential, found back in the item's text.
+		if i := strings.Index(item.Value, cmd.text[m[0]:m[1]]); i >= 0 {
+			return parser.ScalarOffsetLine(item, i+credentialOffset(m)-m[0]), true
+		}
+		return parser.ScalarContentLine(item, cmd.line), true
+	}
+	return 0, false
 }
 
 // credentialOffset returns where a credCheck match's literal starts: its

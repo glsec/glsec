@@ -402,3 +402,26 @@ func TestGL038_LineOfTheCredential(t *testing.T) {
 		}
 	}
 }
+
+// A database client and its -p flag must be in the same command: a word
+// mysql and a later -print are not a password (#985).
+func TestGL038_ClientAndFlagInOneCommand(t *testing.T) {
+	for _, tc := range []struct {
+		line string
+		want int
+	}{
+		{`for pkg in core mysql mail; do find deb/ -name "app-${pkg}_*.deb" -print; done`, 0},
+		{`echo mysql; ls -p /tmp`, 0},
+		{`mysql -h db.example.com -uroot -pS3cret -e "select 1"`, 1},
+		{`docker exec -i db mysql -h db.example.com -uroot -pS3cret`, 1},
+		{`sqlcmd -S db.example.com -U sa -P S3cret -Q "select 1"`, 1},
+	} {
+		doc, err := parser.Parse([]byte("job:\n  script:\n    - '"+tc.line+"'\n"), "test.yml")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := len(GL038.Check(doc.Root, "test.yml")); got != tc.want {
+			t.Errorf("%s: got %d findings, want %d", tc.line, got, tc.want)
+		}
+	}
+}
