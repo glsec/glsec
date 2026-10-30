@@ -108,6 +108,34 @@ var secretPatterns = []secretPattern{
 	// Infisical service token: st.<uuid>.<32 hex>, with an optional second
 	// 32 hex segment after rotation.
 	{"Infisical service token", regexp.MustCompile(`^st\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.[0-9a-f]{32}(\.[0-9a-f]{32})?$`)},
+	// do_v1_ personal access, doo_v1_ OAuth and dor_v1_ refresh tokens.
+	{"DigitalOcean token", regexp.MustCompile(`^do[opr]_v1_[a-f0-9]{64}$`)},
+	{"HashiCorp Vault service token", regexp.MustCompile(`^hvs\.[A-Za-z0-9_-]{90,120}$`)},
+	{"HashiCorp Vault batch token", regexp.MustCompile(`^hvb\.[A-Za-z0-9_-]{138,300}$`)},
+	{"JFrog API key", regexp.MustCompile(`^AKCp[A-Za-z0-9]{69}$`)},
+	// A reference token is base64 starting with "ref".
+	{"JFrog reference token", regexp.MustCompile(`^cmVmd[A-Za-z0-9]{59}$`)},
+	{"Heroku API key", regexp.MustCompile(`^HRKU-AA[0-9A-Za-z_-]{58}$`)},
+	{"Fly.io token", regexp.MustCompile(`^fo1_[A-Za-z0-9_-]{43}$`)},
+	// flyctl prints macaroon tokens as "FlyV1 fm2_…", several joined by commas.
+	{"Fly.io macaroon token", regexp.MustCompile(`^(?:FlyV1 )?fm2_[A-Za-z0-9+/]{100,}={0,3}(?:,fm2_[A-Za-z0-9+/]+={0,3})*$`)},
+	{"Grafana Cloud token", regexp.MustCompile(`^glc_[A-Za-z0-9+/]{32,400}={0,3}$`)},
+	{"Grafana service account token", regexp.MustCompile(`^glsa_[A-Za-z0-9]{32}_[A-Fa-f0-9]{8}$`)},
+	// The legacy API key is base64 JSON starting with {"k":".
+	{"Grafana API key", regexp.MustCompile(`^eyJrIjoi[A-Za-z0-9]{70,400}={0,3}$`)},
+	{"Sentry user token", regexp.MustCompile(`^sntryu_[a-f0-9]{64}$`)},
+	{"Sentry organization token", regexp.MustCompile(`^sntrys_eyJpYXQiO[A-Za-z0-9+/=_-]{50,}$`)},
+	{"1Password service account token", regexp.MustCompile(`^ops_eyJ[A-Za-z0-9+/]{250,}={0,3}$`)},
+	{"OpenShift user token", regexp.MustCompile(`^sha256~[A-Za-z0-9_-]{43}$`)},
+	{"AWS Bedrock API key", regexp.MustCompile(`^ABSK[A-Za-z0-9+/]{109,269}={0,2}$`)},
+	{"Notion integration token", regexp.MustCompile(`^ntn_[0-9]{11}[A-Za-z0-9]{35}$`)},
+	{"Perplexity API key", regexp.MustCompile(`^pplx-[A-Za-z0-9]{48}$`)},
+	{"Prefect API key", regexp.MustCompile(`^pnu_[A-Za-z0-9]{36}$`)},
+	{"ReadMe API key", regexp.MustCompile(`^rdme_[a-z0-9]{70}$`)},
+	{"Infracost API key", regexp.MustCompile(`^ico-[A-Za-z0-9]{32}$`)},
+	{"Scalingo API token", regexp.MustCompile(`^tk-us-[A-Za-z0-9_-]{48}$`)},
+	{"Sourcegraph access token", regexp.MustCompile(`^sgp_(?:[a-f0-9]{16}|local)_[a-f0-9]{40}$`)},
+	{"Microsoft Teams webhook URL", regexp.MustCompile(`^https://[a-z0-9-]+\.webhook\.office\.com/webhookb2/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}@[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/IncomingWebhook/[0-9a-f]{32}/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:/[A-Za-z0-9_-]+)?$`)},
 }
 
 func (r *gl006) Check(doc *yaml.Node, file string) []finding.Finding {
