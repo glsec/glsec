@@ -5,6 +5,7 @@ package rules
 
 import (
 	"regexp"
+	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
 	"github.com/glsec/glsec/internal/parser"
@@ -26,7 +27,11 @@ func (r *gl050) Check(doc *yaml.Node, file string) []finding.Finding {
 		// Only sudo as the command a line runs counts: not the sudo package in
 		// an install list, and not the word in text a heredoc writes.
 		for _, cmd := range shellCommands(line.Value) {
-			if commandName(commandWords(cmd.text)) != "sudo" && !sudoSubstRe.MatchString(maskSingleQuoted(cmd.text)) {
+			words := commandWords(cmd.text)
+			if commandName(words) != "sudo" && !sudoSubstRe.MatchString(maskSingleQuoted(cmd.text)) {
+				continue
+			}
+			if commandName(words) == "sudo" && sudoDropsPrivileges(words[1:]) {
 				continue
 			}
 			f := finding.Finding{
@@ -45,4 +50,35 @@ func (r *gl050) Check(doc *yaml.Node, file string) []finding.Finding {
 		}
 	})
 	return findings
+}
+
+// sudoDropsPrivileges reports whether sudo's options run the command as a
+// user other than root (-u nobody, --user=builder): that runs it with fewer
+// privileges, not more (#994).
+func sudoDropsPrivileges(args []string) bool {
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		user := ""
+		switch {
+		case a == "-u" || a == "--user":
+			if i+1 < len(args) {
+				user = args[i+1]
+			}
+		case strings.HasPrefix(a, "--user="):
+			user = strings.TrimPrefix(a, "--user=")
+		case strings.HasPrefix(a, "-u") && len(a) > 2:
+			user = a[2:]
+		case strings.HasPrefix(a, "-") && strings.HasSuffix(a, "u") && !strings.HasPrefix(a, "--"):
+			// a cluster such as -Eu user or -Hu user
+			if i+1 < len(args) {
+				user = args[i+1]
+			}
+		case !strings.HasPrefix(a, "-"):
+			return false // the command starts here
+		}
+		if user != "" {
+			return user != "root" && user != "0" && user != "#0"
+		}
+	}
+	return false
 }

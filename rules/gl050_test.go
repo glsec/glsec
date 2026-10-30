@@ -192,3 +192,24 @@ func TestGL050_SudoInSubstitution(t *testing.T) {
 		}
 	}
 }
+
+// sudo -u with a user other than root drops privileges (#994).
+func TestGL050_SudoAsAnotherUser(t *testing.T) {
+	for line, want := range map[string]int{
+		"sudo -u nobody makepkg -c":     0,
+		"sudo --user=builder make":      0,
+		"sudo -E -u mysql mariadbd":     0,
+		"sudo -Hu postgres psql -c 'x'": 0,
+		"sudo -u root make install":     1,
+		"sudo make install":             1,
+		"sudo -E make install":          1,
+	} {
+		doc, err := parser.Parse([]byte("job:\n  script:\n    - \""+line+"\"\n"), "test.yml")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := len(GL050.Check(doc.Root, "test.yml")); got != want {
+			t.Errorf("%s: got %d findings, want %d", line, got, want)
+		}
+	}
+}
