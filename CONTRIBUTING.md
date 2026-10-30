@@ -390,6 +390,16 @@ GITLAB_LINT_TOKEN=... GITLAB_LINT_PROJECT=<id> \
 
 Passing files are cached per GitLab major.minor version, so a second run only sends what changed.
 
+Before a release, `ci-lint-diff.py` checks the parser against real pipelines (#895). It sends a set of `.gitlab-ci.yml` files to the same lint API and through glsec and counts the files GitLab accepts but glsec can't scan (exit 2); each of those is a parser bug:
+
+```sh
+go build -o /tmp/glsec ./cmd/glsec
+GITLAB_LINT_TOKEN=... GITLAB_LINT_PROJECT=<id> \
+  python3 .github/scripts/ci-lint-diff.py /tmp/glsec /tmp/ci-lint-diff pipelines/*.yml
+```
+
+`/tmp/ci-lint-diff/results.jsonl` lists the group, glsec's exit code and error, and GitLab's errors for every file. The GitLab answers are cached by content, so a rerun only sends new files.
+
 ## Regression corpus
 
 `testdata/corpus/` holds short pipelines taken from past false-positive and false-negative issues, each with a `.golden` snapshot of its findings (`LINE RULE SEVERITY JOB`). `TestCorpus` fails when a finding appears or disappears. When you fix a false positive or a missed finding, add the case: a small `.yml` with a comment that names the issue and what should or shouldn't be reported, then
