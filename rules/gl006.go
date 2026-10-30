@@ -42,6 +42,9 @@ var secretPatterns = []secretPattern{
 	// AWS key-id prefixes: long-term (AKIA), temporary STS session (ASIA), and
 	// the various IAM resource-id prefixes.
 	{"AWS access key", regexp.MustCompile(`(?:AKIA|ASIA|AGPA|AIDA|AROA|AIPA|ANPA|ANVA)[0-9A-Z]{16}`)},
+	{"Google API key", regexp.MustCompile(`^AIza[0-9A-Za-z_-]{35}$`)},
+	// Azure AD (Entra ID) client secrets carry Q~ after a version digit.
+	{"Azure AD client secret", regexp.MustCompile(`^[A-Za-z0-9_~.]{3}[0-9]Q~[A-Za-z0-9_~.-]{31,34}$`)},
 	{"PEM private key", regexp.MustCompile(`-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY`)},
 	{"GitHub PAT", regexp.MustCompile(`^ghp_[A-Za-z0-9]{36,}$`)},
 	{"GitHub fine-grained PAT", regexp.MustCompile(`^github_pat_[A-Za-z0-9_]{82,}$`)},
