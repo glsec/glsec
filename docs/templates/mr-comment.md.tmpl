@@ -1,0 +1,20 @@
+### glsec {{escapeMarkdown .Version}}
+
+{{if .Findings -}}
+**{{.Summary.Error}}** error, **{{.Summary.Warn}}** warn, **{{.Summary.Info}}** info in {{.Summary.Files}} file(s), {{.Summary.Jobs}} job(s).
+
+| Severity | Rule | Job | Location | Message |
+|---|---|---|---|---|
+{{range .Findings -}}
+| {{upper .Severity}} | {{escapeMarkdown .Rule}} | {{markdownCode .Job}} | {{markdownCode .File}}:{{.Line}} | {{markdownCode .Message}} |
+{{end -}}
+{{else -}}
+No findings in {{.Summary.Files}} file(s), {{.Summary.Jobs}} job(s).
+{{end -}}
+{{if .Errors}}
+**glsec could not scan every file:**
+
+{{range .Errors -}}
+- {{markdownCode .File}}: {{markdownCode .Message}}
+{{end -}}
+{{end -}}

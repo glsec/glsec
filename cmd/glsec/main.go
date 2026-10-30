@@ -17,6 +17,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"text/template"
 	"time"
 
 	"github.com/glsec/glsec/internal/baseline"
@@ -61,7 +62,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("glsec", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 
-	formatFlag := flags.String("format", "text", "output format: text, table, json, sarif, codeclimate, junit, gitlab-sast")
+	formatFlag := flags.String("format", "text", "output format: text, table, json, sarif, codeclimate, junit, gitlab-sast, template")
+	// Only a flag: .glsec.yml comes from the scanned repository, which must
+	// not be able to change what glsec writes in CI (#829).
+	templateFlag := flags.String("template", "", "Go text/template file to render the report with (requires --format template)")
 	configFlag := flags.String("config", config.DefaultFile, "path to .glsec.yml config file")
 	versionFlag := flags.Bool("version", false, "print version and exit")
 	gitlabVersionFlag := flags.String("gitlab-version", "", "target GitLab version, e.g. 16.0 (skips rules not available in that version)")
@@ -133,8 +137,24 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 	format, ok := output.ParseFormat(*formatFlag)
 	if !ok {
-		_, _ = fmt.Fprintf(stderr, "unknown format %q — use text, table, json, sarif, codeclimate, junit, or gitlab-sast\n", *formatFlag)
+		_, _ = fmt.Fprintf(stderr, "unknown format %q — use text, table, json, sarif, codeclimate, junit, gitlab-sast, or template\n", *formatFlag)
 		return 2
+	}
+	// Parsed before the scan, so a broken template fails fast.
+	var reportTemplate *template.Template
+	switch {
+	case format == output.FormatTemplate && *templateFlag == "":
+		_, _ = fmt.Fprintln(stderr, "error: --format template requires --template <file>")
+		return 2
+	case format != output.FormatTemplate && *templateFlag != "":
+		_, _ = fmt.Fprintln(stderr, "error: --template requires --format template")
+		return 2
+	case *templateFlag != "":
+		var err error
+		if reportTemplate, err = output.ParseTemplate(*templateFlag); err != nil {
+			_, _ = fmt.Fprintf(stderr, "error: --template: %v\n", err)
+			return 2
+		}
 	}
 
 	// A .glsec.yml in the working directory usually comes from the repository
@@ -338,7 +358,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 
-	if err := writeOutput(stdout, format, allFindings, scanErrors, totalJobCount, colorEnabled, stdoutIsTTY, !*noRedactFlag); err != nil {
+	templateOpt := output.WithTemplate(reportTemplate, output.TemplateMeta{
+		Version: resolvedVersion(), Files: len(scanOpts.scannedFiles),
+		OWASP: rules.OWASPCategories, ASVS: rules.ASVSRequirements,
+	})
+	if err := writeOutput(stdout, format, allFindings, scanErrors, totalJobCount, colorEnabled, stdoutIsTTY, !*noRedactFlag, templateOpt); err != nil {
 		_, _ = fmt.Fprintf(stderr, "error: %v\n", err)
 		return 2
 	}
@@ -462,9 +486,9 @@ var scanStart = time.Now()
 
 // writeOutput renders findings and scan errors in the requested format. With
 // mask set, secret values in messages and source lines are masked in every
-// format (#831).
-func writeOutput(w io.Writer, format output.Format, findings []finding.Finding, errs []output.ScanError, jobCount int, colorEnabled, isTTY, mask bool) error {
-	var opts []output.WriteOption
+// format (#831). extra passes further options, such as the template.
+func writeOutput(w io.Writer, format output.Format, findings []finding.Finding, errs []output.ScanError, jobCount int, colorEnabled, isTTY, mask bool, extra ...output.WriteOption) error {
+	opts := extra
 	if mask {
 		findings = redact.Findings(findings)
 		masked := make([]output.ScanError, len(errs))

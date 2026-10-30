@@ -156,6 +156,9 @@ glsec --format junit .gitlab-ci.yml > glsec-junit.xml
 # GitLab SAST report for the vulnerability report and MR security widget (Ultimate)
 glsec --format gitlab-sast .gitlab-ci.yml > gl-sast-report.json
 
+# your own report layout from a Go text/template (see Report templates)
+glsec --format template --template docs/templates/csv.tmpl .gitlab-ci.yml > glsec.csv
+
 # treat warn findings as hard failures (exit 1)
 glsec --strict .gitlab-ci.yml
 
@@ -206,6 +209,32 @@ JSON, SARIF, Code Quality, JUnit and GitLab SAST reports write absolute file pat
 
 `--generate-ignore` rewrites only the entries the run could have reported: those for a file it scanned and a rule that ran. Entries for other pipeline files, and for rules left out with `--only`, `--skip` or `.glsec.yml`, stay as they are, and so do comments and an entry's `exp:` date when the finding is still there. `glsec --generate-ignore --only GL001 .gitlab-ci.yml` refreshes the GL001 entries and keeps the rest.
 
+### Report templates
+
+`--format template --template <file>` renders the report with a Go [`text/template`](https://pkg.go.dev/text/template) file, for formats glsec doesn't write itself: CSV for a spreadsheet, a Markdown summary for a merge request comment, a checkstyle file for another CI server. The template path is accepted on the command line only, never from `.glsec.yml`: the config file comes from the scanned repository, which must not decide what glsec writes in CI.
+
+The template is executed with:
+
+| Field | Content |
+|---|---|
+| `.Findings` | One entry per finding, with the fields of the JSON report: `.Rule`, `.Severity` (`error`, `warn`, `info`), `.Job`, `.File`, `.Line`, `.Message`, `.OWASP` and `.ASVS` (lists) |
+| `.Errors` | Files glsec could not scan, with `.File` and `.Message` (see Exit codes) |
+| `.Summary` | `.Error`, `.Warn` and `.Info`: the number of findings per severity; `.Files` and `.Jobs`: the number of files and jobs scanned |
+| `.Version` | The glsec version |
+
+Besides the built-in functions of `text/template`, a template can use `upper`, `lower`, `join` (`{{join .OWASP ", "}}`) and one escape per output syntax. Job names, paths and messages come from the scanned file, so pass every one of them through the escape for the format you write:
+
+| Function | Use |
+|---|---|
+| `escapeCSV` | A quoted CSV field. A value starting with `=`, `+`, `-` or `@` gets a leading `'`, so a spreadsheet shows it as text instead of running it as a formula. |
+| `escapeMarkdown` | Text in Markdown, also in a table cell: `\|` and other Markdown syntax are escaped, and so is HTML. |
+| `markdownCode` | A complete Markdown code span, also in a table cell (a `\|` is escaped for the table). Use it for job names, paths and messages in a GitLab comment: inside a code span GitLab renders no Markdown or HTML and resolves no references, so a job named `@all` can't notify every project member and `#123` doesn't link an issue. |
+| `escapeXML` | XML text or an attribute value. |
+
+`escapeCSV`, `escapeMarkdown` and `markdownCode` also show control and bidirectional characters escaped, as the text output does, so a line break or a right-to-left override in a job name can't break a row or reorder the text.
+
+Two examples to start from: [`docs/templates/csv.tmpl`](docs/templates/csv.tmpl) (one row per finding) and [`docs/templates/mr-comment.md.tmpl`](docs/templates/mr-comment.md.tmpl) (a severity summary and a table, for `glab mr note`). A template that fails to parse stops glsec before the scan; one that fails while it runs writes no partial report. Both exit 2.
+
 ### Exit codes
 
 | Code | Meaning |
@@ -214,7 +243,7 @@ JSON, SARIF, Code Quality, JUnit and GitLab SAST reports write absolute file pat
 | 1 | One or more `error` findings; or any finding when `--strict` is set |
 | 2 | Usage error (including an unknown rule ID in `--only`, or `--only` and `--skip` that leave no rule), file could not be parsed, a suppression policy violation, or with `--strict`, every file excluded |
 
-On exit 2 after the scan started, the machine-readable reports still list the findings of the files that were scanned and say which file failed and why, so a failed scan doesn't read as a clean one: an `errors` array in `json`, a `blocker` issue with check name `glsec-error` in `codeclimate`, an unsuccessful invocation with the error as a notification in `sarif`, a test case with an `<error>` in `junit`, and `scan.status: failure` with a `fatal` message in `gitlab-sast`. A usage or config error stops glsec before it writes a report.
+On exit 2 after the scan started, the machine-readable reports still list the findings of the files that were scanned and say which file failed and why, so a failed scan doesn't read as a clean one: an `errors` array in `json`, a `blocker` issue with check name `glsec-error` in `codeclimate`, an unsuccessful invocation with the error as a notification in `sarif`, a test case with an `<error>` in `junit`, `scan.status: failure` with a `fatal` message in `gitlab-sast`, and `.Errors` in a template. A usage or config error stops glsec before it writes a report.
 
 glsec reads only regular files of up to 64 MB as pipelines: a FIFO, a device, a directory or a larger file is an exit 2 for the file named on the command line, and a child pipeline file like that is skipped with a warning.
 

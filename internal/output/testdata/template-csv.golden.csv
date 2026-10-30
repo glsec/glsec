@@ -1,0 +1,5 @@
+severity,rule,job,file,line,message,owasp
+"error","GL001","build",".gitlab-ci.yml",3,"image ""node:latest"" uses mutable tag ""latest""","CICD-SEC-3 CICD-SEC-8"
+"warn","GL053","",".gitlab-ci.yml",1,"no top-level workflow:rules",""
+"info","GL070","'@all","ci/child.yml",5,"see #1 and `make`",""
+"error","GL011","'=HYPERLINK(""http://x"")",".gitlab-ci.yml",7,"a|b <img src=x> *c* ""q"", d\x0anext \u202eevil",""

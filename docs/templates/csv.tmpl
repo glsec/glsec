@@ -1,0 +1,3 @@
+severity,rule,job,file,line,message,owasp
+{{range .Findings}}{{escapeCSV .Severity}},{{escapeCSV .Rule}},{{escapeCSV .Job}},{{escapeCSV .File}},{{.Line}},{{escapeCSV .Message}},{{escapeCSV (join .OWASP " ")}}
+{{end}}

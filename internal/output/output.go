@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -16,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"text/tabwriter"
+	"text/template"
 	"time"
 
 	"github.com/glsec/glsec/internal/color"
@@ -34,11 +36,12 @@ const (
 	FormatTable       Format = "table"
 	FormatJUnit       Format = "junit"
 	FormatGitLabSAST  Format = "gitlab-sast"
+	FormatTemplate    Format = "template"
 )
 
 func ParseFormat(s string) (Format, bool) {
 	switch Format(s) {
-	case FormatText, FormatJSON, FormatSARIF, FormatCodeClimate, FormatTable, FormatJUnit, FormatGitLabSAST:
+	case FormatText, FormatJSON, FormatSARIF, FormatCodeClimate, FormatTable, FormatJUnit, FormatGitLabSAST, FormatTemplate:
 		return Format(s), true
 	default:
 		return "", false
@@ -49,8 +52,10 @@ func ParseFormat(s string) (Format, bool) {
 type WriteOption func(*writeConfig)
 
 type writeConfig struct {
-	noRedact bool
-	errors   []ScanError
+	noRedact     bool
+	errors       []ScanError
+	template     *template.Template
+	templateMeta TemplateMeta
 }
 
 // NoRedact shows the source lines of the text output as they are, secrets
@@ -73,6 +78,11 @@ func Write(w io.Writer, format Format, findings []finding.Finding, jobCount int,
 		return writeJUnit(w, findings, cfg.errors)
 	case FormatGitLabSAST:
 		return WriteGitLabSAST(w, findings, GitLabSASTMeta{Start: time.Now()}, opts...)
+	case FormatTemplate:
+		if cfg.template == nil {
+			return errors.New("--format template needs a template (--template)")
+		}
+		return writeTemplate(w, cfg.template, findings, cfg.errors, jobCount, cfg.templateMeta)
 	case FormatTable:
 		return writeTable(w, findings, jobCount, colorEnabled, isTTY)
 	default:
@@ -272,8 +282,20 @@ func WriteJSON(w io.Writer, findings []finding.Finding, owasp, asvs func(string)
 }
 
 func writeJSON(w io.Writer, findings []finding.Finding, errs []ScanError, owasp, asvs func(string) []string) error {
+	out := jsonOutput{Findings: jsonFindings(findings, owasp, asvs), Errors: jsonErrors(errs)}
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetIndent("", "  ")
+	_ = enc.Encode(out) // a bytes.Buffer never fails and jsonOutput always marshals
+	_, err := io.WriteString(w, escapeBidiJSON(buf.String()))
+	return err
+}
+
+// jsonFindings converts findings to the JSON report's fields, which the
+// template format exposes too.
+func jsonFindings(findings []finding.Finding, owasp, asvs func(string) []string) []jsonFinding {
 	cwd, _ := os.Getwd() // retain supplied absolute paths if cwd is unavailable
-	out := jsonOutput{Findings: make([]jsonFinding, 0, len(findings))}
+	out := make([]jsonFinding, 0, len(findings))
 	for _, f := range findings {
 		file, _ := reportPath(f.File, cwd)
 		jf := jsonFinding{
@@ -290,17 +312,17 @@ func writeJSON(w io.Writer, findings []finding.Finding, errs []ScanError, owasp,
 		if asvs != nil {
 			jf.ASVS = asvs(f.RuleID)
 		}
-		out.Findings = append(out.Findings, jf)
+		out = append(out, jf)
 	}
+	return out
+}
+
+func jsonErrors(errs []ScanError) []jsonError {
+	var out []jsonError
 	for _, e := range reportErrors(errs) {
-		out.Errors = append(out.Errors, jsonError(e))
+		out = append(out, jsonError(e))
 	}
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetIndent("", "  ")
-	_ = enc.Encode(out) // a bytes.Buffer never fails and jsonOutput always marshals
-	_, err := io.WriteString(w, escapeBidiJSON(buf.String()))
-	return err
+	return out
 }
 
 // escapeBidiJSON replaces each bidirectional control character in s with
