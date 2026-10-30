@@ -39,20 +39,24 @@ var secretPatterns = []secretPattern{
 	{"GitLab runner registration token (legacy)", regexp.MustCompile(`^GR1348941[0-9a-zA-Z_-]{20}$`)},
 	// A session cookie sits inside a longer value, such as a Cookie header.
 	{"GitLab session cookie", regexp.MustCompile(`_gitlab_session=[0-9a-z]{32}`)},
-	// AWS key-id prefixes: long-term (AKIA), temporary STS session (ASIA), and
-	// the various IAM resource-id prefixes.
-	{"AWS access key", regexp.MustCompile(`(?:AKIA|ASIA|AGPA|AIDA|AROA|AIPA|ANPA|ANVA)[0-9A-Z]{16}`)},
+	// AWS key-id prefixes: long-term (AKIA), temporary STS session (ASIA),
+	// the older A3T form, ABIA (STS service bearer token), ACCA (context-
+	// specific credential) and the various IAM resource-id prefixes.
+	{"AWS access key", regexp.MustCompile(`(?:A3T[A-Z0-9]|AKIA|ASIA|ABIA|ACCA|AGPA|AIDA|AROA|AIPA|ANPA|ANVA)[0-9A-Z]{16}`)},
 	{"Google API key", regexp.MustCompile(`^AIza[0-9A-Za-z_-]{35}$`)},
 	// Azure AD (Entra ID) client secrets carry Q~ after a version digit.
 	{"Azure AD client secret", regexp.MustCompile(`^[A-Za-z0-9_~.]{3}[0-9]Q~[A-Za-z0-9_~.-]{31,34}$`)},
-	{"PEM private key", regexp.MustCompile(`-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY`)},
+	{"PEM private key", regexp.MustCompile(`-----BEGIN (?:(?:RSA |EC |DSA |OPENSSH |ENCRYPTED )?PRIVATE KEY|PGP PRIVATE KEY BLOCK)`)},
 	{"GitHub PAT", regexp.MustCompile(`^ghp_[A-Za-z0-9]{36,}$`)},
 	{"GitHub fine-grained PAT", regexp.MustCompile(`^github_pat_[A-Za-z0-9_]{82,}$`)},
 	// Covers both the fixed-length ghs_<36+> form and the newer stateless
 	// ghs_<APPID>_<JWT> form (the JWT segment adds '.' separators).
 	{"GitHub App installation token", regexp.MustCompile(`^ghs_[A-Za-z0-9_.-]{36,}$`)},
 	{"GitHub OAuth/user/refresh token", regexp.MustCompile(`^gh[uor]_[A-Za-z0-9]{36,}$`)},
-	{"Slack token", regexp.MustCompile(`^xox[baprs]-[A-Za-z0-9-]{10,}$`)},
+	// Also the configuration access (xoxe.xoxb-, xoxe.xoxp-) and refresh
+	// (xoxe-) tokens of the app configuration API.
+	{"Slack token", regexp.MustCompile(`^(?:xox[baprs]-[A-Za-z0-9-]{10,}|xoxe\.xox[bp]-[0-9]-[A-Za-z0-9]{163,166}|xoxe-[0-9]-[A-Za-z0-9]{146})$`)},
+	{"Slack app-level token", regexp.MustCompile(`^xapp-[0-9]-[A-Z0-9]+-[0-9]+-[a-z0-9]+$`)},
 	{"Docker Hub access token", regexp.MustCompile(`^dckr_(?:pat|oat)_[A-Za-z0-9_-]{20,}$`)},
 	// Anthropic and OpenRouter reuse the sk- prefix but carry no OpenAI
 	// watermark; match them by their specific prefixes so they are labelled
@@ -68,13 +72,16 @@ var secretPatterns = []secretPattern{
 	{"OpenAI realtime client secret", regexp.MustCompile(`^ek_[0-9a-f]{32,}$`)},
 	{"PyPI upload token", regexp.MustCompile(`^pypi-AgEIcHlwaS5vcmc[A-Za-z0-9_-]{20,}$`)},
 	{"npm access token", regexp.MustCompile(`^npm_[A-Za-z0-9]{36}$`)},
-	{"Stripe secret key", regexp.MustCompile(`^sk_(?:test|live)_[A-Za-z0-9]{24,}$`)},
+	// sk_ secret and rk_ restricted keys.
+	{"Stripe secret key", regexp.MustCompile(`^[rs]k_(?:test|live|prod)_[A-Za-z0-9]{24,}$`)},
 	{"HuggingFace token", regexp.MustCompile(`^hf_[A-Za-z0-9]{34,40}$`)},
+	{"HuggingFace organization token", regexp.MustCompile(`^api_org_[A-Za-z]{34}$`)},
 	{"GCP service account key", regexp.MustCompile(`"type":\s*"service_account"`)},
 	{"Databricks token", regexp.MustCompile(`^dapi[a-h0-9]{32}$`)},
-	{"Doppler token", regexp.MustCompile(`^dp\.pt\.[a-z0-9]{43}$`)},
+	{"Doppler token", regexp.MustCompile(`^dp\.pt\.[A-Za-z0-9]{43}$`)},
 	{"SendGrid API key", regexp.MustCompile(`^SG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}$`)},
 	{"PlanetScale token", regexp.MustCompile(`^pscale_(?:pw|tkn)_[A-Za-z0-9_.-]{32,}$`)},
+	{"PlanetScale OAuth token", regexp.MustCompile(`^pscale_oauth_[A-Za-z0-9_.=-]{32,64}$`)},
 	{"Postman API key", regexp.MustCompile(`^PMAK-[a-f0-9]{24}-[a-f0-9]{34}$`)},
 	{"RubyGems API key", regexp.MustCompile(`^rubygems_[a-f0-9]{48}$`)},
 	{"New Relic API key", regexp.MustCompile(`^NRAK-[A-Z0-9]{27}$`)},
@@ -90,7 +97,9 @@ var secretPatterns = []secretPattern{
 	{"New Relic browser key", regexp.MustCompile(`^NRJS-[a-f0-9]{19}$`)},
 	{"Pulumi access token", regexp.MustCompile(`^pul-[a-f0-9]{40}$`)},
 	{"Shippo API token", regexp.MustCompile(`^shippo_(?:live|test)_[a-f0-9]{40}$`)},
-	{"Slack webhook URL", regexp.MustCompile(`^https://hooks\.slack\.com/services/T[A-Za-z0-9_]+/B[A-Za-z0-9_]+/[A-Za-z0-9_]{20,}$`)},
+	// Incoming webhooks under /services/, and workflow and trigger webhooks
+	// of Slack's Workflow Builder.
+	{"Slack webhook URL", regexp.MustCompile(`^https://hooks\.slack\.com/(?:services/T[A-Za-z0-9_]+/B[A-Za-z0-9_]+/[A-Za-z0-9_]{20,}|(?:workflows|triggers)/T[A-Za-z0-9_]+/(?:[A-Za-z0-9_]+/)+[A-Za-z0-9_]{20,})$`)},
 	{"Alibaba access key ID", regexp.MustCompile(`^LTAI[A-Za-z0-9]{20}$`)},
 	{"Private Packagist token", regexp.MustCompile(`^packagist_[a-z]{3}_[a-f0-9]{68}$`)},
 	{"Adobe client secret", regexp.MustCompile(`^p8e-[a-z0-9]{32}$`)},
