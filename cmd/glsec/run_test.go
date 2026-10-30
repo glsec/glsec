@@ -631,3 +631,59 @@ func TestRun_FailingShellcheckFailsTheScan(t *testing.T) {
 		})
 	}
 }
+
+// A file glsec can't scan must not make the report look clean: the reports
+// carry the error next to the findings of the files that were scanned (#809).
+func TestRun_ScanErrorInReport(t *testing.T) {
+	files := map[string]string{"error.yml": errorPipeline, "broken.yml": brokenPipeline}
+	for format, want := range map[string]string{
+		"json":        `"errors": [`,
+		"codeclimate": `"check_name": "glsec-error"`,
+		"sarif":       `"executionSuccessful": false`,
+		"junit":       `<error message="parse broken.yml`,
+		"gitlab-sast": `"status": "failure"`,
+	} {
+		t.Run(format, func(t *testing.T) {
+			code, stdout, stderr := runCLI(t, files, "--format", format, "error.yml", "broken.yml")
+			if code != 2 {
+				t.Fatalf("exit %d, want 2; stderr:\n%s", code, stderr)
+			}
+			if !strings.Contains(stdout, want) || !strings.Contains(stdout, "broken.yml") {
+				t.Errorf("report lacks the scan error (%s):\n%s", want, stdout)
+			}
+			if !strings.Contains(stdout, "GL001") {
+				t.Errorf("report lacks the findings of the file that was scanned:\n%s", stdout)
+			}
+			if !strings.Contains(stderr, "error: parse broken.yml") {
+				t.Errorf("stderr lacks the error:\n%s", stderr)
+			}
+		})
+	}
+
+	t.Run("strict with every file excluded", func(t *testing.T) {
+		code, stdout, _ := runCLI(t, files, "--strict", "--exclude", "*.yml", "--format", "json", "error.yml")
+		if code != 2 || !strings.Contains(stdout, "nothing was scanned") {
+			t.Errorf("exit %d, report:\n%s", code, stdout)
+		}
+	})
+	t.Run("clean report unchanged", func(t *testing.T) {
+		_, stdout, _ := runCLI(t, files, "--format", "json", "error.yml")
+		if strings.Contains(stdout, `"errors"`) {
+			t.Errorf("report of a successful scan has errors:\n%s", stdout)
+		}
+	})
+}
+
+func TestWriteOutput_MasksSecretsInScanErrors(t *testing.T) {
+	token := "ghp_" + strings.Repeat("aB3", 12)
+	errs := []output.ScanError{{File: "ci.yml", Message: "ci.yml: bad value " + token}}
+	for _, mask := range []bool{true, false} {
+		var buf bytes.Buffer
+		if err := writeOutput(&buf, output.FormatJSON, nil, errs, 0, false, false, mask); err != nil {
+			t.Fatal(err)
+		}
+		if got := strings.Contains(buf.String(), token); got == mask {
+			t.Errorf("mask=%v: token in report = %v:\n%s", mask, got, buf.String())
+		}
+	}
+}

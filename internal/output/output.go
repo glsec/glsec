@@ -48,7 +48,10 @@ func ParseFormat(s string) (Format, bool) {
 // WriteOption changes how Write renders.
 type WriteOption func(*writeConfig)
 
-type writeConfig struct{ noRedact bool }
+type writeConfig struct {
+	noRedact bool
+	errors   []ScanError
+}
 
 // NoRedact shows the source lines of the text output as they are, secrets
 // included (--no-redact, #831). Messages are masked by the caller.
@@ -58,21 +61,18 @@ func NoRedact() WriteOption { return func(c *writeConfig) { c.noRedact = true } 
 // interactive terminal; the text format uses it to decide whether to print the
 // clean-run summary line (suppressed when piped, e.g. in CI).
 func Write(w io.Writer, format Format, findings []finding.Finding, jobCount int, colorEnabled, isTTY bool, opts ...WriteOption) error {
-	var cfg writeConfig
-	for _, o := range opts {
-		o(&cfg)
-	}
+	cfg := writeOptions(opts)
 	switch format {
 	case FormatJSON:
-		return writeJSON(w, findings, nil, nil)
+		return writeJSON(w, findings, cfg.errors, nil, nil)
 	case FormatSARIF:
-		return writeSARIF(w, findings, SARIFTool{}, nil, nil, nil, nil, nil, nil)
+		return writeSARIF(w, findings, cfg.errors, SARIFTool{}, nil, nil, nil, nil, nil, nil)
 	case FormatCodeClimate:
-		return writeCodeClimate(w, findings)
+		return writeCodeClimate(w, findings, cfg.errors)
 	case FormatJUnit:
-		return writeJUnit(w, findings)
+		return writeJUnit(w, findings, cfg.errors)
 	case FormatGitLabSAST:
-		return WriteGitLabSAST(w, findings, GitLabSASTMeta{Start: time.Now()})
+		return WriteGitLabSAST(w, findings, GitLabSASTMeta{Start: time.Now()}, opts...)
 	case FormatTable:
 		return writeTable(w, findings, jobCount, colorEnabled, isTTY)
 	default:
@@ -256,15 +256,22 @@ type jsonFinding struct {
 
 type jsonOutput struct {
 	Findings []jsonFinding `json:"findings"`
+	Errors   []jsonError   `json:"errors,omitempty"`
+}
+
+type jsonError struct {
+	File    string `json:"file,omitempty"`
+	Message string `json:"message"`
 }
 
 // WriteJSON writes findings as JSON. owasp and asvs, if non-nil, are called
-// per finding to populate the "owasp" and "asvs" fields.
-func WriteJSON(w io.Writer, findings []finding.Finding, owasp, asvs func(string) []string) error {
-	return writeJSON(w, findings, owasp, asvs)
+// per finding to populate the "owasp" and "asvs" fields. Scan errors go in
+// an "errors" array.
+func WriteJSON(w io.Writer, findings []finding.Finding, owasp, asvs func(string) []string, opts ...WriteOption) error {
+	return writeJSON(w, findings, writeOptions(opts).errors, owasp, asvs)
 }
 
-func writeJSON(w io.Writer, findings []finding.Finding, owasp, asvs func(string) []string) error {
+func writeJSON(w io.Writer, findings []finding.Finding, errs []ScanError, owasp, asvs func(string) []string) error {
 	cwd, _ := os.Getwd() // retain supplied absolute paths if cwd is unavailable
 	out := jsonOutput{Findings: make([]jsonFinding, 0, len(findings))}
 	for _, f := range findings {
@@ -284,6 +291,9 @@ func writeJSON(w io.Writer, findings []finding.Finding, owasp, asvs func(string)
 			jf.ASVS = asvs(f.RuleID)
 		}
 		out.Findings = append(out.Findings, jf)
+	}
+	for _, e := range reportErrors(errs) {
+		out.Errors = append(out.Errors, jsonError(e))
 	}
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
@@ -328,6 +338,8 @@ type sarifRun struct {
 	Tool       sarifTool       `json:"tool"`
 	Taxonomies []sarifTaxonomy `json:"taxonomies,omitempty"`
 	Results    []sarifResult   `json:"results"`
+	// Only written when the scan failed, so a clean report stays as it was.
+	Invocations []sarifInvocation `json:"invocations,omitempty"`
 }
 
 type sarifTool struct {
@@ -437,6 +449,40 @@ type sarifResult struct {
 	Locations []sarifLocation `json:"locations"`
 }
 
+type sarifInvocation struct {
+	ExecutionSuccessful        bool                `json:"executionSuccessful"`
+	ToolExecutionNotifications []sarifNotification `json:"toolExecutionNotifications"`
+}
+
+type sarifNotification struct {
+	Level     string          `json:"level"`
+	Message   sarifMessage    `json:"message"`
+	Locations []sarifLocation `json:"locations,omitempty"`
+}
+
+// sarifInvocations reports the scan errors as a failed invocation, the field
+// SARIF has for a tool run that didn't complete.
+func sarifInvocations(errs []ScanError) []sarifInvocation {
+	if len(errs) == 0 {
+		return nil
+	}
+	cwd, _ := os.Getwd()
+	inv := sarifInvocation{}
+	for _, e := range errs {
+		e, local := reportError(e, cwd)
+		n := sarifNotification{Level: "error", Message: sarifMessage{Text: e.Message}}
+		if e.File != "" {
+			loc := sarifArtifactLocation{URI: e.File}
+			if local {
+				loc.URIBaseID = "%SRCROOT%"
+			}
+			n.Locations = []sarifLocation{{PhysicalLocation: sarifPhysicalLocation{ArtifactLocation: loc}}}
+		}
+		inv.ToolExecutionNotifications = append(inv.ToolExecutionNotifications, n)
+	}
+	return []sarifInvocation{inv}
+}
+
 type sarifMessage struct {
 	Text string `json:"text"`
 }
@@ -447,7 +493,7 @@ type sarifLocation struct {
 
 type sarifPhysicalLocation struct {
 	ArtifactLocation sarifArtifactLocation `json:"artifactLocation"`
-	Region           sarifRegion           `json:"region"`
+	Region           *sarifRegion          `json:"region,omitempty"`
 }
 
 type sarifArtifactLocation struct {
@@ -500,11 +546,12 @@ func WriteSARIF(w io.Writer, findings []finding.Finding, tool SARIFTool,
 	cweID func(string) string, cweName func(string) string,
 	owasp func(string) []string, owaspName func(string) string,
 	asvs func(string) []string, asvsName func(string) string,
+	opts ...WriteOption,
 ) error {
-	return writeSARIF(w, findings, tool, cweID, cweName, owasp, owaspName, asvs, asvsName)
+	return writeSARIF(w, findings, writeOptions(opts).errors, tool, cweID, cweName, owasp, owaspName, asvs, asvsName)
 }
 
-func writeSARIF(w io.Writer, findings []finding.Finding, tool SARIFTool,
+func writeSARIF(w io.Writer, findings []finding.Finding, errs []ScanError, tool SARIFTool,
 	cweID func(string) string, cweName func(string) string,
 	owasp func(string) []string, owaspName func(string) string,
 	asvs func(string) []string, asvsName func(string) string,
@@ -524,7 +571,7 @@ func writeSARIF(w io.Writer, findings []finding.Finding, tool SARIFTool,
 			Locations: []sarifLocation{{
 				PhysicalLocation: sarifPhysicalLocation{
 					ArtifactLocation: location,
-					Region:           sarifRegion{StartLine: f.Line},
+					Region:           &sarifRegion{StartLine: f.Line},
 				},
 			}},
 		})
@@ -535,7 +582,8 @@ func writeSARIF(w io.Writer, findings []finding.Finding, tool SARIFTool,
 			Name:           "glsec",
 			InformationURI: SiteURL,
 		}},
-		Results: results,
+		Results:     results,
+		Invocations: sarifInvocations(errs),
 	}
 	if tool.Version != "" && tool.Version != "dev" {
 		run.Tool.Driver.Version = tool.Version
@@ -716,12 +764,13 @@ func codeClimateFingerprint(f finding.Finding) string {
 }
 
 // WriteCodeClimate writes findings in the Code Climate JSON format
-// consumed by GitLab's Code Quality (artifacts:reports:codequality).
-func WriteCodeClimate(w io.Writer, findings []finding.Finding) error {
-	return writeCodeClimate(w, findings)
+// consumed by GitLab's Code Quality (artifacts:reports:codequality). A scan
+// error becomes a blocker issue, so the merge request widget shows it.
+func WriteCodeClimate(w io.Writer, findings []finding.Finding, opts ...WriteOption) error {
+	return writeCodeClimate(w, findings, writeOptions(opts).errors)
 }
 
-func writeCodeClimate(w io.Writer, findings []finding.Finding) error {
+func writeCodeClimate(w io.Writer, findings []finding.Finding, errs []ScanError) error {
 	cwd, _ := os.Getwd()
 	out := make([]codeClimateIssue, 0, len(findings))
 	for _, f := range findings {
@@ -741,6 +790,9 @@ func writeCodeClimate(w io.Writer, findings []finding.Finding) error {
 			},
 		})
 	}
+	for _, e := range reportErrors(errs) {
+		out = append(out, codeClimateError(e))
+	}
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
 	enc.SetIndent("", "  ")
@@ -754,6 +806,7 @@ type junitTestsuites struct {
 	Name     string           `xml:"name,attr"`
 	Tests    int              `xml:"tests,attr"`
 	Failures int              `xml:"failures,attr"`
+	Errors   int              `xml:"errors,attr,omitempty"`
 	Suites   []junitTestsuite `xml:"testsuite"`
 }
 
@@ -761,6 +814,7 @@ type junitTestsuite struct {
 	Name     string          `xml:"name,attr"`
 	Tests    int             `xml:"tests,attr"`
 	Failures int             `xml:"failures,attr"`
+	Errors   int             `xml:"errors,attr,omitempty"`
 	Cases    []junitTestcase `xml:"testcase"`
 }
 
@@ -768,6 +822,7 @@ type junitTestcase struct {
 	Name      string        `xml:"name,attr"`
 	Classname string        `xml:"classname,attr"`
 	Failure   *junitFailure `xml:"failure,omitempty"`
+	Error     *junitFailure `xml:"error,omitempty"`
 }
 
 type junitFailure struct {
@@ -779,11 +834,13 @@ type junitFailure struct {
 // writeJUnit renders findings as a JUnit XML report, consumed by GitLab's
 // pipeline Tests tab and MR test widget via artifacts:reports:junit (all tiers).
 // Each finding becomes one failing test case; a clean run emits a single
-// passing case so the widget is not empty.
-func writeJUnit(w io.Writer, findings []finding.Finding) error {
+// passing case so the widget is not empty. A scan error becomes a test case
+// with an <error> element.
+func writeJUnit(w io.Writer, findings []finding.Finding, errs []ScanError) error {
 	cwd, _ := os.Getwd()
 	suite := junitTestsuite{Name: "glsec"}
-	if len(findings) == 0 {
+	errs = reportErrors(errs)
+	if len(findings) == 0 && len(errs) == 0 {
 		suite.Tests = 1
 		suite.Cases = []junitTestcase{{Name: "glsec: no findings", Classname: "glsec"}}
 	} else {
@@ -807,13 +864,26 @@ func writeJUnit(w io.Writer, findings []finding.Finding) error {
 				},
 			})
 		}
-		suite.Tests = len(findings)
+		for _, e := range errs {
+			classname := e.File
+			if classname == "" {
+				classname = "glsec"
+			}
+			suite.Cases = append(suite.Cases, junitTestcase{
+				Name:      "glsec: scan failed",
+				Classname: classname,
+				Error:     &junitFailure{Message: e.Message, Type: "scan-error", Text: e.Message},
+			})
+		}
+		suite.Tests = len(findings) + len(errs)
 		suite.Failures = len(findings)
+		suite.Errors = len(errs)
 	}
 	root := junitTestsuites{
 		Name:     "glsec",
 		Tests:    suite.Tests,
 		Failures: suite.Failures,
+		Errors:   suite.Errors,
 		Suites:   []junitTestsuite{suite},
 	}
 	if _, err := io.WriteString(w, xml.Header); err != nil {

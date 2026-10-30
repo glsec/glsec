@@ -214,6 +214,8 @@ JSON, SARIF, Code Quality, JUnit and GitLab SAST reports write absolute file pat
 | 1 | One or more `error` findings; or any finding when `--strict` is set |
 | 2 | Usage error (including an unknown rule ID in `--only`, or `--only` and `--skip` that leave no rule), file could not be parsed, a suppression policy violation, or with `--strict`, every file excluded |
 
+On exit 2 after the scan started, the machine-readable reports still list the findings of the files that were scanned and say which file failed and why, so a failed scan doesn't read as a clean one: an `errors` array in `json`, a `blocker` issue with check name `glsec-error` in `codeclimate`, an unsuccessful invocation with the error as a notification in `sarif`, a test case with an `<error>` in `junit`, and `scan.status: failure` with a `fatal` message in `gitlab-sast`. A usage or config error stops glsec before it writes a report.
+
 glsec reads only regular files of up to 64 MB as pipelines: a FIFO, a device, a directory or a larger file is an exit 2 for the file named on the command line, and a child pipeline file like that is skipped with a warning.
 
 Use `--strict` to treat `warn` findings as hard failures (exit 1). Use `--no-exit-codes` to always exit 0 regardless of findings (advisory/informational mode). All flags can also be set in `.glsec.yml`:
@@ -540,8 +542,10 @@ glsec:
     name: ghcr.io/glsec/glsec:1.24.1
     entrypoint: [""]
   script:
-    - glsec --format codeclimate .gitlab-ci.yml > gl-code-quality.json || true
+    # exit 1 means findings, which the report shows; let exit 2 fail the job
+    - glsec --format codeclimate .gitlab-ci.yml > gl-code-quality.json || [ $? -eq 1 ]
   artifacts:
+    when: always
     reports:
       codequality: gl-code-quality.json
 ```

@@ -41,7 +41,7 @@ func FuzzScan(f *testing.F) {
 		findings, _, _ := collectFindings(doc, "fuzz.yml", config.Default(), gitlabver.Version{}, false, true)
 		jobs := parser.CountJobs(doc.Root)
 		for _, format := range formats {
-			if err := writeOutput(io.Discard, format, findings, jobs, true, true, true); err != nil {
+			if err := writeOutput(io.Discard, format, findings, nil, jobs, true, true, true); err != nil {
 				t.Fatalf("%s: %v", format, err)
 			}
 		}

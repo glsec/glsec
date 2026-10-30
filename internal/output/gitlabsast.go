@@ -32,12 +32,18 @@ type gitlabSASTReport struct {
 }
 
 type gitlabSASTScan struct {
-	Analyzer  gitlabSASTTool `json:"analyzer"`
-	Scanner   gitlabSASTTool `json:"scanner"`
-	Type      string         `json:"type"`
-	StartTime string         `json:"start_time"`
-	EndTime   string         `json:"end_time"`
-	Status    string         `json:"status"`
+	Analyzer  gitlabSASTTool      `json:"analyzer"`
+	Scanner   gitlabSASTTool      `json:"scanner"`
+	Type      string              `json:"type"`
+	StartTime string              `json:"start_time"`
+	EndTime   string              `json:"end_time"`
+	Status    string              `json:"status"`
+	Messages  []gitlabSASTMessage `json:"messages,omitempty"`
+}
+
+type gitlabSASTMessage struct {
+	Level string `json:"level"`
+	Value string `json:"value"`
 }
 
 type gitlabSASTTool struct {
@@ -110,8 +116,9 @@ func gitlabSASTID(f finding.Finding) string {
 	return fmt.Sprintf("%x-%x-%x-%x-%x", h[0:4], h[4:6], h[6:8], h[8:10], h[10:16])
 }
 
-// WriteGitLabSAST writes findings as a GitLab SAST report.
-func WriteGitLabSAST(w io.Writer, findings []finding.Finding, meta GitLabSASTMeta) error {
+// WriteGitLabSAST writes findings as a GitLab SAST report. With scan errors
+// the scan's status is "failure" and each error is a fatal message.
+func WriteGitLabSAST(w io.Writer, findings []finding.Finding, meta GitLabSASTMeta, opts ...WriteOption) error {
 	cwd, _ := os.Getwd()
 	version := meta.Version
 	if version == "" {
@@ -126,6 +133,10 @@ func WriteGitLabSAST(w io.Writer, findings []finding.Finding, meta GitLabSASTMet
 			StartTime: at, EndTime: at, Status: "success",
 		},
 		Vulnerabilities: make([]gitlabSASTFinding, 0, len(findings)),
+	}
+	for _, e := range reportErrors(writeOptions(opts).errors) {
+		report.Scan.Status = "failure"
+		report.Scan.Messages = append(report.Scan.Messages, gitlabSASTMessage{Level: "fatal", Value: e.Message})
 	}
 	for _, f := range findings {
 		// Use the reported path for both the location and its stable ID.

@@ -278,16 +278,19 @@ func run(args []string, stdout, stderr io.Writer) int {
 	var allFindings []finding.Finding
 	totalJobCount := 0
 	totalUnjustified := 0
-	hadError := false
+	// The reports carry the errors too, so a failed scan doesn't look like a
+	// clean one (#809).
+	var scanErrors []output.ScanError
 	scanned := 0
 	for _, file := range targets {
 		if matchesExclude(file, cfg.ExcludePaths) {
 			continue
 		}
 		scanned++
-		findings, jobCount, unjustified, ok := scanRoot(file, scanOpts)
-		if !ok {
-			hadError = true
+		findings, jobCount, unjustified, scanErr := scanRoot(file, scanOpts)
+		if scanErr != nil {
+			_, _ = fmt.Fprintf(stderr, "error: %s\n", scanErr.Message)
+			scanErrors = append(scanErrors, *scanErr)
 			continue
 		}
 		allFindings = append(allFindings, findings...)
@@ -298,12 +301,13 @@ func run(args []string, stdout, stderr io.Writer) int {
 	// Excluding every file looks exactly like a clean scan, and the exclusions
 	// usually come from the repository being scanned.
 	if len(targets) > 0 && scanned == 0 {
+		const msg = "every file to scan matches exclude_paths or --exclude; nothing was scanned"
 		severity := "warning"
 		if cfg.Strict {
 			severity = "error"
-			hadError = true
+			scanErrors = append(scanErrors, output.ScanError{Message: msg})
 		}
-		_, _ = fmt.Fprintf(stderr, "%s: every file to scan matches exclude_paths or --exclude; nothing was scanned\n", severity)
+		_, _ = fmt.Fprintf(stderr, "%s: %s\n", severity, msg)
 	}
 
 	if *generateIgnoreFlag {
@@ -328,12 +332,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 
-	if err := writeOutput(stdout, format, allFindings, totalJobCount, colorEnabled, stdoutIsTTY, !*noRedactFlag); err != nil {
+	if err := writeOutput(stdout, format, allFindings, scanErrors, totalJobCount, colorEnabled, stdoutIsTTY, !*noRedactFlag); err != nil {
 		_, _ = fmt.Fprintf(stderr, "error: %v\n", err)
 		return 2
 	}
 
-	if hadError {
+	if len(scanErrors) > 0 {
 		return 2
 	}
 	if totalUnjustified > 0 {
@@ -361,20 +365,21 @@ type scanOptions struct {
 }
 
 // scanRoot parses one root pipeline file (and its child pipelines), runs the
-// rules, and returns the findings and job count. ok is false if the file could
-// not be parsed or validated; the error has already been reported to stderr.
-func scanRoot(file string, opt scanOptions) (findings []finding.Finding, jobCount, unjustified int, ok bool) {
+// rules, and returns the findings and job count, or the error if the file
+// could not be scanned. The error's message is sanitized for the terminal.
+func scanRoot(file string, opt scanOptions) (findings []finding.Finding, jobCount, unjustified int, scanErr *output.ScanError) {
+	fail := func(path string, err error) (findings []finding.Finding, jobCount, unjustified int, scanErr *output.ScanError) {
+		return nil, 0, 0, &output.ScanError{File: path, Message: output.Sanitize(err.Error())}
+	}
 	// Child pipelines must stay inside the directory of the pipeline file, and
 	// so must the file itself: a symbolic link out of it would make glsec read
 	// and quote a file outside the repository.
 	if !withinRoot(filepath.Dir(file), file) {
-		_, _ = fmt.Fprintf(opt.stderr, "error: %s: symbolic link to a file outside its directory\n", output.Sanitize(file))
-		return nil, 0, 0, false
+		return fail(file, fmt.Errorf("%s: symbolic link to a file outside its directory", file))
 	}
 	doc, err := parser.ParseFile(file)
 	if err != nil {
-		_, _ = fmt.Fprintf(opt.stderr, "error: %s\n", output.Sanitize(err.Error()))
-		return nil, 0, 0, false
+		return fail(file, err)
 	}
 
 	warns, valErr := validate.File(file, doc)
@@ -382,8 +387,7 @@ func scanRoot(file string, opt scanOptions) (findings []finding.Finding, jobCoun
 		_, _ = fmt.Fprintf(opt.stderr, "warning: %s\n", output.Sanitize(w))
 	}
 	if valErr != nil {
-		_, _ = fmt.Fprintf(opt.stderr, "error: %s\n", output.Sanitize(valErr.Error()))
-		return nil, 0, 0, false
+		return fail(file, valErr)
 	}
 
 	seen := map[string]bool{}
@@ -417,7 +421,7 @@ func scanRoot(file string, opt scanOptions) (findings []finding.Finding, jobCoun
 		if key, kerr := cache.Key(resolvedVersion(), time.Now().Format("2006-01-02"), opt.versionStr, filePaths, opt.configPath, suppress.IgnoreFile, opt.cfg.ExcludePaths, opt.only, opt.skip); kerr == nil {
 			cacheKey = key
 			if entry, hit := cache.Load(cacheKey); hit {
-				return entry.Findings, entry.JobCount, 0, true
+				return entry.Findings, entry.JobCount, 0, nil
 			}
 		}
 	}
@@ -426,8 +430,7 @@ func scanRoot(file string, opt scanOptions) (findings []finding.Finding, jobCoun
 	for _, d := range allDocs {
 		f, u, err := collectFindings(d, d.File, opt.cfg, opt.gitlabVersion, skipSuppress, opt.newOnly)
 		if err != nil {
-			_, _ = fmt.Fprintf(opt.stderr, "error: %s\n", output.Sanitize(err.Error()))
-			return nil, 0, 0, false
+			return fail(d.File, err)
 		}
 		findings = append(findings, f...)
 		unjustified += u
@@ -437,31 +440,38 @@ func scanRoot(file string, opt scanOptions) (findings []finding.Finding, jobCoun
 		cache.Store(cacheKey, &cache.Entry{Findings: findings, JobCount: jobCount})
 	}
 
-	return findings, jobCount, unjustified, true
+	return findings, jobCount, unjustified, nil
 }
 
 // scanStart is when glsec started, the scan start time in a GitLab SAST report.
 var scanStart = time.Now()
 
-// writeOutput renders findings in the requested format. With mask set, secret
-// values in messages and source lines are masked in every format (#831).
-func writeOutput(w io.Writer, format output.Format, findings []finding.Finding, jobCount int, colorEnabled, isTTY, mask bool) error {
+// writeOutput renders findings and scan errors in the requested format. With
+// mask set, secret values in messages and source lines are masked in every
+// format (#831).
+func writeOutput(w io.Writer, format output.Format, findings []finding.Finding, errs []output.ScanError, jobCount int, colorEnabled, isTTY, mask bool) error {
 	var opts []output.WriteOption
 	if mask {
 		findings = redact.Findings(findings)
+		masked := make([]output.ScanError, len(errs))
+		for i, e := range errs {
+			masked[i] = output.ScanError{File: e.File, Message: redact.String(e.Message)}
+		}
+		errs = masked
 	} else {
 		opts = append(opts, output.NoRedact())
 	}
+	opts = append(opts, output.WithErrors(errs))
 	switch format {
 	case output.FormatSARIF:
-		return output.WriteSARIF(w, findings, output.SARIFTool{Version: version, Rule: sarifRuleInfo}, rules.CWEID, rules.CWEName, rules.OWASPCategories, rules.OWASPCategoryName, rules.ASVSRequirements, rules.ASVSRequirementName)
+		return output.WriteSARIF(w, findings, output.SARIFTool{Version: version, Rule: sarifRuleInfo}, rules.CWEID, rules.CWEName, rules.OWASPCategories, rules.OWASPCategoryName, rules.ASVSRequirements, rules.ASVSRequirementName, opts...)
 	case output.FormatJSON:
-		return output.WriteJSON(w, findings, rules.OWASPCategories, rules.ASVSRequirements)
+		return output.WriteJSON(w, findings, rules.OWASPCategories, rules.ASVSRequirements, opts...)
 	case output.FormatGitLabSAST:
 		return output.WriteGitLabSAST(w, findings, output.GitLabSASTMeta{
 			Version: version, Rule: sarifRuleInfo, CWE: rules.CWEID,
 			OWASP: rules.OWASPCategories, OWASPName: rules.OWASPCategoryName, Start: scanStart,
-		})
+		}, opts...)
 	default:
 		return output.Write(w, format, findings, jobCount, colorEnabled, isTTY, opts...)
 	}
