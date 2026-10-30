@@ -1,5 +1,5 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://raw.githubusercontent.com/glsec/glsec/main/schema/glsec.schema.json",
   "title": "glsec configuration",
   "description": "The .glsec.yml configuration file of glsec, the security linter for GitLab CI/CD pipelines. https://github.com/glsec/glsec#configuration-file",
@@ -11,18 +11,18 @@
       "type": "object",
       "propertyNames": {
         "anyOf": [
-          { "$ref": "#/$defs/ruleId" },
+          { "$ref": "#/definitions/ruleId" },
           { "type": "string", "pattern": "^SC[0-9]{4}$", "description": "A ShellCheck code, with shellcheck.enabled." }
         ]
       },
       "additionalProperties": {
         "oneOf": [
-          { "$ref": "#/$defs/ruleSeverity" },
+          { "$ref": "#/definitions/ruleSeverity" },
           {
             "type": "object",
             "additionalProperties": false,
             "required": ["severity"],
-            "properties": { "severity": { "$ref": "#/$defs/ruleSeverity" } }
+            "properties": { "severity": { "$ref": "#/definitions/ruleSeverity" } }
           }
         ]
       }
@@ -94,15 +94,15 @@
     "owasp": {
       "description": "Run only the rules in these OWASP Top 10 CI/CD Security Risks categories.",
       "type": "array",
-      "items": { "$ref": "#/$defs/owaspCategory" }
+      "items": { "$ref": "#/definitions/owaspCategory" }
     },
     "owasp_exclude": {
       "description": "Skip the rules in these OWASP Top 10 CI/CD Security Risks categories.",
       "type": "array",
-      "items": { "$ref": "#/$defs/owaspCategory" }
+      "items": { "$ref": "#/definitions/owaspCategory" }
     }
   },
-  "$defs": {
+  "definitions": {
     "ruleSeverity": {
       "description": "error, warn or info sets the rule's severity; off turns the rule off.",
       "enum": ["error", "warn", "info", "off"]

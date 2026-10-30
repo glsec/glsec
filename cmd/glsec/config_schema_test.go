@@ -22,7 +22,7 @@ const configSchemaPath = "../../schema/glsec.schema.json"
 type schemaNode struct {
 	Description string                 `json:"description"`
 	Properties  map[string]*schemaNode `json:"properties"`
-	Defs        map[string]*schemaNode `json:"$defs"`
+	Definitions map[string]*schemaNode `json:"definitions"`
 	Enum        []string               `json:"enum"`
 }
 
@@ -85,7 +85,7 @@ func TestConfigSchema(t *testing.T) {
 		t.Errorf("shellcheck: schema keys %v, config keys %v", scSchema, sc)
 	}
 
-	if got := schema.Defs["ruleId"].Enum; !reflect.DeepEqual(got, ids) {
+	if got := schema.Definitions["ruleId"].Enum; !reflect.DeepEqual(got, ids) {
 		t.Errorf("the schema's rule IDs differ from the registry; run go test ./cmd/glsec -run TestConfigSchema -update\nschema: %v\nrules:  %v", got, ids)
 	}
 }
