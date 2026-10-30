@@ -25,7 +25,13 @@ var (
 
 	// componentSemverRe matches a semver tag, optionally prefixed with "v".
 	// Requires at least two dot-separated numeric segments (e.g. 1.0, v1.2.3).
-	componentSemverRe = regexp.MustCompile(`^v?\d+\.\d+`)
+	componentSemverRe = regexp.MustCompile(`^v?\d+\.\d+\.\d+`)
+	// componentPartialRe is a partial version, which GitLab resolves to the
+	// latest matching release (#986).
+	componentPartialRe = regexp.MustCompile(`^v?\d+(?:\.\d+)?$`)
+	// componentCommitSHARe is the pipeline's own commit, the documented way
+	// to test a component in its own project: fixed for the pipeline.
+	componentCommitSHARe = regexp.MustCompile(`^\$\{?CI_COMMIT_SHA\}?$`)
 )
 
 func (r *gl041) Check(doc *yaml.Node, file string) []finding.Finding {
@@ -70,8 +76,18 @@ func checkComponentVersion(node *yaml.Node, file string) *finding.Finding {
 		}
 	}
 
-	if componentSHARe.MatchString(ref) || componentSemverRe.MatchString(ref) {
+	if componentSHARe.MatchString(ref) || componentSemverRe.MatchString(ref) || componentCommitSHARe.MatchString(ref) {
 		return nil
+	}
+	if componentPartialRe.MatchString(ref) {
+		return &finding.Finding{
+			RuleID:   "GL041",
+			Severity: finding.Warn,
+			Message:  fmt.Sprintf("component include %q uses partial version %q, which GitLab resolves to the latest matching release — pin to an exact version (e.g. %s.0) or a full commit SHA", val, ref, ref),
+			File:     file,
+			Line:     node.Line,
+			Col:      node.Column,
+		}
 	}
 
 	return &finding.Finding{

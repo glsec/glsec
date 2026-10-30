@@ -58,10 +58,10 @@ func TestGL041(t *testing.T) {
 			wantHits: 0,
 		},
 		{
-			name: "component with two-segment semver — safe",
+			name: "component with a two-segment version — the latest 2.1.x, not pinned (#986)",
 			yaml: `include:
   - component: gitlab.com/org/security-scan/sast@2.1`,
-			wantHits: 0,
+			wantHits: 1,
 		},
 		{
 			name: "component with full SHA — safe",
@@ -108,5 +108,28 @@ func TestGL041(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// $CI_COMMIT_SHA is the pipeline's own commit; a partial version moves with
+// new releases (#986).
+func TestGL041_CommitSHAAndPartialVersions(t *testing.T) {
+	for ref, want := range map[string]int{
+		"$CI_COMMIT_SHA":   0,
+		"${CI_COMMIT_SHA}": 0,
+		"1.2.3":            0,
+		"v1.2.3-rc.1":      0,
+		"1.2":              1,
+		"1":                1,
+		"v2":               1,
+		"main":             1,
+	} {
+		doc, err := parser.Parse([]byte("include:\n  - component: $CI_SERVER_FQDN/$CI_PROJECT_PATH/build@"+ref+"\n"), "test.yml")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := len(GL041.Check(doc.Root, "test.yml")); got != want {
+			t.Errorf("@%s: got %d findings, want %d", ref, got, want)
+		}
 	}
 }
