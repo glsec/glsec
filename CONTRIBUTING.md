@@ -40,6 +40,8 @@ What blocks a merge or a release:
 
 ## Running tests
 
+[TESTING.md](TESTING.md) gives the overview: which tests exist, what each protects against and when it runs.
+
 ```sh
 go test ./...                   # all packages
 go test -race ./...             # with race detector (what CI runs)
