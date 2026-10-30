@@ -4,6 +4,7 @@
 package rules
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -134,5 +135,25 @@ build:
 	}
 	if f[0].Line == 0 {
 		t.Error("expected non-zero line number")
+	}
+}
+
+// The message names the whole variable when the tag uses a parameter
+// expansion (#977).
+func TestGL015_ParameterExpansionName(t *testing.T) {
+	for line, want := range map[string]string{
+		`docker build -t ${CI_REGISTRY_IMAGE}:${CI_COMMIT_REF_NAME//\//-} .`: "$CI_COMMIT_REF_NAME ",
+		`docker build -t img:${CI_MERGE_REQUEST_SOURCE_BRANCH_NAME-dev} .`:   "$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME ",
+		`docker build -t img:${CI_COMMIT_REF_SLUG:-dev} .`:                   "$CI_COMMIT_REF_SLUG ",
+		`docker build -t img:$CI_COMMIT_BRANCH .`:                            "$CI_COMMIT_BRANCH ",
+	} {
+		doc, err := parser.Parse([]byte("job:\n  script:\n    - '"+line+"'\n"), "test.yml")
+		if err != nil {
+			t.Fatal(err)
+		}
+		f := GL015.Check(doc.Root, "test.yml")
+		if len(f) != 1 || !strings.Contains(f[0].Message, want) {
+			t.Errorf("%s: got %v, want a message naming %q", line, f, want)
+		}
 	}
 }

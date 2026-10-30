@@ -5,6 +5,7 @@ package rules
 
 import (
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -436,5 +437,17 @@ func TestGL021_EmptyQuotedCommandFragment(t *testing.T) {
 				t.Fatalf("got %d findings, want 1 for POSIX quoted command fragment", len(f))
 			}
 		})
+	}
+}
+
+// A substring expansion is shown with its closing brace (#977).
+func TestGL021_SubstringExpansionName(t *testing.T) {
+	doc, err := parser.Parse([]byte("job:\n  script:\n    - echo \"prefix ${PUBLISH_TOKEN:0:4}\"\n"), "test.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := GL021.Check(doc.Root, "test.yml")
+	if len(f) != 1 || !strings.Contains(f[0].Message, "${PUBLISH_TOKEN} ") {
+		t.Errorf("got %v, want a message naming ${PUBLISH_TOKEN}", f)
 	}
 }

@@ -27,7 +27,7 @@ var (
 	// i.e. a colon (tag separator) followed by a user-controlled predefined variable.
 	// CI_COMMIT_SHA, CI_PIPELINE_ID, and CI_COMMIT_SHORT_SHA are safe — not listed here.
 	userControlledTagRe = regexp.MustCompile(
-		`:\$\{?(?:CI_COMMIT_REF_NAME|CI_COMMIT_REF_SLUG|CI_COMMIT_BRANCH|CI_MERGE_REQUEST_SOURCE_BRANCH_NAME)\}?`,
+		`:\$\{?(CI_COMMIT_REF_NAME|CI_COMMIT_REF_SLUG|CI_COMMIT_BRANCH|CI_MERGE_REQUEST_SOURCE_BRANCH_NAME)\}?`,
 	)
 )
 
@@ -52,18 +52,16 @@ func checkScriptDockerTags(node *yaml.Node, file string) []finding.Finding {
 			continue
 		}
 		for _, cmd := range shellCommands(item.Value) {
-			m := ""
+			varName := ""
 			for _, t := range writtenImageRefs(withoutSudo(commandWords(cmd.text))) {
-				if m = userControlledTagRe.FindString(t); m != "" {
+				// The name from the group: ${NAME//x/y} or ${NAME:-d} has no } right after it (#977).
+				if m := userControlledTagRe.FindStringSubmatch(t); m != nil {
+					varName = m[1]
 					break
 				}
 			}
-			if m == "" {
+			if varName == "" {
 				continue
-			}
-			varName := m[2:] // strip ":$"
-			if len(varName) > 0 && varName[0] == '{' {
-				varName = varName[1 : len(varName)-1] // strip braces
 			}
 			f := finding.Finding{
 				RuleID:   "GL015",

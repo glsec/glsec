@@ -156,7 +156,7 @@ func printedSecret(line string) (string, bool) {
 			if informationRedirected(seg) {
 				continue
 			}
-			return s[start:end], true
+			return varRefText(s[start:end]), true
 		}
 		// Output redirected to a file (`>` / `>>`): not logged.
 		if strings.Contains(seg, ">") {
@@ -171,7 +171,7 @@ func printedSecret(line string) (string, bool) {
 		if left > 0 && s[left] == '(' && (s[left-1] == '$' || s[left-1] == '<') {
 			continue
 		}
-		return s[start:end], true
+		return varRefText(s[start:end]), true
 	}
 	return "", false
 }
@@ -274,4 +274,13 @@ func isShellSep(b byte) bool {
 		return true
 	}
 	return false
+}
+
+// varRefText is a reference as the message shows it: ${NAME:0:4} matches as
+// "${NAME", so the brace is closed (#977).
+func varRefText(ref string) string {
+	if strings.HasPrefix(ref, "${") && !strings.HasSuffix(ref, "}") {
+		return ref + "}"
+	}
+	return ref
 }
