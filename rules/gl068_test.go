@@ -198,3 +198,32 @@ job:
 		t.Fatalf("expected 2 findings (before+after script), got %d", len(f))
 	}
 }
+
+// xtrace set inside a subshell ends with it (#997).
+func TestGL068_SubshellXtrace(t *testing.T) {
+	for line, want := range map[string]int{
+		"( set -x ; cd /tmp && make )":       0,
+		"(set -x; ./build.sh) && echo done":  0,
+		"set -x":                             1,
+		"( cd /tmp ) && set -x":              1,
+		"echo \"$(set -x; date)\" && set -x": 1,
+	} {
+		doc, err := parser.Parse([]byte("job:\n  script:\n    - '"+line+"'\n"), "test.yml")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := len(GL068.Check(doc.Root, "test.yml")); got != want {
+			t.Errorf("%s: got %d findings, want %d", line, got, want)
+		}
+	}
+}
+
+func TestGL068_MultiLineSubshellStillCounts(t *testing.T) {
+	doc, err := parser.Parse([]byte("job:\n  script:\n    - |\n      (\n        set -x\n        ./deploy.sh\n      )\n"), "test.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := len(GL068.Check(doc.Root, "test.yml")); got != 1 {
+		t.Errorf("got %d findings, want 1", got)
+	}
+}

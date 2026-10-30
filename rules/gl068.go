@@ -80,7 +80,8 @@ func scriptLineXtraceMessage(item string) (string, int, bool) {
 	enabled := false
 	touched := false
 	at := 0
-	for _, cmd := range shellCommands(item) {
+	// A set -x inside a ( … ) subshell ends with it (#997).
+	for _, cmd := range shellCommands(blankSubshells(item)) {
 		if on, ok := setCommandXtrace(cmd.text); ok {
 			enabled = on
 			touched = true
@@ -236,4 +237,44 @@ func shellOptsValueHasXtrace(value string) bool {
 		}
 	}
 	return false
+}
+
+// blankSubshells returns script with the inside of every ( … ) subshell
+// that opens and closes on one line replaced by spaces.
+// $( … ) command substitutions and quoted text are left as they are.
+func blankSubshells(script string) string {
+	b := []byte(script)
+	var stack []int // start of each open bracket; -1 for $( and ${
+	var quote byte
+	for i := 0; i < len(b); i++ {
+		c := b[i]
+		switch {
+		case quote != 0:
+			if c == quote {
+				quote = 0
+			} else if c == '\\' && quote == '"' {
+				i++
+			}
+		case c == '\\':
+			i++
+		case c == '\'' || c == '"':
+			quote = c
+		case c == '(' && i > 0 && (b[i-1] == '$' || b[i-1] == '<' || b[i-1] == '>'):
+			stack = append(stack, -1)
+		case c == '(':
+			stack = append(stack, i)
+		case c == ')' && len(stack) > 0:
+			start := stack[len(stack)-1]
+			stack = stack[:len(stack)-1]
+			// Only a subshell on one line: one that spans a block can hold
+			// a whole script, all of it traced.
+			if start < 0 || len(stack) > 0 || strings.Contains(script[start:i], "\n") {
+				continue
+			}
+			for j := start + 1; j < i; j++ {
+				b[j] = ' '
+			}
+		}
+	}
+	return string(b)
 }
