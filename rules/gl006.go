@@ -29,6 +29,16 @@ var secretPatterns = []secretPattern{
 	{"GitLab CI job token", regexp.MustCompile(`^glcbt-[A-Za-z0-9_-]{20,}$`)},
 	{"GitLab runner registration token", regexp.MustCompile(`^glrt-[A-Za-z0-9_-]{20,}$`)},
 	{"GitLab deploy token", regexp.MustCompile(`^gldt-[A-Za-z0-9_-]{20,}$`)},
+	{"GitLab pipeline trigger token", regexp.MustCompile(`^glptt-[0-9a-f]{40}$`)},
+	{"GitLab feed token", regexp.MustCompile(`^glft-[0-9a-zA-Z_-]{20}$`)},
+	{"GitLab OAuth application secret", regexp.MustCompile(`^gloas-[0-9a-zA-Z_-]{64}$`)},
+	{"GitLab Kubernetes agent token", regexp.MustCompile(`^glagent-[0-9a-zA-Z_-]{50}$`)},
+	{"GitLab incoming mail token", regexp.MustCompile(`^glimt-[0-9a-zA-Z_-]{25}$`)},
+	{"GitLab feature flag client token", regexp.MustCompile(`^glffct-[0-9a-zA-Z_-]{20}$`)},
+	{"GitLab SCIM token", regexp.MustCompile(`^glsoat-[0-9a-zA-Z_-]{20}$`)},
+	{"GitLab runner registration token (legacy)", regexp.MustCompile(`^GR1348941[0-9a-zA-Z_-]{20}$`)},
+	// A session cookie sits inside a longer value, such as a Cookie header.
+	{"GitLab session cookie", regexp.MustCompile(`_gitlab_session=[0-9a-z]{32}`)},
 	// AWS key-id prefixes: long-term (AKIA), temporary STS session (ASIA), and
 	// the various IAM resource-id prefixes.
 	{"AWS access key", regexp.MustCompile(`(?:AKIA|ASIA|AGPA|AIDA|AROA|AIPA|ANPA|ANVA)[0-9A-Z]{16}`)},

@@ -569,3 +569,73 @@ build:
 		t.Error("expected non-zero line number")
 	}
 }
+
+// gitlabTokens are the GitLab token formats of #925, each built from its
+// prefix and a body of the format's length, split so no contiguous token is
+// in the source (GitHub push protection).
+var gitlabTokens = []struct {
+	name, prefix, alphabet string
+	n                      int
+}{
+	{"GitLab pipeline trigger token", "glp" + "tt-", "0123456789abcdef", 40},
+	{"GitLab feed token", "gl" + "ft-", "aB3_x-9Qz7", 20},
+	{"GitLab OAuth application secret", "glo" + "as-", "aB3_x-9Qz7", 64},
+	{"GitLab Kubernetes agent token", "glag" + "ent-", "aB3_x-9Qz7", 50},
+	{"GitLab incoming mail token", "gli" + "mt-", "aB3_x-9Qz7", 25},
+	{"GitLab feature flag client token", "glff" + "ct-", "aB3_x-9Qz7", 20},
+	{"GitLab SCIM token", "glso" + "at-", "aB3_x-9Qz7", 20},
+	{"GitLab runner registration token (legacy)", "GR13" + "48941", "aB3_x-9Qz7", 20},
+}
+
+func tokenBody(alphabet string, n int) string {
+	return strings.Repeat(alphabet, n/len(alphabet)+1)[:n]
+}
+
+func TestGL006_GitLabTokenFormats(t *testing.T) {
+	for _, tc := range gitlabTokens {
+		t.Run(tc.name, func(t *testing.T) {
+			token := tc.prefix + tokenBody(tc.alphabet, tc.n)
+			f := findings006(t, "variables:\n  VALUE: \""+token+"\"\nbuild:\n  script: [echo ok]\n")
+			if len(f) != 1 || !strings.Contains(f[0].Message, tc.name) {
+				t.Errorf("%s: got %v, want one %s finding", token, f, tc.name)
+			}
+			for _, quiet := range []string{
+				tc.prefix + tokenBody(tc.alphabet, tc.n-1),          // one character short
+				tc.prefix + tokenBody("EXAMPLE", tc.n),              // placeholder
+				tc.prefix + strings.Repeat("e", tc.n-7) + "example", // placeholder in the alphabet
+			} {
+				if f := findings006(t, "variables:\n  VALUE: \""+quiet+"\"\nbuild:\n  script: [echo ok]\n"); len(f) != 0 {
+					t.Errorf("%s: got %v, want no finding", quiet, f)
+				}
+			}
+		})
+	}
+}
+
+func TestGL006_GitLabSessionCookie(t *testing.T) {
+	cookie := "_gitlab_" + "session=" + tokenBody("0123456789abcdefghijklmnopqrstuvwxyz", 32)
+	f := findings006(t, "variables:\n  COOKIE: \"Cookie: "+cookie+"; path=/\"\nbuild:\n  script: [echo ok]\n")
+	if len(f) != 1 || !strings.Contains(f[0].Message, "GitLab session cookie") {
+		t.Errorf("got %v, want one session cookie finding", f)
+	}
+	short := "_gitlab_" + "session=" + tokenBody("0123456789abcdef", 31)
+	if f := findings006(t, "variables:\n  COOKIE: \"Cookie: "+short+"\"\nbuild:\n  script: [echo ok]\n"); len(f) != 0 {
+		t.Errorf("31 characters: got %v, want no finding", f)
+	}
+}
+
+// GL088 finds the same tokens on a script line, such as a pipeline trigger
+// token sent with curl.
+func TestGL088_GitLabTokenFormats(t *testing.T) {
+	for _, tc := range gitlabTokens {
+		token := tc.prefix + tokenBody(tc.alphabet, tc.n)
+		f := findings088(t, "trigger:\n  script:\n    - curl -X POST -F token="+token+" -F ref=main \"$CI_API_V4_URL/projects/1/trigger/pipeline\"\n")
+		if len(f) != 1 || !strings.Contains(f[0].Message, tc.name) {
+			t.Errorf("%s: got %v, want one %s finding", tc.name, f, tc.name)
+		}
+	}
+	cookie := "_gitlab_" + "session=" + tokenBody("0123456789abcdefghijklmnopqrstuvwxyz", 32)
+	if f := findings088(t, "job:\n  script:\n    - |\n      curl -H 'Cookie: "+cookie+"' https://gitlab.example.com/api/v4/user\n"); len(f) != 1 {
+		t.Errorf("session cookie: got %v, want one finding", f)
+	}
+}
