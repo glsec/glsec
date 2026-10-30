@@ -140,7 +140,7 @@ func TestEscapeMarkdown(t *testing.T) {
 		`[link](http://x)`:   `\[link\](http://x)`,
 		"*bold* _it_ `code`": "\\*bold\\* \\_it\\_ \\`code\\`",
 		"line\nbreak":        `line\\x0abreak`,
-		"a\u202eb":                `a\\u202eb`,
+		"a\u202eb":           `a\\u202eb`,
 		`it's "q" & co`:      `it's "q" &amp; co`,
 		`back\slash`:         `back\\slash`,
 	} {
