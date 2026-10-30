@@ -4,8 +4,8 @@
 package rules
 
 import (
-	"strings"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/glsec/glsec/internal/finding"
