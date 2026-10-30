@@ -410,6 +410,14 @@ go test ./cmd/glsec -run TestCorpus -update
 
 and review the snapshot diff before committing it. Cases for issues that are still open record today's behaviour and say so in their comment; the snapshot changes with the fix.
 
+## Metamorphic test
+
+`TestMetamorphic` rewrites every pipeline in `testdata/fixtures` and `testdata/corpus` into forms that mean the same to GitLab (CRLF, flow style, other quoting, `script:` as a string or a list, jobs reversed, anchors expanded, keys moved into a template the job `extends:` or merges with `<<:`) and fails when the findings change; lines may move. A difference is either a rule that matches on spelling instead of meaning, or a rewrite that isn't equivalent for that rule. The second kind, and rule gaps that have an issue, go into `knownDifferences` as `transform/rule` with the reason. The test also fails on an entry that no longer matches, so remove it when you fix the rule.
+
+```sh
+go test ./cmd/glsec -run TestMetamorphic
+```
+
 ## Performance
 
 `TestRulesScaleLinearly` runs every rule on a large generated pipeline and on one four times its size, and fails when a rule takes more than ten times as long, which means it grows faster than linearly. It skips itself under `-race`, which makes it take minutes; CI runs it once without. To compare a change locally:
