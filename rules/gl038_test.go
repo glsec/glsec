@@ -360,3 +360,45 @@ func TestGL038_CurlAuthAndAssignments(t *testing.T) {
 		})
 	}
 }
+
+// The finding goes on the line with the credential, also inside a multi-line
+// script item (#800, part 2).
+func TestGL038_LineOfTheCredential(t *testing.T) {
+	src := `integration:
+  script:
+    - for i in $(seq 1 30); do
+        mysql -h db.example.com -uroot -pci-only -e 'select 1' && break;
+        sleep 2;
+      done
+    - |
+      echo start
+      curl -u admin:S3cr3tPassw0rd https://api.example.com
+    - >
+      echo start
+
+      export SERVICE_SECRET="k8s9d7f6g5h4j3"
+    - "echo \"start\"
+
+      docker login -u ci -p Hunter2Hunter2 registry.example.com"
+`
+	doc, err := parser.Parse([]byte(src), "test.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var lines []int
+	for _, f := range GL038.Check(doc.Root, "test.yml") {
+		lines = append(lines, f.Line)
+	}
+	// The quoted item has an escape, so its lines can't be traced and the
+	// finding stays where the item starts.
+	want := []int{4, 9, 13, 14}
+	if len(lines) != len(want) {
+		t.Fatalf("lines = %v, want %v", lines, want)
+	}
+	for i := range want {
+		if lines[i] != want[i] {
+			t.Errorf("lines = %v, want %v", lines, want)
+			break
+		}
+	}
+}

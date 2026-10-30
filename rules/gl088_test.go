@@ -166,7 +166,7 @@ build:
 
       sonar-scanner -Dsonar.token=%s
 `, sonarToken))
-	if len(f) != 1 || f[0].Line != 4 {
-		t.Fatalf("expected 1 finding at the scalar's start on line 4, got %+v", f)
+	if len(f) != 1 || f[0].Line != 7 {
+		t.Fatalf("expected 1 finding on the token's line 7, got %+v", f)
 	}
 }

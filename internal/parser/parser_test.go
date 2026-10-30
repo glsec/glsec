@@ -415,6 +415,9 @@ func TestScalarContentLine(t *testing.T) {
     - "echo h
 
       echo i"
+    - "echo \"j\"
+
+      echo k"
 `), "test.yml")
 	if err != nil {
 		t.Fatal(err)
@@ -428,10 +431,11 @@ func TestScalarContentLine(t *testing.T) {
 		{1, 0, 5, true},   // literal block: content starts one line after "|"
 		{1, 1, 6, true},   // and keeps its lines one to one
 		{2, 0, 8, true},   // folded block: content starts one line after ">"
-		{2, 1, 8, false},  // its second value line ("echo e", line 10) can't be traced
+		{2, 1, 10, true},  // its second value line, traced back to the source (#753)
 		{3, 0, 11, true},  // plain scalar: its own line
-		{3, 1, 11, false}, // "echo g" is on line 13, reported where the scalar starts
-		{4, 1, 14, false}, // the same for a quoted scalar ("echo i" is on line 16)
+		{3, 1, 13, true},  // "echo g", after the folded blank line
+		{4, 1, 16, true},  // the same for a quoted scalar
+		{5, 1, 17, false}, // an escape breaks the tracing: reported where the scalar starts
 	} {
 		value := strings.Split(items[tc.item].Value, "\n")
 		if tc.i >= len(value) {

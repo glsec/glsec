@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -63,6 +64,10 @@ func Parse(data []byte, file string) (*Document, error) {
 	}
 	if len(docs) == 0 {
 		return nil, fmt.Errorf("%s: empty document", file)
+	}
+	src := newSourceLines(data)
+	for _, d := range docs {
+		recordScalarLines(d, src)
 	}
 
 	doc := &Document{Root: docs[0], File: file}
@@ -186,27 +191,38 @@ func Unwrap(node *yaml.Node) *yaml.Node {
 }
 
 // ScalarContentLine returns the source line to report for the i-th line of a
-// scalar node's value. Only a literal block ("|") keeps its lines one to one,
+// scalar node's value. A literal block ("|") keeps its lines one to one,
 // starting on the line after the indicator. A folded block (">") and a plain or
-// quoted scalar join source lines and turn blank lines into line breaks, so a
-// value line can't be traced back to its source line from the node (#753);
-// every line is reported where the content starts: the line after ">", or the
-// scalar's own line. Use ScalarLineExact to tell the two apart.
+// quoted scalar join source lines and turn blank lines into line breaks; Parse
+// records where their lines came from (#753). Where it couldn't, for a quoted
+// scalar with an escape or a node built after parsing, every line is reported
+// where the content starts: the line after ">", or the scalar's own line. Use
+// ScalarLineExact to tell the two apart.
 func ScalarContentLine(node *yaml.Node, i int) int {
-	switch {
-	case node.Style&yaml.LiteralStyle != 0:
+	if node.Style&yaml.LiteralStyle != 0 {
 		return node.Line + 1 + i
-	case node.Style&yaml.FoldedStyle != 0:
-		return node.Line + 1
 	}
-	return node.Line
+	return ScalarOffsetLine(node, lineOffset(node.Value, i))
+}
+
+// lineOffset returns the offset of the i-th line of s.
+func lineOffset(s string, i int) int {
+	off := 0
+	for ; i > 0; i-- {
+		n := strings.IndexByte(s[off:], '\n')
+		if n < 0 {
+			return len(s)
+		}
+		off += n + 1
+	}
+	return off
 }
 
 // ScalarLineExact reports whether ScalarContentLine gives the exact source line
 // of the i-th value line: always for a literal block, and for the first line
 // of any other scalar.
 func ScalarLineExact(node *yaml.Node, i int) bool {
-	return i == 0 || node.Style&yaml.LiteralStyle != 0
+	return i == 0 || node.Style&yaml.LiteralStyle != 0 || loadScalarLines(node) != nil
 }
 
 // reservedKeys are top-level GitLab CI keys that are configuration, not job definitions.

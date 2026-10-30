@@ -267,8 +267,8 @@ func checkHardcodedCredScript(node *yaml.Node, file, job string, aliases map[str
 		}
 		reported := false
 		for _, check := range credChecks {
-			m := check.re.FindStringSubmatch(item.Value)
-			if m == nil || (len(m) > 1 && looksLikePlaceholder(m[1])) {
+			m := check.re.FindStringSubmatchIndex(item.Value)
+			if m == nil || (len(m) > 2 && looksLikePlaceholder(item.Value[m[2]:m[3]])) {
 				continue
 			}
 			if check.db && targetsOwnService(item.Value, aliases, hasServices) {
@@ -283,25 +283,36 @@ func checkHardcodedCredScript(node *yaml.Node, file, job string, aliases map[str
 				Job:      job,
 				Message:  fmt.Sprintf("[%s] %s", check.tool, check.msg),
 				File:     file,
-				Line:     item.Line,
+				Line:     parser.ScalarOffsetLine(item, credentialOffset(m)),
 				Col:      item.Column,
 			})
 			reported = true
 			break
 		}
-		if name, ok := exportedSecret(item.Value); ok && !reported {
+		if name, off, ok := exportedSecret(item.Value); ok && !reported {
 			findings = append(findings, finding.Finding{
 				RuleID:   "GL038",
 				Severity: finding.Error,
 				Job:      job,
 				Message:  fmt.Sprintf("[export] script sets %q, a secret-like name, to a hardcoded value — anyone who can read the repository can use it; store it as a masked CI/CD variable, which the job gets without an export", name),
 				File:     file,
-				Line:     item.Line,
+				Line:     parser.ScalarOffsetLine(item, off),
 				Col:      item.Column,
 			})
 		}
 	}
 	return findings
+}
+
+// credentialOffset returns where a credCheck match's literal starts: its
+// group, or else the last byte of the match, which every pattern ends on the
+// literal's first character. The finding goes on that line of a multi-line
+// script (#800).
+func credentialOffset(m []int) int {
+	if len(m) > 2 {
+		return m[2]
+	}
+	return m[1] - 1
 }
 
 // secretAssignmentRe matches a shell assignment in command position: at the start
@@ -311,13 +322,13 @@ var secretAssignmentRe = regexp.MustCompile(`(?:^|[;&|(]\s*|\bexport\s+)([A-Za-z
 
 // exportedSecret reports whether a script line assigns a literal to a
 // variable with a secret-like name (#910), with the name GL027 would use and
-// its placeholder handling. Values that are rarely a secret are left out: a
+// its placeholder handling, and returns the name and where it starts. Values that are rarely a secret are left out: a
 // reference ($VAR, $(cmd)), a path or URL, and a short or single-kind value
 // such as root, 1 or postgres, which are mostly throwaway passwords for
 // service containers.
-func exportedSecret(line string) (string, bool) {
-	for _, m := range secretAssignmentRe.FindAllStringSubmatch(line, -1) {
-		name, v := m[1], strings.Trim(m[2], `"'`)
+func exportedSecret(line string) (name string, off int, ok bool) {
+	for _, m := range secretAssignmentRe.FindAllStringSubmatchIndex(line, -1) {
+		name, v := line[m[2]:m[3]], strings.Trim(line[m[4]:m[5]], `"'`)
 		if !hasSecretSuffix(name) || !committedSecretValue(v) || strings.ContainsAny(v, "/~`\\") {
 			continue
 		}
@@ -325,9 +336,9 @@ func exportedSecret(line string) (string, bool) {
 		if len(v) < 8 || (!mixed && len(v) < 16) || wordLike(v) {
 			continue
 		}
-		return name, true
+		return name, m[2], true
 	}
-	return "", false
+	return "", 0, false
 }
 
 func isLetter(r rune) bool { return r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' }

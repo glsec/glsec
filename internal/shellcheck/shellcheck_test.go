@@ -238,7 +238,8 @@ func TestRun_ApproximateLineHasNoColumn(t *testing.T) {
 		line, col int
 	}{
 		{"literal block keeps line and column", "build:\n  script:\n    - |\n      echo ok\n      echo $X\n", 5, 6},
-		{"folded plain line has no column", "build:\n  script:\n    - echo ok\n\n      echo $X\n", 3, 0},
+		{"folded plain line traced to its source", "build:\n  script:\n    - echo ok\n\n      echo $X\n", 5, 6},
+		{"untraceable quoted line has no column", "build:\n  script:\n    - \"echo \\\"ok\\\"\n\n      echo $X\"\n", 3, 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := runOn(t, bin, tc.src)

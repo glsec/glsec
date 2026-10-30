@@ -158,6 +158,7 @@ func deepCopyNode(n *yaml.Node) *yaml.Node {
 		return nil
 	}
 	cp := *n
+	copyScalarLines(n, &cp)
 	if len(n.Content) > 0 {
 		cp.Content = make([]*yaml.Node, len(n.Content))
 		for i, c := range n.Content {
