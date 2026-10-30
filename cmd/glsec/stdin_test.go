@@ -91,11 +91,11 @@ func TestRun_StdinLocalIncludes(t *testing.T) {
 	files := map[string]string{"ci/jobs.yml": "lint:\n  image: alpine:latest\n  script: [make lint]\n"}
 	root := "include:\n  - local: ci/jobs.yml\nbuild:\n  script: [make]\n"
 	_, out, _ := runStdin(t, files, root, "--only", "GL001", "--format", "json", "--stdin-filename", ".gitlab-ci.yml", "-")
-	if !strings.Contains(out, "ci/jobs.yml") {
+	if !strings.Contains(out, `"job": "lint"`) {
 		t.Errorf("include not resolved with --stdin-filename: %s", out)
 	}
 	_, out, stderr := runStdin(t, files, root, "--only", "GL001", "--format", "json", "-")
-	if strings.Contains(out, "ci/jobs.yml") || !strings.Contains(stderr, "--stdin-filename") {
+	if strings.Contains(out, `"job": "lint"`) || !strings.Contains(stderr, "--stdin-filename") {
 		t.Errorf("unnamed stdin: output %s, stderr %s; want the include skipped with a note", out, stderr)
 	}
 }
