@@ -104,15 +104,18 @@ def scanned_jobs(glsec, path, cwd):
 
 
 # GitLab names the copies of a parallel: job "build 1/3" and of a
-# parallel:matrix job "build: [linux, amd64]"; glsec scans the job once.
+# parallel:matrix job "build: [linux, amd64]"; glsec scans the job once. A
+# pipeline may also name its jobs "build 1/3" itself, which GitLab groups the
+# same way, so both sides are compared without the suffix.
 PARALLEL_SUFFIX = re.compile(r"(?: \d+/\d+|: \[.*\])$")
 
 
 def job_diff(gitlab, glsec, include):
     """The jobs only one side has, or None when the sets agree."""
     gitlab = {PARALLEL_SUFFIX.sub("", name) for name in gitlab}
-    glsec_only = sorted(set(glsec) - gitlab)
-    gitlab_only = [] if include else sorted(set(gitlab) - set(glsec))
+    glsec = {PARALLEL_SUFFIX.sub("", name) for name in glsec}
+    glsec_only = sorted(glsec - gitlab)
+    gitlab_only = [] if include else sorted(gitlab - glsec)
     if not glsec_only and not gitlab_only:
         return None
     return {"glsec_only": glsec_only, "gitlab_only": gitlab_only}
