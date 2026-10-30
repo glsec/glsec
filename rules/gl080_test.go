@@ -311,3 +311,30 @@ pages:
 		t.Errorf("expected GL080 to keep a prefixed Pages deploy, got %d", len(f))
 	}
 }
+
+// rules: from a !reference into an included file are unknown and count as a
+// guard, for GL080 and GL081 (#979).
+func TestGL080_UnresolvedReferenceRules(t *testing.T) {
+	for _, rulesYAML := range []string{
+		"  rules:\n    - !reference [.default_rules, rules]\n",
+		"  rules: !reference [.default_rules, rules]\n",
+	} {
+		src := "include:\n  - project: example/ci-templates\n    ref: 0123456789abcdef0123456789abcdef01234567\n    file: /rules.yml\npublish:\n  stage: deploy\n" + rulesYAML +
+			"  id_tokens:\n    CLOUD_TOKEN:\n      aud: https://example.com\n  script: [./publish.sh]\n"
+		doc, err := parser.Parse([]byte(src), "test.yml")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if f := append(GL080.Check(doc.Root, "test.yml"), GL081.Check(doc.Root, "test.yml")...); len(f) != 0 {
+			t.Errorf("%q: got %v, want no finding", rulesYAML, f)
+		}
+	}
+	// A reference that resolves in the file is read as before.
+	doc, err := parser.Parse([]byte(".r:\n  rules:\n    - when: always\npublish:\n  stage: deploy\n  rules:\n    - !reference [.r, rules]\n  script: [./publish.sh]\n"), "test.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f := GL080.Check(doc.Root, "test.yml"); len(f) != 1 {
+		t.Errorf("resolved reference to a condition-less rule: got %v, want one finding", f)
+	}
+}

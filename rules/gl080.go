@@ -155,10 +155,15 @@ func jobGuardState(job *yaml.Node) guardState {
 	if rules == nil {
 		return guardAbsent
 	}
-	if rules.Kind != yaml.SequenceNode {
+	// A !reference that points into an included file can't be read here: the
+	// rules it stands for are unknown, so they count as a guard (#979).
+	if rules.Kind != yaml.SequenceNode || parser.IsReference(rules) {
 		return guardEffective
 	}
 	for _, item := range rules.Content {
+		if parser.IsReference(item) {
+			return guardEffective
+		}
 		if item.Kind != yaml.MappingNode {
 			continue
 		}
