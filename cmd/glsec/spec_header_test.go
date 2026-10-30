@@ -27,7 +27,7 @@ func ruleIDs(t *testing.T, file string) map[string]bool {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	found, _, _ := collectFindings(doc, file, config.Default(), gitlabver.Version{}, true, true)
+	found, _, _, _ := collectFindings(doc, file, config.Default(), gitlabver.Version{}, true, true)
 	ids := map[string]bool{}
 	for _, f := range found {
 		ids[f.RuleID] = true

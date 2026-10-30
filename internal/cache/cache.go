@@ -19,9 +19,10 @@ import (
 
 // Entry is a cached scan result.
 type Entry struct {
-	Findings []finding.Finding `json:"findings"`
-	JobCount int               `json:"job_count"`
-	CachedAt time.Time         `json:"cached_at"`
+	Findings   []finding.Finding    `json:"findings"`
+	Suppressed []finding.Suppressed `json:"suppressed,omitempty"`
+	JobCount   int                  `json:"job_count"`
+	CachedAt   time.Time            `json:"cached_at"`
 }
 
 // Dir returns the glsec cache directory, respecting XDG_CACHE_HOME.

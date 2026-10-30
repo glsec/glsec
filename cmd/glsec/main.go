@@ -331,6 +331,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 
 	var allFindings []finding.Finding
+	// Findings a suppression covers; reports show them as suppressed (#834).
+	var allSuppressed []finding.Suppressed
 	totalJobCount := 0
 	totalUnjustified := 0
 	// The reports carry the errors too, so a failed scan doesn't look like a
@@ -347,13 +349,14 @@ func run(args []string, stdout, stderr io.Writer) int {
 		if abs, err := filepath.Abs(file); err == nil && scanOpts.included[abs] {
 			continue
 		}
-		findings, jobCount, unjustified, scanErr := scanRoot(file, scanOpts)
+		findings, suppressed, jobCount, unjustified, scanErr := scanRoot(file, scanOpts)
 		if scanErr != nil {
 			_, _ = fmt.Fprintf(stderr, "error: %s\n", scanErr.Message)
 			scanErrors = append(scanErrors, *scanErr)
 			continue
 		}
 		allFindings = append(allFindings, findings...)
+		allSuppressed = append(allSuppressed, suppressed...)
 		totalJobCount += jobCount
 		totalUnjustified += unjustified
 	}
@@ -396,7 +399,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		Version: resolvedVersion(), Files: len(scanOpts.scannedFiles),
 		OWASP: rules.OWASPCategories, ASVS: rules.ASVSRequirements,
 	})
-	if err := writeOutput(stdout, format, allFindings, scanErrors, totalJobCount, colorEnabled, stdoutIsTTY, !*noRedactFlag, templateOpt, output.WithSources(scanOpts.sources)); err != nil {
+	if err := writeOutput(stdout, format, allFindings, allSuppressed, scanErrors, totalJobCount, colorEnabled, stdoutIsTTY, !*noRedactFlag, templateOpt, output.WithSources(scanOpts.sources)); err != nil {
 		_, _ = fmt.Fprintf(stderr, "error: %v\n", err)
 		return 2
 	}
@@ -438,11 +441,12 @@ type scanOptions struct {
 }
 
 // scanRoot parses one root pipeline file (and its child pipelines), runs the
-// rules, and returns the findings and job count, or the error if the file
-// could not be scanned. The error's message is sanitized for the terminal.
-func scanRoot(file string, opt scanOptions) (findings []finding.Finding, jobCount, unjustified int, scanErr *output.ScanError) {
-	fail := func(path string, err error) (findings []finding.Finding, jobCount, unjustified int, scanErr *output.ScanError) {
-		return nil, 0, 0, &output.ScanError{File: path, Message: output.Sanitize(err.Error())}
+// rules, and returns the findings, the suppressed findings and the job count,
+// or the error if the file could not be scanned. The error's message is
+// sanitized for the terminal.
+func scanRoot(file string, opt scanOptions) (findings []finding.Finding, suppressed []finding.Suppressed, jobCount, unjustified int, scanErr *output.ScanError) {
+	fail := func(path string, err error) ([]finding.Finding, []finding.Suppressed, int, int, *output.ScanError) {
+		return nil, nil, 0, 0, &output.ScanError{File: path, Message: output.Sanitize(err.Error())}
 	}
 	var doc *parser.Document
 	var err error
@@ -514,26 +518,27 @@ func scanRoot(file string, opt scanOptions) (findings []finding.Finding, jobCoun
 		if key, kerr := cache.Key(resolvedVersion(), time.Now().Format("2006-01-02"), opt.versionStr, filePaths, opt.configPath, suppress.IgnoreFile, opt.cfg.ExcludePaths, opt.only, opt.skip); kerr == nil {
 			cacheKey = key
 			if entry, hit := cache.Load(cacheKey); hit {
-				return entry.Findings, entry.JobCount, 0, nil
+				return entry.Findings, entry.Suppressed, entry.JobCount, 0, nil
 			}
 		}
 	}
 
 	skipSuppress := opt.generateIgnore || opt.noIgnores
 	for _, d := range withPipelineContext(allDocs) {
-		f, u, err := collectFindings(d, d.File, opt.cfg, opt.gitlabVersion, skipSuppress, opt.newOnly)
+		f, s, u, err := collectFindings(d, d.File, opt.cfg, opt.gitlabVersion, skipSuppress, opt.newOnly)
 		if err != nil {
 			return fail(d.File, err)
 		}
 		findings = append(findings, f...)
+		suppressed = append(suppressed, s...)
 		unjustified += u
 	}
 
 	if useCache && cacheKey != "" {
-		cache.Store(cacheKey, &cache.Entry{Findings: findings, JobCount: jobCount})
+		cache.Store(cacheKey, &cache.Entry{Findings: findings, Suppressed: suppressed, JobCount: jobCount})
 	}
 
-	return findings, jobCount, unjustified, nil
+	return findings, suppressed, jobCount, unjustified, nil
 }
 
 // scanStart is when glsec started, the scan start time in a GitLab SAST report.
@@ -542,19 +547,25 @@ var scanStart = time.Now()
 // writeOutput renders findings and scan errors in the requested format. With
 // mask set, secret values in messages and source lines are masked in every
 // format (#831). extra passes further options, such as the template.
-func writeOutput(w io.Writer, format output.Format, findings []finding.Finding, errs []output.ScanError, jobCount int, colorEnabled, isTTY, mask bool, extra ...output.WriteOption) error {
+func writeOutput(w io.Writer, format output.Format, findings []finding.Finding, suppressed []finding.Suppressed, errs []output.ScanError, jobCount int, colorEnabled, isTTY, mask bool, extra ...output.WriteOption) error {
 	opts := extra
 	if mask {
 		findings = redact.Findings(findings)
-		masked := make([]output.ScanError, len(errs))
-		for i, e := range errs {
-			masked[i] = output.ScanError{File: e.File, Message: redact.String(e.Message)}
+		masked := make([]finding.Suppressed, len(suppressed))
+		for i, s := range suppressed {
+			s.Message, s.Reason = redact.String(s.Message), redact.String(s.Reason)
+			masked[i] = s
 		}
-		errs = masked
+		suppressed = masked
+		maskedErrs := make([]output.ScanError, len(errs))
+		for i, e := range errs {
+			maskedErrs[i] = output.ScanError{File: e.File, Message: redact.String(e.Message)}
+		}
+		errs = maskedErrs
 	} else {
 		opts = append(opts, output.NoRedact())
 	}
-	opts = append(opts, output.WithErrors(errs))
+	opts = append(opts, output.WithErrors(errs), output.WithSuppressed(suppressed))
 	switch format {
 	case output.FormatSARIF:
 		return output.WriteSARIF(w, findings, output.SARIFTool{Version: version, Rule: sarifRuleInfo}, rules.CWEID, rules.CWEName, rules.OWASPCategories, rules.OWASPCategoryName, rules.ASVSRequirements, rules.ASVSRequirementName, opts...)
@@ -976,7 +987,7 @@ func resolvePath(p string) (string, error) {
 // An unreadable .glsec-ignore comes back as an error: the caller stops the run
 // with exit 2, like an unreadable config file, instead of silently scanning
 // without the suppressions.
-func collectFindings(doc *parser.Document, path string, cfg *config.Config, gitlabVersion gitlabver.Version, skipSuppress, skipIgnoreFile bool) ([]finding.Finding, int, error) {
+func collectFindings(doc *parser.Document, path string, cfg *config.Config, gitlabVersion gitlabver.Version, skipSuppress, skipIgnoreFile bool) ([]finding.Finding, []finding.Suppressed, int, error) {
 	sm := suppress.Build(doc.Root)
 	// Checked against the inline map only: the .glsec-ignore baseline has no
 	// reason column, so requiring one there would be unsatisfiable.
@@ -987,15 +998,17 @@ func collectFindings(doc *parser.Document, path string, cfg *config.Config, gitl
 	if !skipIgnoreFile {
 		ignore, err := suppress.LoadIgnoreFile(suppress.IgnoreFile, path)
 		if err != nil {
-			return nil, 0, fmt.Errorf("%s: %w", suppress.IgnoreFile, err)
+			return nil, nil, 0, fmt.Errorf("%s: %w", suppress.IgnoreFile, err)
 		}
 		sm.Merge(ignore)
 	}
 	now := time.Now()
 
-	// keep reports a finding unless an unexpired suppression covers it. An
-	// expired suppression is announced, so a finding that suddenly reappears is
-	// traceable to the date rather than looking like a new violation.
+	// keep reports a finding unless an unexpired suppression covers it, which
+	// moves it to suppressed. An expired suppression is announced, so a finding
+	// that suddenly reappears is traceable to the date rather than looking like
+	// a new violation.
+	var suppressed []finding.Suppressed
 	keep := func(f finding.Finding) bool {
 		// On configuration another file of the pipeline contributes (#810):
 		// that file reports it.
@@ -1005,7 +1018,8 @@ func collectFindings(doc *parser.Document, path string, cfg *config.Config, gitl
 		if skipSuppress {
 			return true
 		}
-		if sm.IsSuppressed(f.Line, f.RuleID, now) {
+		if e, ok := sm.Active(f.Line, f.RuleID, now); ok {
+			suppressed = append(suppressed, finding.Suppressed{Finding: f, Source: e.Source, Reason: e.Reason, Expires: e.Expiry})
 			return false
 		}
 		if sm.ExpiredAt(f.Line, f.RuleID, now) {
@@ -1043,7 +1057,7 @@ func collectFindings(doc *parser.Document, path string, cfg *config.Config, gitl
 	if cfg.ShellCheck.Enabled {
 		scFindings, err := shellcheck.Run(doc.Root, path, cfg.ShellCheck.Path)
 		if err != nil {
-			return nil, 0, fmt.Errorf("%s: %w", path, err)
+			return nil, nil, 0, fmt.Errorf("%s: %w", path, err)
 		}
 		for _, f := range scFindings {
 			if !cfg.RuleEnabled(f.RuleID) {
@@ -1060,7 +1074,7 @@ func collectFindings(doc *parser.Document, path string, cfg *config.Config, gitl
 		}
 	}
 
-	return finding.Dedupe(findings), unjustified, nil
+	return finding.Dedupe(findings), finding.DedupeSuppressed(suppressed), unjustified, nil
 }
 
 // reportUnjustified prints every inline suppression that carries no reason and

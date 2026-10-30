@@ -132,6 +132,15 @@
                   "security"
                 ]
               }
+            },
+            {
+              "id": "GL016",
+              "helpUri": "https://glsec.github.io/rules/GL016/",
+              "properties": {
+                "tags": [
+                  "security"
+                ]
+              }
             }
           ]
         }
@@ -270,6 +279,60 @@
                   "startLine": 12
                 }
               }
+            }
+          ]
+        },
+        {
+          "ruleId": "GL001",
+          "level": "error",
+          "message": {
+            "text": "image \"ruby:latest\" uses mutable tag \"latest\""
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": ".gitlab-ci.yml",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startLine": 20
+                }
+              }
+            }
+          ],
+          "suppressions": [
+            {
+              "kind": "inSource",
+              "justification": "pinned by renovate",
+              "properties": {
+                "expires": "2027-01-31"
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "GL016",
+          "level": "warning",
+          "message": {
+            "text": "http:// URL"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "ci/docs.yml",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startLine": 4
+                }
+              }
+            }
+          ],
+          "suppressions": [
+            {
+              "kind": "external"
             }
           ]
         }

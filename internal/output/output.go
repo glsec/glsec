@@ -27,6 +27,7 @@ import (
 	"github.com/glsec/glsec/internal/finding"
 	"github.com/glsec/glsec/internal/parser"
 	"github.com/glsec/glsec/internal/redact"
+	"github.com/glsec/glsec/internal/suppress"
 )
 
 type Format string
@@ -57,6 +58,7 @@ type WriteOption func(*writeConfig)
 type writeConfig struct {
 	noRedact     bool
 	errors       []ScanError
+	suppressed   []finding.Suppressed
 	template     *template.Template
 	templateMeta TemplateMeta
 	sources      map[string][]byte
@@ -80,9 +82,9 @@ func Write(w io.Writer, format Format, findings []finding.Finding, jobCount int,
 	cfg := writeOptions(opts)
 	switch format {
 	case FormatJSON:
-		return writeJSON(w, findings, cfg.errors, nil, nil)
+		return writeJSON(w, findings, cfg.suppressed, cfg.errors, nil, nil)
 	case FormatSARIF:
-		return writeSARIF(w, findings, cfg.errors, SARIFTool{}, nil, nil, nil, nil, nil, nil)
+		return writeSARIF(w, findings, cfg.suppressed, cfg.errors, SARIFTool{}, nil, nil, nil, nil, nil, nil)
 	case FormatCodeClimate:
 		return writeCodeClimate(w, findings, cfg.errors)
 	case FormatJUnit:
@@ -95,9 +97,15 @@ func Write(w io.Writer, format Format, findings []finding.Finding, jobCount int,
 		}
 		return writeTemplate(w, cfg.template, findings, cfg.errors, jobCount, cfg.templateMeta)
 	case FormatTable:
-		return writeTable(w, findings, jobCount, colorEnabled, isTTY)
+		if err := writeTable(w, findings, jobCount, colorEnabled, isTTY); err != nil {
+			return err
+		}
+		return writeSuppressedSummary(w, cfg.suppressed, len(findings) > 0)
 	default:
-		return writeText(w, findings, jobCount, colorEnabled, isTTY, !cfg.noRedact, cfg.sources)
+		if err := writeText(w, findings, jobCount, colorEnabled, isTTY, !cfg.noRedact, cfg.sources); err != nil {
+			return err
+		}
+		return writeSuppressedSummary(w, cfg.suppressed, len(findings) > 0)
 	}
 }
 
@@ -187,6 +195,38 @@ func writeText(w io.Writer, findings []finding.Finding, jobCount int, col, isTTY
 		return err
 	}
 	return nil
+}
+
+// writeSuppressedSummary tells the text and table reader that findings were
+// suppressed, so a suppression doesn't look like a fix (#834). It follows the
+// findings after a blank line.
+func writeSuppressedSummary(w io.Writer, suppressed []finding.Suppressed, afterFindings bool) error {
+	if len(suppressed) == 0 {
+		return nil
+	}
+	inline := 0
+	for _, s := range suppressed {
+		if s.Source == finding.SourceInline {
+			inline++
+		}
+	}
+	var sources []string
+	if inline > 0 {
+		sources = append(sources, fmt.Sprintf("%d inline", inline))
+	}
+	if n := len(suppressed) - inline; n > 0 {
+		sources = append(sources, fmt.Sprintf("%d %s", n, suppress.IgnoreFile))
+	}
+	noun := "findings"
+	if len(suppressed) == 1 {
+		noun = "finding"
+	}
+	sep := ""
+	if afterFindings {
+		sep = "\n"
+	}
+	_, err := fmt.Fprintf(w, "%s%d %s suppressed (%s); run with --no-ignores to show them\n", sep, len(suppressed), noun, strings.Join(sources, ", "))
+	return err
 }
 
 // writeDiagnostic renders one finding. The source block is best-effort: a
@@ -283,7 +323,21 @@ type jsonFinding struct {
 
 type jsonOutput struct {
 	Findings []jsonFinding `json:"findings"`
-	Errors   []jsonError   `json:"errors,omitempty"`
+	// Suppressed is a separate array, so a consumer that reads findings, and
+	// a JSON snapshot used as --baseline, see what they saw before (#834).
+	Suppressed []jsonSuppressed `json:"suppressed,omitempty"`
+	Errors     []jsonError      `json:"errors,omitempty"`
+}
+
+type jsonSuppressed struct {
+	jsonFinding
+	Suppression jsonSuppression `json:"suppression"`
+}
+
+type jsonSuppression struct {
+	Source  string `json:"source"`
+	Reason  string `json:"reason,omitempty"`
+	Expires string `json:"expires,omitempty"`
 }
 
 type jsonError struct {
@@ -295,11 +349,22 @@ type jsonError struct {
 // per finding to populate the "owasp" and "asvs" fields. Scan errors go in
 // an "errors" array.
 func WriteJSON(w io.Writer, findings []finding.Finding, owasp, asvs func(string) []string, opts ...WriteOption) error {
-	return writeJSON(w, findings, writeOptions(opts).errors, owasp, asvs)
+	cfg := writeOptions(opts)
+	return writeJSON(w, findings, cfg.suppressed, cfg.errors, owasp, asvs)
 }
 
-func writeJSON(w io.Writer, findings []finding.Finding, errs []ScanError, owasp, asvs func(string) []string) error {
+func writeJSON(w io.Writer, findings []finding.Finding, suppressed []finding.Suppressed, errs []ScanError, owasp, asvs func(string) []string) error {
 	out := jsonOutput{Findings: jsonFindings(findings, owasp, asvs), Errors: jsonErrors(errs)}
+	if len(suppressed) > 0 {
+		fs := make([]finding.Finding, len(suppressed))
+		for i, s := range suppressed {
+			fs[i] = s.Finding
+		}
+		for i, jf := range jsonFindings(fs, owasp, asvs) {
+			s := suppressed[i]
+			out.Suppressed = append(out.Suppressed, jsonSuppressed{jf, jsonSuppression{Source: s.Source, Reason: s.Reason, Expires: s.Expires}})
+		}
+	}
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
 	enc.SetIndent("", "  ")
@@ -482,10 +547,40 @@ type sarifTaxon struct {
 }
 
 type sarifResult struct {
-	RuleID    string          `json:"ruleId"`
-	Level     string          `json:"level"`
-	Message   sarifMessage    `json:"message"`
-	Locations []sarifLocation `json:"locations"`
+	RuleID       string             `json:"ruleId"`
+	Level        string             `json:"level"`
+	Message      sarifMessage       `json:"message"`
+	Locations    []sarifLocation    `json:"locations"`
+	Suppressions []sarifSuppression `json:"suppressions,omitempty"`
+}
+
+type sarifSuppression struct {
+	Kind          string                 `json:"kind"`
+	Justification string                 `json:"justification,omitempty"`
+	Properties    *sarifSuppressionProps `json:"properties,omitempty"`
+}
+
+type sarifSuppressionProps struct {
+	Expires string `json:"expires"`
+}
+
+func sarifResultOf(f finding.Finding, cwd string) sarifResult {
+	file, local := reportPath(f.File, cwd)
+	location := sarifArtifactLocation{URI: sarifURI(file)}
+	if local {
+		location.URIBaseID = "%SRCROOT%"
+	}
+	physical := sarifPhysicalLocation{ArtifactLocation: location}
+	// SARIF lines start at 1; a finding on the whole file has none.
+	if f.Line > 0 {
+		physical.Region = &sarifRegion{StartLine: f.Line}
+	}
+	return sarifResult{
+		RuleID:    f.RuleID,
+		Level:     severityToSARIFLevel(f.Severity),
+		Message:   sarifMessage{Text: f.Message},
+		Locations: []sarifLocation{{PhysicalLocation: physical}},
+	}
 }
 
 type sarifInvocation struct {
@@ -607,33 +702,35 @@ func WriteSARIF(w io.Writer, findings []finding.Finding, tool SARIFTool,
 	asvs func(string) []string, asvsName func(string) string,
 	opts ...WriteOption,
 ) error {
-	return writeSARIF(w, findings, writeOptions(opts).errors, tool, cweID, cweName, owasp, owaspName, asvs, asvsName)
+	cfg := writeOptions(opts)
+	return writeSARIF(w, findings, cfg.suppressed, cfg.errors, tool, cweID, cweName, owasp, owaspName, asvs, asvsName)
 }
 
-func writeSARIF(w io.Writer, findings []finding.Finding, errs []ScanError, tool SARIFTool,
+func writeSARIF(w io.Writer, findings []finding.Finding, suppressed []finding.Suppressed, errs []ScanError, tool SARIFTool,
 	cweID func(string) string, cweName func(string) string,
 	owasp func(string) []string, owaspName func(string) string,
 	asvs func(string) []string, asvsName func(string) string,
 ) error {
 	cwd, _ := os.Getwd()
-	results := make([]sarifResult, 0, len(findings))
+	results := make([]sarifResult, 0, len(findings)+len(suppressed))
 	for _, f := range findings {
-		file, local := reportPath(f.File, cwd)
-		location := sarifArtifactLocation{URI: sarifURI(file)}
-		if local {
-			location.URIBaseID = "%SRCROOT%"
+		results = append(results, sarifResultOf(f, cwd))
+	}
+	// A suppressed finding is a result with suppressions, the SARIF way to
+	// say that it was reviewed and accepted rather than fixed (#834).
+	all := append([]finding.Finding(nil), findings...)
+	for _, s := range suppressed {
+		r := sarifResultOf(s.Finding, cwd)
+		sup := sarifSuppression{Kind: "inSource", Justification: s.Reason}
+		if s.Source == finding.SourceIgnoreFile {
+			sup.Kind = "external"
 		}
-		physical := sarifPhysicalLocation{ArtifactLocation: location}
-		// SARIF lines start at 1; a finding on the whole file has none.
-		if f.Line > 0 {
-			physical.Region = &sarifRegion{StartLine: f.Line}
+		if s.Expires != "" {
+			sup.Properties = &sarifSuppressionProps{Expires: s.Expires}
 		}
-		results = append(results, sarifResult{
-			RuleID:    f.RuleID,
-			Level:     severityToSARIFLevel(f.Severity),
-			Message:   sarifMessage{Text: f.Message},
-			Locations: []sarifLocation{{PhysicalLocation: physical}},
-		})
+		r.Suppressions = []sarifSuppression{sup}
+		results = append(results, r)
+		all = append(all, s.Finding)
 	}
 
 	run := sarifRun{
@@ -654,7 +751,7 @@ func writeSARIF(w io.Writer, findings []finding.Finding, errs []ScanError, tool 
 	seenOWASP := map[string]bool{}
 	seenASVS := map[string]bool{}
 
-	for _, f := range findings {
+	for _, f := range all {
 		if seenRules[f.RuleID] {
 			continue
 		}

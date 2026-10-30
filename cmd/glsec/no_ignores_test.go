@@ -22,7 +22,7 @@ func hasGL001(t *testing.T, content string, skipSuppress bool) bool {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	found, _, _ := collectFindings(doc, "test.yml", config.Default(), gitlabver.Version{}, skipSuppress, false)
+	found, _, _, _ := collectFindings(doc, "test.yml", config.Default(), gitlabver.Version{}, skipSuppress, false)
 	for _, f := range found {
 		if f.RuleID == "GL001" {
 			return true
@@ -72,13 +72,13 @@ build:
 	}
 
 	cfg := config.Default()
-	_, unjustified, _ := collectFindings(doc, "test.yml", cfg, gitlabver.Version{}, false, false)
+	_, _, unjustified, _ := collectFindings(doc, "test.yml", cfg, gitlabver.Version{}, false, false)
 	if unjustified != 0 {
 		t.Errorf("policy off: expected 0 violations, got %d", unjustified)
 	}
 
 	cfg.RequireIgnoreReason = true
-	_, unjustified, _ = collectFindings(doc, "test.yml", cfg, gitlabver.Version{}, false, false)
+	_, _, unjustified, _ = collectFindings(doc, "test.yml", cfg, gitlabver.Version{}, false, false)
 	if unjustified != 1 {
 		t.Errorf("policy on: expected 1 violation for the reasonless suppression, got %d", unjustified)
 	}
@@ -93,7 +93,7 @@ build:
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	if _, n, _ := collectFindings(withReason, "test.yml", cfg, gitlabver.Version{}, false, false); n != 0 {
+	if _, _, n, _ := collectFindings(withReason, "test.yml", cfg, gitlabver.Version{}, false, false); n != 0 {
 		t.Errorf("a suppression with a reason must not be a violation, got %d", n)
 	}
 }

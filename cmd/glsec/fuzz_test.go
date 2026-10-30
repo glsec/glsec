@@ -38,10 +38,10 @@ func FuzzScan(f *testing.F) {
 		if err != nil {
 			return
 		}
-		findings, _, _ := collectFindings(doc, "fuzz.yml", config.Default(), gitlabver.Version{}, false, true)
+		findings, _, _, _ := collectFindings(doc, "fuzz.yml", config.Default(), gitlabver.Version{}, false, true)
 		jobs := parser.CountJobs(doc.Root)
 		for _, format := range formats {
-			if err := writeOutput(io.Discard, format, findings, nil, jobs, true, true, true); err != nil {
+			if err := writeOutput(io.Discard, format, findings, nil, nil, jobs, true, true, true); err != nil {
 				t.Fatalf("%s: %v", format, err)
 			}
 		}

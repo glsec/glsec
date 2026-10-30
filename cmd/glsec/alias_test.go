@@ -18,7 +18,7 @@ func findingsFor(t *testing.T, src string) []finding.Finding {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	found, _, _ := collectFindings(doc, "test.yml", config.Default(), gitlabver.Version{}, true, true)
+	found, _, _, _ := collectFindings(doc, "test.yml", config.Default(), gitlabver.Version{}, true, true)
 	return found
 }
 

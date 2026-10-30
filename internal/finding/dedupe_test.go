@@ -49,3 +49,20 @@ func TestDedupe_InfoNeverRaisesSeverity(t *testing.T) {
 		t.Errorf("info first: got %+v, want it raised to warn", out)
 	}
 }
+
+// A suppressed finding an anchor repeats per job is listed once, with the
+// first one's suppression and the highest severity.
+func TestDedupeSuppressed(t *testing.T) {
+	in := []Suppressed{
+		{Finding: Finding{RuleID: "GL001", Severity: Warn, Job: "a", Message: `job "a" uses node:latest`, File: "f", Line: 3}, Source: SourceInline, Reason: "pinned"},
+		{Finding: Finding{RuleID: "GL001", Severity: Error, Job: "b", Message: `job "b" uses node:latest`, File: "f", Line: 3}, Source: SourceInline, Reason: "pinned"},
+		{Finding: Finding{RuleID: "GL001", Severity: Warn, Job: "c", Message: `job "c" uses node:latest`, File: "f", Line: 9}, Source: SourceIgnoreFile},
+	}
+	out := DedupeSuppressed(in)
+	if len(out) != 2 {
+		t.Fatalf("got %d, want 2", len(out))
+	}
+	if out[0].Job != "a" || out[0].Severity != Error || out[0].Reason != "pinned" || out[1].Source != SourceIgnoreFile {
+		t.Errorf("got %+v", out)
+	}
+}

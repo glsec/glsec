@@ -14,18 +14,10 @@ import (
 // only in the quoted job name. The merged finding keeps the first job and the highest
 // severity any of them carries.
 func Dedupe(findings []Finding) []Finding {
-	type key struct {
-		rule, file, message string
-		line, col           int
-	}
-	index := map[key]int{}
+	index := map[dedupeKey]int{}
 	out := make([]Finding, 0, len(findings))
 	for _, f := range findings {
-		msg := f.Message
-		if f.Job != "" {
-			msg = strings.ReplaceAll(msg, strconv.Quote(f.Job), "\x00")
-		}
-		k := key{f.RuleID, f.File, msg, f.Line, f.Col}
+		k := keyOf(f)
 		i, seen := index[k]
 		if !seen {
 			index[k] = len(out)
@@ -37,6 +29,39 @@ func Dedupe(findings []Finding) []Finding {
 		}
 	}
 	return out
+}
+
+// DedupeSuppressed is Dedupe for suppressed findings. One suppression covers
+// the line, so the first finding's source and reason stand for all of them.
+func DedupeSuppressed(suppressed []Suppressed) []Suppressed {
+	index := map[dedupeKey]int{}
+	out := make([]Suppressed, 0, len(suppressed))
+	for _, s := range suppressed {
+		k := keyOf(s.Finding)
+		i, seen := index[k]
+		if !seen {
+			index[k] = len(out)
+			out = append(out, s)
+			continue
+		}
+		if rank(s.Severity) > rank(out[i].Severity) {
+			out[i].Severity = s.Severity
+		}
+	}
+	return out
+}
+
+type dedupeKey struct {
+	rule, file, message string
+	line, col           int
+}
+
+func keyOf(f Finding) dedupeKey {
+	msg := f.Message
+	if f.Job != "" {
+		msg = strings.ReplaceAll(msg, strconv.Quote(f.Job), "\x00")
+	}
+	return dedupeKey{f.RuleID, f.File, msg, f.Line, f.Col}
 }
 
 func rank(s Severity) int {

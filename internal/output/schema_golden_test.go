@@ -32,6 +32,15 @@ func schemaFixture() ([]finding.Finding, []ScanError) {
 	return findings, errs
 }
 
+// suppressedFixture holds an inline suppression with a reason and an expiry
+// and a .glsec-ignore entry, for a rule no open finding has (#834).
+func suppressedFixture() []finding.Suppressed {
+	return []finding.Suppressed{
+		{Finding: finding.Finding{RuleID: "GL001", Severity: finding.Error, Job: "test", File: ".gitlab-ci.yml", Line: 20, Col: 5, Message: `image "ruby:latest" uses mutable tag "latest"`}, Source: finding.SourceInline, Reason: "pinned by renovate", Expires: "2027-01-31"},
+		{Finding: finding.Finding{RuleID: "GL016", Severity: finding.Warn, Job: "docs", File: "ci/docs.yml", Line: 4, Message: "http:// URL"}, Source: finding.SourceIgnoreFile},
+	}
+}
+
 // TestSchemaGoldenReports compares the reports with the golden files in
 // testdata, which CI validates against each format's schema (#927): SARIF
 // 2.1.0, the Code Quality fields GitLab documents, and a JUnit XSD. After an
@@ -60,11 +69,15 @@ func TestSchemaGoldenReports(t *testing.T) {
 				func(string) string { return "Dependency Chain Abuse" },
 				func(id string) []string { return map[string][]string{"GL011": {"ASVS-V14.2.4"}}[id] },
 				func(string) string { return "Verify the integrity of third-party components" },
-				WithErrors(errs))
+				WithErrors(errs), WithSuppressed(suppressedFixture()))
 		}},
-		{"codequality.golden.json", func(b *bytes.Buffer) error { return WriteCodeClimate(b, findings, WithErrors(errs)) }},
+		// Neither format has a suppressed state: the suppressed findings must
+		// not show up as open issues or failed tests.
+		{"codequality.golden.json", func(b *bytes.Buffer) error {
+			return WriteCodeClimate(b, findings, WithErrors(errs), WithSuppressed(suppressedFixture()))
+		}},
 		{"junit.golden.xml", func(b *bytes.Buffer) error {
-			return Write(b, FormatJUnit, findings, 3, false, false, WithErrors(errs))
+			return Write(b, FormatJUnit, findings, 3, false, false, WithErrors(errs), WithSuppressed(suppressedFixture()))
 		}},
 	} {
 		t.Run(tc.golden, func(t *testing.T) {

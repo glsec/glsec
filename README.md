@@ -321,6 +321,15 @@ The same token works in the `.glsec-ignore` baseline, appended to a line:
 
 Entries without the token never expire, so existing ignore files keep working unchanged.
 
+Suppressed findings stay visible, so a merge request that adds a suppression doesn't look like one that fixes the problem. They never fail the run:
+
+- `text` and `table` end with a summary line: `2 findings suppressed (1 inline, 1 .glsec-ignore); run with --no-ignores to show them`.
+- `sarif` lists them as results with `suppressions`: `kind` is `inSource` for an inline comment and `external` for `.glsec-ignore`, `justification` is the reason, and `properties.expires` the expiry date. Code scanning shows them as suppressed rather than open.
+- `json` lists them in a separate `suppressed` array, so consumers of `findings` see what they saw before. Each entry has the fields of a finding plus `suppression`: `source` (`inline` or `ignore-file`) and, when given, `reason` and `expires`. A JSON snapshot with this array still works as `--baseline`; its suppressed entries aren't part of the baseline.
+- `codeclimate`, `junit`, `gitlab-sast` and templates leave them out: these formats have no suppressed state, and an entry would count as an open issue or a failed test.
+
+An expired suppression doesn't count: its finding is reported as before. With `--no-ignores` every finding is reported and nothing is suppressed.
+
 To stop undocumented suppressions creeping in, require a reason:
 
 ```sh

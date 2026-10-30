@@ -9,6 +9,8 @@ import (
 	"encoding/json"
 	"os"
 	"strings"
+
+	"github.com/glsec/glsec/internal/finding"
 )
 
 // ScanError is a file glsec could not scan. The machine-readable reports
@@ -17,6 +19,13 @@ import (
 type ScanError struct {
 	File    string
 	Message string
+}
+
+// WithSuppressed adds the findings a suppression covers. text and table
+// count them, sarif and json list them as suppressed; the other formats have
+// no suppressed state and leave them out (#834).
+func WithSuppressed(suppressed []finding.Suppressed) WriteOption {
+	return func(c *writeConfig) { c.suppressed = suppressed }
 }
 
 // WithErrors adds the scan errors to the report.

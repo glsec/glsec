@@ -679,7 +679,7 @@ func TestWriteOutput_MasksSecretsInScanErrors(t *testing.T) {
 	errs := []output.ScanError{{File: "ci.yml", Message: "ci.yml: bad value " + token}}
 	for _, mask := range []bool{true, false} {
 		var buf bytes.Buffer
-		if err := writeOutput(&buf, output.FormatJSON, nil, errs, 0, false, false, mask); err != nil {
+		if err := writeOutput(&buf, output.FormatJSON, nil, nil, errs, 0, false, false, mask); err != nil {
 			t.Fatal(err)
 		}
 		if got := strings.Contains(buf.String(), token); got == mask {

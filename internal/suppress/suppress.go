@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/glsec/glsec/internal/finding"
 	"gopkg.in/yaml.v3"
 )
 
@@ -39,6 +40,8 @@ type Entry struct {
 	// suppression stops applying and the finding is reported again. Empty means
 	// the suppression never expires.
 	Expiry string
+	// Source is finding.SourceInline or finding.SourceIgnoreFile.
+	Source string
 }
 
 // Expired reports whether the entry has an expiry date that has passed.
@@ -93,7 +96,7 @@ func walk(node *yaml.Node, m Map) {
 		return
 	}
 	for _, s := range fromComment(node.LineComment, node.Line) {
-		m.set(s.Line, s.RuleID, Entry{Reason: s.Reason, Expiry: s.Expiry})
+		m.set(s.Line, s.RuleID, Entry{Reason: s.Reason, Expiry: s.Expiry, Source: finding.SourceInline})
 	}
 	for _, child := range node.Content {
 		walk(child, m)
@@ -119,8 +122,18 @@ func (m Map) lookup(line int, ruleID string) (Entry, bool) {
 // IsSuppressed returns true when ruleID is suppressed on the given line and the
 // suppression has not expired as of now.
 func (m Map) IsSuppressed(line int, ruleID string, now time.Time) bool {
+	_, ok := m.Active(line, ruleID, now)
+	return ok
+}
+
+// Active returns the suppression of ruleID on the given line that applies as
+// of now, so a report can say where it comes from and why.
+func (m Map) Active(line int, ruleID string, now time.Time) (Entry, bool) {
 	e, ok := m.lookup(line, ruleID)
-	return ok && !e.Expired(now)
+	if !ok || e.Expired(now) {
+		return Entry{}, false
+	}
+	return e, true
 }
 
 // ExpiredAt reports whether a suppression exists for ruleID on the given line
@@ -202,7 +215,7 @@ func LoadIgnoreFile(ignorePath, targetFile string) (Map, error) {
 		if filePath != targetFile {
 			continue
 		}
-		m.set(lineNum, ruleID, Entry{Expiry: expiry})
+		m.set(lineNum, ruleID, Entry{Expiry: expiry, Source: finding.SourceIgnoreFile})
 	}
 	if err := scanner.Err(); err != nil {
 		return m, err
