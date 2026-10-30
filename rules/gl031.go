@@ -5,7 +5,9 @@ package rules
 
 import (
 	"github.com/glsec/glsec/internal/finding"
+	"github.com/glsec/glsec/internal/parser"
 	"gopkg.in/yaml.v3"
+	"strings"
 )
 
 type gl031 struct{}
@@ -28,6 +30,14 @@ func (r *gl031) Check(doc *yaml.Node, file string) []finding.Finding {
 func checkDockerTLS(node *yaml.Node, file, job string) *finding.Finding {
 	if node == nil || node.Kind != yaml.MappingNode {
 		return nil
+	}
+	// DOCKER_HOST cleared or pointing at a Unix socket in the same block:
+	// the job talks to the runner's daemon, and no dind daemon starts whose
+	// TLS the empty DOCKER_TLS_CERTDIR would turn off (#992).
+	if host := parser.FindKey(node, "DOCKER_HOST"); host != nil {
+		if h := resolveScalar(host); h != nil && (h.Value == "" || strings.HasPrefix(h.Value, "unix://")) {
+			return nil
+		}
 	}
 	for i := 0; i+1 < len(node.Content); i += 2 {
 		key := node.Content[i]

@@ -74,3 +74,21 @@ build:
 		})
 	}
 }
+
+// A job that clears DOCKER_HOST or points it at a Unix socket uses the
+// runner's daemon; its empty DOCKER_TLS_CERTDIR turns no TLS off (#992).
+func TestGL031_RunnerSocket(t *testing.T) {
+	for host, want := range map[string]int{
+		`""`:                          0,
+		"unix:///var/run/docker.sock": 0,
+		"tcp://docker:2375":           1,
+	} {
+		doc, err := parser.Parse([]byte("local-docker:\n  image: docker:27.3.1\n  variables:\n    DOCKER_HOST: "+host+"\n    DOCKER_TLS_CERTDIR: \"\"\n  script: [docker info]\n"), "test.yml")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := len(GL031.Check(doc.Root, "test.yml")); got != want {
+			t.Errorf("DOCKER_HOST %s: got %d findings, want %d", host, got, want)
+		}
+	}
+}
