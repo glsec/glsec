@@ -214,6 +214,8 @@ A file named `-` reads the pipeline from stdin, with the same size limit as a fi
 
 `--generate-ignore` rewrites only the entries the run could have reported: those for a file it scanned and a rule that ran. Entries for other pipeline files, and for rules left out with `--only`, `--skip` or `.glsec.yml`, stay as they are, and so do comments and an entry's `exp:` date when the finding is still there. `glsec --generate-ignore --only GL001 .gitlab-ci.yml` refreshes the GL001 entries and keeps the rest.
 
+Flags that contradict each other aren't resolved silently. `--generate-ignore` writes a new baseline and can't be combined with `--new-only` or `--baseline`, which diff against one; `--no-ignores` reports every finding and can't be combined with them either, since they leave out the baselined ones. Both stop glsec with exit 2. Where a flag only has no effect, glsec warns and runs as it would without it: `--format` with `--generate-ignore`, which prints no report; `--strict` with `--no-exit-codes`, also when they come from `.glsec.yml`; and files or other flags with `--clear-cache`, which only empties the cache.
+
 ### Report templates
 
 `--format template --template <file>` renders the report with a Go [`text/template`](https://pkg.go.dev/text/template) file, for formats glsec doesn't write itself: CSV for a spreadsheet, a Markdown summary for a merge request comment, a checkstyle file for another CI server. The template path is accepted on the command line only, never from `.glsec.yml`: the config file comes from the scanned repository, which must not decide what glsec writes in CI.
@@ -256,7 +258,7 @@ Use `--strict` to treat `warn` findings as hard failures (exit 1). Use `--no-exi
 
 ```yaml
 strict: true        # warn findings cause exit 1
-no-exit-codes: true # never exit 1 (overrides strict)
+no-exit-codes: true # never exit 1 (overrides strict, with a warning)
 
 # Optional container-image policies (GL065 and GL001):
 allowed_registries: []       # empty permits any registry

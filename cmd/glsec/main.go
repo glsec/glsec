@@ -132,7 +132,31 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 
+	// Flags that contradict each other: an error where a result or a file
+	// would differ from what one of them promises, a warning where one of
+	// them has no effect (#903).
+	newOnlyMode := *newOnlyFlag || *baselineFlag != ""
+	if *generateIgnoreFlag && newOnlyMode {
+		_, _ = fmt.Fprintln(stderr, "error: --generate-ignore writes a new baseline, --new-only and --baseline diff against one; use one or the other")
+		return 2
+	}
+	if *noIgnoresFlag && newOnlyMode {
+		_, _ = fmt.Fprintln(stderr, "error: --no-ignores reports every finding, but --new-only and --baseline leave out the ones in the baseline; use one or the other")
+		return 2
+	}
 	if *clearCacheFlag {
+		var other []string
+		flags.Visit(func(f *flag.Flag) {
+			if f.Name != "clear-cache" {
+				other = append(other, "--"+f.Name)
+			}
+		})
+		if flags.NArg() > 0 {
+			other = append(other, "file arguments")
+		}
+		if len(other) > 0 {
+			_, _ = fmt.Fprintf(stderr, "warning: --clear-cache only empties the cache and exits; ignoring %s\n", strings.Join(other, ", "))
+		}
 		if err := cache.Clear(); err != nil {
 			_, _ = fmt.Fprintf(stderr, "error: --clear-cache: %v\n", err)
 			return 2
@@ -215,6 +239,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	if *noExitCodesFlag {
 		cfg.NoExitCodes = true
+	}
+	if cfg.Strict && cfg.NoExitCodes {
+		_, _ = fmt.Fprintln(stderr, "warning: strict has no effect with no-exit-codes, which always exits 0")
+	}
+	if *generateIgnoreFlag && flagSet(flags, "format") {
+		_, _ = fmt.Fprintln(stderr, "warning: --format has no effect with --generate-ignore, which writes .glsec-ignore and prints no report")
 	}
 	if *requireReasonFlag {
 		cfg.RequireIgnoreReason = true
