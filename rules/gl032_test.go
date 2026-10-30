@@ -4,6 +4,7 @@
 package rules
 
 import (
+	"strconv"
 	"testing"
 
 	"github.com/glsec/glsec/internal/parser"
@@ -129,5 +130,30 @@ func TestGL032(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// Only a key that is written counts, and a write into a key file only when
+// it carries a variable (#993).
+func TestGL032_WrittenKeysOnly(t *testing.T) {
+	for _, tc := range []struct {
+		line string
+		want int
+	}{
+		{`echo "toolchain cache fresh ($CURRENT_KEY)"`, 0},
+		{`printf '\n' >> ~/.ssh/id_ed25519`, 0},
+		{`echo "$SSH_PRIVATE_KEY" | ssh-add -`, 1},
+		{`echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa`, 1},
+		{`echo "$DEPLOY_KEY" | base64 -d > ~/.ssh/id_ed25519`, 1},
+		{`ssh-add <(echo "$SSH_PRIVATE_KEY")`, 1},
+		{`{ echo "$GPG_PRIVATE_KEY"; } | gpg --batch --import`, 1},
+	} {
+		doc, err := parser.Parse([]byte("job:\n  script:\n    - "+strconv.Quote(tc.line)+"\n"), "test.yml")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := len(GL032.Check(doc.Root, "test.yml")); got != tc.want {
+			t.Errorf("%s: got %d findings, want %d", tc.line, got, tc.want)
+		}
 	}
 }

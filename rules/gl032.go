@@ -102,9 +102,23 @@ func sshKeyEchoLines(script string) []int {
 			continue
 		}
 		private, public := printedKeyVars(maskSingleQuoted(first.text))
-		m := sshRedirectRe.FindStringSubmatch(strings.Join(pipeline, " | "))
+		joined := strings.Join(pipeline, " | ")
+		m := sshRedirectRe.FindStringSubmatch(joined)
 		keyFile := m != nil && !sshNonKeyTargets[m[1]] && !strings.HasSuffix(m[1], ".pub")
-		if private || keyFile && !public {
+		// Only a key that is written counts: piped into a command or
+		// redirected to a file. An echo that only prints a key-named
+		// variable, often a cache key, writes nothing; printing a secret is
+		// GL021's (#993).
+		written := len(pipeline) > 1 || strings.Contains(maskSingleQuoted(joined), ">")
+		if !written {
+			if at := strings.Index(script, first.text); at >= 0 {
+				written = groupOutputDiverted(script, at) // { …; echo "$KEY"; } | gpg --import
+			}
+		}
+		// A write into a key file counts when it carries a variable: printf
+		// '\n' >> ~/.ssh/id_ed25519 writes no key material.
+		expands := strings.Contains(maskSingleQuoted(first.text), "$")
+		if private && written || keyFile && !public && expands {
 			lines = append(lines, first.line)
 		}
 	}
