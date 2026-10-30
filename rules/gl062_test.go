@@ -4,6 +4,7 @@
 package rules
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -141,5 +142,30 @@ func TestGL062_LaterLineOfABlock(t *testing.T) {
 	f := GL062.Check(doc.Root, "test.yml")
 	if len(f) != 1 || f[0].Line != 5 {
 		t.Fatalf("got %+v, want one finding on line 5", f)
+	}
+}
+
+// A dump filtered to one non-secret variable is like printenv NAME; a broad
+// filter is reported with its own message (#996).
+func TestGL062_GrepFilter(t *testing.T) {
+	for _, tc := range []struct {
+		line, want string
+	}{
+		{"env | grep THREADS", ""},
+		{"printenv | grep -E '^BUILD_JOBS='", ""},
+		{"env | grep CI_REGISTRY", "filtered with grep"},
+		{"env | grep ^CI", "filtered with grep"},
+		{"env | grep -i token", "filtered with grep"},
+		{"env | sort", "dumps every environment variable"},
+		{"env | grep -E '^(CI|APP)_' > .env", ""},
+		{"env > env.txt", ""},
+	} {
+		f := findings062(t, "job:\n  script:\n    - \""+tc.line+"\"\n")
+		switch {
+		case tc.want == "" && len(f) != 0:
+			t.Errorf("%s: got %v, want no finding", tc.line, f)
+		case tc.want != "" && (len(f) != 1 || !strings.Contains(f[0].Message, tc.want)):
+			t.Errorf("%s: got %v, want a finding saying %q", tc.line, f, tc.want)
+		}
 	}
 }
