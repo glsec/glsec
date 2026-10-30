@@ -29,6 +29,7 @@ func TestReportPaths(t *testing.T) {
 		local            bool
 	}{
 		{"relative", "ci/build.yml", "ci/build.yml", true},
+		{"relative with OS separator", filepath.Join("ci", "build.yml"), "ci/build.yml", true},
 		{"absolute inside", filepath.Join(cwd, "ci", "build.yml"), "ci/build.yml", true},
 		{"absolute outside", filepath.Join(root, "outside.yml"), filepath.Join(root, "outside.yml"), false},
 		{"sibling prefix", filepath.Join(root, "repo-other", "build.yml"), filepath.Join(root, "repo-other", "build.yml"), false},

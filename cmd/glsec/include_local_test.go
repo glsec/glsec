@@ -189,3 +189,18 @@ func TestIncludeLocal_NamedToo(t *testing.T) {
 		t.Errorf("want ci/build.yml's GL001 once and no GL053: %v", got)
 	}
 }
+
+// Files glsec finds itself are joined with the OS separator; the reports
+// write them with / also on Windows (#956).
+func TestRun_IncludedFileReportedWithSlashes(t *testing.T) {
+	files := map[string]string{
+		".gitlab-ci.yml": "include:\n  - local: ci/jobs.yml\n",
+		"ci/jobs.yml":    includedBuild,
+	}
+	for _, format := range []string{"json", "sarif"} {
+		_, out, stderr := runCLI(t, files, "--no-cache", "--only", "GL001", "--format", format)
+		if !strings.Contains(out, `"ci/jobs.yml"`) {
+			t.Errorf("%s: included file not reported as ci/jobs.yml: %s (stderr %s)", format, out, stderr)
+		}
+	}
+}
