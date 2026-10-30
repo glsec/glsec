@@ -36,7 +36,7 @@ func (r *gl071) Check(doc *yaml.Node, file string) []finding.Finding {
 	}
 	var deploys []deploy
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
-		if isHiddenJob(name.Value) {
+		if isHiddenJob(name.Value) || !in.Has(job, "environment") {
 			return
 		}
 		job = in.Effective(job)
@@ -53,7 +53,7 @@ func (r *gl071) Check(doc *yaml.Node, file string) []finding.Finding {
 
 	var findings []finding.Finding
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
-		if isHiddenJob(name.Value) {
+		if isHiddenJob(name.Value) || !in.Has(job, "when") {
 			return
 		}
 		job = in.Effective(job)

@@ -39,6 +39,9 @@ func (r *gl037) Check(doc *yaml.Node, file string) []finding.Finding {
 		if strings.HasPrefix(name.Value, ".") {
 			return
 		}
+		if !in.Has(job, "trigger") {
+			return
+		}
 		job = in.Effective(job)
 		trigger := parser.FindKey(job, "trigger")
 		if trigger == nil {

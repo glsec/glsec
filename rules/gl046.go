@@ -38,6 +38,9 @@ func (r *gl046) Check(doc *yaml.Node, file string) []finding.Finding {
 
 	in := NewInheritance(doc)
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
+		if !in.Has(job, "cache") {
+			return
+		}
 		job = in.Effective(job)
 		for _, f := range checkCacheNode(parser.FindKey(job, "cache"), file, "") {
 			f.Job = name.Value

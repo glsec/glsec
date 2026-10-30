@@ -29,7 +29,9 @@ func (r *gl051) CheckWithSpec(spec, doc *yaml.Node, file string) []finding.Findi
 	findings := gl051SpecInputs(spec, doc, file)
 	in := NewInheritance(doc)
 	parser.EachJob(doc, func(name, job *yaml.Node) {
-		findings = append(findings, gl051JobInputs(name.Value, in.Effective(job), file)...)
+		if in.Has(job, "inputs") {
+			findings = append(findings, gl051JobInputs(name.Value, in.Effective(job), file)...)
+		}
 	})
 	return findings
 }
