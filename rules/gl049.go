@@ -60,7 +60,19 @@ func (r *gl049) Check(doc *yaml.Node, file string) []finding.Finding {
 // A job with an environment: or a deploy-like stage still counts, as do
 // name-keyword jobs in any other stage.
 func deployLikeInherited(in *Inheritance, jobName string, job *yaml.Node) bool {
+	// GitLab Pages deploys the site only after the job succeeds, so a
+	// cancelled pages job leaves the old site in place (#981).
+	if jobName == "pages" || in.Key(job, "pages") != nil {
+		return false
+	}
+	stage := in.Key(job, "stage")
+	checkStage := stage != nil && stage.Kind == yaml.ScalarNode && hasWordPrefix(strings.ToLower(stage.Value), checkOnlyKeywords)
 	if env := in.Key(job, "environment"); env != nil && !envActionNoDeploy(env) && !envDevTier(env) {
+		// An environment with neither a tier nor a name GitLab reads as
+		// production or staging doesn't make a job in a test stage a deploy.
+		if tier, _ := envTier(env); tier == "other" && checkStage {
+			return false
+		}
 		return true
 	}
 	if deployLikeName(strings.ToLower(jobName), deployLikeKeywords) {

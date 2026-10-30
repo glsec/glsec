@@ -5,6 +5,7 @@ package rules
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -70,11 +71,43 @@ func envActionNoDeploy(env *yaml.Node) bool {
 // envDevTier reports an environment that declares itself a review or test
 // target: per-branch previews, links to job artifacts.
 func envDevTier(env *yaml.Node) bool {
-	if env.Kind != yaml.MappingNode {
-		return false
+	t, _ := envTier(env)
+	return t == "development" || t == "testing"
+}
+
+// envTier returns an environment's deployment tier: its deployment_tier:,
+// else the tier GitLab guesses from the name (Environment#guess_tier in
+// GitLab's source, #989). explicit reports which.
+func envTier(env *yaml.Node) (tier string, explicit bool) {
+	name := ""
+	switch env.Kind {
+	case yaml.ScalarNode:
+		name = env.Value
+	case yaml.MappingNode:
+		if t := parser.FindKey(env, "deployment_tier"); t != nil && t.Kind == yaml.ScalarNode {
+			return t.Value, true
+		}
+		if n := parser.FindKey(env, "name"); n != nil && n.Kind == yaml.ScalarNode {
+			name = n.Value
+		}
 	}
-	t := parser.FindKey(env, "deployment_tier")
-	return t != nil && (t.Value == "development" || t.Value == "testing")
+	for _, g := range tierGuesses {
+		if g.re.MatchString(name) {
+			return g.tier, false
+		}
+	}
+	return "other", false
+}
+
+// tierGuesses are GitLab's guesses, in its order: a name matches the first.
+var tierGuesses = []struct {
+	tier string
+	re   *regexp.Regexp
+}{
+	{"development", regexp.MustCompile(`(?i)(dev|review|trunk)`)},
+	{"testing", regexp.MustCompile(`(?i)(test|tst|int|ac(ce|)pt|qa|qc|control|quality)`)},
+	{"staging", regexp.MustCompile(`(?i)(st(a|)g|mod(e|)l|pre|demo|non)`)},
+	{"production", regexp.MustCompile(`(?i)(pr(o|)d|live)`)},
 }
 
 // checkOnlyKeywords mark a job or stage that tests or checks rather than
