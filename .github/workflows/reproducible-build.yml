@@ -12,6 +12,8 @@ on:
       - go.mod
       - go.sum
       - cmd/**
+      # Tests don't change the binary.
+      - "!cmd/**/*_test.go"
       - .github/workflows/build-release.yml
       - .github/workflows/reproducible-build.yml
   push:
