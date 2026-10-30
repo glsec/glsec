@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "GitLab publishes no schema for the Code Quality report. This one encodes the fields GitLab documents as required, https://docs.gitlab.com/ci/testing/code_quality/#code-quality-report-format, checked in CI against codequality.golden.json (#927).",
+  "title": "GitLab Code Quality report",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": ["description", "check_name", "fingerprint", "severity", "location"],
+    "properties": {
+      "type": { "const": "issue" },
+      "description": { "type": "string", "minLength": 1 },
+      "check_name": { "type": "string", "minLength": 1 },
+      "fingerprint": { "type": "string", "minLength": 1 },
+      "severity": { "enum": ["info", "minor", "major", "critical", "blocker"] },
+      "categories": { "type": "array", "items": { "type": "string" } },
+      "location": {
+        "type": "object",
+        "required": ["path"],
+        "properties": {
+          "path": { "type": "string", "minLength": 1 },
+          "lines": {
+            "type": "object",
+            "required": ["begin"],
+            "properties": { "begin": { "type": "integer", "minimum": 0 } }
+          },
+          "positions": {
+            "type": "object",
+            "required": ["begin"],
+            "properties": {
+              "begin": {
+                "type": "object",
+                "required": ["line"],
+                "properties": { "line": { "type": "integer", "minimum": 0 } }
+              }
+            }
+          }
+        },
+        "oneOf": [{ "required": ["lines"] }, { "required": ["positions"] }]
+      }
+    }
+  }
+}

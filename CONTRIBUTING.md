@@ -48,6 +48,15 @@ go test -race ./...             # with race detector (what CI runs)
 go test ./rules/... -v -run GL001  # single rule
 ```
 
+### Report schemas
+
+Each machine-readable format has a golden report in `internal/output/testdata/` (`sarif.golden.json`, `codequality.golden.json`, `junit.golden.xml`, `gitlab-sast.golden.json`) and the inventory one in `internal/inventory/testdata/`. The Go tests compare the writers' output with them, and CI validates them against the formats' schemas, pinned by URL and SHA-256: SARIF 2.1.0, GitLab's SAST report schema, the JUnit XSD of Jenkins' xUnit plugin and CycloneDX 1.6. GitLab publishes no schema for Code Quality; `codequality.schema.json` encodes the fields it documents as required. When a writer changes on purpose, regenerate the golden files and check the diff:
+
+```sh
+go test ./internal/output -run 'TestSchemaGoldenReports|TestWriteGitLabSAST' -update
+git diff -- internal/output/testdata/
+```
+
 ### Finding identity snapshots
 
 `TestFindingIdentities` pins the report fingerprints, identifiers and baseline key fields of a fixed set of real rule findings in `internal/output/testdata/finding-identities.golden.json`. It runs with relative and absolute input paths, and loads the saved JSON and ignore-file keys through the baseline matcher. This catches message, job, path or fingerprint changes that would make existing findings appear new after an upgrade.

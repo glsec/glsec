@@ -1,0 +1,308 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "glsec",
+          "version": "1.2.3",
+          "semanticVersion": "1.2.3",
+          "informationUri": "https://glsec.github.io",
+          "rules": [
+            {
+              "id": "GL001",
+              "shortDescription": {
+                "text": "Mutable image tag"
+              },
+              "fullDescription": {
+                "text": "Tags like latest move."
+              },
+              "help": {
+                "text": "Tags like latest move.\n\nSafe alternative:\nimage: node:22.11.0\n\nhttps://glsec.github.io/rules/GL001/",
+                "markdown": "Checks `image:`.\n\n**Safe alternative:**\n\n```yaml\nimage: node:22.11.0\n```\n\n[GL001 on glsec.github.io](https://glsec.github.io/rules/GL001/)"
+              },
+              "helpUri": "https://glsec.github.io/rules/GL001/",
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "properties": {
+                "tags": [
+                  "security",
+                  "external/cwe/cwe-1104"
+                ],
+                "security-severity": "8.0"
+              },
+              "relationships": [
+                {
+                  "target": {
+                    "id": "CWE-1104",
+                    "toolComponent": {
+                      "name": "CWE"
+                    }
+                  },
+                  "kinds": [
+                    "superset"
+                  ]
+                },
+                {
+                  "target": {
+                    "id": "CICD-SEC-3",
+                    "toolComponent": {
+                      "name": "OWASP Top 10 CI/CD Security Risks"
+                    }
+                  },
+                  "kinds": [
+                    "superset"
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "GL053",
+              "helpUri": "https://glsec.github.io/rules/GL053/",
+              "properties": {
+                "tags": [
+                  "security"
+                ]
+              }
+            },
+            {
+              "id": "GL011",
+              "shortDescription": {
+                "text": "Download and execute"
+              },
+              "fullDescription": {
+                "text": "Code runs unverified."
+              },
+              "help": {
+                "text": "Code runs unverified.\n\nSafe alternative:\nscript:\n  - sha256sum -c install.sh.sha256\n\nhttps://glsec.github.io/rules/GL011/",
+                "markdown": "Code runs unverified.\n\n**Safe alternative:**\n\n```yaml\nscript:\n  - sha256sum -c install.sh.sha256\n```\n\n[GL011 on glsec.github.io](https://glsec.github.io/rules/GL011/)"
+              },
+              "helpUri": "https://glsec.github.io/rules/GL011/",
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "properties": {
+                "tags": [
+                  "security",
+                  "external/cwe/cwe-494"
+                ],
+                "security-severity": "8.0"
+              },
+              "relationships": [
+                {
+                  "target": {
+                    "id": "CWE-494",
+                    "toolComponent": {
+                      "name": "CWE"
+                    }
+                  },
+                  "kinds": [
+                    "superset"
+                  ]
+                },
+                {
+                  "target": {
+                    "id": "ASVS-V14.2.4",
+                    "toolComponent": {
+                      "name": "OWASP ASVS"
+                    }
+                  },
+                  "kinds": [
+                    "superset"
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "GL070",
+              "helpUri": "https://glsec.github.io/rules/GL070/",
+              "properties": {
+                "tags": [
+                  "security"
+                ]
+              }
+            },
+            {
+              "id": "SC2086",
+              "helpUri": "https://www.shellcheck.net/wiki/SC2086",
+              "properties": {
+                "tags": [
+                  "security"
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "taxonomies": [
+        {
+          "name": "CWE",
+          "version": "4.14",
+          "organization": "MITRE",
+          "taxa": [
+            {
+              "id": "CWE-1104",
+              "name": "Use of Unmaintained Third Party Components"
+            },
+            {
+              "id": "CWE-494",
+              "name": "Download of Code Without Integrity Check"
+            }
+          ]
+        },
+        {
+          "name": "OWASP Top 10 CI/CD Security Risks",
+          "version": "2022",
+          "organization": "OWASP",
+          "taxa": [
+            {
+              "id": "CICD-SEC-3",
+              "name": "Dependency Chain Abuse"
+            }
+          ]
+        },
+        {
+          "name": "OWASP ASVS",
+          "version": "4.0.3",
+          "organization": "OWASP",
+          "taxa": [
+            {
+              "id": "ASVS-V14.2.4",
+              "name": "Verify the integrity of third-party components"
+            }
+          ]
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "GL001",
+          "level": "error",
+          "message": {
+            "text": "image \"node:latest\" uses mutable tag \"latest\""
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": ".gitlab-ci.yml",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startLine": 3
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "GL053",
+          "level": "warning",
+          "message": {
+            "text": "no top-level workflow:rules"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": ".gitlab-ci.yml",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "GL011",
+          "level": "error",
+          "message": {
+            "text": "script pipes a download\ninto sh"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "ci/my%20pipelines/deploy.yml",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startLine": 7
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "GL070",
+          "level": "note",
+          "message": {
+            "text": "informational"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "ci/child.yml",
+                  "uriBaseId": "%SRCROOT%"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "SC2086",
+          "level": "warning",
+          "message": {
+            "text": "Double quote to prevent globbing and word splitting."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": ".gitlab-ci.yml",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startLine": 12
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "parse ci/broken file.yml: yaml: line 2: did not find expected ',' or ']'"
+              },
+              "locations": [
+                {
+                  "physicalLocation": {
+                    "artifactLocation": {
+                      "uri": "ci/broken%20file.yml",
+                      "uriBaseId": "%SRCROOT%"
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "level": "error",
+              "message": {
+                "text": "every file to scan matches exclude_paths or --exclude; nothing was scanned"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -11,8 +11,10 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"text/tabwriter"
@@ -472,7 +474,7 @@ func sarifInvocations(errs []ScanError) []sarifInvocation {
 		e, local := reportError(e, cwd)
 		n := sarifNotification{Level: "error", Message: sarifMessage{Text: e.Message}}
 		if e.File != "" {
-			loc := sarifArtifactLocation{URI: e.File}
+			loc := sarifArtifactLocation{URI: sarifURI(e.File)}
 			if local {
 				loc.URIBaseID = "%SRCROOT%"
 			}
@@ -481,6 +483,18 @@ func sarifInvocations(errs []ScanError) []sarifInvocation {
 		inv.ToolExecutionNotifications = append(inv.ToolExecutionNotifications, n)
 	}
 	return []sarifInvocation{inv}
+}
+
+// sortTaxa orders taxa by ID: they come from a map, and the same findings
+// must give the same report.
+func sortTaxa(taxa []sarifTaxon) {
+	sort.Slice(taxa, func(i, j int) bool { return taxa[i].ID < taxa[j].ID })
+}
+
+// sarifURI writes a report path as the URI reference SARIF requires: a space
+// or another character a URI can't hold is percent-encoded, / stays.
+func sarifURI(path string) string {
+	return (&url.URL{Path: path}).EscapedPath()
 }
 
 type sarifMessage struct {
@@ -560,20 +574,20 @@ func writeSARIF(w io.Writer, findings []finding.Finding, errs []ScanError, tool 
 	results := make([]sarifResult, 0, len(findings))
 	for _, f := range findings {
 		file, local := reportPath(f.File, cwd)
-		location := sarifArtifactLocation{URI: file}
+		location := sarifArtifactLocation{URI: sarifURI(file)}
 		if local {
 			location.URIBaseID = "%SRCROOT%"
 		}
+		physical := sarifPhysicalLocation{ArtifactLocation: location}
+		// SARIF lines start at 1; a finding on the whole file has none.
+		if f.Line > 0 {
+			physical.Region = &sarifRegion{StartLine: f.Line}
+		}
 		results = append(results, sarifResult{
-			RuleID:  f.RuleID,
-			Level:   severityToSARIFLevel(f.Severity),
-			Message: sarifMessage{Text: f.Message},
-			Locations: []sarifLocation{{
-				PhysicalLocation: sarifPhysicalLocation{
-					ArtifactLocation: location,
-					Region:           &sarifRegion{StartLine: f.Line},
-				},
-			}},
+			RuleID:    f.RuleID,
+			Level:     severityToSARIFLevel(f.Severity),
+			Message:   sarifMessage{Text: f.Message},
+			Locations: []sarifLocation{{PhysicalLocation: physical}},
 		})
 	}
 
@@ -649,6 +663,7 @@ func writeSARIF(w io.Writer, findings []finding.Finding, errs []ScanError, tool 
 		for cwe := range seenCWEs {
 			taxa = append(taxa, sarifTaxon{ID: cwe, Name: cweName(cwe)})
 		}
+		sortTaxa(taxa)
 		run.Taxonomies = append(run.Taxonomies, sarifTaxonomy{
 			Name: "CWE", Version: "4.14", Organization: "MITRE", Taxa: taxa,
 		})
@@ -659,6 +674,7 @@ func writeSARIF(w io.Writer, findings []finding.Finding, errs []ScanError, tool 
 		for cat := range seenOWASP {
 			taxa = append(taxa, sarifTaxon{ID: cat, Name: owaspName(cat)})
 		}
+		sortTaxa(taxa)
 		run.Taxonomies = append(run.Taxonomies, sarifTaxonomy{
 			Name: "OWASP Top 10 CI/CD Security Risks", Version: "2022", Organization: "OWASP", Taxa: taxa,
 		})
@@ -669,6 +685,7 @@ func writeSARIF(w io.Writer, findings []finding.Finding, errs []ScanError, tool 
 		for req := range seenASVS {
 			taxa = append(taxa, sarifTaxon{ID: req, Name: asvsName(req)})
 		}
+		sortTaxa(taxa)
 		run.Taxonomies = append(run.Taxonomies, sarifTaxonomy{
 			Name: "OWASP ASVS", Version: "4.0.3", Organization: "OWASP", Taxa: taxa,
 		})
@@ -806,16 +823,17 @@ type junitTestsuites struct {
 	Name     string           `xml:"name,attr"`
 	Tests    int              `xml:"tests,attr"`
 	Failures int              `xml:"failures,attr"`
-	Errors   int              `xml:"errors,attr,omitempty"`
+	Errors   int              `xml:"errors,attr"`
 	Suites   []junitTestsuite `xml:"testsuite"`
 }
 
 type junitTestsuite struct {
-	Name     string          `xml:"name,attr"`
-	Tests    int             `xml:"tests,attr"`
-	Failures int             `xml:"failures,attr"`
-	Errors   int             `xml:"errors,attr,omitempty"`
-	Cases    []junitTestcase `xml:"testcase"`
+	Name     string `xml:"name,attr"`
+	Tests    int    `xml:"tests,attr"`
+	Failures int    `xml:"failures,attr"`
+	// The JUnit schema requires errors on a testsuite, also when it is 0.
+	Errors int             `xml:"errors,attr"`
+	Cases  []junitTestcase `xml:"testcase"`
 }
 
 type junitTestcase struct {

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"errors"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -222,8 +223,9 @@ func TestWriteSARIF_BidiCharactersEscaped(t *testing.T) {
 		t.Fatalf("invalid SARIF JSON: %v", err)
 	}
 	result := log.Runs[0].Results[0]
-	if result.Message.Text != msg || result.Locations[0].PhysicalLocation.ArtifactLocation.URI != file {
-		t.Errorf("round trip changed values: got message=%q file=%q", result.Message.Text, result.Locations[0].PhysicalLocation.ArtifactLocation.URI)
+	uri, err := url.PathUnescape(result.Locations[0].PhysicalLocation.ArtifactLocation.URI)
+	if err != nil || result.Message.Text != msg || uri != file {
+		t.Errorf("round trip changed values: got message=%q file=%q (%v)", result.Message.Text, uri, err)
 	}
 }
 

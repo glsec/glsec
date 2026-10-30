@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="glsec" tests="7" failures="5" errors="2">
+  <testsuite name="glsec" tests="7" failures="5" errors="2">
+    <testcase name="GL001 in job &#34;build&#34;" classname=".gitlab-ci.yml:3">
+      <failure message="image &#34;node:latest&#34; uses mutable tag &#34;latest&#34;" type="error">GL001 [error] .gitlab-ci.yml:3</failure>
+    </testcase>
+    <testcase name="GL053" classname=".gitlab-ci.yml:1">
+      <failure message="no top-level workflow:rules" type="warn">GL053 [warn] .gitlab-ci.yml:1</failure>
+    </testcase>
+    <testcase name="GL011 in job &#34;deploy prod&#34;" classname="ci/my pipelines/deploy.yml:7">
+      <failure message="script pipes a download&#xA;into sh" type="error">GL011 [error] ci/my pipelines/deploy.yml:7</failure>
+    </testcase>
+    <testcase name="GL070 in job &#34;lint&#34;" classname="ci/child.yml">
+      <failure message="informational" type="info">GL070 [info] ci/child.yml</failure>
+    </testcase>
+    <testcase name="SC2086 in job &#34;build&#34;" classname=".gitlab-ci.yml:12">
+      <failure message="Double quote to prevent globbing and word splitting." type="warn">SC2086 [warn] .gitlab-ci.yml:12</failure>
+    </testcase>
+    <testcase name="glsec: scan failed" classname="ci/broken file.yml">
+      <error message="parse ci/broken file.yml: yaml: line 2: did not find expected &#39;,&#39; or &#39;]&#39;" type="scan-error">parse ci/broken file.yml: yaml: line 2: did not find expected &#39;,&#39; or &#39;]&#39;</error>
+    </testcase>
+    <testcase name="glsec: scan failed" classname="glsec">
+      <error message="every file to scan matches exclude_paths or --exclude; nothing was scanned" type="scan-error">every file to scan matches exclude_paths or --exclude; nothing was scanned</error>
+    </testcase>
+  </testsuite>
+</testsuites>

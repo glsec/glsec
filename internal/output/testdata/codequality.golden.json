@@ -1,0 +1,114 @@
+[
+  {
+    "type": "issue",
+    "check_name": "GL001",
+    "description": "image \"node:latest\" uses mutable tag \"latest\"",
+    "categories": [
+      "Security"
+    ],
+    "severity": "critical",
+    "fingerprint": "2f6cb5807eeecf313b7b4dc0472a9e00b3b3f931385b41dd73db0b80832fc5e8",
+    "location": {
+      "path": ".gitlab-ci.yml",
+      "lines": {
+        "begin": 3
+      }
+    }
+  },
+  {
+    "type": "issue",
+    "check_name": "GL053",
+    "description": "no top-level workflow:rules",
+    "categories": [
+      "Security"
+    ],
+    "severity": "major",
+    "fingerprint": "3ad7613cd48d08ec87d004eaadbf319bb9b3fdd397d27caeb29cc6d3b52f655a",
+    "location": {
+      "path": ".gitlab-ci.yml",
+      "lines": {
+        "begin": 1
+      }
+    }
+  },
+  {
+    "type": "issue",
+    "check_name": "GL011",
+    "description": "script pipes a download\ninto sh",
+    "categories": [
+      "Security"
+    ],
+    "severity": "critical",
+    "fingerprint": "c4b2dbcde3cebe6568eb417bc30329a4b35603de602b0760fe6a28d6c235c6c5",
+    "location": {
+      "path": "ci/my pipelines/deploy.yml",
+      "lines": {
+        "begin": 7
+      }
+    }
+  },
+  {
+    "type": "issue",
+    "check_name": "GL070",
+    "description": "informational",
+    "categories": [
+      "Security"
+    ],
+    "severity": "info",
+    "fingerprint": "8edeca3d61633a2e736bd93012cd5e5127e27309c34deb830f99293e22350c22",
+    "location": {
+      "path": "ci/child.yml",
+      "lines": {
+        "begin": 0
+      }
+    }
+  },
+  {
+    "type": "issue",
+    "check_name": "SC2086",
+    "description": "Double quote to prevent globbing and word splitting.",
+    "categories": [
+      "Security"
+    ],
+    "severity": "major",
+    "fingerprint": "707722c1b06e7de7f39bccd4d05da824a568416d207d500b685e8f7828ba9dc9",
+    "location": {
+      "path": ".gitlab-ci.yml",
+      "lines": {
+        "begin": 12
+      }
+    }
+  },
+  {
+    "type": "issue",
+    "check_name": "glsec-error",
+    "description": "glsec could not scan this file: parse ci/broken file.yml: yaml: line 2: did not find expected ',' or ']'",
+    "categories": [
+      "Bug Risk"
+    ],
+    "severity": "blocker",
+    "fingerprint": "4a5a097c92196ba48e9a721779629051ff34377fcc42233b7281c1139c3aa58b",
+    "location": {
+      "path": "ci/broken file.yml",
+      "lines": {
+        "begin": 1
+      }
+    }
+  },
+  {
+    "type": "issue",
+    "check_name": "glsec-error",
+    "description": "glsec could not scan this file: every file to scan matches exclude_paths or --exclude; nothing was scanned",
+    "categories": [
+      "Bug Risk"
+    ],
+    "severity": "blocker",
+    "fingerprint": "9eebf4115aa5b26f288f422047fd6e507fbc3b23595fa1bff010d7f140a6cfe4",
+    "location": {
+      "path": ".",
+      "lines": {
+        "begin": 1
+      }
+    }
+  }
+]

@@ -376,6 +376,32 @@ jobs:
           curl -fsSL --retry 3 -o "$RUNNER_TEMP/sast-report-format.json" "$SCHEMA_URL"
           echo "$SCHEMA_SHA256  $RUNNER_TEMP/sast-report-format.json" | sha256sum -c -
           check-jsonschema --schemafile "$RUNNER_TEMP/sast-report-format.json" internal/output/testdata/gitlab-sast.golden.json
+      # The SARIF, Code Quality and JUnit writers' golden reports have to match
+      # their formats too (#927): the OASIS SARIF 2.1.0 schema, the fields
+      # GitLab documents for Code Quality (it publishes no schema), and the
+      # JUnit XSD of Jenkins' xUnit plugin, pinned by commit and hash.
+      - name: Validate the SARIF report against the SARIF 2.1.0 schema
+        env:
+          SCHEMA_URL: https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json
+          SCHEMA_SHA256: c3b4bb2d6093897483348925aaa73af03b3e3f4bd4ca38cef26dcb4212a2682e
+        run: |
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/sarif-schema-2.1.0.json" "$SCHEMA_URL"
+          echo "$SCHEMA_SHA256  $RUNNER_TEMP/sarif-schema-2.1.0.json" | sha256sum -c -
+          check-jsonschema --schemafile "$RUNNER_TEMP/sarif-schema-2.1.0.json" internal/output/testdata/sarif.golden.json
+      - name: Validate the Code Quality report against GitLab's documented fields
+        run: check-jsonschema --schemafile internal/output/testdata/codequality.schema.json internal/output/testdata/codequality.golden.json
+      - name: Validate the JUnit report against the JUnit XSD
+        env:
+          SCHEMA_URL: https://raw.githubusercontent.com/jenkinsci/xunit-plugin/ae25da5089d4f94ac6c4669bf736e4d416cc4665/src/main/resources/org/jenkinsci/plugins/xunit/types/model/xsd/junit-10.xsd
+          SCHEMA_SHA256: a1a816f58d1bf95ebabf371994df0b9246dee66ea9572fbec4f9296f1b2c0ff6
+        run: |
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/junit-10.xsd" "$SCHEMA_URL"
+          echo "$SCHEMA_SHA256  $RUNNER_TEMP/junit-10.xsd" | sha256sum -c -
+          if ! command -v xmllint >/dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq --no-install-recommends libxml2-utils
+          fi
+          xmllint --noout --schema "$RUNNER_TEMP/junit-10.xsd" internal/output/testdata/junit.golden.xml
       # The pipeline inventory's golden BOM has to match the CycloneDX 1.6
       # schema, which references two more schema files; all three are pinned
       # by release and hash (#830).
