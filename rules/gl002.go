@@ -206,7 +206,7 @@ func notWordSplit(masked string, dollarPos, end int) bool {
 	if strings.HasPrefix(rest, "+") || strings.HasPrefix(rest, ":+") {
 		return true
 	}
-	start := strings.LastIndexAny(masked[:dollarPos], ";&|\n(){`") + 1
+	start := commandStart(masked, dollarPos)
 	words := strings.Fields(masked[start:dollarPos])
 	for len(words) > 0 && shellKeywords[words[0]] && !declarationWords[words[0]] {
 		words = words[1:]
@@ -236,6 +236,27 @@ func notWordSplit(masked string, dollarPos, end int) bool {
 		}
 	}
 	return true
+}
+
+// commandStart returns where the simple command holding pos starts. The
+// braces of a ${…} expansion don't separate commands, only those of a
+// `{ …; }` group do (#976).
+func commandStart(masked string, pos int) int {
+	for i := pos - 1; i >= 0; i-- {
+		switch c := masked[i]; c {
+		case ';', '&', '|', '\n', '(', ')', '`':
+			return i + 1
+		case '{':
+			if i == 0 || masked[i-1] != '$' {
+				return i + 1
+			}
+		case '}':
+			if i == 0 || strings.IndexByte(" \t;\n", masked[i-1]) >= 0 {
+				return i + 1
+			}
+		}
+	}
+	return 0
 }
 
 func containsWord(words []string, w string) bool {

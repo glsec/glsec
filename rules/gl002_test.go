@@ -506,3 +506,27 @@ job:
 		t.Errorf("unexpected message: %s", f[1].Message)
 	}
 }
+
+// A ${VAR} earlier on the line doesn't hide the [[ … ]] or the assignment
+// the reference is in (#976).
+func TestGL002_BracedVariableBefore(t *testing.T) {
+	for _, tc := range []struct {
+		line string
+		want int
+	}{
+		{`[[ ${VERSION} == ${CI_COMMIT_TAG} ]]`, 0},
+		{`export NAME=${PREFIX}-${CI_COMMIT_TAG}`, 0},
+		{`NAME=${PREFIX:-x}-${CI_COMMIT_TAG} make`, 0},
+		{`echo ${PREFIX} ${CI_COMMIT_TAG}`, 1},
+		{`{ echo start; } ; echo ${CI_COMMIT_TAG}`, 1},
+		{`{ X=1; } && echo ${CI_COMMIT_TAG}`, 1},
+	} {
+		doc, err := parser.Parse([]byte("job:\n  script:\n    - '"+tc.line+"'\n"), "test.yml")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := len(GL002.Check(doc.Root, "test.yml")); got != tc.want {
+			t.Errorf("%s: got %d findings, want %d", tc.line, got, tc.want)
+		}
+	}
+}
