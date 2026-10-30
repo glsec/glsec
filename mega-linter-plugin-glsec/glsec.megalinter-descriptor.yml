@@ -54,7 +54,7 @@ linters:
     install:
       dockerfile:
         - |-
-          RUN GLSEC_VERSION=1.24.1 && \
+          RUN GLSEC_VERSION=1.25.0 && \
               case "$(uname -m)" in x86_64|amd64) GLSEC_ARCH=amd64 ;; aarch64|arm64) GLSEC_ARCH=arm64 ;; *) echo "glsec: unsupported architecture $(uname -m)" >&2 && exit 1 ;; esac && \
               GLSEC_ASSET="glsec_${GLSEC_VERSION}_linux_${GLSEC_ARCH}.tar.gz" && \
               GLSEC_URL="https://github.com/glsec/glsec/releases/download/v${GLSEC_VERSION}" && \

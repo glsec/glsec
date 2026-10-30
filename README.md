@@ -85,15 +85,15 @@ Pre-built binaries for Linux, macOS, and Windows (amd64 + arm64) are available o
 
 ```sh
 # Example: Linux amd64. Archives are named glsec_<version>_<os>_<arch>.tar.gz (.zip on Windows).
-curl -sSLO https://github.com/glsec/glsec/releases/download/v1.24.1/glsec_1.24.1_linux_amd64.tar.gz
-tar xzf glsec_1.24.1_linux_amd64.tar.gz
+curl -sSLO https://github.com/glsec/glsec/releases/download/v1.25.0/glsec_1.25.0_linux_amd64.tar.gz
+tar xzf glsec_1.25.0_linux_amd64.tar.gz
 ./glsec --version
 ```
 
 **Docker:**
 
 ```sh
-docker run --rm -v "$PWD:/src:ro" -w /src ghcr.io/glsec/glsec:1.24.1
+docker run --rm -v "$PWD:/src:ro" -w /src ghcr.io/glsec/glsec:1.25.0
 ```
 
 Without a file argument glsec scans `.gitlab-ci.yml` in the mounted directory.

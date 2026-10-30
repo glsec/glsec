@@ -16,7 +16,7 @@
 # Supports linux + darwin only. VERSION is kept in lockstep with the release.
 set -eu
 
-VERSION="1.24.1"
+VERSION="1.25.0"
 REPO="glsec/glsec"
 
 hint() {

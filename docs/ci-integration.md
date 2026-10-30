@@ -47,13 +47,13 @@ If you need more control than the Catalog component offers, use the pre-built im
 glsec:
   stage: test
   image:
-    name: ghcr.io/glsec/glsec:1.24.1
+    name: ghcr.io/glsec/glsec:1.25.0
     entrypoint: [""]
   script:
     - glsec .gitlab-ci.yml
 ```
 
-The `entrypoint: [""]` override is required: the image sets `ENTRYPOINT ["glsec"]` for `docker run` convenience, which conflicts with GitLab Runner's shell wrapper. Pin to a specific tag (`1.24.1`, not `:latest`) for reproducible pipelines.
+The `entrypoint: [""]` override is required: the image sets `ENTRYPOINT ["glsec"]` for `docker run` convenience, which conflicts with GitLab Runner's shell wrapper. Pin to a specific tag (`1.25.0`, not `:latest`) for reproducible pipelines.
 
 ## GitLab CI — binary download
 
@@ -61,7 +61,7 @@ For pipelines that cannot pull from GHCR:
 
 ```yaml
 variables:
-  GLSEC_VERSION: "1.24.1"
+  GLSEC_VERSION: "1.25.0"
 
 glsec:
   stage: test
@@ -83,7 +83,7 @@ Show findings in the merge request's **Code Quality report**, on all GitLab tier
 glsec:
   stage: test
   image:
-    name: ghcr.io/glsec/glsec:1.24.1
+    name: ghcr.io/glsec/glsec:1.25.0
     entrypoint: [""]
   script:
     # exit 1 means findings, which the report shows; let exit 2 fail the job
@@ -104,7 +104,7 @@ On GitLab Ultimate, `--format gitlab-sast` (glsec 1.25.0 and later) writes a SAS
 glsec-sast:
   stage: test
   image:
-    name: ghcr.io/glsec/glsec:1.24.1
+    name: ghcr.io/glsec/glsec:1.25.0
     entrypoint: [""]
   script:
     - glsec --format gitlab-sast --no-exit-codes .gitlab-ci.yml > gl-sast-report.json
@@ -171,7 +171,7 @@ Like the rest of glsec it works offline: includes are listed, not fetched, so wh
 ```yaml
 - name: Run glsec
   env:
-    GLSEC_VERSION: "1.24.1"
+    GLSEC_VERSION: "1.25.0"
   run: |
     curl -sSLO "https://github.com/glsec/glsec/releases/download/v${GLSEC_VERSION}/glsec_${GLSEC_VERSION}_linux_amd64.tar.gz"
     tar xzf "glsec_${GLSEC_VERSION}_linux_amd64.tar.gz"
@@ -184,7 +184,7 @@ glsec ships a [MegaLinter](https://megalinter.io) plugin. Add it to `.mega-linte
 
 ```yaml
 PLUGINS:
-  - https://raw.githubusercontent.com/glsec/glsec/v1.24.1/mega-linter-plugin-glsec/glsec.megalinter-descriptor.yml
+  - https://raw.githubusercontent.com/glsec/glsec/v1.25.0/mega-linter-plugin-glsec/glsec.megalinter-descriptor.yml
 ```
 
 The linter key is `GITLAB_GLSEC`. It lints files named `.gitlab-ci.yml` or `*.gitlab-ci.yml` (`.yaml` too); widen that with `GITLAB_GLSEC_FILE_NAMES_REGEX`. Extra flags go in `GITLAB_GLSEC_ARGUMENTS`, or in a `.glsec.yml` at the repository root. With `SARIF_REPORTER: true`, findings are included in MegaLinter's SARIF report.
@@ -198,7 +198,7 @@ glsec ships a [pre-commit](https://pre-commit.com/) hook so `.gitlab-ci.yml` iss
 ```yaml
 repos:
   - repo: https://github.com/glsec/glsec
-    rev: v1.24.1
+    rev: v1.25.0
     hooks:
       - id: glsec
 ```
