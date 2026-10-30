@@ -5,6 +5,7 @@ package rules
 
 import (
 	"fmt"
+	"strings"
 	"unicode"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -171,7 +172,10 @@ func (r *gl078) CheckDocument(doc *parser.Document, file string) []finding.Findi
 			}
 		}
 		crlf := ch == '\r' && i+1 < len(runes) && runes[i+1] == '\n'
-		if name, ok := lineBreakRunes[ch]; ok && !crlf {
+		// A CR with only whitespace after it ends the file: nothing follows
+		// that could be parsed apart from how it reads (#1001).
+		finalCR := ch == '\r' && !crlf && strings.TrimSpace(string(runes[i+1:])) == ""
+		if name, ok := lineBreakRunes[ch]; ok && !crlf && !finalCR {
 			findings = append(findings, finding.Finding{
 				RuleID:   "GL078",
 				Severity: finding.Warn,

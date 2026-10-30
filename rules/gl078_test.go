@@ -180,3 +180,17 @@ func TestGL078_CRLFAllowed(t *testing.T) {
 		t.Errorf("CRLF line endings: expected no finding, got %d", len(f))
 	}
 }
+
+// A lone CR that ends the file shifts nothing (#1001).
+func TestGL078_CRAtEndOfFile(t *testing.T) {
+	for content, want := range map[string]int{
+		"pages:\n  script:\n    - echo hi\n  only:\n    - main\r":    0,
+		"pages:\n  script:\n    - echo hi\n  only:\n    - main\r \n": 0,
+		"pages:\n  script:\n    - echo hi\r    - echo hidden\n":      1,
+		"pages:\r\n  script:\r\n    - echo hi\r\n":                   0,
+	} {
+		if got := len(findings078(t, content)); got != want {
+			t.Errorf("%q: got %d findings, want %d", content, got, want)
+		}
+	}
+}
