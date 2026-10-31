@@ -14,6 +14,7 @@ Fixes #
 - [ ] Tests cover the change (a bug fix has a test that fails without it)
 - [ ] User-visible behaviour is documented (`docs/usage.md` or another page in `docs/`, `docs/rules/GLNNN.md`, rule table)
 - [ ] Commits are signed off (`git commit -s`)
+- [ ] From a fork: "Allow edits and access to secrets by maintainers" is ticked, so a maintainer can rebase the branch (see CONTRIBUTING.md#commit-and-pr-conventions)
 
 ## AI assistance
 
