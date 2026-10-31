@@ -223,3 +223,34 @@ include:
 		t.Error("expected non-zero line number")
 	}
 }
+
+func TestCommitPinnedRawURL(t *testing.T) {
+	const sha = "3f2a9c1d8e7b6a5f4e3d2c1b0a9f8e7d6c5b4a39"
+	for _, tc := range []struct {
+		url  string
+		want bool
+	}{
+		{"https://raw.githubusercontent.com/org/templates/" + sha + "/ci/lint.yml", true},
+		{"https://github.com/org/templates/raw/" + sha + "/ci/lint.yml", true},
+		{"https://gitlab.example.com/group/sub/project/-/raw/" + sha + "/ci/lint.yml", true},
+		{"https://bitbucket.org/org/templates/raw/" + sha + "/lint.yml", true},
+		{"https://codeberg.org/org/templates/raw/commit/" + sha + "/lint.yml", true},
+		{"https://gitlab.com/api/v4/projects/123/repository/files/ci%2Flint.yml/raw?ref=" + sha, true},
+		{"https://raw.githubusercontent.com/org/templates/main/ci/lint.yml", false},
+		{"https://raw.githubusercontent.com/org/templates/v1.2.3/ci/lint.yml", false},
+		{"https://raw.githubusercontent.com/org/templates/" + sha[:12] + "/ci/lint.yml", false},
+		{"https://raw.githubusercontent.com/org/" + sha + "/main/lint.yml", false},
+		{"https://gitlab.com/group/project/-/raw/main/lint.yml", false},
+		{"https://gitlab.com/group/project/-/raw/" + sha, false},
+		{"https://codeberg.org/org/templates/raw/branch/main/lint.yml", false},
+		{"https://gitlab.com/api/v4/projects/123/repository/files/lint.yml/raw?ref=main", false},
+		{"https://example.com/raw/" + sha + "/lint.yml", false},
+		{"https://example.com/" + sha + ".yml", false},
+		{"ftp://example.com/x/y/raw/" + sha + "/lint.yml", false},
+		{"https://exa mple.com/%zz", false},
+	} {
+		if got := commitPinnedRawURL(tc.url); got != tc.want {
+			t.Errorf("%s: got %v, want %v", tc.url, got, tc.want)
+		}
+	}
+}

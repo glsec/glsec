@@ -5,6 +5,7 @@ package rules
 
 import (
 	"fmt"
+	"net/url"
 	"regexp"
 	"strings"
 
@@ -52,6 +53,9 @@ func checkIncludeItem(node *yaml.Node, file string) []finding.Finding {
 		// GitLab refuses the include when the fetched content does not match
 		// the hash, so integrity: pins the content.
 		if integrity := parser.FindKey(node, "integrity"); integrity != nil && integrityPattern.MatchString(integrity.Value) {
+			return nil
+		}
+		if commitPinnedRawURL(remote.Value) {
 			return nil
 		}
 		return []finding.Finding{{
@@ -139,3 +143,43 @@ func isMutableRef(ref string) bool {
 // IsMutableRef reports whether ref is a well-known branch name that moves,
 // as GL003 judges include refs. The pipeline inventory uses it (#830).
 func IsMutableRef(ref string) bool { return isMutableRef(ref) }
+
+// fullCommitRe matches a full 40-character commit SHA.
+var fullCommitRe = regexp.MustCompile(`^[0-9a-f]{40}$`)
+
+// commitPinnedRawURL reports a raw-file URL that names a full commit SHA on a
+// Git host that serves files by commit, so its content cannot change, as with
+// a project include pinned to a SHA (#1050):
+//
+//	https://raw.githubusercontent.com/<owner>/<repo>/<sha>/<path>
+//	https://github.com/<owner>/<repo>/raw/<sha>/<path>
+//	https://<gitlab>/<group>/<project>/-/raw/<sha>/<path>
+//	https://bitbucket.org/<owner>/<repo>/raw/<sha>/<path>
+//	https://<gitea>/<owner>/<repo>/raw/commit/<sha>/<path>
+//	https://<gitlab>/api/v4/projects/<id>/repository/files/<path>/raw?ref=<sha>
+func commitPinnedRawURL(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "https" && u.Scheme != "http" {
+		return false
+	}
+	seg := strings.Split(strings.Trim(u.EscapedPath(), "/"), "/")
+	if strings.HasPrefix(u.EscapedPath(), "/api/v4/projects/") && seg[len(seg)-1] == "raw" {
+		return fullCommitRe.MatchString(u.Query().Get("ref"))
+	}
+	if u.Host == "raw.githubusercontent.com" {
+		return len(seg) > 3 && fullCommitRe.MatchString(seg[2])
+	}
+	for i := 2; i < len(seg); i++ {
+		if seg[i] != "raw" {
+			continue
+		}
+		at := i + 1
+		if at < len(seg) && seg[at] == "commit" {
+			at++
+		}
+		if at+1 < len(seg) && fullCommitRe.MatchString(seg[at]) {
+			return true
+		}
+	}
+	return false
+}
