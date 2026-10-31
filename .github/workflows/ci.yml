@@ -329,6 +329,28 @@ jobs:
           config: ${{ runner.temp }}/cfgaudit.yml
           strict: "true"
 
+  pinact:
+    name: Security (pinact)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - run: go install github.com/suzuki-shunsuke/pinact/v5/cmd/pinact@v5.0.2
+      # On top of the SHA pin that zizmor and cfgaudit require, verify that each
+      # action's version comment matches the pinned SHA, so a pin can't claim a
+      # version it isn't. codeql-action is excluded on the command line, not in a
+      # config a pull request could edit: it is SHA-pinned, but its bundle-version
+      # comment (# codeql-bundle-vX) isn't a semver tag pinact can resolve.
+      - name: Verify action pins and their version comments
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: pinact run --check --verify-comment --exclude 'github/codeql-action/.*'
+
   trivy:
     name: Security (Trivy image)
     runs-on: ubuntu-latest
