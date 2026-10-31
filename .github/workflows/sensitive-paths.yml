@@ -1,12 +1,17 @@
 name: Sensitive paths
 
 # Fails while a pull request changes a file that reaches plugin users, the
-# release build or a maintainer's agent setup, until a maintainer sets the
-# sensitive-paths-reviewed label. A new push removes the label again (#691).
+# published pre-commit and MegaLinter integrations, the release build and its
+# signing keys, a maintainer's agent setup or the rules of the other checks,
+# until a maintainer sets the sensitive-paths-reviewed label. A new push
+# removes the label again (#691), unless the pull request's changes to the
+# sensitive paths are the same as before the push, as after "Update branch" or
+# a push that only touches other files (#1089).
 #
 # pull_request_target runs this file from main, so a pull request can't change
 # the check it is measured by. That is only safe because the job never checks
-# out or runs code from the pull request: it reads the changed files and the
+# out or runs code from the pull request: it checks out main for
+# .github/scripts/sensitive-paths.sh, and reads the changed files and the
 # labels through the API.
 
 on:
@@ -33,28 +38,38 @@ jobs:
       PR: ${{ github.event.pull_request.number }}
       REPO: ${{ github.repository }}
     steps:
-      - name: Remove the review label after a new push
+      # main, not the pull request: pull_request_target checks out the base
+      # branch by default, and the script is the one main reviewed.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/scripts/sensitive-paths.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Remove the review label after a new push to sensitive paths
         if: github.event.action == 'synchronize' && contains(github.event.pull_request.labels.*.name, 'sensitive-paths-reviewed')
+        env:
+          BASE: ${{ github.event.pull_request.base.ref }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.event.after }}
         run: |
+          if .github/scripts/sensitive-paths.sh unchanged "$REPO" "$BASE" "$BEFORE" "$AFTER"; then
+            echo "Keeping $LABEL."
+            exit 0
+          fi
           if ! gh api -X DELETE "repos/$REPO/issues/$PR/labels/$LABEL" > /dev/null; then
             echo "::error::new commits after the review, but the $LABEL label could not be removed; remove it, review again and set it again"
             exit 1
           fi
+          echo "Removed $LABEL."
+
       - name: Check the changed files
         run: |
           # Renames count with their old path too, so moving a file out of
           # hooks/ needs the label as well.
-          files=$(gh api --paginate "repos/$REPO/pulls/$PR/files" \
-            --jq '.[] | .filename, (.previous_filename // empty)')
-          hits=$(printf '%s\n' "$files" | grep -E \
-            -e '^(hooks|bin|skills|\.claude-plugin)/' \
-            -e '^\.github/(workflows|actions|instructions|agents|skills)/' \
-            -e '^(\.goreleaser\.ya?ml|Dockerfile)$' \
-            -e '(^|/)(CLAUDE|CLAUDE\.local|AGENTS|AGENT|GEMINI)\.md$' \
-            -e '^(\.claude|\.agents|\.cursor|\.vscode|\.devcontainer)/' \
-            -e '^(\.mcp\.json|\.envrc|\.cursorrules|\.github/copilot-instructions\.md)$' \
-            -e '^(\.gitignore|REUSE\.toml|\.github/dependabot\.yml|(\.github/|docs/)?CODEOWNERS)$' \
-            | sort -u || true)
+          hits=$(gh api --paginate "repos/$REPO/pulls/$PR/files" \
+            --jq '.[] | .filename, (.previous_filename // empty)' \
+            | .github/scripts/sensitive-paths.sh filter)
 
           if [ -z "$hits" ]; then
             echo "No sensitive paths changed."

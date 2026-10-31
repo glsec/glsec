@@ -391,6 +391,12 @@ Every change to `main` goes through a pull request. Before it is merged, the rev
 
 The reviewer leaves comments on anything that needs to change; a pull request is merged only when none are open.
 
+## Sensitive paths
+
+Some files, changed without review, would run on a user's or a maintainer's machine or reach a release: the hooks, `bin/`, skills and plugin that reach plugin users, the pre-commit and MegaLinter integrations, the release config and the keys that sign releases, the CI workflows and scripts, the lint and dependency config, and the agent-setup files (`CLAUDE.md`, `.claude/`, `.mcp.json`, `.envrc`, …). The `Sensitive paths` check guards them: when a pull request changes one, it fails until a maintainer reviews the change and sets the `sensitive-paths-reviewed` label.
+
+A new push removes the label again, so it always reflects the reviewed code — unless the change to the sensitive paths is identical to the reviewed state, as after "Update branch" or a push that only touches other files, where the label stays. Only a maintainer can set the label, so a pull request that touches these paths needs a maintainer review round even when the rest of CI is green. The list and the comparison live in [`.github/scripts/sensitive-paths.sh`](.github/scripts/sensitive-paths.sh).
+
 ## Commit and PR conventions
 
 - **Commit messages:** one short line (`feat: add GL090 rule`, `fix: GL002 false positive on quoted vars`), signed off with `-s` (see above). No other body, no `Co-Authored-By` trailers.
