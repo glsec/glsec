@@ -33,6 +33,16 @@ var sensitivePatterns = []string{
 	"*.tfstate", "*.tfvars",
 }
 
+// gitlabReportArtifacts are GitLab's own Secret Detection artifacts: the
+// findings report (uploaded via artifacts:reports:secret_detection) and the
+// scanner's ruleset bundle. They hold findings about secrets, not secrets
+// themselves, so the "*secret*" match on their names is a false positive
+// (#1101).
+var gitlabReportArtifacts = []string{
+	"gl-secret-detection-report.json",
+	"secret-detection-rules.zip",
+}
+
 func (r *gl005) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
 	mapping := parser.Unwrap(doc)
@@ -163,7 +173,23 @@ func isWholeProjectArtifactPath(path string) bool {
 	return false
 }
 
+// isGitlabReportArtifact reports whether path names one of GitLab's standard
+// security-report artifacts, matched on the base name so directory prefixes
+// such as tmp/ are covered too.
+func isGitlabReportArtifact(path string) bool {
+	base := strings.ToLower(filepath.Base(path))
+	for _, name := range gitlabReportArtifacts {
+		if base == name {
+			return true
+		}
+	}
+	return false
+}
+
 func matchesSensitivePattern(path string) string {
+	if isGitlabReportArtifact(path) {
+		return ""
+	}
 	base := filepath.Base(path)
 	// also check the full path for patterns like "*secret*"
 	targets := []string{base, strings.ToLower(base), strings.ToLower(path)}

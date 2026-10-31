@@ -140,6 +140,66 @@ build:
 	}
 }
 
+func TestGL005_SecretDetectionReportNoFinding(t *testing.T) {
+	f := findings005(t, `
+build:
+  script: [make]
+  artifacts:
+    paths:
+      - gl-secret-detection-report.json
+    expire_in: 1 week
+`)
+	if len(f) != 0 {
+		t.Fatalf("expected no finding for the secret detection report, got %d: %+v", len(f), f)
+	}
+}
+
+func TestGL005_SecretDetectionRulesetNoFinding(t *testing.T) {
+	f := findings005(t, `
+build:
+  script: [make]
+  artifacts:
+    paths:
+      - secret-detection-rules.zip
+    expire_in: 1 week
+`)
+	if len(f) != 0 {
+		t.Fatalf("expected no finding for the ruleset bundle, got %d: %+v", len(f), f)
+	}
+}
+
+func TestGL005_SecretDetectionReportSubdirNoFinding(t *testing.T) {
+	f := findings005(t, `
+build:
+  script: [make]
+  artifacts:
+    paths:
+      - tmp/gl-secret-detection-report.json
+    expire_in: 1 week
+`)
+	if len(f) != 0 {
+		t.Fatalf("expected no finding for the report under tmp/, got %d: %+v", len(f), f)
+	}
+}
+
+func TestGL005_ReportArtifactAlongsideRealSecretStillFires(t *testing.T) {
+	f := findings005(t, `
+build:
+  script: [make]
+  artifacts:
+    paths:
+      - gl-secret-detection-report.json
+      - .env
+    expire_in: 1 week
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for .env only, got %d: %+v", len(f), f)
+	}
+	if !strings.Contains(f[0].Message, ".env") {
+		t.Errorf("expected the finding to be about .env, got %q", f[0].Message)
+	}
+}
+
 func TestGL005_DefaultBlockSensitivePath(t *testing.T) {
 	f := findings005(t, `
 default:
