@@ -5,6 +5,7 @@ package rules
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
 	"github.com/glsec/glsec/internal/parser"
@@ -97,7 +98,7 @@ func checkScriptDownloadExecute(node *yaml.Node, file string) []finding.Finding 
 		// Each line of a block on its own: a curl on one line and a pipe into
 		// an interpreter on another are two unrelated commands.
 		for _, l := range logicalLines(item.Value) {
-			if !isDownloadExecute(l.text) {
+			if !isDownloadExecute(l.text) && !childShellDownloadExecute(l.text) {
 				continue
 			}
 			f := finding.Finding{
@@ -114,6 +115,28 @@ func checkScriptDownloadExecute(node *yaml.Node, file string) []finding.Finding 
 		}
 	}
 	return findings
+}
+
+// childShellDownloadExecute reports a download-execute in the script a new
+// shell runs: sh -c "curl … | sh", docker run img sh -c '…', ssh host '…'.
+// Quoted text is stripped before isDownloadExecute looks for a pipe, so the
+// script is checked as lines of its own (#1069).
+func childShellDownloadExecute(line string) bool {
+	if !strings.Contains(line, "sh") || !downloadToolRe.MatchString(line) {
+		return false
+	}
+	for _, cmd := range shellCommands(line) {
+		_, inner, _, ok := childShellScript(withoutSudo(commandWords(cmd.text)))
+		if !ok || len(inner) >= len(line) {
+			continue
+		}
+		for _, l := range logicalLines(inner) {
+			if isDownloadExecute(l.text) || childShellDownloadExecute(l.text) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func isDownloadExecute(line string) bool {

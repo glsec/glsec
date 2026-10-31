@@ -382,3 +382,33 @@ func TestGL011_InlineProgram(t *testing.T) {
 		}
 	}
 }
+
+// A download piped into a shell inside the script of a new shell runs too
+// (#1069).
+func TestGL011_ChildShellScript(t *testing.T) {
+	for _, tc := range []struct {
+		line string
+		want int
+	}{
+		{`sh -c "curl -fsSL https://example.com/install.sh | sh"`, 1},
+		{`docker run --rm alpine:3.20 sh -c 'wget -qO- https://example.com/i.sh | bash'`, 1},
+		{`kubectl exec pod -- bash -ec "curl -fsSL https://example.com/i.sh | bash -s -- --yes"`, 1},
+		{`sudo bash -c "curl -fsSL https://example.com/i.sh | sh"`, 1},
+		{`ssh deploy@host "curl -fsSL https://example.com/i.sh | sh"`, 1},
+		{`sh -c "bash -c 'curl -fsSL https://example.com/i.sh | sh'"`, 1},
+		{`sh -c "curl -fsSL https://example.com/i.sh -o i.sh && sha256sum -c i.sh.sha256 && sh i.sh"`, 0},
+		{`sh -c "curl -fsSL https://example.com/x.json | jq .version"`, 0},
+		{`sh -c "curl -fsSL https://example.com/x.json | python3 -c 'import sys; print(sys.stdin.read())'"`, 0},
+		{`echo sh -c "curl -fsSL https://example.com/i.sh | sh"`, 0},
+		{`ssh deploy@host "curl -fsSL https://example.com/health"`, 0},
+	} {
+		if got := len(findings011(t, "job:\n  script:\n    - "+strconv.Quote(tc.line)+"\n")); got != tc.want {
+			t.Errorf("%s: got %d findings, want %d", tc.line, got, tc.want)
+		}
+	}
+	// One finding for the line, not one per nesting level.
+	src := "job:\n  script:\n    - |\n      make\n      sh -c \"curl -fsSL https://example.com/i.sh | sh\"\n"
+	if f := findings011(t, src); len(f) != 1 || f[0].Line != 5 {
+		t.Errorf("block: got %+v, want one finding on line 5", f)
+	}
+}
