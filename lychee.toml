@@ -32,8 +32,10 @@ exclude = [
   '…|%E2%80%A6',
   # Not pages: the GitHub Actions OIDC issuer, used as a flag value.
   '^https://token\.actions\.githubusercontent\.com',
-  # Answers 403 to non-browser clients.
+  # Answer 403 to non-browser clients. nccgroup.com does so to GitHub's
+  # runners from time to time (PRs #1059, #1072).
   '^https://wiki\.alpinelinux\.org/',
+  '^https://www\.nccgroup\.com/',
 ]
 
 exclude_path = ["^testdata/"]
