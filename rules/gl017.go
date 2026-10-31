@@ -58,14 +58,33 @@ func (r *gl017) Check(doc *yaml.Node, file string) []finding.Finding {
 
 // isSensitiveJob returns true for jobs that deploy to an environment or
 // whose stage name suggests deployment/release activity.
-// envActionNoDeploy reports an environment: whose action deploys nothing:
-// prepare, verify and access only use the environment.
-func envActionNoDeploy(env *yaml.Node) bool {
+// envAction returns the configured GitLab environment action, if any.
+func envAction(env *yaml.Node) string {
 	if env.Kind != yaml.MappingNode {
-		return false
+		return ""
 	}
 	a := parser.FindKey(env, "action")
-	return a != nil && (a.Value == "prepare" || a.Value == "verify" || a.Value == "access")
+	if a == nil {
+		return ""
+	}
+	return a.Value
+}
+
+// envActionNoDeploy reports an environment: whose action deploys nothing:
+// stop tears it down, while prepare, verify and access only use it.
+func envActionNoDeploy(env *yaml.Node) bool {
+	switch envAction(env) {
+	case "prepare", "stop", "verify", "access":
+		return true
+	}
+	return false
+}
+
+// envActionStops reports an environment action that tears the environment
+// down. Unlike the other non-deploy actions, it is not a deploy even when the
+// job is in a deploy-like stage.
+func envActionStops(env *yaml.Node) bool {
+	return envAction(env) == "stop"
 }
 
 // envDevTier reports an environment that declares itself a review or test
@@ -182,6 +201,9 @@ func isSensitiveJob(in *Inheritance, job *yaml.Node, devTierDeploys bool) bool {
 	// An environment: deploys unless its action only uses the environment;
 	// then the stage still decides.
 	if env := in.Key(job, "environment"); env != nil {
+		if envActionStops(env) {
+			return false
+		}
 		if t, explicit := envTier(env); !devTierDeploys && (envActionNoDeploy(env) || explicit && (t == "development" || t == "testing")) {
 			return false
 		}
