@@ -32,7 +32,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest, windows-11-arm]
     # Force bash on every OS. The Windows runner defaults to PowerShell, which
     # mangles `go test -race -coverprofile=coverage.out ./...` into a bogus
     # ".out" package argument; bash parses the command identically everywhere.
@@ -48,7 +48,16 @@ jobs:
           go-version-file: go.mod
           cache: true
       - run: go mod verify
-      - run: go test -race -coverprofile=coverage.out ./...
+      # The race detector isn't supported on windows/arm64, so that leg runs
+      # the tests without it; coverage is read from the Linux leg anyway.
+      - env:
+          OS: ${{ matrix.os }}
+        run: |
+          if [ "$OS" = windows-11-arm ]; then
+            go test ./...
+          else
+            go test -race -coverprofile=coverage.out ./...
+          fi
       # The large-pipeline tests skip themselves under -race, which makes them
       # take minutes; once without it is enough (#838).
       - if: matrix.os == 'ubuntu-latest'
