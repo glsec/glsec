@@ -229,7 +229,7 @@ Once the date has passed the suppression stops applying, the finding is reported
 
 The same token works in the `.glsec-ignore` baseline, appended to a line:
 
-```
+```text
 .gitlab-ci.yml:14 GL013 exp:2026-12-01
 ```
 

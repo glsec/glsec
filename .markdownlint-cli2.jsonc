@@ -1,0 +1,38 @@
+// Markdown lint for the docs (.github/workflows/markdown.yml, #1074). Only
+// rules about structure and rendering are on; prose style (line length and
+// the like) is left to the author.
+{
+  "config": {
+    "default": false,
+    "MD001": true, // heading levels go up one at a time
+    "MD003": { "style": "atx" },
+    "MD005": true, // list indentation
+    "MD007": true,
+    "MD009": true, // trailing spaces
+    "MD010": true, // hard tabs
+    "MD011": true, // reversed link syntax
+    "MD012": true, // multiple blank lines
+    "MD018": true,
+    "MD019": true,
+    "MD022": true, // blank lines around headings
+    "MD023": true,
+    "MD024": { "siblings_only": true },
+    "MD025": true,
+    "MD031": true, // blank lines around code fences
+    "MD032": true, // blank lines around lists
+    "MD034": true, // bare URLs
+    "MD037": true,
+    "MD039": true,
+    "MD040": true, // code fences name a language
+    "MD042": true,
+    "MD045": true, // images have alt text
+    "MD047": true,
+    "MD051": true, // link fragments exist
+    "MD052": true,
+    "MD053": true,
+    "MD055": true,
+    "MD056": true, // table rows have the header's column count
+    "MD058": true
+  },
+  "ignores": ["testdata/**", "**/testdata/**", "node_modules/**"]
+}

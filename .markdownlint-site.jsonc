@@ -1,0 +1,7 @@
+// Extra rule for the pages glsec.github.io renders (docs/rules.md and
+// docs/rules/): the site drops raw HTML, so inline HTML there would silently
+// disappear (#1074).
+{
+  "default": false,
+  "MD033": true
+}

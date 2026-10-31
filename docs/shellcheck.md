@@ -13,7 +13,7 @@ glsec runs `shellcheck` from `PATH`. To use another binary, pass `--shellcheck-p
 
 ShellCheck findings are reported alongside GL findings and use `SC` rule IDs:
 
-```
+```text
 WARN   .gitlab-ci.yml:12  SC2086  [build]  Double quote to prevent globbing and word splitting.
 ```
 

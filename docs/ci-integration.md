@@ -35,9 +35,9 @@ variables:
   FORCE_COLOR: "1"
 ```
 
-**Component repo and full input reference:** https://gitlab.com/glsec-io/glsec
+**Component repo and full input reference:** <https://gitlab.com/glsec-io/glsec>
 
-**Runnable example projects:** https://gitlab.com/glsec-io/examples
+**Runnable example projects:** <https://gitlab.com/glsec-io/examples>
 
 ## GitLab CI — Docker image
 
@@ -226,7 +226,7 @@ The hook exits non-zero (failing the commit) on `error` findings or parse errors
 
 glsec ships as a [Claude Code](https://claude.com/claude-code) plugin so Claude can scan your GitLab CI config on demand and as you edit it. Install it from glsec's own marketplace:
 
-```
+```text
 /plugin marketplace add glsec/glsec
 /plugin install glsec@glsec
 ```

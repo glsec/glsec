@@ -4,7 +4,7 @@ glsec is a single Go binary that reads GitLab CI configuration files and reports
 
 ## A scan
 
-```
+```text
 files ─▶ resolve targets ─▶ parse ─▶ validate ─▶ follow includes and child pipelines
                                                         │
           exit code ◀─ output ◀─ baseline diff ◀─ suppressions ◀─ rules (+ ShellCheck)

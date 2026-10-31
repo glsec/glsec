@@ -5,17 +5,21 @@ This is where glsec is heading over the next 12 months (until October 2027). It 
 ## Planned
 
 **Rules**
+
 - Keep the rule set current with GitLab: new keywords and features as GitLab releases them, and new rules where real pipelines show a pattern that leads to a vulnerability. New rules are checked against over 1,000 real pipelines for false positives before a release.
 - Pinning checks for `run:` function and step references once GitLab Functions leaves the experiment stage (#470).
 
 **Analysis**
+
 - Finish `extends:` and `default:` inheritance: most rules that read inherited keys follow `extends:` within a file and `default:` today; still missing are `default:` in the deep merge of `extends:`, GL001, and templates that come from another included file, so findings and suppressions follow what GitLab actually runs.
 
 **Usability**
+
 - `--fix` for findings with a mechanical, safe fix, such as pinning an image to a digest.
 - Custom rules written in a simple YAML format, with a command to test them against example files.
 
 **Project**
+
 - Signed release tags, in addition to the signed release artifacts.
 
 ## Not planned

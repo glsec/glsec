@@ -17,7 +17,7 @@
 
 **Website and rule reference: [glsec.github.io](https://glsec.github.io)**
 
-```
+```console
 $ glsec .gitlab-ci.yml
 
 error[GL001]: image "node:latest" uses mutable tag "latest" — pin to a specific version or digest
@@ -161,7 +161,6 @@ glsec ships as a [Claude Code](https://claude.com/claude-code) plugin with a `/g
 ## Verifying a release
 
 Releases and the container image are signed through Sigstore and carry SLSA Build Level 3 provenance, and release builds are reproducible. How to check a download, the image and the checksums, and how to rebuild a release: [Verifying a release](docs/verifying-releases.md).
-
 
 ## Badge
 

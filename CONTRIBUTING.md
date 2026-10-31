@@ -110,14 +110,14 @@ Enabled linters: `errcheck`, `govet`, `staticcheck`, `revive`, `gosec`, `misspel
 
 Each rule lives in two files under `rules/`:
 
-```
+```text
 rules/glNNN.go        # implementation
 rules/glNNN_test.go   # tests
 ```
 
 And one fixture under `testdata/fixtures/`:
 
-```
+```text
 testdata/fixtures/glNNN-short-name.yml   # must be valid GitLab CI YAML
 ```
 
@@ -290,6 +290,7 @@ Before finishing a rule, work through this checklist:
 Check the [GitLab CI/CD YAML syntax reference](https://docs.gitlab.com/ci/yaml/) to confirm the key you are inspecting is actually used by GitLab Runner, not just valid YAML syntax. A key that GitLab silently ignores cannot be a real vulnerability.
 
 Common areas to check:
+
 - [`artifacts:`](https://docs.gitlab.com/ci/yaml/#artifacts) — paths, exclude, reports, expire_in
 - [`variables:`](https://docs.gitlab.com/ci/yaml/#variables) — job-level vs. global, `expand`/`value`/`description` sub-keys
 - [`rules:`](https://docs.gitlab.com/ci/yaml/#rules) — if, changes, exists, when, variables
@@ -352,7 +353,7 @@ Then:
 
 Every commit must be signed off. A sign-off is a line at the end of the commit message:
 
-```
+```text
 Signed-off-by: Your Name <you@example.com>
 ```
 

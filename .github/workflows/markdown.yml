@@ -1,0 +1,46 @@
+name: Markdown
+
+# Lints the Markdown docs with markdownlint-cli2 (config:
+# .markdownlint-cli2.jsonc), for structure and rendering only (#1074). The
+# pages glsec.github.io renders also may not contain inline HTML, which the
+# site drops (.markdownlint-site.jsonc).
+
+on:
+  pull_request:
+    paths:
+      - "**/*.md"
+      - .markdownlint-cli2.jsonc
+      - .markdownlint-site.jsonc
+      - .github/workflows/markdown.yml
+  push:
+    branches: [main]
+    paths:
+      - "**/*.md"
+      - .markdownlint-cli2.jsonc
+      - .markdownlint-site.jsonc
+      - .github/workflows/markdown.yml
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint Markdown
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Lint all Markdown files
+        uses: DavidAnson/markdownlint-cli2-action@21c1be1b93ad9ed58fa840aacc3f279cde2a72ff # v24.2.0
+        with:
+          globs: "**/*.md"
+
+      - name: No inline HTML in the pages the website renders
+        uses: DavidAnson/markdownlint-cli2-action@21c1be1b93ad9ed58fa840aacc3f279cde2a72ff # v24.2.0
+        with:
+          config: .markdownlint-site.jsonc
+          globs: |
+            docs/rules.md
+            docs/rules/*.md
