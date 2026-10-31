@@ -116,11 +116,18 @@ func checkScriptLine(node *yaml.Node, file string) []finding.Finding {
 			RuleID:   "GL002",
 			Severity: finding.Warn,
 			Message: fmt.Sprintf(
-				"unquoted user-controlled variable $%s in script — value is %s and may contain shell metacharacters",
+				"unquoted user-controlled variable $%s in script — value is %s; the shell splits it into words and expands globs, so it can add arguments",
 				varName, whoSets(varName),
 			),
 			File: file,
 			Line: parser.ScalarContentLine(node, at),
+		}
+		if refNameVars[varName] {
+			f.Severity = finding.Info
+			f.Message = fmt.Sprintf(
+				"unquoted ref-name variable $%s in script — Git ref names can't contain spaces or glob characters, so the shell can't split it, but quote it: the value is %s",
+				varName, whoSets(varName),
+			)
 		}
 		if at == 0 {
 			f.Col = node.Column
@@ -128,6 +135,16 @@ func checkScriptLine(node *yaml.Node, file string) []finding.Finding {
 		findings = append(findings, f)
 	}
 	return findings
+}
+
+// refNameVars hold a Git ref name, or end in one. git check-ref-format
+// forbids spaces, control characters and *?[ in ref names, so an unquoted
+// expansion is never split or globbed (#1054). Only quoting hygiene is left,
+// unless the value is parsed again as code (checkEvaluatedArgs).
+var refNameVars = map[string]bool{
+	"CI_COMMIT_REF_NAME": true, "CI_COMMIT_BRANCH": true, "CI_COMMIT_TAG": true,
+	"CI_MERGE_REQUEST_SOURCE_BRANCH_NAME": true, "CI_EXTERNAL_PULL_REQUEST_SOURCE_BRANCH_NAME": true,
+	"CI_CONFIG_REF_URI": true,
 }
 
 // whoSets says who controls a user-controlled variable, for the message.

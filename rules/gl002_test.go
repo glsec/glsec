@@ -30,8 +30,29 @@ build:
 	if len(f) != 1 {
 		t.Fatalf("expected 1 finding, got %d", len(f))
 	}
-	if f[0].Severity != finding.Warn {
-		t.Errorf("expected Warn severity")
+	if f[0].Severity != finding.Info || !strings.Contains(f[0].Message, "can't split it") {
+		t.Errorf("got %s %q, want an info finding for a ref name (#1054)", f[0].Severity, f[0].Message)
+	}
+}
+
+// Free-text variables can hold spaces and globs and stay warnings; a ref name
+// spliced into code is a warning too (#1054).
+func TestGL002_SeverityByVariable(t *testing.T) {
+	for _, tc := range []struct {
+		line string
+		want finding.Severity
+	}{
+		{`./notify.sh $CI_MERGE_REQUEST_TITLE`, finding.Warn},
+		{`echo $CI_COMMIT_MESSAGE`, finding.Warn},
+		{`git push origin $CI_COMMIT_BRANCH`, finding.Info},
+		{`tar czf app-${CI_COMMIT_TAG}.tgz dist`, finding.Info},
+		{`git fetch origin $CI_MERGE_REQUEST_SOURCE_BRANCH_NAME`, finding.Info},
+		{`bash -c "git checkout $CI_COMMIT_BRANCH"`, finding.Warn},
+	} {
+		f := findings002(t, "build:\n  script:\n    - '"+tc.line+"'\n")
+		if len(f) != 1 || f[0].Severity != tc.want {
+			t.Errorf("%s: got %v, want one %s finding", tc.line, f, tc.want)
+		}
 	}
 }
 

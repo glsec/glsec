@@ -65,7 +65,7 @@ User-controlled inputs and unversioned component references that allow malicious
 
 | ID | Severity | Description |
 |----|----------|-------------|
-| [GL002](rules/GL002.md) | `warn`  | User-controlled CI variable used unquoted in script |
+| [GL002](rules/GL002.md) | `warn`  | User-controlled CI variable used unquoted in script, or spliced into code that `eval`, `sh -c` or an interpreter parses; unquoted ref names are `info` |
 | [GL007](rules/GL007.md) | `error` | CI variable interpolation in `image:` reference |
 | [GL015](rules/GL015.md) | `warn`  | Docker image tag built from user-controlled variable (`$CI_COMMIT_REF_SLUG` etc.) |
 | [GL025](rules/GL025.md) | `warn`  | `curl`/`wget` uses a user-controlled CI variable — attacker can redirect the request to an arbitrary host |
