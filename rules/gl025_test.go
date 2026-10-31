@@ -190,14 +190,14 @@ notify:
 	}
 }
 
-func TestGL025_CommitTag(t *testing.T) {
-	f := findings025(t, `
-notify:
-  script:
-    - curl https://api.example.com/releases/$CI_COMMIT_TAG
-`)
-	if len(f) != 1 {
-		t.Fatalf("expected 1 finding for CI_COMMIT_TAG, got %d", len(f))
+func TestGL025_CommitTag_NoFinding(t *testing.T) {
+	for _, line := range []string{
+		`curl https://api.example.com/releases/$CI_COMMIT_TAG`,
+		`wget --post-data="tag=$CI_COMMIT_TAG" https://api.example.com/releases`,
+	} {
+		if f := findings025(t, "notify:\n  script:\n    - '"+line+"'\n"); len(f) != 0 {
+			t.Errorf("%s: expected no finding for CI_COMMIT_TAG, got %v", line, f)
+		}
 	}
 }
 
@@ -265,8 +265,8 @@ notify:
 // unquoted one (#1002).
 func TestGL025_QuotedSubstitution(t *testing.T) {
 	for line, want := range map[string]int{
-		`ID="$(curl -fsS "https://api.example.com/releases/${CI_COMMIT_TAG}")"`:     1,
-		`OTHER=$(curl -fsS "https://api.example.com/releases/${CI_COMMIT_TAG}")`:    1,
+		`ID="$(curl -fsS "https://api.example.com/releases/${CI_COMMIT_TAG}")"`:     0,
+		`OTHER=$(curl -fsS "https://api.example.com/releases/${CI_COMMIT_TAG}")`:    0,
 		`echo "id: $(curl -fsS https://api.example.com/x?ref=$CI_COMMIT_REF_NAME)"`: 1,
 		`ID="$(curl -fsS https://api.example.com/releases/latest)"`:                 0,
 		`echo '$(curl https://api.example.com/$CI_COMMIT_TAG)'`:                     0,
