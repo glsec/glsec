@@ -22,7 +22,7 @@ func (r *gl053) ID() string { return "GL053" }
 // workflow:rules:if, indicate the pipeline is gated on a trusted source or
 // branch rather than running for every event.
 var workflowSourceVarRe = regexp.MustCompile(
-	`\$\{?(CI_PIPELINE_SOURCE|CI_COMMIT_BRANCH|CI_COMMIT_REF_NAME|CI_COMMIT_REF_SLUG|CI_COMMIT_TAG|CI_MERGE_REQUEST_IID|CI_DEFAULT_BRANCH)\b`,
+	`\$\{?(CI_PIPELINE_SOURCE|CI_COMMIT_BRANCH|CI_COMMIT_REF_NAME|CI_COMMIT_REF_SLUG|CI_COMMIT_TAG|CI_MERGE_REQUEST_(?:IID|ID|EVENT_TYPE|SOURCE_BRANCH_NAME|TARGET_BRANCH_NAME)|CI_DEFAULT_BRANCH)\b`,
 )
 
 func (r *gl053) Check(doc *yaml.Node, file string) []finding.Finding {
@@ -43,7 +43,7 @@ func (r *gl053) Check(doc *yaml.Node, file string) []finding.Finding {
 		return []finding.Finding{{
 			RuleID:   "GL053",
 			Severity: finding.Warn,
-			Message:  "no top-level workflow:rules — pipelines run for every event, including merge requests from forks; gate on $CI_PIPELINE_SOURCE or branch to block untrusted pipeline execution",
+			Message:  "no top-level workflow:rules — pipelines run for every push, tag, trigger, API call and merge request event, also a fork's merge request that a member runs in this project; gate on $CI_PIPELINE_SOURCE or branch to block untrusted pipeline execution",
 			File:     file,
 			Line:     1,
 			Col:      1,

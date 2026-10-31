@@ -120,3 +120,24 @@ build:
 		t.Fatalf("expected no findings when at least one rule gates on source, got %d", len(f))
 	}
 }
+
+// Merge request variables are set only in merge request pipelines, so a rule
+// on any of them gates on the source (#1051).
+func TestGL053_MergeRequestVariables(t *testing.T) {
+	for _, v := range []string{"CI_MERGE_REQUEST_ID", "CI_MERGE_REQUEST_IID", "CI_MERGE_REQUEST_EVENT_TYPE", "CI_MERGE_REQUEST_SOURCE_BRANCH_NAME", "{CI_MERGE_REQUEST_TARGET_BRANCH_NAME}"} {
+		doc, err := parser.Parse([]byte("workflow:\n  rules:\n    - if: $"+v+"\nbuild:\n  script: [make]\n"), "test.yml")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if f := GL053.Check(doc.Root, "test.yml"); len(f) != 0 {
+			t.Errorf("$%s: got %v, want no finding", v, f)
+		}
+	}
+	doc, err := parser.Parse([]byte("workflow:\n  rules:\n    - if: $CI_MERGE_REQUEST_LABELS =~ /ci/\nbuild:\n  script: [make]\n"), "test.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f := GL053.Check(doc.Root, "test.yml"); len(f) != 1 {
+		t.Errorf("$CI_MERGE_REQUEST_LABELS: got %d findings, want 1", len(f))
+	}
+}

@@ -30,20 +30,20 @@
       "severity": "warn",
       "file": ".gitlab-ci.yml",
       "line": 1,
-      "message": "no top-level workflow:rules — pipelines run for every event, including merge requests from forks; gate on $CI_PIPELINE_SOURCE or branch to block untrusted pipeline execution",
-      "code_quality_fingerprint": "17e8a98538f6e081c2be0a596d273f5976971e548acbd335235968a7d68befb9",
+      "message": "no top-level workflow:rules — pipelines run for every push, tag, trigger, API call and merge request event, also a fork's merge request that a member runs in this project; gate on $CI_PIPELINE_SOURCE or branch to block untrusted pipeline execution",
+      "code_quality_fingerprint": "95a97d70e5aeee661079e529c7773731f8817647fad373087cded04fc086a7e6",
       "code_quality_path": ".gitlab-ci.yml",
       "sarif_rule": "GL053",
       "sarif_uri": ".gitlab-ci.yml",
       "sarif_base": "%SRCROOT%",
-      "sast_id": "af998cfa-159d-590d-a042-837e0cb55f0a",
+      "sast_id": "059497a0-3dc0-54b0-904a-549f931b776b",
       "sast_file": ".gitlab-ci.yml",
       "sast_identifier": "GL053",
       "sast_identifier_type": "glsec_rule",
       "json_baseline_key": [
         "GL053",
         ".gitlab-ci.yml",
-        "no top-level workflow:rules — pipelines run for every event, including merge requests from forks; gate on $CI_PIPELINE_SOURCE or branch to block untrusted pipeline execution"
+        "no top-level workflow:rules — pipelines run for every push, tag, trigger, API call and merge request event, also a fork's merge request that a member runs in this project; gate on $CI_PIPELINE_SOURCE or branch to block untrusted pipeline execution"
       ],
       "ignore_baseline_key": [
         "GL053",
