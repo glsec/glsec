@@ -84,7 +84,14 @@ func (r *gl024) Check(doc *yaml.Node, file string) []finding.Finding {
 // script with a pipeline needing pipefail.
 func gl024Scan(script string) gl024Line {
 	var res gl024Line
+	// Every shell name and ssh contain "sh".
+	if !strings.Contains(script, "sh") {
+		return res
+	}
 	for _, cmd := range shellCommands(maskCasePatterns(script)) {
+		if !strings.Contains(cmd.text, "sh") {
+			continue
+		}
 		via, inner, errexit, ok := childShellScript(withoutSudo(commandWords(cmd.text)))
 		if !ok || pipefailRe.MatchString(inner) || !needsPipefail(inner, errexit || errexitRe.MatchString(inner)) {
 			continue
