@@ -4,6 +4,7 @@
 package rules
 
 import (
+	"path"
 	"regexp"
 	"strings"
 
@@ -26,20 +27,24 @@ func (r *gl020) Check(doc *yaml.Node, file string) []finding.Finding {
 
 	download := nodeMemo[int]{} // item line of the first saved download, or -1
 	checksum := nodeMemo[bool]{}
+	compares := nodeMemo[[]string]{}
 
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
 		lines := CollectJobScriptLines(job)
 
 		// The first command that saves a download to disk.
 		downloadLine, downloadCol := 0, 0
+		var downloads []string
 		for _, l := range lines {
 			at := download.get(l, func() int { return firstSavedDownload(l.Value) })
 			if at >= 0 {
-				downloadLine = parser.ScalarContentLine(l, at)
-				if at == 0 {
-					downloadCol = l.Column
+				if downloadLine == 0 {
+					downloadLine = parser.ScalarContentLine(l, at)
+					if at == 0 {
+						downloadCol = l.Column
+					}
 				}
-				break
+				downloads = append(downloads, l.Value)
 			}
 		}
 		if downloadLine == 0 {
@@ -50,6 +55,16 @@ func (r *gl020) Check(doc *yaml.Node, file string) []finding.Finding {
 		for _, l := range lines {
 			if checksum.get(l, func() bool { return checksumRe.MatchString(l.Value) }) {
 				return
+			}
+		}
+		// So is comparing a download with a copy in the repository (#1056).
+		for _, l := range lines {
+			for _, arg := range compares.get(l, func() []string { return comparedFiles(l.Value) }) {
+				for _, d := range downloads {
+					if strings.Contains(d, arg) {
+						return
+					}
+				}
 			}
 		}
 
@@ -67,11 +82,43 @@ func (r *gl020) Check(doc *yaml.Node, file string) []finding.Finding {
 	return findings
 }
 
+// comparedFiles returns the base names of the files a script line compares
+// byte for byte: diff, cmp, git diff --no-index.
+func comparedFiles(script string) []string {
+	if !strings.Contains(script, "diff") && !strings.Contains(script, "cmp") {
+		return nil
+	}
+	var files []string
+	for _, cmd := range shellCommands(script) {
+		words := withoutSudo(commandWords(cmd.text))
+		switch commandName(words) {
+		case "diff", "cmp":
+			words = words[1:]
+		case "git":
+			if len(words) < 2 || words[1] != "diff" || !containsWord(words, "--no-index") {
+				continue
+			}
+			words = words[2:]
+		default:
+			continue
+		}
+		for _, w := range words {
+			if b := path.Base(w); !strings.HasPrefix(w, "-") && len(b) > 2 {
+				files = append(files, b)
+			}
+		}
+	}
+	return files
+}
+
 // firstSavedDownload returns the index of the item line whose command saves a
 // download to disk, or -1.
 func firstSavedDownload(script string) int {
 	cmds := shellCommands(script)
 	for i, cmd := range cmds {
+		if fromOwnProject(withoutSudo(commandWords(cmd.text))) {
+			continue
+		}
 		saved := savesDownload(withoutSudo(commandWords(cmd.text)))
 		if !saved && isDownload(withoutSudo(commandWords(cmd.text))) {
 			// To stdout, but into a file or an archive extractor.
@@ -83,6 +130,23 @@ func firstSavedDownload(script string) int {
 		}
 	}
 	return -1
+}
+
+// ownProjectURLRe matches a URL of the project the pipeline runs for: its web
+// URL or its API path. Another project on the same instance may belong to
+// someone else.
+var ownProjectURLRe = regexp.MustCompile(`^\$\{?CI_PROJECT_URL\}?(?:/|$)|^\$\{?CI_API_V4_URL\}?/projects/\$\{?CI_PROJECT_ID\}?(?:/|$)`)
+
+// fromOwnInstance reports a download from the pipeline's own project: job
+// artifacts, packages and repository files that the project's access control
+// already guards (#1056).
+func fromOwnProject(words []string) bool {
+	for _, w := range words[min(1, len(words)):] {
+		if ownProjectURLRe.MatchString(w) {
+			return true
+		}
+	}
+	return false
 }
 
 // savesDownload reports whether a command is curl or wget writing what it

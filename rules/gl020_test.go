@@ -309,3 +309,44 @@ func TestCurlStatusProbe_Forms(t *testing.T) {
 		t.Error("-w without a status code is not a probe")
 	}
 }
+
+// Comparing the download with a tracked copy verifies it (#1056).
+func TestGL020_CompareWithTrackedCopy(t *testing.T) {
+	for _, tc := range []struct {
+		lines string
+		want  int
+	}{
+		{"    - curl -fsSLo schema.json https://example.com/schema.json\n    - diff schema.json vendor/schema.json\n", 0},
+		{"    - curl -fsSL https://example.com/schema.json -o /tmp/schema.json\n    - cmp -s /tmp/schema.json schema.json\n", 0},
+		{"    - wget -O upstream.yml https://example.com/ci.yml\n    - git diff --no-index --exit-code upstream.yml ci/ci.yml\n", 0},
+		{"    - |\n      curl -fsSLO https://example.com/LICENSE.txt\n      diff -q LICENSE.txt LICENSE\n", 0},
+		{"    - curl -fsSLo schema.json https://example.com/schema.json\n    - diff a.txt b.txt\n", 1},
+		{"    - curl -fsSLo schema.json https://example.com/schema.json\n    - git diff --exit-code\n", 1},
+		{"    - curl -fsSLo schema.json https://example.com/schema.json\n    - git diff schema.json\n", 1},
+	} {
+		if got := len(findings020(t, "job:\n  script:\n"+tc.lines)); got != tc.want {
+			t.Errorf("%q: got %d findings, want %d", tc.lines, got, tc.want)
+		}
+	}
+}
+
+// A download from the pipeline's own project is guarded by GitLab (#1056).
+func TestGL020_OwnProject_NoFinding(t *testing.T) {
+	for _, line := range []string{
+		`curl -fsSLo pkg.tgz --header "JOB-TOKEN: $CI_JOB_TOKEN" "$CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/pkg/1.0/pkg.tgz"`,
+		`wget -O report.json "${CI_PROJECT_URL}/-/jobs/artifacts/main/raw/report.json?job=test"`,
+	} {
+		if f := findings020(t, "job:\n  script:\n    - '"+line+"'\n"); len(f) != 0 {
+			t.Errorf("%s: got %v, want no finding", line, f)
+		}
+	}
+	for _, line := range []string{
+		`curl -fsSLo x "https://evil.example/$CI_API_V4_URL"`,
+		`curl -fsSLO "$CI_SERVER_URL/group/tools/-/raw/main/tool.sh"`,
+		`curl -fsSLo x "$CI_API_V4_URL/projects/42/packages/generic/tool/1.0/tool"`,
+	} {
+		if f := findings020(t, "job:\n  script:\n    - '"+line+"'\n"); len(f) != 1 {
+			t.Errorf("%s: got %d findings, want 1", line, len(f))
+		}
+	}
+}
