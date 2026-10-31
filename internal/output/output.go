@@ -922,13 +922,9 @@ func codeClimateFingerprint(f finding.Finding) string {
 	return hex.EncodeToString(h[:])
 }
 
-// WriteCodeClimate writes findings in the Code Climate JSON format
+// writeCodeClimate writes findings in the Code Climate JSON format
 // consumed by GitLab's Code Quality (artifacts:reports:codequality). A scan
 // error becomes a blocker issue, so the merge request widget shows it.
-func WriteCodeClimate(w io.Writer, findings []finding.Finding, opts ...WriteOption) error {
-	return writeCodeClimate(w, findings, writeOptions(opts).errors)
-}
-
 func writeCodeClimate(w io.Writer, findings []finding.Finding, errs []ScanError) error {
 	cwd, _ := os.Getwd()
 	out := make([]codeClimateIssue, 0, len(findings))

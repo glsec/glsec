@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"errors"
+	"io"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -481,6 +482,12 @@ func TestWriteJSON_WithOWASP(t *testing.T) {
 	}
 }
 
+// writeCodeQuality writes the Code Climate report the way glsec does, through
+// Write (#1076).
+func writeCodeQuality(w io.Writer, findings []finding.Finding, opts ...WriteOption) error {
+	return Write(w, FormatCodeClimate, findings, 0, false, false, opts...)
+}
+
 func TestWriteCodeClimate(t *testing.T) {
 	var buf bytes.Buffer
 	if err := Write(&buf, FormatCodeClimate, testFindings, 0, false, false); err != nil {
@@ -541,10 +548,10 @@ func TestWriteCodeClimate_Empty(t *testing.T) {
 
 func TestWriteCodeClimate_FingerprintStable(t *testing.T) {
 	var buf1, buf2 bytes.Buffer
-	if err := WriteCodeClimate(&buf1, testFindings); err != nil {
+	if err := writeCodeQuality(&buf1, testFindings); err != nil {
 		t.Fatal(err)
 	}
-	if err := WriteCodeClimate(&buf2, testFindings); err != nil {
+	if err := writeCodeQuality(&buf2, testFindings); err != nil {
 		t.Fatal(err)
 	}
 	if buf1.String() != buf2.String() {
@@ -554,7 +561,7 @@ func TestWriteCodeClimate_FingerprintStable(t *testing.T) {
 
 func TestWriteCodeClimate_FingerprintUnique(t *testing.T) {
 	var buf bytes.Buffer
-	if err := WriteCodeClimate(&buf, testFindingsWithJob); err != nil {
+	if err := writeCodeQuality(&buf, testFindingsWithJob); err != nil {
 		t.Fatal(err)
 	}
 	var issues []codeClimateIssue

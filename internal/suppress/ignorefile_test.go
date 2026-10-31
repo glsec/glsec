@@ -43,7 +43,7 @@ ci.yml:10 GL013 trailing words are ignored
 
 	var got []string
 	for _, e := range m.Entries() {
-		if m.IsSuppressed(e.Line, e.RuleID, now) {
+		if isSuppressed(m, e.Line, e.RuleID, now) {
 			got = append(got, e.RuleID)
 		}
 	}
@@ -60,7 +60,7 @@ ci.yml:10 GL013 trailing words are ignored
 	if !m.ExpiredAt(6, "GL004", now) {
 		t.Error("GL004's past expiry should be reported as expired")
 	}
-	if m.IsSuppressed(3, "GL002", now) {
+	if isSuppressed(m, 3, "GL002", now) {
 		t.Error("a suppression must only cover its own line and rule")
 	}
 }

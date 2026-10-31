@@ -106,7 +106,7 @@ func TestCodeQualityPathsHaveStableFingerprints(t *testing.T) {
 	var fingerprints []string
 	for _, file := range []string{"ci.yml", abs} {
 		var buf bytes.Buffer
-		if err := WriteCodeClimate(&buf, []finding.Finding{{RuleID: "GL001", File: file, Line: 7}}); err != nil {
+		if err := writeCodeQuality(&buf, []finding.Finding{{RuleID: "GL001", File: file, Line: 7}}); err != nil {
 			t.Fatal(err)
 		}
 		var out []codeClimateIssue

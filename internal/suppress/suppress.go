@@ -81,7 +81,7 @@ func fromComment(comment string, line int) []Suppression {
 }
 
 // Map builds a lookup from (line → ruleID → entry) for an entire YAML document
-// tree. Call this once per document, then use IsSuppressed.
+// tree. Call this once per document, then use Active.
 type Map map[int]map[string]Entry
 
 // Build walks the node tree and collects all inline suppressions.
@@ -117,13 +117,6 @@ func (m Map) lookup(line int, ruleID string) (Entry, bool) {
 	}
 	e, ok := rules[ruleID]
 	return e, ok
-}
-
-// IsSuppressed returns true when ruleID is suppressed on the given line and the
-// suppression has not expired as of now.
-func (m Map) IsSuppressed(line int, ruleID string, now time.Time) bool {
-	_, ok := m.Active(line, ruleID, now)
-	return ok
 }
 
 // Active returns the suppression of ruleID on the given line that applies as

@@ -74,7 +74,7 @@ func TestSchemaGoldenReports(t *testing.T) {
 		// Neither format has a suppressed state: the suppressed findings must
 		// not show up as open issues or failed tests.
 		{"codequality.golden.json", func(b *bytes.Buffer) error {
-			return WriteCodeClimate(b, findings, WithErrors(errs), WithSuppressed(suppressedFixture()))
+			return writeCodeQuality(b, findings, WithErrors(errs), WithSuppressed(suppressedFixture()))
 		}},
 		{"junit.golden.xml", func(b *bytes.Buffer) error {
 			return Write(b, FormatJUnit, findings, 3, false, false, WithErrors(errs), WithSuppressed(suppressedFixture()))

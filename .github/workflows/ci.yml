@@ -139,6 +139,27 @@ jobs:
       - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
           version: latest
+      # golangci-lint's unused only sees unexported code. deadcode follows the
+      # calls from main and reports exported functions nothing reaches, such as
+      # a wrapper only tests still call after a refactor (#1076). It must be
+      # built with the toolchain setup-go installed, or it can't load the
+      # standard library.
+      - run: go install golang.org/x/tools/cmd/deadcode@v0.52.0
+      - name: Unreachable functions
+        run: |
+          deadcode -f '{{range .Funcs}}{{$.Path}}.{{.Name}}{{"\n"}}{{end}}' ./... | sort -u > "$RUNNER_TEMP/dead.txt"
+          sed 's/#.*//; s/[[:space:]]*$//; /^$/d' .github/deadcode-allow.txt | sort -u > "$RUNNER_TEMP/allow.txt"
+          unexpected=$(comm -23 "$RUNNER_TEMP/dead.txt" "$RUNNER_TEMP/allow.txt")
+          stale=$(comm -13 "$RUNNER_TEMP/dead.txt" "$RUNNER_TEMP/allow.txt")
+          if [ -n "$unexpected" ]; then
+            echo "::error::Unreachable from main: remove them, or call them from production code; only list one in .github/deadcode-allow.txt with a reason"
+            echo "$unexpected"
+          fi
+          if [ -n "$stale" ]; then
+            echo "::error::Listed in .github/deadcode-allow.txt but reachable or gone: remove the entry"
+            echo "$stale"
+          fi
+          [ -z "$unexpected" ] && [ -z "$stale" ]
 
   # go test -cover counts statements only; gobco counts each branch, so an
   # untested else or early return shows up here (#625). Same rule as the

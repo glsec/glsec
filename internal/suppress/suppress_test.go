@@ -59,7 +59,7 @@ func TestFromComment_NoMatch(t *testing.T) {
 	}
 }
 
-func TestBuild_IsSuppressed(t *testing.T) {
+func TestBuild_Active(t *testing.T) {
 	src := `
 build:
   image: node:latest  # glsec:ignore GL001 -- updated monthly via Renovate
@@ -74,10 +74,10 @@ build:
 	for line, rules := range m {
 		if _, ok := rules["GL001"]; ok {
 			found = true
-			if !m.IsSuppressed(line, "GL001", testNow) {
+			if !isSuppressed(m, line, "GL001", testNow) {
 				t.Errorf("GL001 should be suppressed on line %d", line)
 			}
-			if m.IsSuppressed(line, "GL002", testNow) {
+			if isSuppressed(m, line, "GL002", testNow) {
 				t.Errorf("GL002 should NOT be suppressed on line %d", line)
 			}
 		}
@@ -90,7 +90,7 @@ build:
 func TestBuild_EmptyDocument(t *testing.T) {
 	root := parseNode(t, "stages: [build]\n")
 	m := Build(root)
-	if m.IsSuppressed(1, "GL001", testNow) {
+	if isSuppressed(m, 1, "GL001", testNow) {
 		t.Error("nothing should be suppressed in a document without ignore comments")
 	}
 }
@@ -118,9 +118,9 @@ func TestFromComment_SCCodeWithReason(t *testing.T) {
 	}
 }
 
-func TestIsSuppressed_MissingLine(t *testing.T) {
+func TestActive_MissingLine(t *testing.T) {
 	m := Map{}
-	if m.IsSuppressed(99, "GL001", testNow) {
+	if isSuppressed(m, 99, "GL001", testNow) {
 		t.Error("should not be suppressed on a line not in the map")
 	}
 }
@@ -129,13 +129,13 @@ func TestMerge(t *testing.T) {
 	a := Map{1: {"GL001": Entry{Reason: "reason a"}}}
 	b := Map{1: {"GL002": Entry{}}, 2: {"GL003": Entry{}}}
 	a.Merge(b)
-	if !a.IsSuppressed(1, "GL001", testNow) {
+	if !isSuppressed(a, 1, "GL001", testNow) {
 		t.Error("GL001 on line 1 should still be suppressed after merge")
 	}
-	if !a.IsSuppressed(1, "GL002", testNow) {
+	if !isSuppressed(a, 1, "GL002", testNow) {
 		t.Error("GL002 on line 1 should be suppressed after merge")
 	}
-	if !a.IsSuppressed(2, "GL003", testNow) {
+	if !isSuppressed(a, 2, "GL003", testNow) {
 		t.Error("GL003 on line 2 should be suppressed after merge")
 	}
 }
@@ -155,14 +155,14 @@ func TestLoadIgnoreFile_Basic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !m.IsSuppressed(7, "GL001", testNow) {
+	if !isSuppressed(m, 7, "GL001", testNow) {
 		t.Error("GL001 on line 7 should be suppressed")
 	}
-	if !m.IsSuppressed(14, "GL002", testNow) {
+	if !isSuppressed(m, 14, "GL002", testNow) {
 		t.Error("GL002 on line 14 should be suppressed")
 	}
 	// Entry for other.yml should not appear for .gitlab-ci.yml
-	if m.IsSuppressed(3, "GL001", testNow) {
+	if isSuppressed(m, 3, "GL001", testNow) {
 		t.Error("GL001 on line 3 from other.yml should not be suppressed for .gitlab-ci.yml")
 	}
 }
@@ -215,8 +215,8 @@ func TestExpiry_Applies(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			m := Map{}
 			m.set(4, "GL001", Entry{Expiry: tc.expiry})
-			if got := m.IsSuppressed(4, "GL001", now); got != tc.suppressed {
-				t.Errorf("IsSuppressed = %v, want %v", got, tc.suppressed)
+			if got := isSuppressed(m, 4, "GL001", now); got != tc.suppressed {
+				t.Errorf("suppressed = %v, want %v", got, tc.suppressed)
 			}
 			// A suppression that no longer applies must be reported as expired,
 			// so the caller can explain why the finding came back.
@@ -230,7 +230,7 @@ func TestExpiry_Applies(t *testing.T) {
 func TestExpiry_UnknownRuleIsNotExpired(t *testing.T) {
 	now := mustTime(t, "2026-06-15")
 	m := Map{}
-	if m.IsSuppressed(1, "GL999", now) || m.ExpiredAt(1, "GL999", now) {
+	if isSuppressed(m, 1, "GL999", now) || m.ExpiredAt(1, "GL999", now) {
 		t.Error("a rule with no suppression is neither suppressed nor expired")
 	}
 }
@@ -250,14 +250,14 @@ func TestLoadIgnoreFile_Expiry(t *testing.T) {
 	}
 
 	now := mustTime(t, "2026-06-15")
-	if !m.IsSuppressed(4, "GL001", now) {
+	if !isSuppressed(m, 4, "GL001", now) {
 		t.Error("entry with a future expiry should still suppress")
 	}
-	if !m.IsSuppressed(9, "GL002", now) {
+	if !isSuppressed(m, 9, "GL002", now) {
 		t.Error("entry without an expiry should suppress, keeping older ignore files working")
 	}
 	after := mustTime(t, "2027-01-01")
-	if m.IsSuppressed(4, "GL001", after) {
+	if isSuppressed(m, 4, "GL001", after) {
 		t.Error("entry should stop suppressing once its expiry has passed")
 	}
 }
@@ -273,4 +273,11 @@ func TestFromComment_OptionalPartsEmpty(t *testing.T) {
 	if len(got) != 1 || got[0].Expiry != "" || got[0].Reason != "" {
 		t.Errorf("got %+v, want no expiry and no reason", got)
 	}
+}
+
+// isSuppressed reports whether Active finds a suppression, as glsec asks it
+// (#1076).
+func isSuppressed(m Map, line int, ruleID string, now time.Time) bool {
+	_, ok := m.Active(line, ruleID, now)
+	return ok
 }

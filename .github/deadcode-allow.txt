@@ -1,0 +1,4 @@
+# Functions deadcode may report as unreachable from main (CI lint job, #1076).
+# One package-qualified name per line, then why it stays. A function that
+# becomes reachable again must leave this list; CI fails on stale entries too.
+github.com/glsec/glsec/internal/config.Keys  # used by cmd/glsec's schema test, which can only see exported names
