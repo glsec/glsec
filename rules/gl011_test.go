@@ -4,6 +4,7 @@
 package rules
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 
@@ -344,6 +345,40 @@ func TestGL011_PowerShellAndHex_NoFinding(t *testing.T) {
 		f := findings011(t, "build:\n  script:\n    - '"+strings.ReplaceAll(line, "'", "''")+"'\n")
 		if len(f) != 0 {
 			t.Errorf("expected no finding for %s, got %d", line, len(f))
+		}
+	}
+}
+
+// An interpreter that gets its program on the command line reads the piped
+// download as data (#1057).
+func TestGL011_InlineProgram(t *testing.T) {
+	for _, tc := range []struct {
+		line string
+		want int
+	}{
+		{`curl -fsSL https://example.com/api/release.json | node -p "JSON.parse(require('fs').readFileSync(0)).tag"`, 0},
+		{`curl -fsSL https://example.com/x.json | node --no-warnings -e "process.stdin.pipe(process.stdout)"`, 0},
+		{`curl -fsSL https://example.com/x.json | node --eval 'x()'`, 0},
+		{`curl -fsSL https://example.com/x.txt | perl -ne 'print if /v/'`, 0},
+		{`curl -fsSL https://example.com/x.txt | perl -lane 'print $F[0]'`, 0},
+		{`curl -fsSL https://example.com/x.txt | perl -E 'say <STDIN>'`, 0},
+		{`curl -fsSL https://example.com/x.txt | ruby -e 'puts STDIN.read.size'`, 0},
+		{`curl -fsSL https://example.com/x.json | python3 -c 'import json,sys; print(json.load(sys.stdin))'`, 0},
+		{`curl -fsSL https://example.com/x.sh | bash -ec 'cat > x'`, 0},
+		{`READY=$(curl -fsS https://example.com/mr.json | node -p "JSON.parse(require('fs').readFileSync(0)).ok")`, 0},
+		{`echo "$(curl -fsS https://example.com/x.sh)" | node -p "1"`, 0},
+		{`echo "$(curl -fsS https://example.com/x.sh)" | bash`, 1},
+		{`curl -fsSL https://example.com/x.sh | bash -e`, 1},
+		{`curl -fsSL https://example.com/x.sh | sh -s -- --yes`, 1},
+		{`curl -fsSL https://example.com/x.js | node`, 1},
+		{`curl -fsSL https://example.com/x.js | node -`, 1},
+		{`curl -fsSL https://example.com/x.pl | perl`, 1},
+		{`curl -fsSL https://example.com/x.pl | perl -w`, 1},
+		{`curl -fsSL https://example.com/x.rb | ruby -`, 1},
+		{`curl -fsSL https://example.com/x.py | python3 -`, 1},
+	} {
+		if got := len(findings011(t, "job:\n  script:\n    - "+strconv.Quote(tc.line)+"\n")); got != tc.want {
+			t.Errorf("%s: got %d findings, want %d", tc.line, got, tc.want)
 		}
 	}
 }

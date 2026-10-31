@@ -21,8 +21,14 @@ const shellAlt = `bash|sh|python[23]?|ruby|perl|node`
 
 var (
 	// interpreterDashCRe matches a pipe into an interpreter that gets its code
-	// from -c (python3 -c, bash -c), so the piped input is data.
-	interpreterDashCRe = mustCompilePrefiltered(`\|\s*(?:` + shellAlt + `)\s+-c\b`)
+	// from the command line, so the piped input is data: -c for shells and
+	// python (python3 -c, bash -ec), -e/-p for node, -e/-E for perl and ruby,
+	// also bundled (perl -ne, perl -lane) (#1057). -e alone is errexit for a
+	// shell, so curl … | bash -e still runs the download.
+	interpreterDashCRe = mustCompilePrefiltered(`\|\s*(?:` +
+		`(?:bash|sh|python[23]?)(?:\s+-[a-zA-Z]+)*?\s+-[a-zA-Z]*c\b` +
+		`|node(?:\s+--?[a-zA-Z][a-zA-Z-]*)*?\s+(?:-e|--eval|-p|--print)\b` +
+		`|(?:perl|ruby)(?:\s+-[a-zA-Z]+)*?\s+-[a-zA-Z]*[eE][a-zA-Z]*\b)`)
 	// downloadToolRe matches curl or wget anywhere in a script line.
 	downloadToolRe = mustCompilePrefiltered(`\b(?:curl|wget)\b`)
 	// pipeToShellRe matches a pipe directly into a shell interpreter.
@@ -111,8 +117,8 @@ func checkScriptDownloadExecute(node *yaml.Node, file string) []finding.Finding 
 }
 
 func isDownloadExecute(line string) bool {
-	// An interpreter given its code with -c reads stdin as data:
-	// curl … | python3 -c "import json, sys; …" runs no downloaded code.
+	// An interpreter given its program on the command line reads stdin as
+	// data: curl … | python3 -c "import json, sys; …" runs no downloaded code.
 	stripped := interpreterDashCRe.ReplaceAllString(quotedRe.ReplaceAllString(line, ""), "| data")
 	// An integrity check on the same line means the code is verified before running.
 	if checksumGuardRe.MatchString(stripped) {
@@ -124,7 +130,7 @@ func isDownloadExecute(line string) bool {
 	}
 	// A download inside $(…) piped into an interpreter, e.g. echo "$(curl …)" | bash.
 	// The quoted substitution is stripped above, so match the raw line.
-	if downloadSubstRe.MatchString(line) && pipeToShellRe.MatchString(line) {
+	if downloadSubstRe.MatchString(line) && pipeToShellRe.MatchString(interpreterDashCRe.ReplaceAllString(line, "| data")) {
 		return true
 	}
 	if downloadToolRe.MatchString(stripped) && pipeToShellRe.MatchString(stripped) {
