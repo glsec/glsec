@@ -45,9 +45,9 @@ func gl051SpecInputs(spec, doc *yaml.Node, file string) []finding.Finding {
 		return nil
 	}
 
-	patterns := make(map[string]*regexp.Regexp, len(unconstrained))
+	patterns := make([]gl051Input, 0, len(unconstrained))
 	for _, name := range unconstrained {
-		patterns[name] = regexp.MustCompile(`\$\[\[\s*inputs\.` + regexp.QuoteMeta(name) + gl051Accessors + `\s*(\|[^\]]*)?\]\]`)
+		patterns = append(patterns, gl051Input{name, regexp.MustCompile(`\$\[\[\s*inputs\.` + regexp.QuoteMeta(name) + gl051Accessors + `\s*(\|[^\]]*)?\]\]`)})
 	}
 
 	var findings []finding.Finding
@@ -82,6 +82,14 @@ func gl051SpecInputs(spec, doc *yaml.Node, file string) []finding.Finding {
 	})
 
 	return findings
+}
+
+// gl051Input is an unconstrained input and the pattern of its interpolation.
+// They are kept in the order spec:inputs declares them, so findings on one
+// line come out in the same order on every run (#1081).
+type gl051Input struct {
+	name string
+	re   *regexp.Regexp
 }
 
 // gl051Accessors matches array indexing and nested keys after an input name,
@@ -134,13 +142,14 @@ func gl051Constrained(def *yaml.Node) bool {
 	return true
 }
 
-func gl051CheckScalar(node *yaml.Node, file, job, keyword string, patterns map[string]*regexp.Regexp) []finding.Finding {
+func gl051CheckScalar(node *yaml.Node, file, job, keyword string, patterns []gl051Input) []finding.Finding {
 	if node == nil || node.Kind != yaml.ScalarNode {
 		return nil
 	}
 	var findings []finding.Finding
-	for inputName, re := range patterns {
-		m := re.FindString(node.Value)
+	for _, in := range patterns {
+		inputName := in.name
+		m := in.re.FindString(node.Value)
 		if m == "" {
 			continue
 		}
@@ -161,7 +170,7 @@ func gl051CheckScalar(node *yaml.Node, file, job, keyword string, patterns map[s
 	return findings
 }
 
-func gl051CheckImage(node *yaml.Node, file, job string, patterns map[string]*regexp.Regexp) []finding.Finding {
+func gl051CheckImage(node *yaml.Node, file, job string, patterns []gl051Input) []finding.Finding {
 	if node == nil {
 		return nil
 	}
@@ -174,7 +183,7 @@ func gl051CheckImage(node *yaml.Node, file, job string, patterns map[string]*reg
 	return nil
 }
 
-func gl051CheckServices(node *yaml.Node, file, job string, patterns map[string]*regexp.Regexp) []finding.Finding {
+func gl051CheckServices(node *yaml.Node, file, job string, patterns []gl051Input) []finding.Finding {
 	if node == nil || node.Kind != yaml.SequenceNode {
 		return nil
 	}
@@ -190,7 +199,7 @@ func gl051CheckServices(node *yaml.Node, file, job string, patterns map[string]*
 	return findings
 }
 
-func gl051CheckScripts(node *yaml.Node, file, job, keyword string, patterns map[string]*regexp.Regexp) []finding.Finding {
+func gl051CheckScripts(node *yaml.Node, file, job, keyword string, patterns []gl051Input) []finding.Finding {
 	if !isScriptList(node) {
 		return nil
 	}
@@ -201,7 +210,7 @@ func gl051CheckScripts(node *yaml.Node, file, job, keyword string, patterns map[
 	return findings
 }
 
-func gl051CheckEnvironment(node *yaml.Node, file, job string, patterns map[string]*regexp.Regexp) []finding.Finding {
+func gl051CheckEnvironment(node *yaml.Node, file, job string, patterns []gl051Input) []finding.Finding {
 	if node == nil {
 		return nil
 	}
