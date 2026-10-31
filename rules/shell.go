@@ -19,6 +19,8 @@ type shellCommand struct {
 	// piped is set when the command's output goes into the next command
 	// through a single |.
 	piped bool
+	// orElse and andThen are set when || or && follows the command.
+	orElse, andThen bool
 }
 
 // heredocRe matches a here-document operator and its delimiter, quoted or not.
@@ -132,7 +134,11 @@ func shellCommands(script string) []shellCommand {
 		case c == '|' || c == '&':
 			if i+1 < len(script) && script[i+1] == c {
 				i++
+				n := len(cmds)
 				emit(false)
+				if len(cmds) > n {
+					cmds[n].orElse, cmds[n].andThen = c == '|', c == '&'
+				}
 			} else {
 				emit(c == '|')
 			}

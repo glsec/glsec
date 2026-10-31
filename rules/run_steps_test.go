@@ -80,7 +80,7 @@ func TestRunSteps_CollectedIntoJobScriptLines(t *testing.T) {
 build:
   run:
     - name: piped
-      script: cat f | grep x
+      script: sh -c "cat f | grep x"
 `)
 	if got := len(GL024.Check(doc, "test.yml")); got == 0 {
 		t.Error("expected GL024 to see a pipe inside a run: step, got no finding")

@@ -7,7 +7,7 @@
 # Per-rule overrides: a severity (error, warn, info) or off.
 rules:
   GL001: warn
-  GL024:
+  GL054:
     severity: info
   GL053: off
   SC2086: off # ShellCheck codes, with shellcheck.enabled

@@ -75,32 +75,6 @@
         "GL001",
         ".gitlab-ci.yml"
       ]
-    },
-    {
-      "rule": "GL024",
-      "severity": "warn",
-      "job": "lint",
-      "file": "ci/nested/pipeline.yml",
-      "line": 3,
-      "message": "script uses a pipe without set -o pipefail — failures in all but the last command are silently ignored",
-      "code_quality_fingerprint": "da457b0cc19f9b641dfff2999e2b2bd073f85eb1de83efb8af44b9d0290d884c",
-      "code_quality_path": "ci/nested/pipeline.yml",
-      "sarif_rule": "GL024",
-      "sarif_uri": "ci/nested/pipeline.yml",
-      "sarif_base": "%SRCROOT%",
-      "sast_id": "9fff6f18-d255-5a0d-a37a-24b55f1d4cc7",
-      "sast_file": "ci/nested/pipeline.yml",
-      "sast_identifier": "GL024",
-      "sast_identifier_type": "glsec_rule",
-      "json_baseline_key": [
-        "GL024",
-        "ci/nested/pipeline.yml",
-        "script uses a pipe without set -o pipefail — failures in all but the last command are silently ignored"
-      ],
-      "ignore_baseline_key": [
-        "GL024",
-        "ci/nested/pipeline.yml"
-      ]
     }
   ]
 }

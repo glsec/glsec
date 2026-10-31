@@ -4,5 +4,5 @@ stages:
 build:
   stage: build
   script:
-    - generate-config | tee config.yml
-    - cat config.yml | grep key
+    - docker run --rm alpine:3.20 sh -c "generate-config | tee config.yml"
+    - ssh deploy@host "journalctl -u app | tail"

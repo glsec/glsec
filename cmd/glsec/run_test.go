@@ -36,14 +36,14 @@ test:
   script:
     - echo hi
 `
-	// GL024 (warn) only.
+	// GL022 (warn) only.
 	warnPipeline = `workflow:
   rules:
     - if: $CI_COMMIT_BRANCH
 job:
   image: alpine:3.20.3@sha256:1e42bbe2508154c9126d48c2b8a75420c3544343bf86fd041fb7527e017a4b4a
   script:
-    - curl -fsSL https://gitlab.com/x | tee out
+    - apk add --no-cache curl
 `
 	brokenPipeline = "job: [unclosed\n"
 )

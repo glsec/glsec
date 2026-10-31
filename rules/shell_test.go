@@ -28,7 +28,7 @@ func TestShellCommands(t *testing.T) {
 	} {
 		got := shellCommands(tc.script)
 		for i := range got {
-			got[i].piped = false
+			got[i].piped, got[i].orElse, got[i].andThen = false, false, false
 		}
 		if !reflect.DeepEqual(got, tc.want) {
 			t.Errorf("shellCommands(%q) = %+v, want %+v", tc.script, got, tc.want)
@@ -81,5 +81,18 @@ func TestShellCommandsSubstitutionInQuotes(t *testing.T) {
 	}
 	if got := shellCommands(`echo "$(( 1 | 2 ))"`); len(got) != 1 {
 		t.Errorf("arithmetic expansion split: %+v", got)
+	}
+}
+
+func TestShellCommands_Separators(t *testing.T) {
+	got := shellCommands("a && b || c | d; e")
+	want := []struct{ piped, orElse, andThen bool }{{andThen: true}, {orElse: true}, {piped: true}, {}, {}}
+	if len(got) != len(want) {
+		t.Fatalf("got %d commands, want %d", len(got), len(want))
+	}
+	for i, w := range want {
+		if got[i].piped != w.piped || got[i].orElse != w.orElse || got[i].andThen != w.andThen {
+			t.Errorf("command %q: got %+v, want %+v", got[i].text, got[i], w)
+		}
 	}
 }

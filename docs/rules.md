@@ -124,7 +124,7 @@ Misconfigured CI settings that expand the attack surface or leak build context.
 
 | ID | Severity | Description |
 |----|----------|-------------|
-| [GL024](rules/GL024.md) | `warn`  | Shell pipe without `set -o pipefail` — one finding per job, with a count when multiple lines are affected |
+| [GL024](rules/GL024.md) | `info`  | Pipe in a script a new shell runs (`sh -c`, `ssh`) without `pipefail` — the runner sets it only for the job's own shell |
 | [GL028](rules/GL028.md) | `warn`  | `artifacts: untracked: true` without sensitive-file exclusions may archive `.env`, keys, and other secrets |
 | [GL030](rules/GL030.md) | `warn`  | `ssh-keyscan` at runtime blindly trusts the remote host key — MITM risk on shared runner networks |
 | [GL031](rules/GL031.md) | `error` | `DOCKER_TLS_CERTDIR: ""` disables Docker daemon TLS — exposes port 2375 unauthenticated on the runner network |

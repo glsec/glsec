@@ -183,8 +183,8 @@ func TestLargePipelineAllFormats(t *testing.T) {
 	}
 	files := map[string]string{".gitlab-ci.yml": largePipeline(100, 1000)}
 	for _, format := range []string{"text", "table", "json", "sarif", "codeclimate", "junit"} {
-		if code, stdout, stderr := runCLI(t, files, "--no-cache", "--format", format, ".gitlab-ci.yml"); code == 2 || !strings.Contains(stdout, "GL024") {
-			t.Errorf("--format %s: exit %d, no GL024 finding: %s", format, code, stderr)
+		if code, stdout, stderr := runCLI(t, files, "--no-cache", "--format", format, ".gitlab-ci.yml"); code == 2 || !strings.Contains(stdout, "GL022") {
+			t.Errorf("--format %s: exit %d, no GL022 finding: %s", format, code, stderr)
 		}
 	}
 }

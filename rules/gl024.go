@@ -24,79 +24,37 @@ var (
 	pipefailRe = regexp.MustCompile(`\bpipefail\b`)
 )
 
+// gl024Line is the result for one script line: how many pipelines a new
+// shell runs without pipefail, where the first starts, and the command that
+// starts that shell.
+type gl024Line struct {
+	count, first int
+	via          string
+}
+
+// GitLab Runner starts bash and sh job scripts with set -o pipefail when the
+// shell supports it (shells/bash.go in gitlab-runner, since 12.0 at least), so
+// a pipe in script: already fails the job (#1047). What remains is a pipe in
+// a script a new shell runs (sh -c, ssh), which starts without the option.
 func (r *gl024) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
 	inherit := NewInheritance(doc)
-	pipefail := nodeMemo[bool]{}
-	type pipedLines struct {
-		first, count int
-	}
-	pipes := nodeMemo[pipedLines]{}
-	hasPipefail := func(l *yaml.Node) bool {
-		return pipefail.get(l, func() bool { return pipefailRe.MatchString(l.Value) })
-	}
+	memo := nodeMemo[gl024Line]{}
 
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
-		lines := CollectJobScriptLines(job)
-		if len(lines) == 0 {
-			return
-		}
 		// Windows runners run PowerShell, which has no pipefail (#615).
 		if inherit.RunsOnWindows(job) {
 			return
 		}
-
-		// Check if pipefail is set anywhere in the job's script, including the
-		// before_script/script it inherits through extends: or default: (#615).
-		// An inherited after_script runs in a separate shell, so it doesn't count.
-		for _, l := range lines {
-			if hasPipefail(l) {
-				return
-			}
-		}
-		for _, key := range []string{"before_script", "script"} {
-			if parser.FindKey(job, key) != nil {
-				continue
-			}
-			if seq := inherit.Key(job, key); isScriptList(seq) {
-				for _, l := range seq.Content {
-					if l.Kind == yaml.ScalarNode && hasPipefail(l) {
-						return
-					}
-				}
-			}
-		}
-
-		// Count lines with pipelines that need pipefail, retaining the first
-		// location. Multiple pipes on the same line count once.
 		var first *yaml.Node
-		var firstLine, count int
-		for _, l := range lines {
-			pl := pipes.get(l, func() pipedLines {
-				var result pipedLines
-				pipelineLine, lastCountedLine := -1, -1
-				for _, cmd := range shellCommands(maskCasePatterns(l.Value)) {
-					if !cmd.piped {
-						pipelineLine = -1
-						continue
-					}
-					if pipelineLine < 0 {
-						pipelineLine = cmd.line
-					}
-					if pipelineLine != lastCountedLine && !isSimplePrintCommand(cmd.text) {
-						if result.count == 0 {
-							result.first = pipelineLine
-						}
-						result.count++
-						lastCountedLine = pipelineLine
-					}
-				}
-				return result
-			})
-			count += pl.count
-			if first == nil && pl.count > 0 {
-				first, firstLine = l, pl.first
+		var firstLine gl024Line
+		count := 0
+		for _, l := range CollectJobScriptLines(job) {
+			res := memo.get(l, func() gl024Line { return gl024Scan(l.Value) })
+			if res.count > 0 && first == nil {
+				first, firstLine = l, res
 			}
+			count += res.count
 		}
 		if count == 0 {
 			return
@@ -107,19 +65,186 @@ func (r *gl024) Check(doc *yaml.Node, file string) []finding.Finding {
 		}
 		f := finding.Finding{
 			RuleID:   "GL024",
-			Severity: finding.Warn,
+			Severity: finding.Info,
 			Job:      name.Value,
-			Message:  "script uses a pipe without set -o pipefail" + countHint + " — failures in all but the last command are silently ignored",
+			Message:  "pipe in a script run by `" + firstLine.via + "`" + countHint + " — the new shell starts without the runner's pipefail, so failures in all but the last command are ignored; add set -o pipefail to that script",
 			File:     file,
-			Line:     parser.ScalarContentLine(first, firstLine),
+			Line:     parser.ScalarContentLine(first, firstLine.first),
 		}
-		if firstLine == 0 {
+		if firstLine.first == 0 {
 			f.Col = first.Column
 		}
 		findings = append(findings, f) // one finding per job
 	})
 
 	return findings
+}
+
+// gl024Scan counts the commands of a script line that hand a new shell a
+// script with a pipeline needing pipefail.
+func gl024Scan(script string) gl024Line {
+	var res gl024Line
+	for _, cmd := range shellCommands(maskCasePatterns(script)) {
+		via, inner, errexit, ok := childShellScript(withoutSudo(commandWords(cmd.text)))
+		if !ok || pipefailRe.MatchString(inner) || !needsPipefail(inner, errexit || errexitRe.MatchString(inner)) {
+			continue
+		}
+		if res.count == 0 {
+			res.first, res.via = cmd.line, via
+		}
+		res.count++
+	}
+	return res
+}
+
+// errexitRe matches set -e, also bundled (set -eu) or spelled set -o errexit.
+var errexitRe = regexp.MustCompile(`\bset\s+(?:-[a-zA-Z]*e[a-zA-Z]*\b|-o\s+errexit\b)`)
+
+// needsPipefail reports whether a script has a pipeline whose status counts
+// and whose earlier commands can fail unnoticed. Without errexit, the status
+// of a pipeline counts only when it is the script's last command or && tests
+// it. Skipped are pipelines whose commands before the last only print (echo
+// "$X" | docker login --password-stdin), pipelines tested as a condition
+// (if/while/until a | grep -q x), those whose failure is handled with ||, and
+// those inside a command substitution, whose status is lost.
+func needsPipefail(script string, errexit bool) bool {
+	cmds := shellCommands(maskCasePatterns(script))
+	for i := 0; i < len(cmds); {
+		j := i
+		for j < len(cmds)-1 && cmds[j].piped {
+			j++
+		}
+		pipeline := cmds[i : j+1]
+		i = j + 1
+		last := pipeline[len(pipeline)-1]
+		switch {
+		case len(pipeline) < 2, last.orElse, isCondition(pipeline[0].text), isQuietGrep(last.text),
+			opensSubstitution(pipeline[0].text),
+			!errexit && i < len(cmds) && !last.andThen:
+			continue
+		}
+		for _, c := range pipeline[:len(pipeline)-1] {
+			if !isSimplePrintCommand(c.text) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// opensSubstitution reports whether text leaves a $( or backtick open: the
+// pipeline it starts runs inside a command substitution.
+func opensSubstitution(text string) bool {
+	depth, backtick := 0, false
+	var quote byte
+	for i := 0; i < len(text); i++ {
+		c := text[i]
+		switch {
+		case quote == '\'':
+			if c == '\'' {
+				quote = 0
+			}
+		case c == '\\':
+			i++
+		case c == '\'' && quote == 0:
+			quote = c
+		case c == '"':
+			if quote == '"' {
+				quote = 0
+			} else {
+				quote = c
+			}
+		case c == '$' && i+1 < len(text) && text[i+1] == '(':
+			depth++
+			i++
+		case c == ')' && depth > 0 && quote == 0:
+			depth--
+		case c == '`':
+			backtick = !backtick
+		}
+	}
+	return depth > 0 || backtick
+}
+
+// isCondition reports a command that starts the condition of if, elif, while
+// or until, or is negated with !.
+func isCondition(text string) bool {
+	f := strings.Fields(text)
+	if len(f) == 0 {
+		return false
+	}
+	switch f[0] {
+	case "if", "elif", "while", "until", "!":
+		return true
+	}
+	return false
+}
+
+// isQuietGrep reports a grep that only tests for a match: grep -q, or its
+// output sent to /dev/null.
+func isQuietGrep(text string) bool {
+	words := commandWords(text)
+	if commandName(words) != "grep" {
+		return false
+	}
+	if strings.Contains(text, "/dev/null") {
+		return true
+	}
+	for _, w := range words[1:] {
+		if w == "--quiet" || w == "--silent" || len(w) > 1 && w[0] == '-' && w[1] != '-' && strings.ContainsRune(w, 'q') {
+			return true
+		}
+	}
+	return false
+}
+
+// childShells start a new shell for the script after -c.
+var childShells = map[string]bool{"sh": true, "bash": true, "ash": true, "dash": true, "zsh": true, "ksh": true, "mksh": true}
+
+// sshValueOptions are the ssh options that take a value.
+const sshValueOptions = "BbcDEeFIiJLlmOoPpQRSWw"
+
+// childShellScript returns the script a command hands to a new shell: the
+// argument after sh -c (also bundled, as in -ec, and wrapped, as in docker run
+// img sh -c …) or the remote command of ssh, and whether the shell is
+// started with -e. A shell started with -o pipefail is skipped.
+func childShellScript(words []string) (via, script string, errexit, ok bool) {
+	if len(words) == 0 || words[0] == "echo" || words[0] == "printf" {
+		return "", "", false, false
+	}
+	if commandName(words) == "ssh" {
+		i := 1
+		for ; i < len(words) && len(words[i]) > 1 && words[i][0] == '-'; i++ {
+			if len(words[i]) == 2 && strings.IndexByte(sshValueOptions, words[i][1]) >= 0 {
+				i++
+			}
+		}
+		if i+1 < len(words) {
+			return "ssh", strings.Join(words[i+1:], " "), false, true
+		}
+		return "", "", false, false
+	}
+	for i, w := range words {
+		name := commandName([]string{w})
+		if !childShells[name] {
+			continue
+		}
+		for j := i + 1; j < len(words) && strings.HasPrefix(words[j], "-") && !strings.HasPrefix(words[j], "--"); j++ {
+			if words[j] == "-o" && j+1 < len(words) && words[j+1] == "pipefail" {
+				return "", "", false, false
+			}
+			if strings.ContainsRune(words[j][1:], 'e') {
+				errexit = true
+			}
+			if strings.ContainsRune(words[j][1:], 'c') {
+				if j+1 < len(words) {
+					return name + " " + words[j], words[j+1], errexit, true
+				}
+				return "", "", false, false
+			}
+		}
+	}
+	return "", "", false, false
 }
 
 // isSimplePrintCommand recognises commands that only write an existing value.
