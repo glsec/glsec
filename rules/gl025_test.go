@@ -35,14 +35,32 @@ notify:
 	}
 }
 
-func TestGL025_CurlWithRefSlug(t *testing.T) {
+// CI_COMMIT_REF_SLUG holds only [a-z0-9-] (#1055).
+func TestGL025_CurlWithRefSlug_NoFinding(t *testing.T) {
 	f := findings025(t, `
 notify:
   script:
     - curl https://hooks.example.com/notify?branch=$CI_COMMIT_REF_SLUG
+    - curl --upload-file pkg.tgz "$CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/pkg/${CI_COMMIT_REF_SLUG}/pkg.tgz"
 `)
-	if len(f) != 1 {
-		t.Fatalf("expected 1 finding, got %d", len(f))
+	if len(f) != 0 {
+		t.Fatalf("expected no finding, got %v", f)
+	}
+}
+
+// A value starting with @ or < makes curl read a local file in -F and -d
+// fields, so free text there stays reported (#1055).
+func TestGL025_FileReadingFields(t *testing.T) {
+	for _, line := range []string{
+		`curl -F "msg=$CI_MERGE_REQUEST_TITLE" https://chat.example.com/post`,
+		`curl --form "text=${CI_COMMIT_MESSAGE}" https://chat.example.com/post`,
+		`curl -d "$CI_COMMIT_TITLE" https://api.example.com/comment`,
+		`curl --data-binary "$CI_COMMIT_DESCRIPTION" https://api.example.com/comment`,
+		`curl -F "branch=$CI_COMMIT_BRANCH" https://chat.example.com/post`,
+	} {
+		if f := findings025(t, "notify:\n  script:\n    - '"+line+"'\n"); len(f) != 1 {
+			t.Errorf("%s: got %d findings, want 1", line, len(f))
+		}
 	}
 }
 

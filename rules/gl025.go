@@ -19,9 +19,11 @@ var GL025 = &gl025{}
 func (r *gl025) ID() string { return "GL025" }
 
 // userControlledVarRe matches any of the CI variables an attacker can influence
-// via branch name, MR title, commit message, etc.
+// via branch name, MR title, commit message, etc. CI_COMMIT_REF_SLUG is not
+// one: it holds only [a-z0-9-], so it can't add a path segment, a query or a
+// field (#1055).
 var userControlledVarRe = regexp.MustCompile(
-	`\$\{?CI_(?:COMMIT_REF_NAME|COMMIT_REF_SLUG|COMMIT_BRANCH|COMMIT_TAG|COMMIT_MESSAGE|COMMIT_TITLE|COMMIT_DESCRIPTION|MERGE_REQUEST_SOURCE_BRANCH_NAME|MERGE_REQUEST_TITLE)\}?`,
+	`\$\{?CI_(?:COMMIT_REF_NAME|COMMIT_BRANCH|COMMIT_TAG|COMMIT_MESSAGE|COMMIT_TITLE|COMMIT_DESCRIPTION|MERGE_REQUEST_SOURCE_BRANCH_NAME|MERGE_REQUEST_TITLE)\}?`,
 )
 
 // curlWgetRe matches curl or wget invocations.
