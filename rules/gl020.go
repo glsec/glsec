@@ -116,16 +116,14 @@ func comparedFiles(script string) []string {
 func firstSavedDownload(script string) int {
 	cmds := shellCommands(script)
 	for i, cmd := range cmds {
-		if fromOwnProject(withoutSudo(commandWords(cmd.text))) {
-			continue
-		}
-		saved := savesDownload(withoutSudo(commandWords(cmd.text)))
-		if !saved && isDownload(withoutSudo(commandWords(cmd.text))) {
+		words := withoutSudo(commandWords(cmd.text))
+		saved := savesDownload(words)
+		if !saved && isDownload(words) {
 			// To stdout, but into a file or an archive extractor.
 			saved = redirectToFileRe.MatchString(cmd.text) ||
 				cmd.piped && i+1 < len(cmds) && extractors[commandName(withoutSudo(commandWords(cmds[i+1].text)))]
 		}
-		if saved {
+		if saved && !fromOwnProject(words) {
 			return cmd.line
 		}
 	}
