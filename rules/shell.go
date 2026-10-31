@@ -190,7 +190,9 @@ func commandWords(text string) []string {
 	for len(words) > 0 {
 		w := words[0]
 		switch {
-		case shellKeywords[w] || w == "env":
+		case w == "env":
+			words = skipEnvOptions(words[1:])
+		case shellKeywords[w]:
 			words = words[1:]
 		case strings.HasPrefix(w, "$("):
 			words[0] = w[2:]
@@ -214,6 +216,35 @@ func commandWords(text string) []string {
 	return nil
 }
 
+// envValueOptions are env's options that take the next word as their value.
+var envValueOptions = map[string]bool{"-u": true, "--unset": true, "-C": true, "--chdir": true}
+
+// skipEnvOptions drops env's own options from the words after env, so the
+// assignments and the command it runs follow (#1082): flags such as -i, -0,
+// -v and -, options with a value (-u NAME, --unset=NAME, -C DIR) and --.
+// -S/--split-string splits its value into the words of the command.
+func skipEnvOptions(words []string) []string {
+	for len(words) > 0 && strings.HasPrefix(words[0], "-") {
+		w := words[0]
+		switch {
+		case w == "--":
+			return words[1:]
+		case w == "-S" || w == "--split-string":
+			if len(words) < 2 {
+				return nil
+			}
+			return append(shellWords(words[1]), words[2:]...)
+		case strings.HasPrefix(w, "--split-string="):
+			return append(shellWords(strings.TrimPrefix(w, "--split-string=")), words[1:]...)
+		case envValueOptions[w]:
+			words = words[min(2, len(words)):]
+		default:
+			words = words[1:]
+		}
+	}
+	return words
+}
+
 // commandName returns the base name of the program a command runs:
 // "/usr/bin/curl" and "curl" are both "curl".
 func commandName(words []string) string {
@@ -235,6 +266,17 @@ func withoutSudo(words []string) []string {
 		words = words[1:]
 		if takesValue && len(words) > 0 {
 			words = words[1:]
+		}
+	}
+	// sudo VAR=value cmd, sudo env -i VAR=value cmd (#1082).
+	for len(words) > 0 {
+		switch {
+		case words[0] == "env":
+			words = skipEnvOptions(words[1:])
+		case assignmentRe.MatchString(words[0]):
+			words = words[1:]
+		default:
+			return words
 		}
 	}
 	return words

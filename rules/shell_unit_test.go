@@ -43,6 +43,17 @@ func TestCommandWords_Prefixes(t *testing.T) {
 		{"export A=1", nil},
 		{"A=1 B=2 make all", []string{"make", "all"}},
 		{"env make", []string{"make"}},
+		{"env -i PATH=/usr/bin curl -fsSLo x u", []string{"curl", "-fsSLo", "x", "u"}},
+		{"env --ignore-environment -0 -v make", []string{"make"}},
+		{"env - A=1 make", []string{"make"}},
+		{"env -u HOME -C /tmp make", []string{"make"}},
+		{"env --unset=HOME --chdir /tmp make", []string{"make"}},
+		{"env -- -weird", []string{"-weird"}},
+		{`env -S "curl -fsSL u" -o x`, []string{"curl", "-fsSL", "u", "-o", "x"}},
+		{`env --split-string="make all"`, []string{"make", "all"}},
+		{"sudo env -i apt-get install x", []string{"sudo", "env", "-i", "apt-get", "install", "x"}},
+		{"env -u", nil},
+		{"env -S", nil},
 		{"V=$(curl -fsSL x", []string{"curl", "-fsSL", "x"}},
 		{"$(git rev-parse HEAD", []string{"git", "rev-parse", "HEAD"}},
 		{"(cd dir", []string{"cd", "dir"}},
@@ -81,6 +92,9 @@ func TestWithoutSudo(t *testing.T) {
 		{"sudo -g wheel -C 3 ls", "ls"},
 		{"apt-get install x", "apt-get install x"},
 		{"sudo", ""},
+		{"sudo env -i PATH=/usr/bin curl x", "curl x"},
+		{"sudo -u app HOME=/srv make", "make"},
+		{"sudo -E env make", "make"},
 	} {
 		got := strings.Join(withoutSudo(strings.Fields(tc.in)), " ")
 		if got != tc.want {
