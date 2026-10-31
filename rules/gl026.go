@@ -89,9 +89,15 @@ func checksOutMutableRef(words []string) bool {
 var ownBranchVarRe = regexp.MustCompile(`^["']?(?:origin/)?\$\{?(?:CI_DEFAULT_BRANCH|CI_COMMIT_REF_NAME|CI_COMMIT_BRANCH|CI_MERGE_REQUEST_SOURCE_BRANCH_NAME|CI_MERGE_REQUEST_TARGET_BRANCH_NAME)\}?["']?$`)
 
 // ownRepoSourceRe matches a clone source that is the project's own
-// repository: the checkout (., $CI_PROJECT_DIR) or its remote
-// ($CI_REPOSITORY_URL).
-var ownRepoSourceRe = regexp.MustCompile(`^(?:\.|\./|\$\{?CI_PROJECT_DIR\}?|\$\{?CI_REPOSITORY_URL\}?)$`)
+// repository: the checkout (., $CI_PROJECT_DIR), its remote
+// ($CI_REPOSITORY_URL), or a URL built from the project's predefined
+// variables: $CI_PROJECT_URL, or the server host or URL with $CI_PROJECT_PATH,
+// over HTTPS with any credentials or over SSH (#1049).
+var ownRepoSourceRe = regexp.MustCompile(`^(?:\.|\./|\$\{?CI_PROJECT_DIR\}?|\$\{?CI_REPOSITORY_URL\}?|(?:` +
+	`\$\{?CI_PROJECT_URL\}?` +
+	`|\$\{?CI_SERVER_URL\}?/\$\{?CI_PROJECT_PATH\}?` +
+	`|(?:https?://(?:[^@/]+@)?|ssh://(?:[^@/]+@)?|git@)\$\{?CI_SERVER_(?:HOST|FQDN|SHELL_SSH_HOST)\}?(?::\d+|:\$\{?CI_SERVER_(?:PORT|SHELL_SSH_PORT)\}?)?[:/]\$\{?CI_PROJECT_PATH\}?` +
+	`)(?:\.git)?/?)$`)
 
 // localCloneSource reports whether a git clone copies the project's own
 // repository.
