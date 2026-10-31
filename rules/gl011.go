@@ -77,24 +77,7 @@ var (
 
 func (r *gl011) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
-	EachScriptBlock(doc, file, func(node *yaml.Node, file, job string) {
-		for _, f := range checkScriptDownloadExecute(node, file) {
-			f.Job = job
-			findings = append(findings, f)
-		}
-	})
-	return findings
-}
-
-func checkScriptDownloadExecute(node *yaml.Node, file string) []finding.Finding {
-	if node.Kind != yaml.SequenceNode {
-		return nil
-	}
-	var findings []finding.Finding
-	for _, item := range node.Content {
-		if item.Kind != yaml.ScalarNode {
-			continue
-		}
+	EachScriptLine(doc, file, func(item *yaml.Node, file, job string) {
 		// Each line of a block on its own: a curl on one line and a pipe into
 		// an interpreter on another are two unrelated commands.
 		for _, l := range logicalLines(item.Value) {
@@ -104,6 +87,7 @@ func checkScriptDownloadExecute(node *yaml.Node, file string) []finding.Finding 
 			f := finding.Finding{
 				RuleID:   "GL011",
 				Severity: finding.Error,
+				Job:      job,
 				Message:  fmt.Sprintf("script line downloads and executes remote code without integrity verification: %q", truncate(l.text, 80)),
 				File:     file,
 				Line:     parser.ScalarContentLine(item, l.line),
@@ -113,7 +97,7 @@ func checkScriptDownloadExecute(node *yaml.Node, file string) []finding.Finding 
 			}
 			findings = append(findings, f)
 		}
-	}
+	})
 	return findings
 }
 

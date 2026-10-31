@@ -144,9 +144,6 @@ func isMutableRef(ref string) bool {
 // as GL003 judges include refs. The pipeline inventory uses it (#830).
 func IsMutableRef(ref string) bool { return isMutableRef(ref) }
 
-// fullCommitRe matches a full 40-character commit SHA.
-var fullCommitRe = regexp.MustCompile(`^[0-9a-f]{40}$`)
-
 // commitPinnedRawURL reports a raw-file URL that names a full commit SHA on a
 // Git host that serves files by commit, so its content cannot change, as with
 // a project include pinned to a SHA (#1050):
@@ -164,10 +161,10 @@ func commitPinnedRawURL(raw string) bool {
 	}
 	seg := strings.Split(strings.Trim(u.EscapedPath(), "/"), "/")
 	if strings.HasPrefix(u.EscapedPath(), "/api/v4/projects/") && seg[len(seg)-1] == "raw" {
-		return fullCommitRe.MatchString(u.Query().Get("ref"))
+		return fullSHARe.MatchString(u.Query().Get("ref"))
 	}
 	if u.Host == "raw.githubusercontent.com" {
-		return len(seg) > 3 && fullCommitRe.MatchString(seg[2])
+		return len(seg) > 3 && fullSHARe.MatchString(seg[2])
 	}
 	for i := 2; i < len(seg); i++ {
 		if seg[i] != "raw" {
@@ -177,7 +174,7 @@ func commitPinnedRawURL(raw string) bool {
 		if at < len(seg) && seg[at] == "commit" {
 			at++
 		}
-		if at+1 < len(seg) && fullCommitRe.MatchString(seg[at]) {
+		if at+1 < len(seg) && fullSHARe.MatchString(seg[at]) {
 			return true
 		}
 	}

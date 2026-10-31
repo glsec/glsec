@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/glsec/glsec/internal/finding"
 	"github.com/glsec/glsec/internal/parser"
 	"gopkg.in/yaml.v3"
 )
@@ -504,4 +505,35 @@ func scriptLinePos(item *yaml.Node, i int) (line, col int) {
 		col = item.Column
 	}
 	return line, col
+}
+
+// fullSHARe matches a word that is exactly a full 40-character commit SHA.
+var fullSHARe = regexp.MustCompile(`^[0-9a-f]{40}$`)
+
+// dockerRunFlagFindings reports a warning on every script line whose docker
+// run command passes the option flag matches, at the option: GL058, GL061 and
+// GL077 differ only in the option and the message (#1078). Comment lines are
+// skipped.
+func dockerRunFlagFindings(doc *yaml.Node, file, ruleID string, flag *regexp.Regexp, message string) []finding.Finding {
+	var findings []finding.Finding
+	EachScriptLine(doc, file, func(line *yaml.Node, file, job string) {
+		v := line.Value
+		if strings.HasPrefix(strings.TrimSpace(v), "#") {
+			return
+		}
+		if !dockerRunRe.MatchString(v) || !flag.MatchString(v) {
+			return
+		}
+		ln, col := scriptMatchPos(line, flag.FindStringIndex(v)[0])
+		findings = append(findings, finding.Finding{
+			RuleID:   ruleID,
+			Severity: finding.Warn,
+			Job:      job,
+			Message:  message,
+			File:     file,
+			Line:     ln,
+			Col:      col,
+		})
+	})
+	return findings
 }

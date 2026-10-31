@@ -31,25 +31,12 @@ var (
 
 func (r *gl004) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
-	EachScriptBlock(doc, file, func(node *yaml.Node, file, job string) {
-		for _, f := range scanScriptForToken(node, file) {
+	EachScriptLine(doc, file, func(line *yaml.Node, file, job string) {
+		for _, f := range checkTokenLine(line, file) {
 			f.Job = job
 			findings = append(findings, f)
 		}
 	})
-	return findings
-}
-
-func scanScriptForToken(node *yaml.Node, file string) []finding.Finding {
-	if node.Kind != yaml.SequenceNode {
-		return nil
-	}
-	var findings []finding.Finding
-	for _, item := range node.Content {
-		if item.Kind == yaml.ScalarNode {
-			findings = append(findings, checkTokenLine(item, file)...)
-		}
-	}
 	return findings
 }
 

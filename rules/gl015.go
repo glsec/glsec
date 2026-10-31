@@ -33,23 +33,9 @@ var (
 
 func (r *gl015) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
-	EachScriptBlock(doc, file, func(node *yaml.Node, file, job string) {
-		for _, f := range checkScriptDockerTags(node, file) {
-			f.Job = job
-			findings = append(findings, f)
-		}
-	})
-	return findings
-}
-
-func checkScriptDockerTags(node *yaml.Node, file string) []finding.Finding {
-	if node.Kind != yaml.SequenceNode {
-		return nil
-	}
-	var findings []finding.Finding
-	for _, item := range node.Content {
-		if item.Kind != yaml.ScalarNode || !dockerCmdRe.MatchString(item.Value) {
-			continue
+	EachScriptLine(doc, file, func(item *yaml.Node, file, job string) {
+		if !dockerCmdRe.MatchString(item.Value) {
+			return
 		}
 		for _, cmd := range shellCommands(item.Value) {
 			varName := ""
@@ -66,6 +52,7 @@ func checkScriptDockerTags(node *yaml.Node, file string) []finding.Finding {
 			f := finding.Finding{
 				RuleID:   "GL015",
 				Severity: finding.Warn,
+				Job:      job,
 				Message: fmt.Sprintf(
 					"Docker image tag uses user-controlled variable $%s — a branch named \"latest\" or \"main\" overwrites the production tag; use $CI_COMMIT_SHA instead",
 					varName,
@@ -78,7 +65,7 @@ func checkScriptDockerTags(node *yaml.Node, file string) []finding.Finding {
 			}
 			findings = append(findings, f)
 		}
-	}
+	})
 	return findings
 }
 

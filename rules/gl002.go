@@ -75,25 +75,12 @@ var evalArgRe = regexp.MustCompile(
 
 func (r *gl002) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
-	EachScriptBlock(doc, file, func(node *yaml.Node, file, job string) {
-		for _, f := range checkScriptNode(node, file) {
+	EachScriptLine(doc, file, func(line *yaml.Node, file, job string) {
+		for _, f := range checkScriptLine(line, file) {
 			f.Job = job
 			findings = append(findings, f)
 		}
 	})
-	return findings
-}
-
-func checkScriptNode(node *yaml.Node, file string) []finding.Finding {
-	if node.Kind != yaml.SequenceNode {
-		return nil
-	}
-	var findings []finding.Finding
-	for _, item := range node.Content {
-		if item.Kind == yaml.ScalarNode {
-			findings = append(findings, checkScriptLine(item, file)...)
-		}
-	}
 	return findings
 }
 
@@ -286,10 +273,10 @@ func containsWord(words []string, w string) bool {
 	return false
 }
 
-// heredocEvaluators read a here-document as code: the shell, ssh or an
-// interpreter runs the body after the outer shell expanded it.
+// heredocEvaluators read a here-document as code, as a shell does
+// (posixShells): ssh and su run it in a remote or login shell, the others
+// interpret it, after the outer shell expanded it.
 var heredocEvaluators = map[string]bool{
-	"sh": true, "bash": true, "ash": true, "dash": true, "zsh": true, "ksh": true, "mksh": true,
 	"ssh": true, "su": true, "eval": true, "python": true, "python3": true, "node": true, "perl": true, "ruby": true, "php": true,
 }
 
@@ -354,7 +341,7 @@ func blankHeredocBodies(orig string) string {
 // shell or interpreter.
 func evaluatesHeredoc(line string) bool {
 	for _, w := range strings.FieldsFunc(line, func(r rune) bool { return r == ' ' || r == '\t' || r == '|' || r == ';' || r == '&' || r == '(' }) {
-		if heredocEvaluators[path.Base(w)] {
+		if b := path.Base(w); posixShells[b] || heredocEvaluators[b] {
 			return true
 		}
 	}

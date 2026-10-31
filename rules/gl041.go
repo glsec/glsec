@@ -20,8 +20,6 @@ var GL041 = &gl041{}
 func (r *gl041) ID() string { return "GL041" }
 
 var (
-	// componentSHARe matches a full 40-character lowercase hex commit SHA.
-	componentSHARe = regexp.MustCompile(`^[0-9a-f]{40}$`)
 
 	// componentSemverRe matches a semver tag, optionally prefixed with "v".
 	// Requires at least two dot-separated numeric segments (e.g. 1.0, v1.2.3).
@@ -76,7 +74,7 @@ func checkComponentVersion(node *yaml.Node, file string) *finding.Finding {
 		}
 	}
 
-	if componentSHARe.MatchString(ref) || componentSemverRe.MatchString(ref) || componentCommitSHARe.MatchString(ref) {
+	if fullSHARe.MatchString(ref) || componentSemverRe.MatchString(ref) || componentCommitSHARe.MatchString(ref) {
 		return nil
 	}
 	if componentPartialRe.MatchString(ref) {

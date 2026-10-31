@@ -5,6 +5,7 @@ package rules
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -93,6 +94,47 @@ func TestShellCommands_Separators(t *testing.T) {
 	for i, w := range want {
 		if got[i].piped != w.piped || got[i].orElse != w.orElse || got[i].andThen != w.andThen {
 			t.Errorf("command %q: got %+v, want %+v", got[i].text, got[i], w)
+		}
+	}
+}
+
+func TestGitArgs(t *testing.T) {
+	for _, tc := range []struct {
+		words     string
+		sub       string
+		otherRepo bool
+	}{
+		{"git -C dir --no-pager checkout x", "checkout", true},
+		{"git -c a=b fetch", "fetch", false},
+		{"git --git-dir .git/other log", "log", true},
+		{"git --git-dir=.git/other log", "log", true},
+		{"git --work-tree /tmp/w status", "status", true},
+		{"/usr/bin/git clone url", "clone", false},
+		{"git --version", "", false},
+		{"git -C", "", true},
+		{"gitx checkout", "", false},
+	} {
+		args, other := gitArgs(strings.Fields(tc.words))
+		sub := ""
+		if len(args) > 0 {
+			sub = args[0]
+		}
+		if sub != tc.sub || other != tc.otherRepo {
+			t.Errorf("gitArgs(%q) = %q, %v; want %q, %v", tc.words, sub, other, tc.sub, tc.otherRepo)
+		}
+	}
+}
+
+func TestFullSHARe(t *testing.T) {
+	for s, want := range map[string]bool{
+		"3f2a9c1d8e7b6a5f4e3d2c1b0a9f8e7d6c5b4a39": true,
+		"3F2A9C1D8E7B6A5F4E3D2C1B0A9F8E7D6C5B4A39": false,
+		"3f2a9c1d8e7b": false,
+		"3f2a9c1d8e7b6a5f4e3d2c1b0a9f8e7d6c5b4a390": false,
+		"v3f2a9c1d8e7b6a5f4e3d2c1b0a9f8e7d6c5b4a39": false,
+	} {
+		if got := fullSHARe.MatchString(s); got != want {
+			t.Errorf("%s: got %v, want %v", s, got, want)
 		}
 	}
 }

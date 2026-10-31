@@ -205,9 +205,6 @@ func isQuietGrep(text string) bool {
 	return false
 }
 
-// childShells start a new shell for the script after -c.
-var childShells = map[string]bool{"sh": true, "bash": true, "ash": true, "dash": true, "zsh": true, "ksh": true, "mksh": true}
-
 // sshValueOptions are the ssh options that take a value.
 const sshValueOptions = "BbcDEeFIiJLlmOoPpQRSWw"
 
@@ -233,7 +230,7 @@ func childShellScript(words []string) (via, script string, errexit, ok bool) {
 	}
 	for i, w := range words {
 		name := commandName([]string{w})
-		if !childShells[name] {
+		if !posixShells[name] {
 			continue
 		}
 		for j := i + 1; j < len(words) && strings.HasPrefix(words[j], "-") && !strings.HasPrefix(words[j], "--"); j++ {

@@ -330,3 +330,28 @@ func logicalLines(script string) []logicalLine {
 	}
 	return out
 }
+
+// gitArgs returns the words of a git command from its subcommand on, past the
+// global options (-C dir, -c key=value, --git-dir dir or --git-dir=dir, the
+// same for --work-tree, and flags such as --no-pager), and whether those
+// options point at another repository (-C, --git-dir, --work-tree).
+func gitArgs(words []string) (args []string, otherRepo bool) {
+	if commandName(words) != "git" {
+		return nil, false
+	}
+	args = words[1:]
+	for len(args) > 0 && strings.HasPrefix(args[0], "-") {
+		a := args[0]
+		if a == "-C" || strings.HasPrefix(a, "--git-dir") || strings.HasPrefix(a, "--work-tree") {
+			otherRepo = true
+		}
+		args = args[1:]
+		if (a == "-C" || a == "-c" || a == "--git-dir" || a == "--work-tree") && len(args) > 0 {
+			args = args[1:]
+		}
+	}
+	return args, otherRepo
+}
+
+// posixShells run the script after -c, or read one from stdin.
+var posixShells = map[string]bool{"sh": true, "bash": true, "ash": true, "dash": true, "zsh": true, "ksh": true, "mksh": true}

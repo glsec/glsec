@@ -141,11 +141,11 @@ func checksOutMRSourceSHA(item string, fetched *bool) (int, bool) {
 		return 0, false
 	}
 	for _, cmd := range shellCommands(item) {
-		words := commandWords(cmd.text)
-		if commandName(words) != "git" {
+		args, _ := gitArgs(commandWords(cmd.text))
+		if len(args) == 0 {
 			continue
 		}
-		sub := gitSubcommand(words[1:])
+		sub := args[0]
 		hasSHA := mrSourceSHARe.MatchString(cmd.text)
 		switch {
 		case sub == "fetch" && hasSHA:
@@ -155,22 +155,6 @@ func checksOutMRSourceSHA(item string, fetched *bool) (int, bool) {
 		}
 	}
 	return 0, false
-}
-
-// gitSubcommand returns git's subcommand from the words after "git",
-// skipping global options such as -C dir and -c key=value.
-func gitSubcommand(words []string) string {
-	for i := 0; i < len(words); i++ {
-		w := words[i]
-		switch {
-		case w == "-C" || w == "-c" || w == "--git-dir" || w == "--work-tree":
-			i++
-		case strings.HasPrefix(w, "-"):
-		default:
-			return w
-		}
-	}
-	return ""
 }
 
 func checkImageForMRSourceSHA(node *yaml.Node, file, job string) *finding.Finding {

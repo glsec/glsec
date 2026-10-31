@@ -68,26 +68,6 @@ func checksOutMutableRef(words []string) bool {
 	return !shaRe.MatchString(refs[0]) && !shaVarRe.MatchString(refs[0])
 }
 
-// gitArgs returns the words of a git command from its subcommand on,
-// past global options (-C dir, -c key=value, --git-dir=…), and whether those
-// options point at another repository (-C, --git-dir, --work-tree).
-func gitArgs(words []string) (args []string, otherRepo bool) {
-	if commandName(words) != "git" {
-		return nil, false
-	}
-	args = words[1:]
-	for len(args) > 0 && strings.HasPrefix(args[0], "-") {
-		if args[0] == "-C" || strings.HasPrefix(args[0], "--git-dir") || strings.HasPrefix(args[0], "--work-tree") {
-			otherRepo = true
-		}
-		if (args[0] == "-C" || args[0] == "-c") && len(args) > 1 {
-			args = args[1:]
-		}
-		args = args[1:]
-	}
-	return args, otherRepo
-}
-
 // pinsCommit reports a git command that fixes the revision to a full commit
 // SHA: git checkout <sha>, git switch --detach <sha>, git reset --hard <sha>,
 // or git fetch <remote> <sha>, whose FETCH_HEAD is then that commit (#1048).
@@ -108,9 +88,6 @@ func pinsCommit(words []string) bool {
 	}
 	return false
 }
-
-// fullSHARe matches a word that is exactly a full commit SHA.
-var fullSHARe = regexp.MustCompile(`^[0-9a-f]{40}$`)
 
 // ownBranchVarRe matches a branch of the project the pipeline runs for,
 // optionally on the origin remote. Checking it out in the project's own
