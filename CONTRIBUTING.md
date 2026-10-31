@@ -397,6 +397,7 @@ The reviewer leaves comments on anything that needs to change; a pull request is
 - **Branch names:** `<type>/issue-<N>-<slug>` — e.g. `feat/issue-13-gl090-rule`; for a change without an issue, `<type>/<slug>`.
 - **PR descriptions:** write the context here — what the rule detects, why it matters, how to test it, any edge cases considered.
 - One branch per issue; one PR per branch.
+- **Allow edits by maintainers:** keep the box "Allow edits and access to secrets by maintainers" ticked when you open a pull request from a fork (it is on by default). `main` moves quickly, and with it a maintainer can rebase your branch, resolve a conflict or fix a small detail directly, instead of asking you for another round. Your commits keep your authorship and sign-off. GitHub only offers the option for forks in a personal account; if you work from a fork owned by an organization, say so in the pull request.
 - **Tests:** new functionality and bug fixes come with tests in the same PR. A new rule needs its fixture and unit tests (see above); a bug fix needs a test that fails without the fix. CI (tests on Linux, macOS and Windows, lint, fuzzing, CodeQL) must pass before merging.
 
 ## AI-assisted contributions
