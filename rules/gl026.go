@@ -137,7 +137,7 @@ func (r *gl026) Check(doc *yaml.Node, file string) []finding.Finding {
 		}
 		all := make([]gl026Facts, len(lines))
 		// A bare `git clone` paired with `git checkout <sha>` is the safe pattern.
-		hasSHACheckout, fetchedSHA := false, false
+		hasSHACheckout, fetchedSHA, cloned := false, false, false
 		for i, l := range lines {
 			all[i] = facts.get(l, func() gl026Facts { return gl026Line(l, file) })
 			hasSHACheckout = hasSHACheckout || all[i].shaCheckout
@@ -148,6 +148,15 @@ func (r *gl026) Check(doc *yaml.Node, file string) []finding.Finding {
 				f.Job = name.Value
 				findings = append(findings, f)
 			}
+			// A mutable-ref checkout only brings in third-party code once an
+			// earlier line of the job cloned a third-party repository (#1098).
+			if cloned {
+				for _, f := range all[i].checkouts {
+					f.Job = name.Value
+					findings = append(findings, f)
+				}
+			}
+			cloned = cloned || all[i].thirdPartyClone
 			// After git fetch <remote> <sha>, FETCH_HEAD is that commit.
 			if !fetchedSHA {
 				for _, f := range all[i].fetchHead {
@@ -175,12 +184,14 @@ func (r *gl026) Check(doc *yaml.Node, file string) []finding.Finding {
 
 // gl026Facts is what one script item says on its own.
 type gl026Facts struct {
-	shaCheckout bool              // pins a commit SHA (pinsCommit)
-	shaFetch    bool              // git fetch <remote> <sha>
-	fetchHead   []finding.Finding // git checkout FETCH_HEAD, without Job
-	bareClone   bool              // git clone without --branch
-	cloneAt     int               // byte offset of the git clone in the item
-	findings    []finding.Finding // the findings that don't depend on the job, without Job
+	shaCheckout     bool              // pins a commit SHA (pinsCommit)
+	shaFetch        bool              // git fetch <remote> <sha>
+	fetchHead       []finding.Finding // git checkout FETCH_HEAD, without Job
+	bareClone       bool              // git clone without --branch
+	cloneAt         int               // byte offset of the git clone in the item
+	thirdPartyClone bool              // git clone of a repository other than the project's own
+	checkouts       []finding.Finding // git checkout <mutable ref>, without Job; reported only after a third-party clone
+	findings        []finding.Finding // the findings that don't depend on the job, without Job
 }
 
 // gl026Line checks one script item.
@@ -205,6 +216,7 @@ func gl026Line(l *yaml.Node, file string) (lf gl026Facts) {
 			}
 		}
 		lf.cloneAt = loc[0]
+		lf.thirdPartyClone = true
 		ln, col := scriptMatchPos(l, loc[0])
 		m := branchFlagRe.FindStringSubmatch(line)
 		switch {
@@ -242,7 +254,7 @@ func gl026Line(l *yaml.Node, file string) (lf gl026Facts) {
 				lf.fetchHead = append(lf.fetchHead, f)
 				continue
 			}
-			lf.findings = append(lf.findings, f)
+			lf.checkouts = append(lf.checkouts, f)
 		}
 	}
 	return lf

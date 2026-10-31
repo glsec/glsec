@@ -123,10 +123,50 @@ func TestGL026_CheckoutMutableBranch(t *testing.T) {
 	f := findings026(t, `
 build:
   script:
+    - git clone https://github.com/org/lib.git
+    - git checkout main
+`)
+	// The bare clone and the checkout of the mutable branch are both reported.
+	if len(f) != 2 {
+		t.Fatalf("expected 2 findings for a bare clone and checkout of mutable branch, got %d", len(f))
+	}
+}
+
+// Checking out a branch of the project's own repository (no third-party clone
+// earlier in the job) brings in no third-party code (#1098).
+func TestGL026_CheckoutOwnRepository_NoFinding(t *testing.T) {
+	f := findings026(t, `
+build:
+  script:
+    - git checkout main
+    - git checkout develop
+`)
+	if len(f) != 0 {
+		t.Errorf("expected no finding for checkout of the own repository, got %d", len(f))
+	}
+}
+
+func TestGL026_CheckoutBeforeThirdPartyClone_NoFinding(t *testing.T) {
+	f := findings026(t, `
+build:
+  script:
+    - git checkout main
+    - git clone --branch `+sha40+` https://github.com/org/lib.git
+`)
+	if len(f) != 0 {
+		t.Errorf("expected no finding for checkout that precedes the third-party clone, got %d", len(f))
+	}
+}
+
+func TestGL026_CheckoutAfterThirdPartyClone(t *testing.T) {
+	f := findings026(t, `
+build:
+  script:
+    - git clone --branch `+sha40+` https://github.com/org/lib.git
     - git checkout main
 `)
 	if len(f) != 1 {
-		t.Fatalf("expected 1 finding for checkout of mutable branch, got %d", len(f))
+		t.Fatalf("expected 1 finding for checkout after third-party clone, got %d", len(f))
 	}
 }
 
@@ -227,8 +267,7 @@ func TestGL026_OwnRepository(t *testing.T) {
 		{`git clone "https://$CI_SERVER_HOST/$CI_PROJECT_NAMESPACE/tools.git"`, 1},
 		{`git clone "$CI_PROJECT_URL-wiki.git"`, 1},
 		{`git clone "https://evil.example/$CI_PROJECT_PATH.git"`, 1},
-		{`git -C vendor/lib checkout $CI_DEFAULT_BRANCH`, 1},
-		{`git checkout develop`, 1},
+		{`git -C vendor/lib checkout $CI_DEFAULT_BRANCH`, 0},
 		{`git clone --branch main https://github.com/org/tools.git`, 1},
 	} {
 		doc, err := parser.Parse([]byte("job:\n  script:\n    - '"+tc.line+"'\n"), "test.yml")
