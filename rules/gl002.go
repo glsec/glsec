@@ -5,6 +5,7 @@ package rules
 
 import (
 	"fmt"
+	"path"
 	"regexp"
 	"strings"
 
@@ -97,7 +98,7 @@ func checkScriptNode(node *yaml.Node, file string) []finding.Finding {
 }
 
 func checkScriptLine(node *yaml.Node, file string) []finding.Finding {
-	masked := maskShellQuotes(node.Value)
+	masked := maskShellQuotes(blankHeredocBodies(node.Value))
 	seen := map[string]bool{}
 	findings := checkEvaluatedArgs(node, file, masked, seen)
 	matches := userVarRe.FindAllStringSubmatchIndex(masked, -1)
@@ -262,6 +263,81 @@ func commandStart(masked string, pos int) int {
 func containsWord(words []string, w string) bool {
 	for _, x := range words {
 		if x == w {
+			return true
+		}
+	}
+	return false
+}
+
+// heredocEvaluators read a here-document as code: the shell, ssh or an
+// interpreter runs the body after the outer shell expanded it.
+var heredocEvaluators = map[string]bool{
+	"sh": true, "bash": true, "ash": true, "dash": true, "zsh": true, "ksh": true, "mksh": true,
+	"ssh": true, "su": true, "eval": true, "python": true, "python3": true, "node": true, "perl": true, "ruby": true, "php": true,
+}
+
+// blankHeredocBodies blanks the bodies of here-documents in a script, keeping
+// newlines and offsets. A body is data: the shell expands $VAR in it but
+// doesn't split, glob or parse the value (#1053), and an apostrophe in it
+// opens no quote. Bodies on a line that hands them to a shell or interpreter
+// (sh <<EOF, ssh host <<EOF, cat <<EOF | bash) are code and stay. The
+// operators are found on the quote-masked script, where a << inside quotes
+// is gone; masking keeps offsets, so both share positions.
+func blankHeredocBodies(orig string) string {
+	if !strings.Contains(orig, "<<") {
+		return orig
+	}
+	masked := maskShellQuotes(orig)
+	b := []byte(orig)
+	// Quote masking blanks newlines inside quotes too, so lines are cut at
+	// the newlines of orig.
+	for i := 0; i < len(orig); {
+		end := strings.IndexByte(orig[i:], '\n')
+		if end < 0 {
+			break
+		}
+		line := masked[i : i+end]
+		var delims []string
+		for j := 0; j+1 < len(line); j++ {
+			if line[j] != '<' || line[j+1] != '<' || j+2 < len(line) && line[j+2] == '<' {
+				continue
+			}
+			if m := heredocRe.FindStringSubmatch(orig[i+j:]); m != nil {
+				delims = append(delims, m[1]+m[2]+m[3])
+				j += len(m[0]) - 1
+			} else {
+				j++
+			}
+		}
+		code := len(delims) > 0 && evaluatesHeredoc(line)
+		i += end + 1
+		for _, delim := range delims {
+			for i < len(orig) {
+				end := strings.IndexByte(orig[i:], '\n')
+				if end < 0 {
+					end = len(orig) - i
+				}
+				body := orig[i : i+end]
+				if !code {
+					for k := i; k < i+end; k++ {
+						b[k] = ' '
+					}
+				}
+				i += end + 1
+				if strings.TrimSpace(body) == delim {
+					break
+				}
+			}
+		}
+	}
+	return string(b)
+}
+
+// evaluatesHeredoc reports whether a script line hands a here-document to a
+// shell or interpreter.
+func evaluatesHeredoc(line string) bool {
+	for _, w := range strings.FieldsFunc(line, func(r rune) bool { return r == ' ' || r == '\t' || r == '|' || r == ';' || r == '&' || r == '(' }) {
+		if heredocEvaluators[path.Base(w)] {
 			return true
 		}
 	}

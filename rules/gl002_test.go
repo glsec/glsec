@@ -549,3 +549,34 @@ func TestCommandStart_Braces(t *testing.T) {
 		}
 	}
 }
+
+// A here-document body is data: $VAR is expanded but not split, globbed or
+// parsed, unless the body goes to a shell or interpreter (#1053).
+func TestGL002_HeredocBodies(t *testing.T) {
+	for _, tc := range []struct {
+		name, script string
+		want         int
+	}{
+		{"cat to file", "cat > notes.md <<EOF\nRelease $CI_COMMIT_TAG\nEOF", 0},
+		{"quoted delimiter", "cat <<'EOF' > notes.md\nRelease $CI_COMMIT_TAG\nEOF", 0},
+		{"indented with <<-", "cat <<-END\n\tBuilt from $CI_COMMIT_REF_NAME\n\tEND", 0},
+		{"apostrophe in body", "cat > n.md <<EOF\nit's $CI_COMMIT_TAG\nEOF\necho $CI_COMMIT_TITLE", 1},
+		{"after the body", "cat > n.md <<EOF\nx\nEOF\necho $CI_COMMIT_TAG", 1},
+		{"two heredocs on a line", "paste - - <<A 3<<B\n$CI_COMMIT_TAG\nA\n$CI_COMMIT_BRANCH\nB\necho $CI_COMMIT_TITLE", 1},
+		{"sh reads the body", "sh <<EOF\necho $CI_COMMIT_TITLE\nEOF", 1},
+		{"ssh runs the body", "ssh deploy@host <<EOF\ncd /srv && ./deploy $CI_COMMIT_TAG\nEOF", 1},
+		{"su runs a login shell", "su -l packager <<EOS\ntar -cf x-${CI_COMMIT_TAG}.tar src\nEOS", 1},
+		{"piped to bash", "cat <<EOF | bash\necho $CI_COMMIT_TITLE\nEOF", 1},
+		{"<< inside quotes", "echo \"a << b\"\necho $CI_COMMIT_TAG", 1},
+		{"here-string", "cat <<< $CI_COMMIT_TAG", 1},
+		{"unterminated", "cat <<EOF\n$CI_COMMIT_TAG", 0},
+	} {
+		doc, err := parser.Parse([]byte("job:\n  script:\n    - |\n      "+strings.ReplaceAll(tc.script, "\n", "\n      ")+"\n"), "test.yml")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := len(GL002.Check(doc.Root, "test.yml")); got != tc.want {
+			t.Errorf("%s: got %d findings, want %d", tc.name, got, tc.want)
+		}
+	}
+}
