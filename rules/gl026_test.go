@@ -244,3 +244,47 @@ func TestLocalCloneSource_NoSource(t *testing.T) {
 		t.Error("a clone without a source isn't a local clone")
 	}
 }
+
+// A clone pinned afterwards by fetching a commit SHA, or by switch/reset to
+// one, is not reported; checking out FETCH_HEAD after such a fetch isn't
+// either (#1048).
+func TestGL026_PinnedAfterClone(t *testing.T) {
+	const clone = "    - git clone --depth 1 https://example.com/org/lib.git lib\n"
+	for _, tc := range []struct {
+		name  string
+		lines string
+		want  int
+	}{
+		{"fetch sha, checkout FETCH_HEAD", clone + "    - git -C lib fetch --depth 1 origin " + sha40 + "\n    - git -C lib checkout FETCH_HEAD\n", 0},
+		{"fetch sha, reset FETCH_HEAD", clone + "    - cd lib && git fetch origin " + sha40 + " && git reset --hard FETCH_HEAD\n", 0},
+		{"fetch sha variable", clone + "    - git -C lib fetch origin $CI_COMMIT_SHA\n    - git -C lib checkout --force FETCH_HEAD\n", 0},
+		{"switch --detach sha", clone + "    - git -C lib switch --detach " + sha40 + "\n", 0},
+		{"reset --hard sha", clone + "    - git -C lib reset --hard " + sha40 + "\n", 0},
+		{"fetch branch, checkout FETCH_HEAD", clone + "    - git -C lib fetch origin main\n    - git -C lib checkout FETCH_HEAD\n", 2},
+		{"FETCH_HEAD without a fetch", "    - git checkout FETCH_HEAD\n", 1},
+		{"short sha", clone + "    - git -C lib reset --hard " + sha40[:12] + "\n", 1},
+		{"sha in a comment word", clone + "    - echo pinned " + sha40 + "\n", 1},
+	} {
+		if got := len(findings026(t, "job:\n  script:\n"+tc.lines)); got != tc.want {
+			t.Errorf("%s: got %d findings, want %d", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestPinsCommit(t *testing.T) {
+	for _, tc := range []struct {
+		words []string
+		want  bool
+	}{
+		{[]string{"git", "fetch", "origin", sha40}, true},
+		{[]string{"git", "-C", "lib", "switch", "--detach", sha40}, true},
+		{[]string{"git", "log", sha40}, false},
+		{[]string{"git", "fetch", "origin", sha40 + "0"}, false},
+		{[]string{"git"}, false},
+		{[]string{"curl", sha40}, false},
+	} {
+		if got := pinsCommit(tc.words); got != tc.want {
+			t.Errorf("%v: got %v, want %v", tc.words, got, tc.want)
+		}
+	}
+}

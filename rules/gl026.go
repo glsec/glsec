@@ -45,22 +45,7 @@ var shaVarRe = regexp.MustCompile(`^\$\{?(?:CI_[A-Z_]*_SHA|CI_BUILD_REF)\}?$`)
 // that only contain the word (git submodule update --checkout, git lfs
 // checkout, git config checkout.defaultRemote).
 func checksOutMutableRef(words []string) bool {
-	if commandName(words) != "git" {
-		return false
-	}
-	args := words[1:]
-	// Global options before the subcommand: -C dir, -c key=value, --git-dir=….
-	// With -C or --git-dir the checkout may be in another repository.
-	otherRepo := false
-	for len(args) > 0 && strings.HasPrefix(args[0], "-") {
-		if args[0] == "-C" || strings.HasPrefix(args[0], "--git-dir") || strings.HasPrefix(args[0], "--work-tree") {
-			otherRepo = true
-		}
-		if (args[0] == "-C" || args[0] == "-c") && len(args) > 1 {
-			args = args[1:]
-		}
-		args = args[1:]
-	}
+	args, otherRepo := gitArgs(words)
 	if len(args) == 0 || args[0] != "checkout" {
 		return false
 	}
@@ -82,6 +67,50 @@ func checksOutMutableRef(words []string) bool {
 	}
 	return !shaRe.MatchString(refs[0]) && !shaVarRe.MatchString(refs[0])
 }
+
+// gitArgs returns the words of a git command from its subcommand on,
+// past global options (-C dir, -c key=value, --git-dir=…), and whether those
+// options point at another repository (-C, --git-dir, --work-tree).
+func gitArgs(words []string) (args []string, otherRepo bool) {
+	if commandName(words) != "git" {
+		return nil, false
+	}
+	args = words[1:]
+	for len(args) > 0 && strings.HasPrefix(args[0], "-") {
+		if args[0] == "-C" || strings.HasPrefix(args[0], "--git-dir") || strings.HasPrefix(args[0], "--work-tree") {
+			otherRepo = true
+		}
+		if (args[0] == "-C" || args[0] == "-c") && len(args) > 1 {
+			args = args[1:]
+		}
+		args = args[1:]
+	}
+	return args, otherRepo
+}
+
+// pinsCommit reports a git command that fixes the revision to a full commit
+// SHA: git checkout <sha>, git switch --detach <sha>, git reset --hard <sha>,
+// or git fetch <remote> <sha>, whose FETCH_HEAD is then that commit (#1048).
+func pinsCommit(words []string) bool {
+	args, _ := gitArgs(words)
+	if len(args) == 0 {
+		return false
+	}
+	switch args[0] {
+	case "checkout", "switch", "reset", "fetch":
+	default:
+		return false
+	}
+	for _, a := range args[1:] {
+		if fullSHARe.MatchString(a) || shaVarRe.MatchString(a) {
+			return true
+		}
+	}
+	return false
+}
+
+// fullSHARe matches a word that is exactly a full commit SHA.
+var fullSHARe = regexp.MustCompile(`^[0-9a-f]{40}$`)
 
 // ownBranchVarRe matches a branch of the project the pipeline runs for,
 // optionally on the origin remote. Checking it out in the project's own
@@ -125,15 +154,23 @@ func (r *gl026) Check(doc *yaml.Node, file string) []finding.Finding {
 		}
 		all := make([]gl026Facts, len(lines))
 		// A bare `git clone` paired with `git checkout <sha>` is the safe pattern.
-		hasSHACheckout := false
+		hasSHACheckout, fetchedSHA := false, false
 		for i, l := range lines {
 			all[i] = facts.get(l, func() gl026Facts { return gl026Line(l, file) })
 			hasSHACheckout = hasSHACheckout || all[i].shaCheckout
+			fetchedSHA = fetchedSHA || all[i].shaFetch
 		}
 		for i, l := range lines {
 			for _, f := range all[i].findings {
 				f.Job = name.Value
 				findings = append(findings, f)
+			}
+			// After git fetch <remote> <sha>, FETCH_HEAD is that commit.
+			if !fetchedSHA {
+				for _, f := range all[i].fetchHead {
+					f.Job = name.Value
+					findings = append(findings, f)
+				}
 			}
 			if all[i].bareClone && !hasSHACheckout {
 				ln, col := scriptMatchPos(l, all[i].cloneAt)
@@ -155,7 +192,9 @@ func (r *gl026) Check(doc *yaml.Node, file string) []finding.Finding {
 
 // gl026Facts is what one script item says on its own.
 type gl026Facts struct {
-	shaCheckout bool              // checks out a commit SHA
+	shaCheckout bool              // pins a commit SHA (pinsCommit)
+	shaFetch    bool              // git fetch <remote> <sha>
+	fetchHead   []finding.Finding // git checkout FETCH_HEAD, without Job
 	bareClone   bool              // git clone without --branch
 	cloneAt     int               // byte offset of the git clone in the item
 	findings    []finding.Finding // the findings that don't depend on the job, without Job
@@ -165,6 +204,17 @@ type gl026Facts struct {
 func gl026Line(l *yaml.Node, file string) (lf gl026Facts) {
 	line := l.Value
 	lf.shaCheckout = gitCheckoutRe.MatchString(line) && shaRe.MatchString(line)
+	if strings.Contains(line, "git") {
+		for _, cmd := range shellCommands(line) {
+			words := commandWords(cmd.text)
+			if pinsCommit(words) {
+				lf.shaCheckout = true
+				if args, _ := gitArgs(words); args[0] == "fetch" {
+					lf.shaFetch = true
+				}
+			}
+		}
+	}
 	if loc := gitCloneRe.FindStringIndex(line); loc != nil {
 		for _, cmd := range shellCommands(line) {
 			if words := commandWords(cmd.text); commandName(words) == "git" && localCloneSource(words) {
@@ -191,7 +241,8 @@ func gl026Line(l *yaml.Node, file string) (lf gl026Facts) {
 	}
 	if gitCheckoutRe.MatchString(line) {
 		for _, cmd := range shellCommands(line) {
-			if !checksOutMutableRef(commandWords(cmd.text)) {
+			words := commandWords(cmd.text)
+			if !checksOutMutableRef(words) {
 				continue
 			}
 			f := finding.Finding{
@@ -203,6 +254,10 @@ func gl026Line(l *yaml.Node, file string) (lf gl026Facts) {
 			}
 			if cmd.line == 0 {
 				f.Col = l.Column
+			}
+			if args, _ := gitArgs(words); containsWord(args, "FETCH_HEAD") {
+				lf.fetchHead = append(lf.fetchHead, f)
+				continue
 			}
 			lf.findings = append(lf.findings, f)
 		}
