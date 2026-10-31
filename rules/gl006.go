@@ -148,6 +148,13 @@ var secretPatterns = []secretPattern{
 	{"Scalingo API token", regexp.MustCompile(`^tk-us-[A-Za-z0-9_-]{48}$`)},
 	{"Sourcegraph access token", regexp.MustCompile(`^sgp_(?:[a-f0-9]{16}|local)_[a-f0-9]{40}$`)},
 	{"Microsoft Teams webhook URL", regexp.MustCompile(`^https://[a-z0-9-]+\.webhook\.office\.com/webhookb2/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}@[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/IncomingWebhook/[0-9a-f]{32}/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:/[A-Za-z0-9_-]+)?$`)},
+	// Mapbox secret access token (sk.); public tokens (pk.) are intentionally
+	// excluded because they are published in client-side code.
+	{"Mapbox secret access token", regexp.MustCompile(`^sk\.eyJ1Ijoi[A-Za-z0-9_-]{15,300}\.[A-Za-z0-9_-]{21}[AQgw]$`)},
+	// Harness platform API key: pat.<account>.<id>.<token> or sat.<...>.
+	{"Harness API key", regexp.MustCompile(`^(?:pat|sat)\.[A-Za-z0-9_-]{22}\.[0-9a-f]{24}\.[A-Za-z0-9]{20}$`)},
+	// Atlassian API token (Jira/Confluence/Bitbucket Cloud).
+	{"Atlassian API token", regexp.MustCompile(`^ATATT3[A-Za-z0-9_=\-]{180,}$`)},
 }
 
 func (r *gl006) Check(doc *yaml.Node, file string) []finding.Finding {
