@@ -343,13 +343,17 @@ jobs:
       - run: go install github.com/suzuki-shunsuke/pinact/v5/cmd/pinact@v5.0.2
       # On top of the SHA pin that zizmor and cfgaudit require, verify that each
       # action's version comment matches the pinned SHA, so a pin can't claim a
-      # version it isn't. codeql-action is excluded on the command line, not in a
-      # config a pull request could edit: it is SHA-pinned, but its bundle-version
-      # comment (# codeql-bundle-vX) isn't a semver tag pinact can resolve.
+      # version it isn't. Two actions are excluded on the command line, not in a
+      # config a pull request could edit; both are still SHA-pinned, and zizmor
+      # and cfgaudit still enforce that:
+      #   - github/codeql-action: its bundle-version comment (# codeql-bundle-vX)
+      #     isn't a semver tag pinact can resolve.
+      #   - aquasecurity: the org has a GitHub IP allow list, so a runner can't
+      #     read its tags through the API (403), whatever the token.
       - name: Verify action pins and their version comments
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: pinact run --check --verify-comment --exclude 'github/codeql-action/.*'
+        run: pinact run --check --verify-comment --exclude 'github/codeql-action/.*' --exclude 'aquasecurity/.*'
 
   trivy:
     name: Security (Trivy image)
