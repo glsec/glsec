@@ -168,3 +168,38 @@ review:
 		t.Fatalf("expected a staging environment to count, got %+v", f)
 	}
 }
+
+// An environment that says the job deploys nothing lasting decides on its
+// own; the stage name only counts for jobs without one. A pre-release stage
+// is no release stage (#1052).
+func TestGL019_EnvironmentDecidesOverStage(t *testing.T) {
+	for _, tc := range []struct {
+		name, job string
+		want017   int
+		want019   int
+	}{
+		{"explicit development tier", "  stage: deploy\n  environment:\n    name: review/$CI_COMMIT_REF_SLUG\n    deployment_tier: development\n", 1, 0},
+		{"guessed review tier", "  stage: deploy\n  environment: review/$CI_COMMIT_REF_SLUG\n", 1, 1},
+		{"guessed tier, no deploy stage", "  stage: test\n  environment: review/$CI_COMMIT_REF_SLUG\n", 1, 0},
+		{"explicit testing tier", "  stage: release\n  environment:\n    name: staging\n    deployment_tier: testing\n", 1, 0},
+		{"action prepare", "  stage: deploy\n  environment:\n    name: production\n    action: prepare\n", 1, 0},
+		{"production in deploy stage", "  stage: deploy\n  environment: production\n", 1, 1},
+		{"prerelease stage", "  stage: prerelease\n", 0, 0},
+		{"pre-release stage", "  stage: pre-release\n", 0, 0},
+		{"pre_release stage", "  stage: Pre_Release\n", 0, 0},
+		{"release stage", "  stage: release\n", 1, 1},
+		{"prerelease then release", "  stage: prerelease-and-release\n", 1, 1},
+	} {
+		src := "stages: [build, test, deploy, release, prerelease, pre-release, Pre_Release, prerelease-and-release]\njob:\n" + tc.job + "  script: [./run.sh]\n"
+		doc, err := parser.Parse([]byte(src), "test.yml")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := len(GL017.Check(doc.Root, "test.yml")); got != tc.want017 {
+			t.Errorf("%s: GL017 got %d findings, want %d", tc.name, got, tc.want017)
+		}
+		if got := len(GL019.Check(doc.Root, "test.yml")); got != tc.want019 {
+			t.Errorf("%s: GL019 got %d findings, want %d", tc.name, got, tc.want019)
+		}
+	}
+}

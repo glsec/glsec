@@ -126,6 +126,8 @@ var strongDeployKeywords = []string{"deploy", "publish", "push", "upload", "roll
 // deployLikeName reports whether a job or stage name (lower case) says it
 // deploys, given the keywords that count for the caller.
 func deployLikeName(lower string, keywords []string) bool {
+	// A pre-release stage checks before a release (#1052).
+	lower = preReleaseReplacer.Replace(lower)
 	if hasWordPrefix(lower, checkOnlyKeywords) {
 		return false
 	}
@@ -134,6 +136,8 @@ func deployLikeName(lower string, keywords []string) bool {
 	}
 	return containsAny(lower, strongDeployKeywords) || !containsAny(lower, buildKeywords)
 }
+
+var preReleaseReplacer = strings.NewReplacer("pre-release", "", "pre_release", "", "prerelease", "", "pre release", "")
 
 // hasWordPrefix reports whether a word of s (split at anything that is not a
 // letter or digit) starts with one of words: "k8s-test" and "linting" match
@@ -168,13 +172,22 @@ func runsInheritedJob(in *Inheritance, name, job *yaml.Node) bool {
 }
 
 // isSensitiveJob reports a job that deploys through its environment: or its
-// stage. With devTierDeploys false, an environment whose deployment_tier is
-// development or testing doesn't count as a deploy (#797).
+// stage. With devTierDeploys false (GL019), an environment whose
+// deployment_tier is development or testing doesn't count as a deploy (#797),
+// and an explicit one, or one whose action only uses the environment, decides
+// whatever the stage is called (#1052); a tier guessed from the name doesn't
+// outweigh the stage (pub-dev-plugin, safari-testflight publish). GL017 keeps them: such
+// jobs still get the environment's variables.
 func isSensitiveJob(in *Inheritance, job *yaml.Node, devTierDeploys bool) bool {
 	// An environment: deploys unless its action only uses the environment;
 	// then the stage still decides.
-	if env := in.Key(job, "environment"); env != nil && !envActionNoDeploy(env) && (devTierDeploys || !envDevTier(env)) {
-		return true
+	if env := in.Key(job, "environment"); env != nil {
+		if t, explicit := envTier(env); !devTierDeploys && (envActionNoDeploy(env) || explicit && (t == "development" || t == "testing")) {
+			return false
+		}
+		if !envActionNoDeploy(env) && (devTierDeploys || !envDevTier(env)) {
+			return true
+		}
 	}
 	stageNode := in.Key(job, "stage")
 	if stageNode != nil && stageNode.Kind == yaml.ScalarNode {
