@@ -41,7 +41,7 @@ Add glsec to a GitLab pipeline with the [CI/CD Catalog component](https://gitlab
 
 ```yaml
 include:
-  - component: gitlab.com/glsec-io/glsec/glsec@v1.0.26
+  - component: gitlab.com/glsec-io/glsec/glsec@v1.0.27
 ```
 
 It adds a `glsec` job that runs in the `test` stage (set the `stage` input to change that) and fails on error findings. For findings in merge requests, Docker, binary or GitHub Actions setups, see [CI integration](#ci-integration). To run it locally, see [Install](#install).
@@ -145,7 +145,7 @@ glsec can pass `script:`, `before_script:` and `after_script:` to [ShellCheck](h
 
 ```yaml
 include:
-  - component: gitlab.com/glsec-io/glsec/glsec@v1.0.26
+  - component: gitlab.com/glsec-io/glsec/glsec@v1.0.27
 ```
 
 **[CI integration](docs/ci-integration.md)** covers the [GitLab CI/CD Catalog component](docs/ci-integration.md#gitlab-ci-catalog-component-recommended), the [Docker image](docs/ci-integration.md#gitlab-ci--docker-image) and [binary](docs/ci-integration.md#gitlab-ci--binary-download) in GitLab CI, findings in merge requests through [Code Quality](docs/ci-integration.md#gitlab-code-quality-integration) and the [vulnerability report](docs/ci-integration.md#gitlab-vulnerability-report-and-security-widget-ultimate), the [pipeline inventory](docs/ci-integration.md#pipeline-inventory-cyclonedx), [GitHub Actions](docs/ci-integration.md#github-actions) and [MegaLinter](docs/ci-integration.md#megalinter). Runnable examples: [gitlab.com/glsec-io/examples](https://gitlab.com/glsec-io/examples).

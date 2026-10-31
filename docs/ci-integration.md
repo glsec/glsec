@@ -10,7 +10,7 @@ Use the official component from the [GitLab CI Catalog](https://gitlab.com/explo
 
 ```yaml
 include:
-  - component: gitlab.com/glsec-io/glsec/glsec@v1.0.26
+  - component: gitlab.com/glsec-io/glsec/glsec@v1.0.27
 
 stages:
   - test
@@ -20,7 +20,7 @@ To see findings in merge requests, add the `glsec-code-quality` template. The me
 
 ```yaml
 include:
-  - component: gitlab.com/glsec-io/glsec/glsec-code-quality@v1.0.26
+  - component: gitlab.com/glsec-io/glsec/glsec-code-quality@v1.0.27
 
 stages:
   - test
