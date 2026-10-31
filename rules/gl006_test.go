@@ -639,3 +639,42 @@ func TestGL088_GitLabTokenFormats(t *testing.T) {
 		t.Errorf("session cookie: got %v, want one finding", f)
 	}
 }
+
+func TestGL006_MapboxSecretToken(t *testing.T) {
+	key := "sk.eyJ1Ijoi" + strings.Repeat("a", 15) + "." + strings.Repeat("b", 21) + "A"
+	f := findings006(t, fmt.Sprintf(`
+variables:
+  MAPBOX: "%s"
+build:
+  script: [echo ok]
+`, key))
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding, got %d", len(f))
+	}
+}
+
+func TestGL006_HarnessAPIKey(t *testing.T) {
+	key := "pat." + strings.Repeat("a", 22) + "." + strings.Repeat("0", 24) + "." + strings.Repeat("A", 20)
+	f := findings006(t, fmt.Sprintf(`
+variables:
+  HARNESS: "%s"
+build:
+  script: [echo ok]
+`, key))
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding, got %d", len(f))
+	}
+}
+
+func TestGL006_AtlassianAPIToken(t *testing.T) {
+	key := "ATATT3" + strings.Repeat("a", 180)
+	f := findings006(t, fmt.Sprintf(`
+variables:
+  ATLASSIAN: "%s"
+build:
+  script: [echo ok]
+`, key))
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding, got %d", len(f))
+	}
+}
