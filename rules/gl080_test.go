@@ -4,6 +4,7 @@
 package rules
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -31,6 +32,48 @@ deploy-prod:
 	}
 	if f[0].Severity != finding.Warn {
 		t.Errorf("expected Warn severity, got %s", f[0].Severity)
+	}
+}
+
+func TestGL080_ManualOnly_FlaggedWithManualWording(t *testing.T) {
+	f := findings080(t, `
+deploy-dev-manual:
+  stage: deploy
+  environment:
+    name: dev
+  when: manual
+  script:
+    - ./deploy.sh
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for a when: manual deploy job, got %d", len(f))
+	}
+	if f[0].Severity != finding.Warn {
+		t.Errorf("expected Warn severity, got %s", f[0].Severity)
+	}
+	if !strings.Contains(f[0].Message, "when: manual") ||
+		!strings.Contains(f[0].Message, "fork merge request") {
+		t.Errorf("expected manual-gate wording, got %q", f[0].Message)
+	}
+	if strings.Contains(f[0].Message, "no rules:/only:/except: guard") {
+		t.Errorf("manual job should not use the generic no-guard wording: %q", f[0].Message)
+	}
+}
+
+func TestGL080_ManualInRulesItem_FlaggedWithManualWording(t *testing.T) {
+	f := findings080(t, `
+publish:
+  stage: deploy
+  rules:
+    - when: manual
+  script:
+    - ./publish.sh
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding, got %d", len(f))
+	}
+	if !strings.Contains(f[0].Message, "when: manual") {
+		t.Errorf("expected manual-gate wording, got %q", f[0].Message)
 	}
 }
 

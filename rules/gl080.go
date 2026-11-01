@@ -58,7 +58,7 @@ func (r *gl080) Check(doc *yaml.Node, file string) []finding.Finding {
 			RuleID:   "GL080",
 			Severity: finding.Warn,
 			Job:      name.Value,
-			Message:  gl080Message(name.Value, state),
+			Message:  gl080Message(name.Value, state, jobManualOnly(job)),
 			File:     file,
 			Line:     name.Line,
 			Col:      name.Column,
@@ -132,7 +132,19 @@ const (
 	guardEffective                     // has a real restriction
 )
 
-func gl080Message(job string, state guardState) string {
+func gl080Message(job string, state guardState, manual bool) string {
+	// when: manual is the job's only gate. It is not a pipeline-source
+	// restriction: the job is still created on every source, and a maintainer
+	// can start it on a fork merge request, where it runs the fork's code with
+	// this job's credentials. So GL080 still flags it, but the message says so
+	// accurately rather than claiming an external contributor can trigger it
+	// (#1124).
+	if manual {
+		return fmt.Sprintf(
+			"sensitive job %q is gated only by when: manual, which is not a pipeline-source restriction — a maintainer can still start it on a fork merge request, where it runs untrusted code with this job's credentials; add a rules:if that checks $CI_PIPELINE_SOURCE",
+			job,
+		)
+	}
 	if state == guardIneffective {
 		return fmt.Sprintf(
 			"sensitive job %q has a rules: block with no if:/changes:/exists: condition — the gate imposes no restriction, so the job runs on every pipeline source including fork merge requests; add a rules:if that checks $CI_PIPELINE_SOURCE",
@@ -143,6 +155,29 @@ func gl080Message(job string, state guardState) string {
 		"sensitive job %q has no rules:/only:/except: guard — it runs on every pipeline source including fork merge requests; add a rules:if that checks $CI_PIPELINE_SOURCE",
 		job,
 	)
+}
+
+// jobManualOnly reports whether the job's trigger gate is when: manual — a
+// top-level when: manual, or a rules: item that sets when: manual. A manual
+// gate is not a pipeline-source restriction, so GL080 keeps flagging the job
+// but words the finding for the manual case (#1124).
+func jobManualOnly(job *yaml.Node) bool {
+	if w := parser.FindKey(job, "when"); w != nil && w.Kind == yaml.ScalarNode {
+		return w.Value == "manual"
+	}
+	rules := parser.FindKey(job, "rules")
+	if rules == nil || rules.Kind != yaml.SequenceNode {
+		return false
+	}
+	for _, item := range rules.Content {
+		if item.Kind != yaml.MappingNode {
+			continue
+		}
+		if w := parser.FindKey(item, "when"); w != nil && w.Kind == yaml.ScalarNode && w.Value == "manual" {
+			return true
+		}
+	}
+	return false
 }
 
 // jobGuardState classifies a job's execution guard. only:/except: (legacy) and
