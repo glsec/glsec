@@ -35,6 +35,11 @@ func (r *gl049) Check(doc *yaml.Node, file string) []finding.Finding {
 		if strings.ToLower(interruptible.Value) != "true" {
 			return
 		}
+		// A job disabled by rules: all when: never never runs, so a mid-run
+		// cancellation can't leave an environment half-updated (#1104).
+		if rules := in.Key(job, "rules"); rules != nil && rules.Kind == yaml.SequenceNode && onlyNever(rules) {
+			return
+		}
 		findings = append(findings, finding.Finding{
 			RuleID:   "GL049",
 			Severity: finding.Warn,
@@ -82,8 +87,13 @@ func deployLikeInherited(in *Inheritance, jobName string, job *yaml.Node) bool {
 		}
 		return true
 	}
-	if stage := in.Key(job, "stage"); stage != nil && stage.Kind == yaml.ScalarNode {
-		return deployLikeName(strings.ToLower(stage.Value), deployLikeKeywords)
+	if stage := in.Key(job, "stage"); stage != nil && stage.Kind == yaml.ScalarNode &&
+		deployLikeName(strings.ToLower(stage.Value), deployLikeKeywords) {
+		// A deploy/release/dist-named stage alone over-fires on build-only jobs
+		// that only produce an artifact (meson dist, cargo build). Classified by
+		// stage alone, require the script to actually deploy or publish (#1104,
+		// mirroring the GL017/GL019 guard in #1096).
+		return jobScriptDeploys(in, job)
 	}
 	return false
 }

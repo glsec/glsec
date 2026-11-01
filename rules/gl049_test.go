@@ -258,3 +258,51 @@ server-image:
 		t.Fatalf("expected the job's own keys to count, got %+v", f)
 	}
 }
+
+// A build-only job in a release/dist stage, and a job disabled by
+// rules: all when: never, are not interruptible-deploy concerns; a real deploy
+// (environment, or a deploy verb in the script) still is (#1104).
+func TestGL049_BuildOnlyAndDisabled(t *testing.T) {
+	for _, tc := range []struct {
+		name, yaml string
+		want       int
+	}{
+		{"build-only in release stage", `
+d:
+  stage: release
+  interruptible: true
+  script: [meson dist]
+`, 0},
+		{"cargo build in release stage", `
+b:
+  stage: release
+  interruptible: true
+  script: [cargo build --release]
+`, 0},
+		{"disabled by when never", `
+deploy:
+  interruptible: true
+  rules:
+    - when: never
+  script: [kubectl apply -f k8s/]
+`, 0},
+		{"real deploy by script in release stage", `
+d:
+  stage: release
+  interruptible: true
+  script: [kubectl apply -f k8s/]
+`, 1},
+		{"real deploy by environment", `
+d:
+  environment: production
+  interruptible: true
+  script: [./run.sh]
+`, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if f := findings049(t, tc.yaml); len(f) != tc.want {
+				t.Errorf("got %d findings, want %d: %+v", len(f), tc.want, f)
+			}
+		})
+	}
+}
