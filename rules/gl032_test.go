@@ -5,6 +5,7 @@ package rules
 
 import (
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/glsec/glsec/internal/parser"
@@ -114,6 +115,20 @@ func TestGL032(t *testing.T) {
     - echo "$GCP_SERVICE_ACCOUNT_KEY" | base64 -d > /tmp/gcloud-key.json`,
 			wantHits: 1,
 		},
+		{
+			name: "key alias alone is not a secret",
+			yaml: `deploy:
+  script:
+    - echo "keyAlias=$ANDROID_KEY_ALIAS" > key.properties`,
+			wantHits: 0,
+		},
+		{ //nolint:gosec // G101: keystore password, wording test
+			name: "keystore password flagged as a credential, not a private key",
+			yaml: `deploy:
+  script:
+    - echo "storePassword=$ANDROID_KEYSTORE_PASSWORD" > key.properties`,
+			wantHits: 1,
+		},
 	}
 
 	for _, tt := range tests {
@@ -128,6 +143,50 @@ func TestGL032(t *testing.T) {
 				for _, f := range findings {
 					t.Logf("  finding: %s", f.Message)
 				}
+			}
+		})
+	}
+}
+
+// A keystore password or passphrase is worded as a credential, while actual
+// key material keeps the "private key" wording; a bare key alias is not flagged
+// at all (#1107).
+func TestGL032_CredentialWording(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		yaml string
+		want string // substring the message must contain, "" = no finding
+	}{
+		{"keystore password", `j:
+  script:
+    - echo "storePassword=$ANDROID_KEYSTORE_PASSWORD" > key.properties`, "key credential"},
+		{"key passphrase", `j:
+  script:
+    - echo "$DEPLOY_KEY_PASSPHRASE" > pass.txt`, "key credential"},
+		{"private key material keeps wording", `j:
+  script:
+    - echo "$SSH_PRIVATE_KEY" | ssh-add -`, "private key written via echo"},
+		{"alias only is not flagged", `j:
+  script:
+    - echo "keyAlias=$ANDROID_KEY_ALIAS" > key.properties`, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			doc, err := parser.Parse([]byte(tc.yaml), "test.yml")
+			if err != nil {
+				t.Fatal(err)
+			}
+			f := GL032.Check(doc.Root, "test.yml")
+			if tc.want == "" {
+				if len(f) != 0 {
+					t.Fatalf("expected no finding, got %d: %+v", len(f), f)
+				}
+				return
+			}
+			if len(f) != 1 {
+				t.Fatalf("expected 1 finding, got %d", len(f))
+			}
+			if !strings.Contains(f[0].Message, tc.want) {
+				t.Errorf("message %q does not contain %q", f[0].Message, tc.want)
 			}
 		})
 	}
