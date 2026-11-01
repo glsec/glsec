@@ -26,6 +26,35 @@ jobs:
       - run: go mod tidy -diff
       - run: go build ./...
 
+  # The toolchain-pinned jobs always build with the newer `toolchain` line in
+  # go.mod, so the `go` directive (the minimum version glsec claims to support)
+  # is never actually exercised. Build and test on that floor too, so a
+  # standard-library API added after it can't slip in unnoticed (#1123). An
+  # explicit GOTOOLCHAIN=go<floor> pins the build to the floor and overrides the
+  # newer `toolchain` line (setup-go installed exactly that version, so there is
+  # no re-download). The floor is read from go.mod, not hard-coded.
+  test-floor:
+    name: Test (go.mod floor)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Read the go.mod floor version
+        id: floor
+        run: echo "version=$(awk '/^go [0-9]/ {print $2}' go.mod)" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ steps.floor.outputs.version }}
+          cache: true
+      - name: Build and test on the floor toolchain
+        env:
+          GOTOOLCHAIN: go${{ steps.floor.outputs.version }}
+        run: |
+          go version
+          go build ./...
+          go test ./...
+
   test:
     name: Test
     runs-on: ${{ matrix.os }}
