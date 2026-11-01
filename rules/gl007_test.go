@@ -33,6 +33,56 @@ build:
 	}
 }
 
+func TestGL007_InFileLiteralVar_Warn(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		yaml string
+	}{
+		{"global variables", `
+variables:
+  IMG: node:24-alpine
+build:
+  image: $IMG
+  script: [make]
+`},
+		{"job variables", `
+build:
+  variables:
+    IMG: node:24-alpine
+  image: ${IMG}
+  script: [make]
+`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := findings007(t, tc.yaml)
+			if len(f) != 1 {
+				t.Fatalf("expected 1 finding, got %d", len(f))
+			}
+			if f[0].Severity != finding.Warn {
+				t.Errorf("expected Warn severity for an in-file literal image var, got %s", f[0].Severity)
+			}
+		})
+	}
+}
+
+func TestGL007_VarResolvesToVar_Error(t *testing.T) {
+	// IMG is defined, but to another variable — not resolvable to an image
+	// here, so the external-override risk stands and it stays error.
+	f := findings007(t, `
+variables:
+  IMG: $OTHER_IMAGE
+build:
+  image: $IMG
+  script: [make]
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding, got %d", len(f))
+	}
+	if f[0].Severity != finding.Error {
+		t.Errorf("expected Error severity when the var resolves to another var, got %s", f[0].Severity)
+	}
+}
+
 func TestGL007_BraceForm(t *testing.T) {
 	f := findings007(t, `
 build:

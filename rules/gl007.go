@@ -36,21 +36,23 @@ var userControlledImageVars = []string{
 func (r *gl007) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
 	mapping := parser.Unwrap(doc)
+	globalVars := parser.FindKey(mapping, "variables")
 
-	findings = append(findings, checkImageVarInjection(parser.FindKey(mapping, "image"), file)...)
-	findings = append(findings, checkServicesVarInjection(parser.FindKey(mapping, "services"), file)...)
+	findings = append(findings, checkImageVarInjection(parser.FindKey(mapping, "image"), file, globalVars, nil)...)
+	findings = append(findings, checkServicesVarInjection(parser.FindKey(mapping, "services"), file, globalVars, nil)...)
 
 	if def := parser.FindKey(mapping, "default"); def != nil {
-		findings = append(findings, checkImageVarInjection(parser.FindKey(def, "image"), file)...)
-		findings = append(findings, checkServicesVarInjection(parser.FindKey(def, "services"), file)...)
+		findings = append(findings, checkImageVarInjection(parser.FindKey(def, "image"), file, globalVars, nil)...)
+		findings = append(findings, checkServicesVarInjection(parser.FindKey(def, "services"), file, globalVars, nil)...)
 	}
 
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
-		for _, f := range checkImageVarInjection(parser.FindKey(job, "image"), file) {
+		jobVars := parser.FindKey(job, "variables")
+		for _, f := range checkImageVarInjection(parser.FindKey(job, "image"), file, globalVars, jobVars) {
 			f.Job = name.Value
 			findings = append(findings, f)
 		}
-		for _, f := range checkServicesVarInjection(parser.FindKey(job, "services"), file) {
+		for _, f := range checkServicesVarInjection(parser.FindKey(job, "services"), file, globalVars, jobVars) {
 			f.Job = name.Value
 			findings = append(findings, f)
 		}
@@ -59,7 +61,23 @@ func (r *gl007) Check(doc *yaml.Node, file string) []finding.Finding {
 	return findings
 }
 
-func checkImageVarInjection(node *yaml.Node, file string) []finding.Finding {
+// imageVarInFileLiteral reports whether a whole-variable image ref ($IMG) names
+// a variable this file defines to a plain image literal, in the job's own
+// variables: or the top-level variables:. A value that is itself a variable
+// reference ($...) doesn't count, because it isn't resolvable to an image here.
+func imageVarInFileLiteral(ref string, globalVars, jobVars *yaml.Node) bool {
+	name := strings.Trim(ref, "${}")
+	for _, vars := range []*yaml.Node{jobVars, globalVars} {
+		for _, val := range varValues(vars, name) {
+			if val != "" && !strings.Contains(val, "$") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func checkImageVarInjection(node *yaml.Node, file string, globalVars, jobVars *yaml.Node) []finding.Finding {
 	if node == nil {
 		return nil
 	}
@@ -67,10 +85,10 @@ func checkImageVarInjection(node *yaml.Node, file string) []finding.Finding {
 	if ref == "" {
 		return nil
 	}
-	return imageVarFindings(ref, line, col, file)
+	return imageVarFindings(ref, line, col, file, globalVars, jobVars)
 }
 
-func checkServicesVarInjection(node *yaml.Node, file string) []finding.Finding {
+func checkServicesVarInjection(node *yaml.Node, file string, globalVars, jobVars *yaml.Node) []finding.Finding {
 	if node == nil || node.Kind != yaml.SequenceNode {
 		return nil
 	}
@@ -80,13 +98,28 @@ func checkServicesVarInjection(node *yaml.Node, file string) []finding.Finding {
 		if ref == "" {
 			continue
 		}
-		findings = append(findings, imageVarFindings(ref, line, col, file)...)
+		findings = append(findings, imageVarFindings(ref, line, col, file, globalVars, jobVars)...)
 	}
 	return findings
 }
 
-func imageVarFindings(ref string, line, col int, file string) []finding.Finding {
+func imageVarFindings(ref string, line, col int, file string, globalVars, jobVars *yaml.Node) []finding.Finding {
 	if entireVarRe.MatchString(ref) {
+		if imageVarInFileLiteral(ref, globalVars, jobVars) {
+			// The variable is set to a plain image literal in this file, so the
+			// real trust boundary is editing the YAML — the same as writing the
+			// image directly. An override from a project/group variable or a
+			// manual run can still redirect it, so it is still worth pinning.
+			return []finding.Finding{{
+				RuleID:   "GL007",
+				Severity: finding.Warn,
+				Message: fmt.Sprintf(
+					"image %q is set from a CI variable that resolves to a literal in this file — pin the image directly; a project/group variable or a manual pipeline run could still override it",
+					ref,
+				),
+				File: file, Line: line, Col: col,
+			}}
+		}
 		return []finding.Finding{{
 			RuleID:   "GL007",
 			Severity: finding.Error,
