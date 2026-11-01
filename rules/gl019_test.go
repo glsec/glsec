@@ -191,7 +191,7 @@ func TestGL019_EnvironmentDecidesOverStage(t *testing.T) {
 		{"release stage", "  stage: release\n", 1, 1},
 		{"prerelease then release", "  stage: prerelease-and-release\n", 1, 1},
 	} {
-		src := "stages: [build, test, deploy, release, prerelease, pre-release, Pre_Release, prerelease-and-release]\njob:\n" + tc.job + "  script: [./run.sh]\n"
+		src := "stages: [build, test, deploy, release, prerelease, pre-release, Pre_Release, prerelease-and-release]\njob:\n" + tc.job + "  script: [./deploy.sh]\n"
 		doc, err := parser.Parse([]byte(src), "test.yml")
 		if err != nil {
 			t.Fatal(err)
@@ -202,5 +202,38 @@ func TestGL019_EnvironmentDecidesOverStage(t *testing.T) {
 		if got := len(GL019.Check(doc.Root, "test.yml")); got != tc.want019 {
 			t.Errorf("%s: GL019 got %d findings, want %d", tc.name, got, tc.want019)
 		}
+	}
+}
+
+// A deploy/release-named stage classifies a job as a deploy only when its
+// script actually ships something; a build-only job in that stage does not
+// (#1096).
+func TestGL019_BuildOnlyInReleaseStageNoFinding(t *testing.T) {
+	for _, tc := range []struct {
+		name, script string
+		want         int
+	}{
+		{"cargo build", "cargo build --release", 0},
+		{"meson dist", "meson dist", 0},
+		{"pnpm build", "pnpm build", 0},
+		{"dotenv version", "echo VERSION=$(git describe) > build.env", 0},
+		{"docker push", "docker push $CI_REGISTRY_IMAGE:latest", 1},
+		{"twine upload", "twine upload dist/*", 1},
+		{"kubectl apply", "kubectl apply -f k8s/", 1},
+		{"deploy script", "./deploy.sh prod", 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			src := "stages: [build, release]\njob:\n  stage: release\n  script:\n    - " + tc.script + "\n"
+			doc, err := parser.Parse([]byte(src), "test.yml")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := len(GL017.Check(doc.Root, "test.yml")); got != tc.want {
+				t.Errorf("GL017 got %d, want %d", got, tc.want)
+			}
+			if got := len(GL019.Check(doc.Root, "test.yml")); got != tc.want {
+				t.Errorf("GL019 got %d, want %d", got, tc.want)
+			}
+		})
 	}
 }

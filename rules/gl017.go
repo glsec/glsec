@@ -22,6 +22,37 @@ func (r *gl017) ID() string { return "GL017" }
 // deployStageKeywords identifies stages that indicate deployment activity.
 var deployStageKeywords = []string{"deploy", "release", "publish", "ship"}
 
+// deployScriptRe matches script commands that actually ship or publish
+// something. A deploy/release-named stage over-fires on build-only jobs that
+// only produce the artifact a later job ships (cargo build, meson dist, pnpm
+// build), so a stage-only classification is corroborated against the script
+// before GL017/GL019 fire (#1096). Bare "release"/"upload"/"push" are left out
+// because they occur in build contexts (cargo build --release, upload
+// coverage); only command-qualified forms and the plain verbs deploy/publish
+// count.
+var deployScriptRe = regexp.MustCompile(
+	`(?:docker|podman|buildah|crane|skopeo|nerdctl|ko)\s+push\b` +
+		`|helm\s+(?:push|upgrade|install)\b` +
+		`|twine\s+upload\b|cargo\s+publish\b|(?:npm|yarn|pnpm)\s+publish\b|gem\s+push\b|dotnet\s+nuget\s+push\b|(?:uv|flit|poetry|maturin)\s+(?:publish|upload)\b` +
+		`|goreleaser\s+release\b|gh\s+release\s+(?:create|upload)\b|glab\s+release\b` +
+		`|kubectl\s+(?:apply|rollout|set|create|patch|replace)\b|kustomize\b|argocd\b|skaffold\s+(?:run|deploy)\b` +
+		`|aws\s+(?:s3|deploy|ecs|lambda|cloudformation|elasticbeanstalk|amplify|cloudfront)\b|gcloud\s+(?:app|run|functions|compute|container|storage)\b|az\s+(?:webapp|functionapp|aks|acr|storage)\b|flyctl?\s+deploy\b|netlify[^|;&]*deploy\b|vercel\b|railway\s+up\b` +
+		`|serverless\s+deploy\b|sls\s+deploy\b|terraform\s+apply\b|pulumi\s+up\b|ansible-playbook\b|cap\s+\S+\s+deploy\b|mina\s+deploy\b|fastlane\b` +
+		`|rsync\b|scp\b|rclone\b|git\s+push\b` +
+		`|\bdeploy\b|\bpublish\b`,
+)
+
+// jobScriptDeploys reports whether the job's effective script (its own and any
+// inherited via extends:) runs a command that ships or publishes something.
+func jobScriptDeploys(in *Inheritance, job *yaml.Node) bool {
+	for _, line := range CollectJobScriptLines(in.Effective(job)) {
+		if deployScriptRe.MatchString(strings.ToLower(line.Value)) {
+			return true
+		}
+	}
+	return false
+}
+
 func (r *gl017) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
 	in := NewInheritance(doc)
@@ -212,8 +243,12 @@ func isSensitiveJob(in *Inheritance, job *yaml.Node, devTierDeploys bool) bool {
 		}
 	}
 	stageNode := in.Key(job, "stage")
-	if stageNode != nil && stageNode.Kind == yaml.ScalarNode {
-		return deployLikeName(strings.ToLower(stageNode.Value), deployStageKeywords)
+	if stageNode != nil && stageNode.Kind == yaml.ScalarNode &&
+		deployLikeName(strings.ToLower(stageNode.Value), deployStageKeywords) {
+		// A deploy/release-named stage alone over-fires on build-only jobs that
+		// only produce the artifact a later job ships; require the script to
+		// actually deploy or publish (#1096).
+		return jobScriptDeploys(in, job)
 	}
 	return false
 }
