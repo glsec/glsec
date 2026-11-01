@@ -366,15 +366,31 @@ func TestParse_EmptyDocumentInStream(t *testing.T) {
 		t.Error("a trailing empty document must not become the root")
 	}
 
-	// A leading empty document is the first document, holding a null. It is not
-	// skipped: the file then has no top-level mapping, which validate rejects,
-	// so glsec reports an error instead of finding nothing.
+	// A leading empty document (a stream opening with `--- ---`) is skipped:
+	// GitLab uses the first non-empty document, so the config is the next one
+	// (#1127).
 	doc, err = Parse([]byte("---\n---\nbuild:\n  script: [make]\n"), "test.yml")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if top := doc.MappingNode(); top.Kind != yaml.ScalarNode || top.Tag != "!!null" {
-		t.Errorf("got kind %d tag %q, want the leading empty document's null", top.Kind, top.Tag)
+	if FindKey(doc.MappingNode(), "build") == nil {
+		t.Error("a leading empty document must be skipped, not become the null root")
+	}
+}
+
+func TestParse_ContentAfterDocumentEndMarker(t *testing.T) {
+	// GitLab reads the first document and ignores everything after a `...`
+	// end-of-document marker; glsec must not exit on the trailing content
+	// (#1127).
+	doc, err := Parse([]byte("build:\n  script: [make]\n...\nextra:\n  script: [oops]\n"), "test.yml")
+	if err != nil {
+		t.Fatalf("content after `...` must not be a parse error: %v", err)
+	}
+	if FindKey(doc.MappingNode(), "build") == nil {
+		t.Error("the first document must be the root")
+	}
+	if FindKey(doc.MappingNode(), "extra") != nil {
+		t.Error("jobs after the `...` marker must not be read (GitLab ignores them)")
 	}
 }
 

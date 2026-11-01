@@ -64,6 +64,13 @@ func Parse(data []byte, file string) (*Document, error) {
 			break
 		}
 		if err != nil {
+			// GitLab loads the first YAML document and never reads what follows
+			// a `...` end-of-document marker; once we have a usable document, a
+			// later decode error is that ignored trailing content, not a broken
+			// configuration (#1127).
+			if anyNonEmptyDoc(docs) {
+				break
+			}
 			return nil, fmt.Errorf("parse %s: %w", file, err)
 		}
 		if n.Kind != 0 {
@@ -78,7 +85,10 @@ func Parse(data []byte, file string) (*Document, error) {
 		recordScalarLines(d, src)
 	}
 
-	doc := &Document{Root: docs[0], File: file, Source: data}
+	// GitLab uses the first non-empty document; an empty leading document
+	// (a stream that opens with `--- ---`) is skipped, not the configuration
+	// (#1127). The spec:-header path below overrides this for components.
+	doc := &Document{Root: firstNonEmptyDoc(docs), File: file, Source: data}
 	if len(docs) > 1 && hasSpecHeader(docs[0]) {
 		doc.Spec = docs[0]
 		doc.Root = docs[len(docs)-1]
@@ -98,6 +108,41 @@ func Parse(data []byte, file string) (*Document, error) {
 	markKeywordJobs(doc.Root)
 	NormalizeScripts(doc.Root)
 	return doc, nil
+}
+
+// docIsEmpty reports whether a decoded document carries no configuration — an
+// empty document or one holding only a null, as a stream that opens or closes
+// with a bare `---` produces. GitLab skips such documents (#1127).
+func docIsEmpty(d *yaml.Node) bool {
+	if d.Kind == yaml.DocumentNode {
+		if len(d.Content) == 0 {
+			return true
+		}
+		d = d.Content[0]
+	}
+	return d == nil || d.Kind == 0 || (d.Kind == yaml.ScalarNode && d.Tag == "!!null")
+}
+
+// firstNonEmptyDoc returns the first document that carries configuration,
+// skipping empty leading documents; if every document is empty it returns the
+// first, so validation reports the missing top-level mapping (#1127).
+func firstNonEmptyDoc(docs []*yaml.Node) *yaml.Node {
+	for _, d := range docs {
+		if !docIsEmpty(d) {
+			return d
+		}
+	}
+	return docs[0]
+}
+
+// anyNonEmptyDoc reports whether the stream has yielded a usable document yet.
+func anyNonEmptyDoc(docs []*yaml.Node) bool {
+	for _, d := range docs {
+		if !docIsEmpty(d) {
+			return true
+		}
+	}
+	return false
 }
 
 // documentLine returns the line a document's content starts on.
