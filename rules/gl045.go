@@ -5,6 +5,7 @@ package rules
 
 import (
 	"regexp"
+	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
 	"github.com/glsec/glsec/internal/parser"
@@ -28,6 +29,37 @@ var releasePushRe = regexp.MustCompile(
 		`|\bgoreleaser\s+release\b`,
 )
 
+// ephemeralTagRe marks a push whose target is not a consumer release: a
+// per-merge-request preview (an `mr-` tag or a merge-request variable) or a
+// moving branch-slug tag. A consumer release is tied to a tag/version, so
+// nobody downstream verifies a signature on these (#1100).
+var ephemeralTagRe = regexp.MustCompile(
+	`(?i)mr-\$?\{?CI_MERGE_REQUEST|[:=]\s*mr-|\bCI_MERGE_REQUEST_IID\b|\bCI_MERGE_REQUEST_REF_PATH\b` +
+		`|:\$\{?CI_COMMIT_REF_SLUG\}?|:\$\{?CI_COMMIT_REF_NAME\}?` +
+		`|--tag[= ]\$?\{?CI_COMMIT_REF_SLUG\}?`,
+)
+
+// mrScopedEnv reports an environment: scoped to a merge request, e.g.
+// environment: { name: "mr/$CI_MERGE_REQUEST_IID" } — a per-MR preview, not a
+// release target.
+func mrScopedEnv(env *yaml.Node) bool {
+	if env == nil {
+		return false
+	}
+	name := ""
+	switch env.Kind {
+	case yaml.ScalarNode:
+		name = env.Value
+	case yaml.MappingNode:
+		if n := parser.FindKey(env, "name"); n != nil && n.Kind == yaml.ScalarNode {
+			name = n.Value
+		}
+	}
+	lower := strings.ToLower(name)
+	return strings.HasPrefix(lower, "mr/") || strings.Contains(lower, "merge_request") ||
+		strings.Contains(lower, "merge-request") || strings.Contains(name, "CI_MERGE_REQUEST")
+}
+
 // releaseSigningRe matches script lines that cryptographically sign an artifact.
 var releaseSigningRe = regexp.MustCompile(
 	`\bcosign\s+sign\b` +
@@ -50,6 +82,10 @@ func (r *gl045) Check(doc *yaml.Node, file string) []finding.Finding {
 		if !IsDeployLikeJob(name.Value, job) {
 			return
 		}
+		// A per-MR preview deployment is ephemeral, not a consumer release.
+		if mrScopedEnv(parser.FindKey(job, "environment")) {
+			return
+		}
 
 		lines := CollectJobScriptLines(job)
 		if len(lines) == 0 {
@@ -60,7 +96,7 @@ func (r *gl045) Check(doc *yaml.Node, file string) []finding.Finding {
 		hasSigning := false
 
 		for _, line := range lines {
-			if pushLine == nil && releasePushRe.MatchString(line.Value) {
+			if pushLine == nil && releasePushRe.MatchString(line.Value) && !ephemeralTagRe.MatchString(line.Value) {
 				pushLine = line
 			}
 			if releaseSigningRe.MatchString(line.Value) {
