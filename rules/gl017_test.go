@@ -171,6 +171,26 @@ start-release-pipeline:
 	}
 }
 
+func TestEnvActionNoDeploy(t *testing.T) {
+	for action, want := range map[string]bool{
+		"start":   false,
+		"prepare": true,
+		"stop":    true,
+		"verify":  true,
+		"access":  true,
+	} {
+		doc, err := parser.Parse([]byte("job:\n  environment:\n    name: production\n    action: "+action+"\n"), "test.yml")
+		if err != nil {
+			t.Fatal(err)
+		}
+		job := parser.FindKey(parser.Unwrap(doc.Root), "job")
+		env := parser.FindKey(job, "environment")
+		if got := envActionNoDeploy(env); got != want {
+			t.Errorf("%s: got %t, want %t", action, got, want)
+		}
+	}
+}
+
 func TestGL017_DevTierEnvironmentStillNeedsTags(t *testing.T) {
 	f := findings017(t, `
 review:

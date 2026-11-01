@@ -183,6 +183,7 @@ func TestGL019_EnvironmentDecidesOverStage(t *testing.T) {
 		{"guessed tier, no deploy stage", "  stage: test\n  environment: review/$CI_COMMIT_REF_SLUG\n", 1, 0},
 		{"explicit testing tier", "  stage: release\n  environment:\n    name: staging\n    deployment_tier: testing\n", 1, 0},
 		{"action prepare", "  stage: deploy\n  environment:\n    name: production\n    action: prepare\n", 1, 0},
+		{"action stop", "  stage: deploy\n  environment:\n    name: production\n    action: stop\n", 0, 0},
 		{"production in deploy stage", "  stage: deploy\n  environment: production\n", 1, 1},
 		{"prerelease stage", "  stage: prerelease\n", 0, 0},
 		{"pre-release stage", "  stage: pre-release\n", 0, 0},
