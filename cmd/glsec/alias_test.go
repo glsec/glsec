@@ -53,6 +53,7 @@ build:
 `},
 		{"cache alias", "GL046", `.c: &c
   key: $CI_COMMIT_REF_NAME
+  unprotect: true
   paths: [x/]
 build:
   image: node:22.1.0

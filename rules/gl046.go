@@ -32,7 +32,6 @@ func (r *gl046) Check(doc *yaml.Node, file string) []finding.Finding {
 	mapping := parser.Unwrap(doc)
 
 	if def := parser.FindKey(mapping, "default"); def != nil {
-		findings = append(findings, checkCacheNode(parser.FindKey(def, "cache"), file, "")...)
 		findings = append(findings, checkCacheUnprotect(parser.FindKey(def, "cache"), file, "", finding.Warn)...)
 	}
 
@@ -42,20 +41,22 @@ func (r *gl046) Check(doc *yaml.Node, file string) []finding.Finding {
 			return
 		}
 		job = in.Effective(job)
-		// Without unprotect: true GitLab keeps the caches of protected and
-		// unprotected refs apart, so a key a branch name can steer can't
-		// reach a job that only runs on protected refs (#1003).
 		cache := parser.FindKey(job, "cache")
-		if !gl046ProtectedOnly(job) || cacheUnprotected(cache) {
+		// A hidden job is a template: the job that extends it decides where it
+		// runs and is checked with the template merged in.
+		if strings.HasPrefix(name.Value, ".") {
+			return
+		}
+		// A job that only runs on protected refs writes the shared cache from
+		// the trusted side, so cache: unprotect: true itself is the documented
+		// pattern and not flagged. But a key such a job restores that a branch
+		// name can still steer, under unprotect: true, lets an unprotected
+		// pipeline pre-fill the slot this protected job reads (#1105, #1003).
+		if gl046ProtectedOnly(job) {
 			for _, f := range checkCacheNode(cache, file, "") {
 				f.Job = name.Value
 				findings = append(findings, f)
 			}
-		}
-		// A hidden job is a template: the job that extends it decides where it
-		// runs. A job that only runs on protected refs writes the shared cache
-		// from the trusted side, the documented use of unprotect:.
-		if strings.HasPrefix(name.Value, ".") || gl046ProtectedOnly(job) {
 			return
 		}
 		// A deploy job restores the shared cache on a protected branch; an MR job
@@ -64,7 +65,7 @@ func (r *gl046) Check(doc *yaml.Node, file string) []finding.Finding {
 		if IsDeployLikeJob(name.Value, job) || jobHasMRTrigger(job) {
 			severity = finding.Error
 		}
-		findings = append(findings, checkCacheUnprotect(parser.FindKey(job, "cache"), file, name.Value, severity)...)
+		findings = append(findings, checkCacheUnprotect(cache, file, name.Value, severity)...)
 	})
 
 	return findings
@@ -126,6 +127,12 @@ func cacheEntries(node *yaml.Node) []*yaml.Node {
 }
 
 func checkCacheMapping(node *yaml.Node, file, job string) []finding.Finding {
+	// Only under unprotect: true do protected and unprotected caches share a
+	// namespace; without it a steerable key can't cross the boundary, so the
+	// key is flagged only together with unprotect: true (#1105).
+	if u := parser.FindKey(node, "unprotect"); u == nil || u.Value != "true" {
+		return nil
+	}
 	keyNode := parser.FindKey(node, "key")
 	if keyNode == nil {
 		return nil
@@ -219,14 +226,4 @@ func gl046ProtectedOnly(job *yaml.Node) bool {
 		running++
 	}
 	return running > 0
-}
-
-// cacheUnprotected reports whether any entry of a cache: sets unprotect: true.
-func cacheUnprotected(node *yaml.Node) bool {
-	for _, entry := range cacheEntries(node) {
-		if u := parser.FindKey(entry, "unprotect"); u != nil && u.Value == "true" {
-			return true
-		}
-	}
-	return false
 }

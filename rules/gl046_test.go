@@ -19,62 +19,44 @@ func findings046(t *testing.T, yaml string) []finding.Finding {
 	return GL046.Check(doc.Root, "test.yml")
 }
 
-func TestGL046_RefNameAsKey(t *testing.T) {
-	f := findings046(t, `
-build:
-  cache:
-    key: $CI_COMMIT_REF_NAME
-    paths:
-      - node_modules/
-  script: [npm ci]
-`)
-	if len(f) != 1 {
-		t.Fatalf("expected 1 finding, got %d", len(f))
-	}
-	if f[0].Severity != finding.Warn {
-		t.Errorf("expected Warn severity")
+// A cache key derived from a user-controlled variable is flagged only together
+// with unprotect: true; without it protected and unprotected caches live in
+// separate namespaces, so a branch name can't steer the key (#1105).
+func TestGL046_RefKeyWithoutUnprotectSilent(t *testing.T) {
+	for _, body := range []string{
+		"key: $CI_COMMIT_REF_NAME\n    paths: [node_modules/]",
+		"key: $CI_COMMIT_REF_SLUG\n    paths: [.cache/]",
+		"key: \"$CI_COMMIT_BRANCH-node\"\n    paths: [node_modules/]",
+		"key: $CI_MERGE_REQUEST_SOURCE_BRANCH_NAME\n    paths: [node_modules/]",
+		"key:\n      files: [package-lock.json]\n      prefix: $CI_COMMIT_REF_NAME\n    paths: [node_modules/]",
+	} {
+		f := findings046(t, "build:\n  cache:\n    "+body+"\n  script: [make]\n")
+		if len(f) != 0 {
+			t.Errorf("%s: expected no finding without unprotect, got %d", body, len(f))
+		}
 	}
 }
 
-func TestGL046_RefSlugAsKey(t *testing.T) {
+// Under unprotect: true, a protected-ref-only job that restores a steerable key
+// is still flagged — an unprotected pipeline can pre-fill the shared slot it
+// reads. (A non-protected-only job's unprotect: true is caught generically by
+// TestGL046_Unprotect, regardless of the key.)
+func TestGL046_RefKeyWithUnprotect(t *testing.T) {
 	f := findings046(t, `
-build:
+warm-cache:
+  rules:
+    - if: $CI_COMMIT_REF_PROTECTED == "true"
   cache:
     key: $CI_COMMIT_REF_SLUG
+    unprotect: true
     paths: [.cache/]
   script: [make]
 `)
 	if len(f) != 1 {
-		t.Fatalf("expected 1 finding for CI_COMMIT_REF_SLUG, got %d", len(f))
+		t.Fatalf("expected 1 finding for a steerable key under unprotect, got %d", len(f))
 	}
-}
-
-func TestGL046_BranchAsKey(t *testing.T) {
-	f := findings046(t, `
-build:
-  cache:
-    key: "$CI_COMMIT_BRANCH-node"
-    paths: [node_modules/]
-  script: [npm ci]
-`)
-	if len(f) != 1 {
-		t.Fatalf("expected 1 finding for CI_COMMIT_BRANCH, got %d", len(f))
-	}
-}
-
-func TestGL046_UserControlledPrefix(t *testing.T) {
-	f := findings046(t, `
-build:
-  cache:
-    key:
-      files:
-        - package-lock.json
-      prefix: $CI_COMMIT_REF_NAME
-    paths: [node_modules/]
-  script: [npm ci]
-`)
-	if len(f) != 1 {
-		t.Fatalf("expected 1 finding for user-controlled prefix, got %d", len(f))
+	if f[0].Severity != finding.Warn {
+		t.Errorf("expected Warn severity, got %s", f[0].Severity)
 	}
 }
 
@@ -106,7 +88,7 @@ build:
 	}
 }
 
-func TestGL046_DefaultBlockFlagged(t *testing.T) {
+func TestGL046_DefaultBlockWithoutUnprotectSilent(t *testing.T) {
 	f := findings046(t, `
 default:
   cache:
@@ -116,36 +98,8 @@ default:
 build:
   script: [make]
 `)
-	if len(f) != 1 {
-		t.Fatalf("expected 1 finding in default: cache:, got %d", len(f))
-	}
-}
-
-func TestGL046_MultipleCachesOneUserControlled(t *testing.T) {
-	f := findings046(t, `
-build:
-  cache:
-    - key: $CI_COMMIT_REF_NAME
-      paths: [node_modules/]
-    - key: "static-key"
-      paths: [.cache/]
-  script: [npm ci]
-`)
-	if len(f) != 1 {
-		t.Fatalf("expected 1 finding (only the user-controlled key), got %d", len(f))
-	}
-}
-
-func TestGL046_MRSourceBranchAsKey(t *testing.T) {
-	f := findings046(t, `
-build:
-  cache:
-    key: $CI_MERGE_REQUEST_SOURCE_BRANCH_NAME
-    paths: [node_modules/]
-  script: [npm ci]
-`)
-	if len(f) != 1 {
-		t.Fatalf("expected 1 finding for MR source branch variable, got %d", len(f))
+	if len(f) != 0 {
+		t.Fatalf("expected no finding for a default cache key without unprotect, got %d", len(f))
 	}
 }
 
@@ -163,8 +117,9 @@ func TestGL046_JobNameInFinding(t *testing.T) {
 	f := findings046(t, `
 my-build-job:
   cache:
-    key: $CI_COMMIT_REF_NAME
-    paths: [node_modules/]
+    key: deps
+    unprotect: true
+    paths: [vendor/]
   script: [npm ci]
 `)
 	if len(f) != 1 {
@@ -412,12 +367,13 @@ func TestGL046_ProtectedOnlyKey(t *testing.T) {
 			t.Errorf("%q: got %d findings, want %d", tc.cache, got, tc.want)
 		}
 	}
-	// A job that runs on any ref is still reported.
+	// A job that runs on any ref with a steerable key but no unprotect: true is
+	// no longer reported — the caches stay in separate namespaces (#1105).
 	doc, err := parser.Parse([]byte("build:\n  cache:\n    key: \"$CI_COMMIT_REF_NAME\"\n    paths: [.cache/]\n  script: [make]\n"), "test.yml")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := len(GL046.Check(doc.Root, "test.yml")); got != 1 {
-		t.Errorf("unrestricted job: got %d findings, want 1", got)
+	if got := len(GL046.Check(doc.Root, "test.yml")); got != 0 {
+		t.Errorf("unrestricted job without unprotect: got %d findings, want 0", got)
 	}
 }
