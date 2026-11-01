@@ -72,7 +72,17 @@ func (r *gl023) Check(doc *yaml.Node, file string) []finding.Finding {
 
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
 		lines := CollectJobScriptLines(job)
-		frozen := globalFrozen || bundlerFrozenVars(in.Key(job, "variables"))
+		// GitLab merges a job's variables: with those inherited through
+		// extends:, so a job's own variables: block (for an unrelated key) does
+		// not drop an inherited BUNDLE_FROZEN. Check every block in the chain,
+		// not just the nearest one (#1102).
+		frozen := globalFrozen
+		for _, vars := range in.Chain(job, "variables") {
+			if bundlerFrozenVars(vars) {
+				frozen = true
+				break
+			}
+		}
 		for _, l := range lines {
 			lf := facts.get(l, func() lineFacts {
 				return lineFacts{

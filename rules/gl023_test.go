@@ -268,3 +268,34 @@ build:
 		t.Error("expected non-zero line number")
 	}
 }
+
+// BUNDLE_FROZEN inherited via extends: still suppresses the finding when the
+// child job defines its own variables: block for an unrelated key — GitLab
+// merges the two, it doesn't drop the inherited value (#1102).
+func TestGL023_InheritedFrozenWithOwnVariables(t *testing.T) {
+	frozenParentOwnVars := `
+.use-ruby:
+  variables:
+    BUNDLE_FROZEN: "true"
+run_danger:
+  extends: .use-ruby
+  variables:
+    GIT_DEPTH: "0"
+  script:
+    - bundle install
+`
+	if f := findings023(t, frozenParentOwnVars); len(f) != 0 {
+		t.Errorf("inherited BUNDLE_FROZEN + own variables: expected no finding, got %+v", f)
+	}
+
+	noFrozenAnywhere := `
+run_danger:
+  variables:
+    GIT_DEPTH: "0"
+  script:
+    - bundle install
+`
+	if f := findings023(t, noFrozenAnywhere); len(f) != 1 {
+		t.Errorf("no frozen anywhere: expected 1 finding, got %d", len(f))
+	}
+}
