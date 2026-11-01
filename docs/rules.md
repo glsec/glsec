@@ -72,7 +72,7 @@ User-controlled inputs and unversioned component references that allow malicious
 | [GL041](rules/GL041.md) | `warn`  | `include: component:` without a pinned semver tag or commit SHA |
 | [GL044](rules/GL044.md) | `warn`  | MR-triggered job checks out `$CI_MERGE_REQUEST_SOURCE_BRANCH_SHA` — executes attacker-controlled code with `$CI_JOB_TOKEN` access |
 | [GL051](rules/GL051.md) | `error`/`warn` | Unconstrained `spec:inputs` or job `inputs:` entry interpolated into `image:`, `script:` and similar keywords — caller can supply arbitrary values |
-| [GL053](rules/GL053.md) | `warn`  | Missing or unrestricted `workflow:rules` — pipelines run for every event, including untrusted fork merge requests |
+| [GL053](rules/GL053.md) | `info`  | Missing or unrestricted `workflow:rules` — pipelines run for every event, including untrusted fork merge requests |
 | [GL065](rules/GL065.md) | `warn`  | `image:`/`services:` from a registry not in the opt-in `allowed_registries` allowlist |
 | [GL067](rules/GL067.md) | `warn`  | `SECURE_ANALYZERS_PREFIX` (or `*_ANALYZER_IMAGE`) repoints managed security scanners off `registry.gitlab.com` |
 | [GL078](rules/GL078.md) | `warn`  | Invisible / bidirectional Unicode control characters (Trojan Source) and line breaks only YAML sees — rendered file can differ from what runs |

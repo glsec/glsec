@@ -27,7 +27,7 @@
     },
     {
       "rule": "GL053",
-      "severity": "warn",
+      "severity": "info",
       "file": ".gitlab-ci.yml",
       "line": 1,
       "message": "no top-level workflow:rules — pipelines run for every push, tag, trigger, API call and merge request event, also a fork's merge request that a member runs in this project; gate on $CI_PIPELINE_SOURCE or branch to block untrusted pipeline execution",

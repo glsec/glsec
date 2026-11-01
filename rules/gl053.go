@@ -42,7 +42,7 @@ func (r *gl053) Check(doc *yaml.Node, file string) []finding.Finding {
 	if workflowNode == nil {
 		return []finding.Finding{{
 			RuleID:   "GL053",
-			Severity: finding.Warn,
+			Severity: finding.Info,
 			Message:  "no top-level workflow:rules — pipelines run for every push, tag, trigger, API call and merge request event, also a fork's merge request that a member runs in this project; gate on $CI_PIPELINE_SOURCE or branch to block untrusted pipeline execution",
 			File:     file,
 			Line:     1,
@@ -54,7 +54,7 @@ func (r *gl053) Check(doc *yaml.Node, file string) []finding.Finding {
 	if rulesNode == nil || rulesNode.Kind != yaml.SequenceNode || len(rulesNode.Content) == 0 {
 		return []finding.Finding{{
 			RuleID:   "GL053",
-			Severity: finding.Warn,
+			Severity: finding.Info,
 			Message:  "workflow: block has no rules: restricting pipeline source — pipelines run for every event; gate on $CI_PIPELINE_SOURCE or branch",
 			File:     file,
 			Line:     keyNode.Line,
@@ -68,7 +68,7 @@ func (r *gl053) Check(doc *yaml.Node, file string) []finding.Finding {
 
 	return []finding.Finding{{
 		RuleID:   "GL053",
-		Severity: finding.Warn,
+		Severity: finding.Info,
 		Message:  "workflow:rules does not gate on pipeline source or branch — add an if: on $CI_PIPELINE_SOURCE, $CI_COMMIT_BRANCH, or $CI_MERGE_REQUEST_IID to block untrusted pipeline execution",
 		File:     file,
 		Line:     keyNode.Line,

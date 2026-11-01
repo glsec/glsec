@@ -27,8 +27,8 @@ build:
 	if len(f) != 1 {
 		t.Fatalf("expected 1 finding for missing workflow, got %d", len(f))
 	}
-	if f[0].Severity != finding.Warn {
-		t.Errorf("expected Warn severity, got %q", f[0].Severity)
+	if f[0].Severity != finding.Info {
+		t.Errorf("expected Info severity, got %q", f[0].Severity)
 	}
 	if f[0].RuleID != "GL053" {
 		t.Errorf("expected GL053, got %q", f[0].RuleID)
