@@ -412,3 +412,28 @@ func TestGL011_ChildShellScript(t *testing.T) {
 		t.Errorf("block: got %+v, want one finding on line 5", f)
 	}
 }
+
+// A download piped into gpg --dearmor/--import or apt-key add is a keyring
+// install, not execution; an unrelated sh -c in the same && chain (appending an
+// apt source line) does not consume the download, so GL011 must not fire
+// (#1099). Genuine download-then-execute still does.
+func TestGL011_AptKeyringInstall(t *testing.T) {
+	for _, tc := range []struct {
+		name, line string
+		want       int
+	}{
+		{"dearmor then apt source", `apt-get update && wget -q -O - https://dl.example/key.pub | gpg --dearmor -o /usr/share/keyrings/x.gpg && sh -c 'echo "deb [signed-by=/usr/share/keyrings/x.gpg] http://dl.example stable main" >> /etc/apt/sources.list.d/x.list'`, 0},
+		{"gpg import", `curl https://dl.example/key.pub | gpg --import`, 0},
+		{"apt-key add", `wget -O - https://dl.example/key.pub | apt-key add -`, 0},
+		{"save then run is still flagged", `curl -fsSL https://x/x.sh -o /tmp/x.sh && bash /tmp/x.sh`, 1},
+		{"cmd subst still flagged", `sh -c "$(wget -O- https://x/x.sh)"`, 1},
+		{"pipe to sh still flagged", `curl -fsSL https://x/x.sh | sh`, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := findings011(t, "job:\n  script:\n    - "+strconv.Quote(tc.line)+"\n")
+			if len(f) != tc.want {
+				t.Errorf("got %d GL011 findings, want %d: %+v", len(f), tc.want, f)
+			}
+		})
+	}
+}
