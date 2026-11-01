@@ -183,3 +183,56 @@ publish-chart:
 		t.Fatalf("expected 1 finding for helm push without signing, got %d", len(f))
 	}
 }
+
+// Per-MR preview pushes and moving ref-slug tags are ephemeral/internal, not
+// consumer releases, so a missing signing step is not a finding; tagged or
+// versioned releases still are (#1100).
+func TestGL045_MRPreviewAndRefSlugNotRelease(t *testing.T) {
+	for _, tc := range []struct {
+		name, yaml string
+		want       int
+	}{
+		{"mr-scoped environment", `
+p:
+  environment: { name: "mr/$CI_MERGE_REQUEST_IID" }
+  script:
+    - docker push $CI_REGISTRY_IMAGE:mr-$CI_MERGE_REQUEST_IID
+`, 0},
+		{"mr tag docker push", `
+p:
+  stage: release
+  script:
+    - docker push $CI_REGISTRY_IMAGE:mr-$CI_MERGE_REQUEST_IID
+`, 0},
+		{"npm publish mr tag", `
+p:
+  stage: release
+  script:
+    - npm publish --tag mr-$CI_MERGE_REQUEST_IID
+`, 0},
+		{"ref-slug tag", `
+p:
+  stage: release
+  script:
+    - docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG
+`, 0},
+		{"tagged release still flagged", `
+p:
+  stage: release
+  script:
+    - docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_TAG
+`, 1},
+		{"twine upload still flagged", `
+p:
+  stage: release
+  script:
+    - twine upload dist/*
+`, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if f := findings045(t, tc.yaml); len(f) != tc.want {
+				t.Errorf("got %d findings, want %d: %+v", len(f), tc.want, f)
+			}
+		})
+	}
+}
