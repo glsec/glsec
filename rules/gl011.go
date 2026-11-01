@@ -66,7 +66,11 @@ var (
 	// downloadThenExecRe matches a download saved to a file and executed on the same
 	// line, e.g. curl … -o f && bash f, or curl … > f; sh f. The redirect alternative
 	// uses [^0-9&]> so stderr/merge redirects (2>, &>) do not count as a save-to-file.
-	downloadThenExecRe = mustCompilePrefiltered(`\b(?:curl|wget)\b.*(?:\s-o\b|\s--output\b|[^0-9&]>).*(?:;|&&)\s*(?:` + shellAlt + `)\s+\S`)
+	// The save must belong to the download command itself — [^|] keeps the -o/>
+	// from crossing a pipe, so `wget … | gpg --dearmor -o keyring && sh -c '…'`
+	// (a keyring install, where the -o is gpg's) is not read as a download saved
+	// and executed (#1099).
+	downloadThenExecRe = mustCompilePrefiltered(`\b(?:curl|wget)\b[^|]*(?:\s-o\b|\s--output\b|[^0-9&]>).*(?:;|&&)\s*(?:` + shellAlt + `)\s+\S`)
 	// checksumGuardRe matches an integrity check on the same line; its presence means
 	// the fetched code is verified before execution, so the line is not flagged.
 	checksumGuardRe = mustCompilePrefiltered(`\b(?:sha256sum|sha512sum|shasum)\b|\bgpg\b.*--verify\b|\bcosign\b.*\bverify\b`)
