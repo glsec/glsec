@@ -33,7 +33,22 @@ var (
 
 func (r *gl015) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
+
+	// A job restricted to the default branch or a protected ref can only run
+	// with the ref variable pinned to that branch (e.g. master), so a fork
+	// contributor can't steer the tag; such jobs are exempt (#1103). Gating to
+	// tags: does not mitigate — tags are user-creatable — so gl046ProtectedOnly,
+	// which matches only default/protected-branch conditions, is the right test.
+	in := NewInheritance(doc)
+	protectedOnly := map[string]bool{}
+	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
+		protectedOnly[name.Value] = gl046ProtectedOnly(in.Effective(job))
+	})
+
 	EachScriptLine(doc, file, func(item *yaml.Node, file, job string) {
+		if protectedOnly[job] {
+			return
+		}
 		if !dockerCmdRe.MatchString(item.Value) {
 			return
 		}
