@@ -7,7 +7,7 @@ The release binaries and the container image meet [SLSA](https://slsa.dev/spec/v
 **Release binaries** carry a SLSA provenance attestation. Verify a downloaded archive with the [GitHub CLI](https://cli.github.com/); `--signer-workflow` requires that the build workflow signed it (Build Level 3):
 
 ```sh
-gh attestation verify glsec_1.25.0_linux_amd64.tar.gz --owner glsec \
+gh attestation verify glsec_1.26.0_linux_amd64.tar.gz --owner glsec \
   --signer-workflow glsec/glsec/.github/workflows/build-release.yml
 ```
 
@@ -17,10 +17,10 @@ The same attestation is attached to each release as `glsec_<version>.sigstore.js
 
 ```sh
 cosign verify-blob-attestation \
-  --bundle glsec_1.25.0.sigstore.json --new-bundle-format --type slsaprovenance1 \
+  --bundle glsec_1.26.0.sigstore.json --new-bundle-format --type slsaprovenance1 \
   --certificate-identity-regexp '^https://github.com/glsec/glsec/\.github/workflows/(build-)?release\.yml@refs/tags/v' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  glsec_1.25.0_linux_amd64.tar.gz
+  glsec_1.26.0_linux_amd64.tar.gz
 ```
 
 One bundle covers every archive and `checksums.txt`. Releases from 1.11.0 on carry these files; in 1.11.0 the bundle covers the archives but not `checksums.txt`, and older releases have no provenance. The identity regex accepts `release.yml`, which signed releases before 1.21.0, and `build-release.yml`, which signs them from 1.21.0 on; use only the latter to require Build Level 3.
@@ -28,18 +28,18 @@ One bundle covers every archive and `checksums.txt`. Releases from 1.11.0 on car
 **The container image** is signed with [cosign](https://github.com/sigstore/cosign) and carries provenance plus an SBOM attestation:
 
 ```sh
-cosign verify ghcr.io/glsec/glsec:1.25.0 \
+cosign verify ghcr.io/glsec/glsec:1.26.0 \
   --certificate-identity-regexp 'https://github.com/glsec/glsec/.*' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 
 # list everything attached to the image (signature, provenance, SBOM)
-cosign tree --experimental-oci11 ghcr.io/glsec/glsec:1.25.0
+cosign tree --experimental-oci11 ghcr.io/glsec/glsec:1.26.0
 ```
 
 To require Build Level 3 provenance for the image (1.21.0 and later):
 
 ```sh
-gh attestation verify oci://ghcr.io/glsec/glsec:1.25.0 --owner glsec \
+gh attestation verify oci://ghcr.io/glsec/glsec:1.26.0 --owner glsec \
   --signer-workflow glsec/glsec/.github/workflows/build-image.yml
 ```
 
@@ -50,7 +50,7 @@ Use cosign v3 or newer. The image is signed in Sigstore's bundle format and the 
 **Checksums** are published as `checksums.txt` next to the archives:
 
 ```sh
-curl -sSLO https://github.com/glsec/glsec/releases/download/v1.25.0/checksums.txt
+curl -sSLO https://github.com/glsec/glsec/releases/download/v1.26.0/checksums.txt
 sha256sum -c checksums.txt --ignore-missing
 ```
 
@@ -63,20 +63,20 @@ gh attestation verify checksums.txt --owner glsec
 **Release tags** are signed from 1.25.0 on, with an SSH key on a maintainer's GitHub account; GitHub shows them as Verified. Earlier tags are annotated but unsigned. Check a tag with the GitHub API:
 
 ```sh
-gh api repos/glsec/glsec/git/tags/$(git rev-parse v1.25.0) --jq .verification.verified
+gh api repos/glsec/glsec/git/tags/$(git rev-parse v1.26.0) --jq .verification.verified
 ```
 
 or locally with `git tag -v` against the maintainers' keys in [`.github/allowed_signers`](../.github/allowed_signers), the list the Release and Docker workflows check every tag against before they publish anything:
 
 ```sh
 curl -sSLo allowed_signers https://raw.githubusercontent.com/glsec/glsec/main/.github/allowed_signers
-git -c gpg.format=ssh -c gpg.ssh.allowedSignersFile=allowed_signers tag -v v1.25.0
+git -c gpg.format=ssh -c gpg.ssh.allowedSignersFile=allowed_signers tag -v v1.26.0
 ```
 
 **Reproducing a release**: release builds are reproducible from 1.21.0 on. Check out the tag and build it with the Go version from `go.mod` (the `toolchain` line from 1.24.1 on, before that the `go` line) and exactly the GoReleaser version pinned in `.github/workflows/build-release.yml` (v2.18.3 for 1.21.0); another GoReleaser version packs the archives differently. The archives must match the published `checksums.txt`:
 
 ```sh
-VERSION=1.25.0
+VERSION=1.26.0
 git clone https://github.com/glsec/glsec && cd glsec
 git checkout "v${VERSION}"
 goreleaser release --clean --skip=publish,sbom
