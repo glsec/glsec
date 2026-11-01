@@ -157,3 +157,31 @@ func TestGL015_ParameterExpansionName(t *testing.T) {
 		}
 	}
 }
+
+// A job gated to the default or a protected branch pins the ref variable, so a
+// ref-slug image tag is not attacker-steerable there; gating to tags: is not a
+// mitigation (#1103).
+func TestGL015_ProtectedRefGating(t *testing.T) {
+	for _, tc := range []struct {
+		name, gate string
+		want       int
+	}{
+		{"only master", "  only: [master]\n", 0},
+		{"only main", "  only: [main]\n", 0},
+		{"rules default branch", "  rules:\n    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH\n", 0},
+		{"rules ref protected", "  rules:\n    - if: $CI_COMMIT_REF_PROTECTED == \"true\"\n", 0},
+		{"only tags still fires", "  only: [tags]\n", 1},
+		{"ungated still fires", "", 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			src := "build:\n" + tc.gate + "  script:\n    - docker build -t $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG .\n"
+			doc, err := parser.Parse([]byte(src), "test.yml")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := len(GL015.Check(doc.Root, "test.yml")); got != tc.want {
+				t.Errorf("got %d findings, want %d", got, tc.want)
+			}
+		})
+	}
+}
