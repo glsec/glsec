@@ -1,0 +1,13 @@
+stages:
+  - publish
+
+publish:
+  stage: publish
+  image: python:3.13.1
+  variables:
+    TWINE_USERNAME: __token__
+    TWINE_PASSWORD: $PYPI_TOKEN
+  script:
+    - pip install -r requirements.txt
+    - python -m build
+    - twine upload dist/*
