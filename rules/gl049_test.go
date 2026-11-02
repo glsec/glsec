@@ -35,6 +35,32 @@ deploy-production:
 	}
 }
 
+func TestGL049_DeployJobInterruptibleYes(t *testing.T) {
+	f := findings049(t, `
+deploy-production:
+  stage: deploy
+  interruptible: yes
+  script:
+    - kubectl apply -f k8s/
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for interruptible: yes, got %d", len(f))
+	}
+}
+
+func TestGL049_DeployJobInterruptibleNo(t *testing.T) {
+	f := findings049(t, `
+deploy-production:
+  stage: deploy
+  interruptible: no
+  script:
+    - kubectl apply -f k8s/
+`)
+	if len(f) != 0 {
+		t.Fatalf("expected no findings for interruptible: no, got %d", len(f))
+	}
+}
+
 func TestGL049_DeployJobInterruptibleFalse(t *testing.T) {
 	f := findings049(t, `
 deploy-production:

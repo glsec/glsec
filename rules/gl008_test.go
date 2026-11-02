@@ -35,6 +35,18 @@ dast:
 	}
 }
 
+func TestGL008_AllowFailureYes_Warn(t *testing.T) {
+	f := findings008(t, `
+dast:
+  allow_failure: yes
+  variables:
+    DAST_WEBSITE: "https://example.com"
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for allow_failure: yes, got %d", len(f))
+	}
+}
+
 // The templates already set allow_failure: true on these jobs, so a pipeline
 // that repeats it is not doing anything new and must not be reported.
 func TestGL008_TemplateAllowFailure_NoFinding(t *testing.T) {
