@@ -95,6 +95,7 @@ var cweIDs = map[string]string{
 	"GL088": "CWE-798",
 	"GL089": "CWE-284",
 	"GL090": "CWE-829",
+	"GL091": "CWE-290",
 }
 
 // cweNames maps CWE IDs to their short names.
@@ -103,6 +104,7 @@ var cweNames = map[string]string{
 	"CWE-214":  "Invocation of Process Using Visible Sensitive Information",
 	"CWE-295":  "Improper Certificate Validation",
 	"CWE-284":  "Improper Access Control",
+	"CWE-290":  "Authentication Bypass by Spoofing",
 	"CWE-319":  "Cleartext Transmission of Sensitive Information",
 	"CWE-362":  "Concurrent Execution using Shared Resource with Improper Synchronization ('Race Condition')",
 	"CWE-390":  "Detection of Error Condition Without Action",

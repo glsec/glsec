@@ -1,0 +1,16 @@
+stages:
+  - release
+
+release-by-bot:
+  stage: release
+  rules:
+    - if: $CI_COMMIT_AUTHOR =~ /release-bot/
+  script:
+    - echo release
+
+merge-by-bot:
+  stage: release
+  rules:
+    - if: '$GITLAB_USER_NAME == "release-bot"'
+  script:
+    - echo merge
