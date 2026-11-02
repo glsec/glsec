@@ -102,7 +102,7 @@ Gates bypassed, runners untrusted, or downstream pipelines outside access contro
 |----|----------|-------------|
 | [GL008](rules/GL008.md) | `warn`  | GitLab security scan job silenced — `allow_failure: true`, `when: manual`, or a lone `rules: [when: never]` |
 | [GL012](rules/GL012.md) | `warn`  | `when: always` on a deploy/release job bypasses upstream quality gates |
-| [GL013](rules/GL013.md) | `warn`  | Production deploy or GitLab Pages job has no `rules:` or `only:` branch restriction |
+| [GL013](rules/GL013.md) | `warn`  | Production deploy or GitLab Pages job has no `rules:` or `only:` branch restriction, or a production deploy runs only in merge request pipelines |
 | [GL019](rules/GL019.md) | `warn`  | Deploy/publish job has no `resource_group:` — concurrent runs risk race conditions or partial deploys |
 | [GL034](rules/GL034.md) | `warn`  | `trigger:` job without `strategy: mirror` / `depend` — child pipeline failures are silently ignored |
 | [GL039](rules/GL039.md) | `warn`  | Security audit tool silenced with `\|\| true` — failures discarded, pipeline always green |

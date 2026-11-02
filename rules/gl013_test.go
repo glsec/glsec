@@ -429,3 +429,57 @@ deploy:
 		t.Fatalf("expected one finding on the job's line 4, got %v", f)
 	}
 }
+
+// A production deploy that runs only in merge request pipelines deploys the
+// MR's unmerged source commit; its rules are no branch restriction (#1135).
+func TestGL013_MergeRequestOnlyProdDeploy(t *testing.T) {
+	for _, tc := range []struct {
+		name, rules string
+		env         string
+		want        int
+	}{
+		{"target branch main", "rules:\n    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == \"main\"", "production", 1},
+		{"merge_request_event alone", "rules:\n    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\"", "production", 1},
+		{"single quotes, reversed", "rules:\n    - if: \"'merge_request_event' == $CI_PIPELINE_SOURCE\"", "production", 1},
+		{"target protected", "rules:\n    - if: $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED == \"true\"", "production", 1},
+		{"source protected", "rules:\n    - if: $CI_MERGE_REQUEST_SOURCE_BRANCH_PROTECTED == \"true\"", "production", 1},
+		{"labels gate", "rules:\n    - if: $CI_MERGE_REQUEST_LABELS =~ /deploy/", "production", 1},
+		{"target default branch", "rules:\n    - if: $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH", "production", 1},
+		{"MR iid presence, manual", "rules:\n    - if: $CI_MERGE_REQUEST_IID\n      when: manual", "production", 1},
+		{"two MR rules", "rules:\n    - if: $CI_MERGE_REQUEST_LABELS =~ /hotfix/\n    - if: ($CI_PIPELINE_SOURCE == \"merge_request_event\" && $CI_MERGE_REQUEST_APPROVED == \"true\")", "production", 1},
+		{"never rule, then MR rule", "rules:\n    - if: $CI_MERGE_REQUEST_DRAFT == \"true\"\n      when: never\n    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\"", "production", 1},
+		{"only merge_requests", "only:\n    - merge_requests", "production", 1},
+		{"only refs merge_requests", "only:\n    refs: [merge_requests]\n    variables: [$DEPLOY]", "production", 1},
+		{"deployment tier", "rules:\n    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\"", "{name: eu-west, deployment_tier: production}", 1},
+		{"live", "rules:\n    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\"", "live", 1},
+		{"staging", "rules:\n    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\"", "staging", 0},
+		{"staging per MR", "only:\n    - merge_requests", "staging/$CI_COMMIT_REF_SLUG", 0},
+		{"staging tier", "rules:\n    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\"", "{name: prod-preview, deployment_tier: staging}", 0},
+		{"review app", "rules:\n    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\"", "review/$CI_COMMIT_REF_SLUG", 0},
+		{"stop action", "rules:\n    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\"", "{name: production, action: stop}", 0},
+		{"prepare action", "rules:\n    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\"", "{name: production, action: prepare}", 0},
+		{"default branch", "rules:\n    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH", "production", 0},
+		{"MR or default branch", "rules:\n    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\" || $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH", "production", 0},
+		{"MR rule, then branch rule", "rules:\n    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\"\n      when: manual\n    - if: $CI_COMMIT_BRANCH == \"main\"", "production", 0},
+		{"never MR rule, then branch rule", "rules:\n    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\"\n      when: never\n    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH", "production", 0},
+		{"MR and branch", "rules:\n    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\" && $CI_COMMIT_BRANCH == \"main\"", "production", 0},
+		{"tag pipeline", "rules:\n    - if: $CI_COMMIT_TAG", "production", 0},
+		{"not MR", "rules:\n    - if: $CI_PIPELINE_SOURCE != \"merge_request_event\"", "production", 0},
+		{"MR variable is null", "rules:\n    - if: $CI_MERGE_REQUEST_IID == null", "production", 0},
+		{"labels not matched", "rules:\n    - if: $CI_MERGE_REQUEST_LABELS !~ /skip/", "production", 0},
+		{"rule without if", "rules:\n    - changes: [deploy/**]", "production", 0},
+		{"only branches", "only:\n    - main", "production", 0},
+		{"only MR and main", "only:\n    - merge_requests\n    - main", "production", 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			y := "deploy_prod:\n  " + tc.rules + "\n  environment: " + tc.env + "\n  script: [./deploy.sh]\n"
+			f := findings013(t, y)
+			if len(f) != tc.want {
+				t.Fatalf("got %d findings, want %d: %+v\n%s", len(f), tc.want, f, y)
+			}
+			if tc.want == 1 && !strings.Contains(f[0].Message, "only in merge request pipelines") {
+				t.Errorf("message: %s", f[0].Message)
+			}
+		})
+	}
+}

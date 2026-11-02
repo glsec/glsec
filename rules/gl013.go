@@ -5,6 +5,7 @@ package rules
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -42,7 +43,11 @@ func (r *gl013) Check(doc *yaml.Node, file string) []finding.Finding {
 		if strings.HasPrefix(name.Value, ".") {
 			return
 		}
-		if in.Key(job, "rules") != nil || in.Key(job, "only") != nil {
+		// A job that runs only in merge request pipelines deploys the MR's
+		// source commit before it is merged, so its rules are no branch
+		// restriction (#1135).
+		mrOnly := runsOnlyInMRPipelines(in, job)
+		if !mrOnly && (in.Key(job, "rules") != nil || in.Key(job, "only") != nil) {
 			return
 		}
 		// A base in another file, or the included job this one overrides,
@@ -61,6 +66,21 @@ func (r *gl013) Check(doc *yaml.Node, file string) []finding.Finding {
 			tier = extractDeploymentTier(envNode)
 		}
 		byName := envName != "" && isProdEnv(envName)
+		if mrOnly {
+			// Staging often is a preview per MR; only production counts.
+			if isProductionOnly(envName, tier) && deploysToEnvironment(envNode) {
+				findings = append(findings, finding.Finding{
+					RuleID:   "GL013",
+					Severity: finding.Warn,
+					Job:      name.Value,
+					Message:  gl013MRMessage(name.Value, envName, tier),
+					File:     file,
+					Line:     line,
+					Col:      col,
+				})
+			}
+			return
+		}
 		if byName || isProdTier(tier) {
 			findings = append(findings, finding.Finding{
 				RuleID:   "GL013",
@@ -130,6 +150,143 @@ func gl013Message(job, envName, tier string, byName bool) string {
 		"job %q has deployment_tier: %s but no rules: or only: clause — any branch can trigger this deployment",
 		job, tier,
 	)
+}
+
+func gl013MRMessage(job, envName, tier string) string {
+	target := fmt.Sprintf("%q", envName)
+	if envName == "" {
+		target = "deployment_tier: " + tier
+	}
+	return fmt.Sprintf(
+		"job %q deploys to %s but runs only in merge request pipelines — they build the MR's source commit before anyone merged it; restrict the job to the protected branch ($CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH) or to tags",
+		job, target,
+	)
+}
+
+// isProductionOnly reports a production environment by name (production,
+// prod, live) or by deployment_tier: production, leaving staging out.
+func isProductionOnly(envName, tier string) bool {
+	if strings.EqualFold(tier, "production") {
+		return true
+	}
+	if tier != "" {
+		return false
+	}
+	lower := strings.ToLower(envName)
+	return !strings.Contains(lower, "staging") && (strings.Contains(lower, "prod") || strings.Contains(lower, "live"))
+}
+
+// deploysToEnvironment reports whether the environment: value deploys: an
+// action of prepare, verify, access or stop changes nothing in it.
+func deploysToEnvironment(env *yaml.Node) bool {
+	if env == nil || env.Kind != yaml.MappingNode {
+		return true
+	}
+	a := parser.FindKey(env, "action")
+	if a == nil || a.Kind != yaml.ScalarNode {
+		return true
+	}
+	return a.Value == "" || a.Value == "start"
+}
+
+var (
+	// mrSourceRe matches an operand that requires a merge request pipeline
+	// by its source, in either operand order.
+	mrSourceRe = regexp.MustCompile(`^(?:\$\{?CI_PIPELINE_SOURCE\}?\s*(?:==\s*["']merge_request_event["']|=~\s*/[^/]*merge_request[^/]*/[a-z]*)|["']merge_request_event["']\s*==\s*\$\{?CI_PIPELINE_SOURCE\}?)$`)
+	// mrVarRe matches an operand that tests a merge request variable for
+	// presence or a value; these are only set in merge request pipelines.
+	mrVarRe = regexp.MustCompile(`^(?:\$\{?CI_MERGE_REQUEST_\w+\}?(?:\s*(?:==|=~)\s*(.+))?|(["'][^"']*["'])\s*==\s*\$\{?CI_MERGE_REQUEST_\w+\}?)$`)
+	// branchOrTagRe matches an operand that tests the branch or tag of a
+	// branch or tag pipeline; both are unset in a merge request pipeline.
+	branchOrTagRe = regexp.MustCompile(`\$\{?CI_COMMIT_(?:BRANCH|TAG)\b`)
+)
+
+// runsOnlyInMRPipelines reports whether every rule that lets the job run
+// requires a merge request pipeline, or only: names merge_requests alone.
+func runsOnlyInMRPipelines(in *Inheritance, job *yaml.Node) bool {
+	if rules := in.Key(job, "rules"); rules != nil {
+		if rules.Kind != yaml.SequenceNode {
+			return false
+		}
+		saw := false
+		for _, item := range rules.Content {
+			if item.Kind != yaml.MappingNode {
+				return false
+			}
+			if ruleExcludes(item) {
+				continue
+			}
+			ifNode := parser.FindKey(item, "if")
+			if ifNode == nil || ifNode.Kind != yaml.ScalarNode || !ifRequiresMR(ifNode.Value) {
+				return false
+			}
+			saw = true
+		}
+		return saw
+	}
+	return onlyMergeRequests(in.Key(job, "only"))
+}
+
+// ifRequiresMR reports whether a rules:if expression is true only in a merge
+// request pipeline: every || alternative requires one, and of && operands
+// one does while none tests a branch or tag.
+func ifRequiresMR(expr string) bool {
+	expr = trimOuterParens(strings.TrimSpace(expr))
+	alts := splitTopLevel(expr, "||")
+	if alts == nil {
+		return false
+	}
+	if len(alts) > 1 {
+		for _, alt := range alts {
+			if !ifRequiresMR(alt) {
+				return false
+			}
+		}
+		return true
+	}
+	ops := splitTopLevel(expr, "&&")
+	if len(ops) > 1 {
+		requires := false
+		for _, op := range ops {
+			if branchOrTagRe.MatchString(op) {
+				return false
+			}
+			requires = requires || ifRequiresMR(op)
+		}
+		return requires
+	}
+	if mrSourceRe.MatchString(expr) {
+		return true
+	}
+	m := mrVarRe.FindStringSubmatch(expr)
+	if m == nil {
+		return false
+	}
+	v := strings.TrimSpace(m[1] + m[2])
+	return v != "null" && v != `""` && v != "''"
+}
+
+// onlyMergeRequests reports whether a legacy only: clause admits nothing but
+// merge_requests.
+func onlyMergeRequests(n *yaml.Node) bool {
+	if n == nil {
+		return false
+	}
+	switch n.Kind {
+	case yaml.ScalarNode:
+		return n.Value == "merge_requests"
+	case yaml.SequenceNode:
+		for _, c := range n.Content {
+			if c.Kind != yaml.ScalarNode || c.Value != "merge_requests" {
+				return false
+			}
+		}
+		return len(n.Content) > 0
+	case yaml.MappingNode:
+		// variables: and changes: narrow the refs further.
+		return onlyMergeRequests(parser.FindKey(n, "refs"))
+	}
+	return false
 }
 
 func extractDeploymentTier(node *yaml.Node) string {
