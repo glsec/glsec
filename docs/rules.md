@@ -56,6 +56,7 @@ Mutable references that allow silent substitution of images, templates, or packa
 | [GL072](rules/GL072.md) | `warn`  | `needs:project` cross-project artifact download with a mutable branch or variable `ref:` — the consumed artifacts can be poisoned |
 | [GL075](rules/GL075.md) | `warn`  | `include:` source (project / component / remote) not on the opt-in `allowed_include_sources` allowlist — provenance check complementing GL003's pinning |
 | [GL079](rules/GL079.md) | `warn`  | `pip install --extra-index-url` adds a public index alongside the default — highest version wins across indexes, enabling dependency confusion |
+| [GL090](rules/GL090.md) | `warn`  | Package publish job also installs dependencies with lifecycle scripts enabled (`npm ci` + `npm publish`) — a dependency's install script runs with the publish token |
 
 ---
 
@@ -161,5 +162,5 @@ A subset of rules is mapped to [OWASP ASVS](https://owasp.org/www-project-applic
 | V14.3.1 — Pipeline config protected from modification | GL003, GL019, GL084 |
 | V14.3.2 — Security tools run and failures block the build | GL008, GL039, GL082 |
 | V14.3.3 — Secrets absent from source and logs | GL006, GL014, GL018, GL021, GL027, GL032, GL033, GL035, GL036, GL038, GL066, GL068 |
-| V14.3.4 — Build environment isolated | GL007, GL015, GL025, GL083 |
+| V14.3.4 — Build environment isolated | GL007, GL015, GL025, GL083, GL090 |
 | V14.4.1 — Third-party CI/CD service dependence minimised | GL041 |

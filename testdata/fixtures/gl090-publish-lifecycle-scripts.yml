@@ -1,0 +1,11 @@
+stages:
+  - publish
+
+publish:
+  stage: publish
+  image: node:22.11.0
+  variables:
+    NPM_TOKEN: $NPM_PUBLISH_TOKEN
+  script:
+    - npm ci
+    - npm publish
