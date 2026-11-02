@@ -112,36 +112,46 @@ func (r *gl090) Check(doc *yaml.Node, file string) []finding.Finding {
 		}
 		var install, publish *pos
 		scriptsOff := false
+		var items []*yaml.Node
+		publishes := false
 		for _, key := range []string{"before_script", "script"} {
 			block := in.Key(job, key)
 			if !isScriptList(block) {
 				continue
 			}
 			for _, item := range block.Content {
-				if item.Kind != yaml.ScalarNode {
-					continue
+				if item.Kind == yaml.ScalarNode && mentionsPackageTool(item.Value) {
+					items = append(items, item)
+					publishes = publishes || strings.Contains(item.Value, "publish")
 				}
-				for _, cmd := range shellCommands(item.Value) {
-					words := withoutSudo(commandWords(cmd.text))
-					installs := false
-					for _, eco := range lifecycleEcosystems {
-						switch {
-						case eco.installs(words):
-							installs = true
-							if install == nil && !scriptsOff && !scriptsOffRe.MatchString(cmd.text) && !scriptsOffArgRe.MatchString(strings.Join(words, " ")) {
-								install = &pos{item, cmd.line, cmd.text}
-							}
-						case eco.publishes(words):
-							if publish == nil {
-								publish = &pos{item, cmd.line, cmd.text}
-							}
+			}
+		}
+		// Splitting every line into commands is costly; most jobs publish
+		// nothing.
+		if !publishes {
+			return
+		}
+		for _, item := range items {
+			for _, cmd := range shellCommands(item.Value) {
+				words := withoutSudo(commandWords(cmd.text))
+				installs := false
+				for _, eco := range lifecycleEcosystems {
+					switch {
+					case eco.installs(words):
+						installs = true
+						if install == nil && !scriptsOff && !scriptsOffRe.MatchString(cmd.text) && !scriptsOffArgRe.MatchString(strings.Join(words, " ")) {
+							install = &pos{item, cmd.line, cmd.text}
+						}
+					case eco.publishes(words):
+						if publish == nil {
+							publish = &pos{item, cmd.line, cmd.text}
 						}
 					}
-					// An assignment in front of an install applies to that
-					// install only; export or npm config set to the rest.
-					if !installs && scriptsOffRe.MatchString(cmd.text) {
-						scriptsOff = true
-					}
+				}
+				// An assignment in front of an install applies to that
+				// install only; export or npm config set to the rest.
+				if !installs && scriptsOffRe.MatchString(cmd.text) {
+					scriptsOff = true
 				}
 			}
 		}
@@ -162,6 +172,13 @@ func (r *gl090) Check(doc *yaml.Node, file string) []finding.Finding {
 		findings = append(findings, f)
 	})
 	return findings
+}
+
+// mentionsPackageTool reports whether a script item can hold an install, a
+// publish or a setting that switches lifecycle scripts off.
+func mentionsPackageTool(s string) bool {
+	return strings.Contains(s, "npm") || strings.Contains(s, "yarn") ||
+		strings.Contains(s, "NPM_") || strings.Contains(s, "YARN_")
 }
 
 // subcommand returns the first word after the program that is not an
