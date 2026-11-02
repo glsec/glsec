@@ -294,7 +294,7 @@ publish:
 		{"inline PIP_ONLY_BINARY applies to that install only", `
 publish:
   script:
-    - PIP_ONLY_BINARY=:all: pip install -r requirements.txt
+    - 'PIP_ONLY_BINARY=:all: pip install -r requirements.txt'
     - pip install .
     - twine upload dist/*
 `, 1},
@@ -390,6 +390,12 @@ test:
   script:
     - poetry install
     - poetry run pytest
+`, 0},
+		{"inline PIP_ONLY_BINARY", `
+publish:
+  script:
+    - 'PIP_ONLY_BINARY=:all: pip install -r requirements.txt'
+    - twine upload dist/*
 `, 0},
 		{"uv pip sync + uv publish", `
 publish:
