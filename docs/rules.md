@@ -116,6 +116,7 @@ Gates bypassed, runners untrusted, or downstream pipelines outside access contro
 | [GL081](rules/GL081.md) | `warn`  | Job issues an OIDC `id_tokens:` credential or uses `identity: google_cloud` on an unrestricted pipeline source — any branch or merge request can get cloud credentials (GitLab ≥ 15.7) |
 | [GL082](rules/GL082.md) | `warn`  | Managed security scan switched off by CI/CD variable (`SAST_DISABLED`, `SECRET_DETECTION_DISABLED`, …) — the template's jobs never run |
 | [GL089](rules/GL089.md) | `warn`  | Renovate runs with autodiscovery and no filter — the bot works on every project its token can reach |
+| [GL091](rules/GL091.md) | `warn`  | `rules:if` grants on a spoofable identity — `$CI_COMMIT_AUTHOR`, `$GITLAB_USER_NAME` or `$CI_COMMIT_USER_LOGIN` matched with `==`/`=~` |
 
 ---
 
