@@ -162,5 +162,5 @@ A subset of rules is mapped to [OWASP ASVS](https://owasp.org/www-project-applic
 | V14.3.1 — Pipeline config protected from modification | GL003, GL019, GL084 |
 | V14.3.2 — Security tools run and failures block the build | GL008, GL039, GL082 |
 | V14.3.3 — Secrets absent from source and logs | GL006, GL014, GL018, GL021, GL027, GL032, GL033, GL035, GL036, GL038, GL066, GL068 |
-| V14.3.4 — Build environment isolated | GL007, GL015, GL025, GL083 |
+| V14.3.4 — Build environment isolated | GL007, GL015, GL025, GL083, GL090 |
 | V14.4.1 — Third-party CI/CD service dependence minimised | GL041 |

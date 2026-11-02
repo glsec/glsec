@@ -32,6 +32,7 @@ var asvsRequirements = map[string][]string{
 	"GL082": {"ASVS-V14.3.2"},
 	"GL083": {"ASVS-V14.3.4"},
 	"GL084": {"ASVS-V14.3.1"},
+	"GL090": {"ASVS-V14.3.4"},
 	"GL011": {"ASVS-V14.2.1"},
 	"GL014": {"ASVS-V14.3.3"},
 	"GL015": {"ASVS-V14.3.4"},
