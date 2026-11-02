@@ -20,20 +20,31 @@ func (r *gl011) ID() string { return "GL011" }
 
 const shellAlt = `bash|sh|python[23]?|ruby|perl|node`
 
+// pipeInto matches a pipe and any privilege or environment wrappers before
+// the command it feeds: | sudo -E bash, | doas sh, | su -c sh,
+// | runuser -u app -- bash, | sudo env FOO=1 bash (#1131). An option that
+// takes a value (-u user) consumes it, so | sudo -u node tee x does not read
+// the user name as the interpreter.
+const pipeInto = `\|\s*(?:(?:sudo|doas|su|runuser|env)(?:\s+(?:` +
+	`-[ugCDhprtU]\s+[^\s|;&-][^\s|;&]*` +
+	`|-[abcdefijklmnoqsvwxyzABEFGHIJKLMNOPQRSTVWXYZ]|-[a-zA-Z]{2,}` +
+	`|--[a-zA-Z][\w-]*(?:=[^\s|;&]*)?|--` +
+	`|[A-Za-z_]\w*=[^\s|;&]*))*\s+)*`
+
 var (
 	// interpreterDashCRe matches a pipe into an interpreter that gets its code
 	// from the command line, so the piped input is data: -c for shells and
 	// python (python3 -c, bash -ec), -e/-p for node, -e/-E for perl and ruby,
 	// also bundled (perl -ne, perl -lane) (#1057). -e alone is errexit for a
 	// shell, so curl … | bash -e still runs the download.
-	interpreterDashCRe = mustCompilePrefiltered(`\|\s*(?:` +
+	interpreterDashCRe = mustCompilePrefiltered(pipeInto + `(?:` +
 		`(?:bash|sh|python[23]?)(?:\s+-[a-zA-Z]+)*?\s+-[a-zA-Z]*c\b` +
 		`|node(?:\s+--?[a-zA-Z][a-zA-Z-]*)*?\s+(?:-e|--eval|-p|--print)\b` +
 		`|(?:perl|ruby)(?:\s+-[a-zA-Z]+)*?\s+-[a-zA-Z]*[eE][a-zA-Z]*\b)`)
 	// downloadToolRe matches curl or wget anywhere in a script line.
 	downloadToolRe = mustCompilePrefiltered(`\b(?:curl|wget)\b`)
-	// pipeToShellRe matches a pipe directly into a shell interpreter.
-	pipeToShellRe = mustCompilePrefiltered(`\|\s*(?:` + shellAlt + `)\b`)
+	// pipeToShellRe matches a pipe into a shell interpreter.
+	pipeToShellRe = mustCompilePrefiltered(pipeInto + `(?:` + shellAlt + `)\b`)
 	// processSubstRe matches bash process substitution: <(curl ...) or <(wget ...).
 	processSubstRe = mustCompilePrefiltered(`<\s*\(\s*(?:curl|wget)\b`)
 	// cmdSubstRe matches command substitution passed to a shell: bash -c "$(curl ...)".
@@ -42,10 +53,10 @@ var (
 	downloadSubstRe = mustCompilePrefiltered(`\$\(\s*(?:curl|wget)\b`)
 	// base64ExecRe matches a base64-decode piped straight into a shell, e.g.
 	// echo "…" | base64 -d | bash — an inline-obfuscated payload with no download tool.
-	base64ExecRe = mustCompilePrefiltered(`\bbase64\s+(?:-d|--decode)\b.*\|\s*(?:` + shellAlt + `)\b`)
+	base64ExecRe = mustCompilePrefiltered(`\bbase64\s+(?:-d|--decode)\b.*` + pipeInto + `(?:` + shellAlt + `)\b`)
 	// hexExecRe matches a hex dump reversed by xxd -r and piped into a shell,
 	// e.g. echo 6375… | xxd -r -p | bash — the same as base64ExecRe in hex.
-	hexExecRe = mustCompilePrefiltered(`\bxxd\b[^|]*\s-[a-z]*r[a-z]*\b.*\|\s*(?:` + shellAlt + `)\b`)
+	hexExecRe = mustCompilePrefiltered(`\bxxd\b[^|]*\s-[a-z]*r[a-z]*\b.*` + pipeInto + `(?:` + shellAlt + `)\b`)
 	// escapePrinterRe and hexEscapeRe together match printf '\x63\x75…' | sh or
 	// echo -e "\x63…" | sh. The escapes sit inside quotes, so hexEscapeRe is
 	// matched against the raw line.

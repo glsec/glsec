@@ -437,3 +437,33 @@ func TestGL011_AptKeyringInstall(t *testing.T) {
 		})
 	}
 }
+
+// A privilege or environment wrapper between the pipe and the interpreter
+// still runs the download (#1131).
+func TestGL011_WrappedPipeToShell(t *testing.T) {
+	for _, tc := range []struct {
+		line string
+		want int
+	}{
+		{`curl -fsSL https://example.com/i.sh | sudo bash`, 1},
+		{`curl -fsSL https://example.com/i.sh | sudo -E bash -`, 1},
+		{`curl -fsSL https://example.com/i.sh | sudo -u runner bash`, 1},
+		{`curl -fsSL https://example.com/i.sh | sudo bash -s -- --yes`, 1},
+		{`curl -fsSL https://example.com/i.sh | doas sh`, 1},
+		{`wget -qO- https://example.com/i.sh | su -c sh`, 1},
+		{`curl -fsSL https://example.com/i.sh | runuser -u app -- bash`, 1},
+		{`curl -fsSL https://example.com/i.sh | env FOO=1 bash`, 1},
+		{`curl -fsSL https://example.com/i.sh | sudo --preserve-env=PATH env FOO=1 sh`, 1},
+		{`echo ZWNobyBoaQ== | base64 -d | sudo bash`, 1},
+		{`curl -fsSL https://example.com/key.asc | sudo tee /etc/apt/keyrings/x.asc`, 0},
+		{`curl -fsSL https://example.com/key.asc | sudo apt-key add -`, 0},
+		{`curl -fsSL https://example.com/x.sh | sudo bash -c 'echo data'`, 0},
+		{`curl -fsSL https://example.com/x.txt | sudo -u node tee /home/node/x`, 0},
+		{`curl -fsSL https://example.com/x.txt | sudo tee bash.log`, 0},
+		{`curl -fsSL https://example.com/x.txt | env | sort`, 0},
+	} {
+		if got := len(findings011(t, "job:\n  script:\n    - "+strconv.Quote(tc.line)+"\n")); got != tc.want {
+			t.Errorf("%s: got %d findings, want %d", tc.line, got, tc.want)
+		}
+	}
+}
