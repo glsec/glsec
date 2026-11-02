@@ -42,6 +42,8 @@ func TestGL085_Lines(t *testing.T) {
 		// untrusted text in the prompt, quoted or not
 		{`claude -p "Review MR: $CI_MERGE_REQUEST_TITLE"`, finding.Warn},
 		{`gemini -p "${AI_FLOW_INPUT}"`, finding.Warn},
+		{`gemini -p "$CHAT_INPUT"`, finding.Warn},
+		{`claude -p "${CI_RELEASE_NAME}"`, finding.Warn},
 		{`copilot --prompt "$CI_COMMIT_MESSAGE"`, finding.Warn},
 		// both
 		{`claude -p "Review: $CI_MERGE_REQUEST_DESCRIPTION" --dangerously-skip-permissions`, finding.Error},

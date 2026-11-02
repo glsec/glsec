@@ -475,6 +475,32 @@ func TestGL002_NewUserControlledVars(t *testing.T) {
 	}
 }
 
+func TestGL002_ChatAndReleaseInput(t *testing.T) {
+	for _, tc := range []struct {
+		name, line, source string
+		want               int
+	}{
+		{"chat eval", `eval "./deploy.sh $CHAT_INPUT"`, "", 1},
+		{"release shell", `sh -c "notify --title $CI_RELEASE_NAME"`, "", 1},
+		{"chat unquoted", `./deploy.sh $CHAT_INPUT`, "ChatOps", 1},
+		{"release unquoted", `./notify.sh ${CI_RELEASE_NAME}`, "release", 1},
+		{"chat quoted", `./deploy.sh "$CHAT_INPUT"`, "", 0},
+		{"release quoted", `./notify.sh "$CI_RELEASE_NAME"`, "", 0},
+		{"unrelated variable", `echo $TRIGGER_PAYLOAD`, "", 0},
+		{"longer name", `echo $CHAT_INPUT_EXTRA`, "", 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := findings002(t, "job:\n  script:\n    - "+strconv.Quote(tc.line)+"\n")
+			if len(f) != tc.want {
+				t.Fatalf("got %d findings, want %d: %v", len(f), tc.want, f)
+			}
+			if tc.want > 0 && (f[0].Severity != finding.Warn || !strings.Contains(f[0].Message, tc.source)) {
+				t.Errorf("unexpected finding: %+v", f[0])
+			}
+		})
+	}
+}
+
 func TestGL002_NoWordSplitting(t *testing.T) {
 	for _, tc := range []struct {
 		script string
