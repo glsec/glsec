@@ -112,7 +112,7 @@ Gates bypassed, runners untrusted, or downstream pipelines outside access contro
 | [GL071](rules/GL071.md) | `warn`  | Manual approval gate before a production deploy without `allow_failure: false` — optional by default, so the pipeline can deploy without it being triggered |
 | [GL074](rules/GL074.md) | `warn`  | Tautological (always-true) `rules:if` condition — the gate is a no-op and the job runs in every context it was meant to restrict |
 | [GL055](rules/GL055.md) | `warn`  | `DOCKER_HOST` points at the host Docker socket (`/var/run/docker.sock`) — full control of the runner's Docker daemon |
-| [GL080](rules/GL080.md) | `warn`  | Sensitive/deploy job with no pipeline-source guard (no `rules:`/`only:` or a `rules:` with no `if:`) — runs on every source including fork MRs |
+| [GL080](rules/GL080.md) | `warn`  | Sensitive/deploy job with no pipeline-source guard (no `rules:`/`only:` or a `rules:` with no `if:`) — runs on every source including fork MRs; or a production deploy/package publish without `environment:` that runs only in MR pipelines |
 | [GL081](rules/GL081.md) | `warn`  | Job issues an OIDC `id_tokens:` credential or uses `identity: google_cloud` on an unrestricted pipeline source — any branch or merge request can get cloud credentials (GitLab ≥ 15.7) |
 | [GL082](rules/GL082.md) | `warn`  | Managed security scan switched off by CI/CD variable (`SAST_DISABLED`, `SECRET_DETECTION_DISABLED`, …) — the template's jobs never run |
 | [GL089](rules/GL089.md) | `warn`  | Renovate runs with autodiscovery and no filter — the bot works on every project its token can reach |

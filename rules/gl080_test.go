@@ -381,3 +381,203 @@ func TestGL080_UnresolvedReferenceRules(t *testing.T) {
 		t.Errorf("resolved reference to a condition-less rule: got %v, want one finding", f)
 	}
 }
+
+func TestGL080_MergeRequestOnlyProduction(t *testing.T) {
+	for _, tc := range []struct {
+		name, yaml string
+		want       int
+	}{
+		{"deploy_prod on MR to master", `
+deploy_prod:
+  stage: deploy
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "master"
+  before_script:
+    - cat "$PROD_SSH" | ssh-add -
+  script:
+    - scp build.tgz deploy@prod.example.invalid:.
+`, 1},
+		{"only: merge_requests, live in the stage", `
+release:
+  stage: go-live
+  only: [merge_requests]
+  script:
+    - ./release.sh
+`, 1},
+		{"MR IID gate with workflow admitting MRs", `
+workflow:
+  rules:
+    - if: $CI_MERGE_REQUEST_IID
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+deploy-production:
+  stage: deploy
+  rules:
+    - if: $CI_MERGE_REQUEST_IID
+  script:
+    - ./deploy.sh
+`, 1},
+		{"npm publish from MR pipelines", `
+publish:
+  stage: publish
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  variables:
+    NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
+  script:
+    - npm publish --tag next
+`, 1},
+		{"twine upload to PyPI from MR pipelines", `
+pypi:
+  stage: deploy
+  rules:
+    - if: $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH
+  script:
+    - twine upload dist/*
+`, 1},
+		{"no production signal", `
+deploy_review:
+  stage: deploy
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  script:
+    - ./deploy.sh
+`, 0},
+		{"publish_preview without publish command", `
+publish_preview:
+  stage: deploy
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  script:
+    - ./upload-preview.sh
+`, 0},
+		{"preprod is not production", `
+deploy-preprod:
+  stage: deploy
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  script:
+    - ./deploy.sh
+`, 0},
+		{"pre-prod is not production", `
+deploy-pre-prod:
+  stage: deploy
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  script:
+    - ./deploy.sh
+`, 0},
+		{"rule also admits the default branch", `
+deploy_prod:
+  stage: deploy
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  script:
+    - ./deploy.sh
+`, 0},
+		{"MR rule is when: never, then a branch rule", `
+deploy_prod:
+  stage: deploy
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      when: never
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  script:
+    - ./deploy.sh
+`, 0},
+		{"production environment is GL013's", `
+deploy_prod:
+  stage: deploy
+  environment: production
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  script:
+    - ./deploy.sh
+`, 0},
+		{"TestPyPI upload", `
+pypi:
+  stage: deploy
+  rules:
+    - if: $CI_MERGE_REQUEST_IID
+  script:
+    - twine upload --repository testpypi dist/*
+`, 0},
+		{"GitLab package registry via job token", `
+publish:
+  stage: deploy
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  variables:
+    TWINE_PASSWORD: $CI_JOB_TOKEN
+    TWINE_USERNAME: gitlab-ci-token
+  script:
+    - twine upload --repository-url "$CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/pypi" dist/*
+`, 0},
+		{"dry-run publish", `
+publish:
+  stage: deploy
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  script:
+    - npm publish --dry-run
+`, 0},
+		{"TestPyPI URL in variables", `
+pypi:
+  stage: deploy
+  rules:
+    - if: $CI_MERGE_REQUEST_IID
+  variables:
+    TWINE_REPOSITORY_URL:
+      value: https://test.pypi.org/legacy/
+  script:
+    - twine upload dist/*
+`, 0},
+		{"workflow with a catch-all rule admits MRs", `
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+      when: never
+    - if: $CI_COMMIT_TAG
+    - when: always
+deploy_prod:
+  stage: deploy
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  script:
+    - ./deploy.sh
+`, 1},
+		{"workflow rule from an included !reference admits MRs", `
+workflow:
+  rules:
+    - if: $CI_COMMIT_TAG
+    - !reference [.included, rules]
+deploy_prod:
+  stage: deploy
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  script:
+    - ./deploy.sh
+`, 1},
+		{"workflow keeps MR pipelines out", `
+workflow:
+  rules:
+    - if: $CI_COMMIT_BRANCH
+deploy_prod:
+  stage: deploy
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  script:
+    - ./deploy.sh
+`, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := findings080(t, tc.yaml)
+			if len(f) != tc.want {
+				t.Fatalf("got %d findings, want %d: %+v", len(f), tc.want, f)
+			}
+			if tc.want == 1 && !strings.Contains(f[0].Message, "runs only in merge request pipelines") {
+				t.Errorf("unexpected message: %s", f[0].Message)
+			}
+		})
+	}
+}

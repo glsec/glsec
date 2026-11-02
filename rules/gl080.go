@@ -5,6 +5,7 @@ package rules
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -23,14 +24,17 @@ func (r *gl080) Check(doc *yaml.Node, file string) []finding.Finding {
 
 	// A restricting top-level workflow:rules gates every job's pipeline source,
 	// so no job needs its own guard. Suppress conservatively: any workflow:rules
-	// carrying an if: condition is treated as restricting the source.
-	if workflowRestrictsSource(mapping) {
+	// carrying an if: condition is treated as restricting the source. It does
+	// not change which jobs run only in merge request pipelines (#1142).
+	wfRestricts := workflowRestrictsSource(mapping)
+	mrPipelines := !wfRestricts || workflowAdmitsMR(mapping)
+	if wfRestricts && !mrPipelines {
 		return nil
 	}
 
 	in := NewInheritance(doc)
 	var findings []finding.Finding
-	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
+	parser.EachJob(doc, func(name *yaml.Node, own *yaml.Node) {
 		// Hidden jobs (names starting with ".") are templates GitLab never runs.
 		if strings.HasPrefix(name.Value, ".") {
 			return
@@ -38,10 +42,10 @@ func (r *gl080) Check(doc *yaml.Node, file string) []finding.Finding {
 		// A base in another file may hold the guard: skip the job rather than
 		// report a guard that is present but invisible here. A chain within
 		// this file is merged in.
-		if !in.ExtendsResolved(job) || in.IncludedOverride(job) {
+		if !in.ExtendsResolved(own) || in.IncludedOverride(own) {
 			return
 		}
-		job = in.Effective(job)
+		job := in.Effective(own)
 		if !gl080Sensitive(name.Value, job) {
 			return
 		}
@@ -51,20 +55,123 @@ func (r *gl080) Check(doc *yaml.Node, file string) []finding.Finding {
 			return
 		}
 		state := jobGuardState(job)
-		if state == guardEffective {
+		msg := ""
+		switch {
+		case state != guardEffective && !wfRestricts:
+			msg = gl080Message(name.Value, state, jobManualOnly(job))
+		case state == guardEffective && mrPipelines && gl080MROnlyProduction(in, name.Value, own, job):
+			msg = fmt.Sprintf(
+				"sensitive job %q runs only in merge request pipelines — it deploys or publishes the MR's source commit before anyone merged it, and to work there its credentials can't be protected variables, so every branch can read them; restrict the job to the protected branch ($CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH) or to tags",
+				name.Value,
+			)
+		default:
 			return
 		}
 		findings = append(findings, finding.Finding{
 			RuleID:   "GL080",
 			Severity: finding.Warn,
 			Job:      name.Value,
-			Message:  gl080Message(name.Value, state, jobManualOnly(job)),
+			Message:  msg,
 			File:     file,
 			Line:     name.Line,
 			Col:      name.Column,
 		})
 	})
 	return findings
+}
+
+// prodNameRe matches prod, production or live as a word of a job or stage
+// name: deploy_prod, release-live, prod:deploy. preprod and pre-prod don't
+// count.
+var prodNameRe = regexp.MustCompile(`(?:^|[^a-z0-9])(?:prod|production|live)(?:[^a-z]|$)`)
+
+// testRegistryRe matches a publish to a test index or to the project's own
+// GitLab package registry, which an MR build may be meant for.
+var testRegistryRe = regexp.MustCompile(`(?i)test\.pypi\.org|testpypi|CI_API_V4_URL|CI_SERVER_URL|CI_JOB_TOKEN|--dry-run`)
+
+// gl080MROnlyProduction reports a job without environment: that runs only in
+// merge request pipelines and deploys to production by its name or publishes
+// a package to a public registry (#1142). A job with an environment: is
+// GL013's: production there, a review app otherwise.
+func gl080MROnlyProduction(in *Inheritance, name string, own, job *yaml.Node) bool {
+	if parser.FindKey(job, "environment") != nil || !runsOnlyInMRPipelines(in, own) {
+		return false
+	}
+	hay := strings.ToLower(name) + " " + jobStageName(job)
+	for _, m := range prodNameRe.FindAllStringIndex(hay, -1) {
+		before := hay[:m[0]+1]
+		if !strings.HasSuffix(before, "pre-") && !strings.HasSuffix(before, "pre_") && !strings.HasSuffix(before, "non-") && !strings.HasSuffix(before, "non_") {
+			return true
+		}
+	}
+	vars := parser.FindKey(job, "variables")
+	for _, key := range []string{"before_script", "script"} {
+		block := parser.FindKey(job, key)
+		if !isScriptList(block) {
+			continue
+		}
+		for _, item := range block.Content {
+			if item.Kind != yaml.ScalarNode || !mentionsPublish(item.Value) {
+				continue
+			}
+			for _, cmd := range shellCommands(item.Value) {
+				if testRegistryRe.MatchString(cmd.text) {
+					continue
+				}
+				words := withoutSudo(commandWords(cmd.text))
+				for _, eco := range lifecycleEcosystems {
+					if eco.publishes(words) && !publishesToTestRegistry(vars) {
+						return true
+					}
+				}
+			}
+		}
+	}
+	return false
+}
+
+// publishesToTestRegistry reports a variables: block that points the publish
+// tools at a test index or the GitLab package registry.
+func publishesToTestRegistry(vars *yaml.Node) bool {
+	if vars == nil || vars.Kind != yaml.MappingNode {
+		return false
+	}
+	for i := 1; i < len(vars.Content); i += 2 {
+		v := vars.Content[i]
+		if v.Kind == yaml.MappingNode {
+			v = parser.FindKey(v, "value")
+		}
+		if v != nil && v.Kind == yaml.ScalarNode && testRegistryRe.MatchString(v.Value) {
+			return true
+		}
+	}
+	return false
+}
+
+// workflowAdmitsMR reports whether workflow:rules, which
+// workflowRestrictsSource found, can let a merge request pipeline run: a rule
+// without if:, or one that tests a merge request or neither the branch, the
+// tag nor the pipeline source.
+func workflowAdmitsMR(mapping *yaml.Node) bool {
+	rules := parser.FindKey(parser.FindKey(mapping, "workflow"), "rules")
+	for _, item := range rules.Content {
+		if item.Kind != yaml.MappingNode {
+			return true
+		}
+		if ruleExcludes(item) {
+			continue
+		}
+		ifNode := parser.FindKey(item, "if")
+		if ifNode == nil || ifNode.Kind != yaml.ScalarNode {
+			return true
+		}
+		e := ifNode.Value
+		if strings.Contains(e, "merge_request") || strings.Contains(e, "CI_MERGE_REQUEST_") ||
+			!branchOrTagRe.MatchString(e) && !strings.Contains(e, "CI_PIPELINE_SOURCE") {
+			return true
+		}
+	}
+	return false
 }
 
 // gl080DeployKeywords are the narrow set of job/stage name fragments that
