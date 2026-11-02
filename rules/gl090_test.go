@@ -327,13 +327,13 @@ publish:
 		{"--only-binary :all:", `
 publish:
   script:
-    - pip install --only-binary :all: -r requirements.txt
+    - 'pip install --only-binary :all: -r requirements.txt'
     - twine upload dist/*
 `, 0},
 		{"--only-binary=:all:", `
 publish:
   script:
-    - pip install --only-binary=:all: -r requirements.txt
+    - 'pip install --only-binary=:all: -r requirements.txt'
     - twine upload dist/*
 `, 0},
 		{"uv sync --no-build", `
@@ -390,6 +390,32 @@ test:
   script:
     - poetry install
     - poetry run pytest
+`, 0},
+		{"uv pip sync + uv publish", `
+publish:
+  script:
+    - uv pip sync requirements.txt
+    - uv publish
+`, 1},
+		{"--only-binary for one package only", `
+publish:
+  script:
+    - pip install --only-binary numpy -r requirements.txt
+    - twine upload dist/*
+`, 1},
+		{"pip download installs nothing", `
+publish:
+  script:
+    - pip download -r requirements.txt -d wheels
+    - twine upload dist/*
+`, 0},
+		{"POETRY_INSTALLER_ONLY_BINARY variable", `
+publish:
+  variables:
+    POETRY_INSTALLER_ONLY_BINARY: "true"
+  script:
+    - poetry install
+    - poetry publish
 `, 0},
 		{"uv publish --dry-run", `
 package:
