@@ -278,7 +278,7 @@ func withoutSudo(words []string) []string {
 		} else {
 			valueOptions := "CDgpRrtTUu"
 			if wrapper == "doas" {
-				valueOptions = "uC"
+				valueOptions = "auC"
 			}
 			for i := 1; i < len(option); i++ {
 				if strings.ContainsRune(valueOptions, rune(option[i])) {

@@ -110,6 +110,8 @@ func TestWithoutSudo(t *testing.T) {
 		{"doas -n npm ci", "npm ci"},
 		{"doas -C config npm ci", "npm ci"},
 		{"doas -unode npm ci", "npm ci"},
+		{"doas -a bsdauth npm ci", "npm ci"},
+		{"doas -nu node npm ci", "npm ci"},
 	} {
 		got := strings.Join(withoutSudo(strings.Fields(tc.in)), " ")
 		if got != tc.want {
