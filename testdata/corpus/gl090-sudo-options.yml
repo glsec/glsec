@@ -1,0 +1,5 @@
+# #1157: sudo options must not hide the install command from GL090.
+publish:
+  script:
+    - sudo -Hu node npm ci
+    - npm publish

@@ -231,6 +231,13 @@ func TestGL090_ReportsInstallLine(t *testing.T) {
 	}
 }
 
+func TestGL090_SudoCombinedOptions(t *testing.T) {
+	f := findings090(t, "publish:\n  script:\n    - sudo -Hu node npm ci\n    - npm publish\n")
+	if len(f) != 1 {
+		t.Fatalf("expected one finding, got %v", f)
+	}
+}
+
 func TestGL090_Python(t *testing.T) {
 	for _, tc := range []struct {
 		name, yaml string
