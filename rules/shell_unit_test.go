@@ -95,11 +95,46 @@ func TestWithoutSudo(t *testing.T) {
 		{"sudo env -i PATH=/usr/bin curl x", "curl x"},
 		{"sudo -u app HOME=/srv make", "make"},
 		{"sudo -E env make", "make"},
+		{"sudo -Hu node npm ci", "npm ci"},
+		{"sudo -iu node npm ci", "npm ci"},
+		{"sudo -su node npm ci", "npm ci"},
+		{"sudo -HE npm ci", "npm ci"},
+		{"sudo -uuser npm ci", "npm ci"},
+		{"sudo -E -- npm ci", "npm ci"},
+		{"sudo --user node npm ci", "npm ci"},
+		{"sudo --user=node npm ci", "npm ci"},
+		{"sudo -T 30 npm ci", "npm ci"},
+		{"sudo -R /chroot npm ci", "npm ci"},
+		{"sudo -- npm ci", "npm ci"},
+		{"doas -u node npm ci", "npm ci"},
+		{"doas -n npm ci", "npm ci"},
+		{"doas -C config npm ci", "npm ci"},
+		{"doas -unode npm ci", "npm ci"},
+		{"doas -a bsdauth npm ci", "npm ci"},
+		{"doas -nu node npm ci", "npm ci"},
 	} {
 		got := strings.Join(withoutSudo(strings.Fields(tc.in)), " ")
 		if got != tc.want {
 			t.Errorf("withoutSudo(%q) = %q, want %q", tc.in, got, tc.want)
 		}
+	}
+}
+
+func TestWithoutSudoValueOptions(t *testing.T) {
+	for _, option := range []string{"-C", "-D", "-g", "-p", "-R", "-r", "-t", "-T", "-U", "-u", "--user", "--group", "--chdir", "--prompt", "--chroot", "--role", "--type", "--command-timeout", "--other-user", "--close-from", "--host"} {
+		t.Run(option, func(t *testing.T) {
+			got := strings.Join(withoutSudo([]string{"sudo", option, "value", "npm", "ci"}), " ")
+			if got != "npm ci" {
+				t.Errorf("got %q, want npm ci", got)
+			}
+		})
+	}
+}
+
+func TestWithoutSudoEmptyPrompt(t *testing.T) {
+	got := strings.Join(withoutSudo(shellWords(`sudo -p '' npm ci`)), " ")
+	if got != "npm ci" {
+		t.Fatalf("got %q, want npm ci", got)
 	}
 }
 

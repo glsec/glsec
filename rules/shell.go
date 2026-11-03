@@ -254,16 +254,39 @@ func commandName(words []string) string {
 	return strings.TrimSuffix(path.Base(words[0]), ".exe")
 }
 
-// withoutSudo drops a leading sudo and its options, so the words start at the
-// command sudo runs.
+// withoutSudo drops a leading sudo or doas and its options.
 func withoutSudo(words []string) []string {
-	if commandName(words) != "sudo" {
+	wrapper := commandName(words)
+	if wrapper != "sudo" && wrapper != "doas" {
 		return words
 	}
 	words = words[1:]
 	for len(words) > 0 && strings.HasPrefix(words[0], "-") {
-		takesValue := words[0] == "-u" || words[0] == "-g" || words[0] == "-C" || words[0] == "-D"
+		option := words[0]
 		words = words[1:]
+		if option == "--" {
+			break
+		}
+		takesValue := false
+		if strings.HasPrefix(option, "--") {
+			if wrapper == "sudo" && !strings.Contains(option, "=") {
+				switch option {
+				case "--user", "--group", "--chdir", "--prompt", "--chroot", "--role", "--type", "--command-timeout", "--other-user", "--close-from", "--host":
+					takesValue = true
+				}
+			}
+		} else {
+			valueOptions := "CDgpRrtTUu"
+			if wrapper == "doas" {
+				valueOptions = "auC"
+			}
+			for i := 1; i < len(option); i++ {
+				if strings.ContainsRune(valueOptions, rune(option[i])) {
+					takesValue = i == len(option)-1
+					break
+				}
+			}
+		}
 		if takesValue && len(words) > 0 {
 			words = words[1:]
 		}
