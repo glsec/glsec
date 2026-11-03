@@ -1,0 +1,9 @@
+# #1136: ChatOps arguments and release names are user-controlled, but quoted arguments are safe.
+chatops:
+  script:
+    - eval "./deploy.sh $CHAT_INPUT"
+    - ./deploy.sh "$CHAT_INPUT"
+release:
+  script:
+    - sh -c "notify --title $CI_RELEASE_NAME"
+    - ./notify.sh "$CI_RELEASE_NAME"

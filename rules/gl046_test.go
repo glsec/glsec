@@ -60,6 +60,17 @@ warm-cache:
 	}
 }
 
+func TestGL046_ChatAndReleaseCacheKeys(t *testing.T) {
+	for _, v := range []string{"CHAT_INPUT", "CI_RELEASE_NAME"} {
+		t.Run(v, func(t *testing.T) {
+			yaml := "job:\n  rules:\n    - if: $CI_COMMIT_REF_PROTECTED == \"true\"\n  cache:\n    key: $" + v + "\n    unprotect: true\n    paths: [.cache/]\n  script: [make]\n"
+			if f := findings046(t, yaml); len(f) != 1 || f[0].Severity != finding.Warn {
+				t.Errorf("expected a warning for a shared user-controlled cache key, got %v", f)
+			}
+		})
+	}
+}
+
 func TestGL046_FilesOnlyKeyNoFinding(t *testing.T) {
 	f := findings046(t, `
 build:

@@ -53,6 +53,10 @@ var userControlledVars = []string{
 	"CI_CONFIG_REF_URI",
 	// Free text on tag pipelines, the same trust as CI_COMMIT_TAG_MESSAGE.
 	"CI_RELEASE_DESCRIPTION",
+	// The release author chooses the free-text release name.
+	"CI_RELEASE_NAME",
+	// ChatOps slash-command arguments are supplied by the caller.
+	"CHAT_INPUT",
 	// GitLab Duo flows: the comment that triggered the flow, and the JSON
 	// context of the merge request, issue or epic (diff and comments).
 	"AI_FLOW_INPUT",
@@ -142,6 +146,10 @@ func whoSets(name string) string {
 		return "taken from the profile of the user who started the pipeline"
 	case strings.HasPrefix(name, "AI_FLOW_"):
 		return "taken from the comment and merge request or issue that triggered the flow"
+	case name == "CHAT_INPUT":
+		return "supplied by the ChatOps command caller"
+	case name == "CI_RELEASE_NAME":
+		return "chosen by the release author"
 	case strings.Contains(name, "MERGE_REQUEST") || strings.Contains(name, "PULL_REQUEST"):
 		return "set by the merge request author"
 	case strings.Contains(name, "MESSAGE") || strings.Contains(name, "TITLE") || strings.Contains(name, "DESCRIPTION") || strings.Contains(name, "AUTHOR"):
