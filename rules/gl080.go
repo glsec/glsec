@@ -80,11 +80,6 @@ func (r *gl080) Check(doc *yaml.Node, file string) []finding.Finding {
 	return findings
 }
 
-// prodNameRe matches prod, production or live as a word of a job or stage
-// name: deploy_prod, release-live, prod:deploy. preprod and pre-prod don't
-// count.
-var prodNameRe = regexp.MustCompile(`(?:^|[^a-z0-9])(?:prod|production|live)(?:[^a-z]|$)`)
-
 // testRegistryRe matches a publish to a test index or to the project's own
 // GitLab package registry, which an MR build may be meant for.
 var testRegistryRe = regexp.MustCompile(`(?i)test\.pypi\.org|testpypi|CI_API_V4_URL|CI_SERVER_URL|CI_JOB_TOKEN|--dry-run`)
@@ -97,12 +92,8 @@ func gl080MROnlyProduction(in *Inheritance, name string, own, job *yaml.Node) bo
 	if parser.FindKey(job, "environment") != nil || !runsOnlyInMRPipelines(in, own) {
 		return false
 	}
-	hay := strings.ToLower(name) + " " + jobStageName(job)
-	for _, m := range prodNameRe.FindAllStringIndex(hay, -1) {
-		before := hay[:m[0]+1]
-		if !strings.HasSuffix(before, "pre-") && !strings.HasSuffix(before, "pre_") && !strings.HasSuffix(before, "non-") && !strings.HasSuffix(before, "non_") {
-			return true
-		}
+	if productionName(name, false) || productionName(jobStageName(job), false) {
+		return true
 	}
 	vars := parser.FindKey(job, "variables")
 	for _, key := range []string{"before_script", "script"} {

@@ -35,6 +35,20 @@ deploy-prod:
 	}
 }
 
+func TestGL080_NonProductionEnvironmentNotOwnedByGL013(t *testing.T) {
+	f := findings080(t, "deploy:\n  stage: deploy\n  environment: non-prod\n  script: [./deploy.sh]\n")
+	if len(f) != 1 {
+		t.Fatalf("expected one GL080 finding, got %v", f)
+	}
+}
+
+func TestGL080_ProductionNameAfterNonProductionWord(t *testing.T) {
+	f := findings080(t, "deploy_non_prod_live:\n  stage: deploy\n  rules:\n    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\"\n  script: [./deploy.sh]\n")
+	if len(f) != 1 {
+		t.Fatalf("expected one finding for live, got %v", f)
+	}
+}
+
 func TestGL080_ManualOnly_FlaggedWithManualWording(t *testing.T) {
 	f := findings080(t, `
 deploy-dev-manual:

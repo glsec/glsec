@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"unicode"
 
 	"github.com/glsec/glsec/internal/finding"
 	"github.com/glsec/glsec/internal/parser"
@@ -18,11 +19,6 @@ type gl013 struct{}
 var GL013 = &gl013{}
 
 func (r *gl013) ID() string { return "GL013" }
-
-// prodKeywords identifies environment names that represent production-like targets.
-var prodKeywords = []string{
-	"production", "prod", "live", "staging",
-}
 
 // prodTiers are environment:deployment_tier values treated as production-like,
 // matching the name-keyword semantics (which also include staging).
@@ -172,8 +168,7 @@ func isProductionOnly(envName, tier string) bool {
 	if tier != "" {
 		return false
 	}
-	lower := strings.ToLower(envName)
-	return !strings.Contains(lower, "staging") && (strings.Contains(lower, "prod") || strings.Contains(lower, "live"))
+	return !hasNameWord(envName, "staging") && productionName(envName, false)
 }
 
 // deploysToEnvironment reports whether the environment: value deploys: an
@@ -322,11 +317,39 @@ func extractEnvName(node *yaml.Node) string {
 }
 
 func isProdEnv(name string) bool {
-	lower := strings.ToLower(name)
-	for _, kw := range prodKeywords {
-		if strings.Contains(lower, kw) {
+	return hasNameWord(name, "staging") || productionName(name, true)
+}
+
+func nameWords(name string) []string {
+	return strings.FieldsFunc(strings.ToLower(name), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	})
+}
+
+func hasNameWord(name, word string) bool {
+	for _, part := range nameWords(name) {
+		if part == word {
 			return true
 		}
+	}
+	return false
+}
+
+// productionName matches whole name components. Pre-production counts for
+// environment classification but not as an MR-only production deployment.
+func productionName(name string, includePre bool) bool {
+	words := nameWords(name)
+	for i, word := range words {
+		if includePre && (word == "preprod" || word == "preproduction") {
+			return true
+		}
+		if word != "prod" && word != "production" && word != "live" {
+			continue
+		}
+		if i > 0 && (words[i-1] == "non" || (!includePre && words[i-1] == "pre")) {
+			continue
+		}
+		return true
 	}
 	return false
 }
