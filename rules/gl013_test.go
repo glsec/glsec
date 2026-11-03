@@ -41,6 +41,7 @@ func TestGL013_ProductionNameBoundaries(t *testing.T) {
 	}{
 		{"production", 1}, {"prod", 1}, {"prod-eu", 1}, {"production/web", 1},
 		{"live", 1}, {"staging", 1}, {"k8s-staging", 1}, {"staging_2", 1},
+		{"prod1", 1}, {"staging2", 1}, {"live01", 1}, {"eu-prod2", 1}, {"k8s", 0},
 		{"preprod", 1}, {"pre-prod", 1}, {"pre-production", 1},
 		{"non-prod", 0}, {"nonprod", 0}, {"non-production", 0}, {"non_production", 0},
 		{"products-review", 0}, {"reproduction", 0}, {"delivery-preview", 0}, {"olive", 0},

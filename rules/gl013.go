@@ -320,10 +320,25 @@ func isProdEnv(name string) bool {
 	return hasNameWord(name, "staging") || productionName(name, true)
 }
 
+// nameWords splits a name into its letter and digit runs, so prod1 and
+// staging2 still contain prod and staging.
 func nameWords(name string) []string {
-	return strings.FieldsFunc(strings.ToLower(name), func(r rune) bool {
-		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
-	})
+	var words []string
+	var cur []rune
+	for _, r := range strings.ToLower(name) {
+		letter, digit := unicode.IsLetter(r), unicode.IsDigit(r)
+		if len(cur) > 0 && (!letter && !digit || unicode.IsDigit(cur[len(cur)-1]) != digit) {
+			words = append(words, string(cur))
+			cur = cur[:0]
+		}
+		if letter || digit {
+			cur = append(cur, r)
+		}
+	}
+	if len(cur) > 0 {
+		words = append(words, string(cur))
+	}
+	return words
 }
 
 func hasNameWord(name, word string) bool {
