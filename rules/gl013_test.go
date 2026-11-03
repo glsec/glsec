@@ -34,6 +34,44 @@ deploy-prod:
 	}
 }
 
+func TestGL013_ProductionNameBoundaries(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		want int
+	}{
+		{"production", 1}, {"prod", 1}, {"prod-eu", 1}, {"production/web", 1},
+		{"live", 1}, {"staging", 1}, {"k8s-staging", 1}, {"staging_2", 1},
+		{"prod1", 1}, {"staging2", 1}, {"live01", 1}, {"eu-prod2", 1}, {"k8s", 0},
+		{"preprod", 1}, {"pre-prod", 1}, {"pre-production", 1},
+		{"non-prod", 0}, {"nonprod", 0}, {"non-production", 0}, {"non_production", 0},
+		{"products-review", 0}, {"reproduction", 0}, {"delivery-preview", 0}, {"olive", 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := findings013(t, "deploy:\n  environment: "+tc.name+"\n  script: [./deploy.sh]\n")
+			if len(f) != tc.want {
+				t.Errorf("got %d findings, want %d: %v", len(f), tc.want, f)
+			}
+		})
+	}
+}
+
+func TestGL013_MROnlyNameBoundaries(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		want int
+	}{
+		{"production", 1}, {"production/web", 1}, {"olive", 0},
+		{"non-prod", 0}, {"preprod", 0}, {"pre-prod", 0}, {"staging", 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			yaml := "deploy:\n  environment: " + tc.name + "\n  rules:\n    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\"\n  script: [./deploy.sh]\n"
+			if f := findings013(t, yaml); len(f) != tc.want {
+				t.Errorf("got %d findings, want %d: %v", len(f), tc.want, f)
+			}
+		})
+	}
+}
+
 func TestGL013_ProdWithRules_NoFinding(t *testing.T) {
 	f := findings013(t, `
 deploy-prod:

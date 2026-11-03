@@ -1,0 +1,7 @@
+# #1151: non-production and unrelated words must not be treated as production.
+deploy-nonprod:
+  environment: non-prod
+  script: [./deploy.sh]
+deploy-production:
+  environment: production/web
+  script: [./deploy.sh]

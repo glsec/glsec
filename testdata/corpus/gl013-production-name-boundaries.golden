@@ -1,0 +1,7 @@
+1 GL053 info -
+2 GL017 warn deploy-nonprod
+2 GL019 warn deploy-nonprod
+2 GL080 warn deploy-nonprod
+5 GL017 warn deploy-production
+5 GL019 warn deploy-production
+6 GL013 warn deploy-production
