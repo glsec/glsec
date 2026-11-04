@@ -41,7 +41,7 @@ Whether the output stays readable for the tools that consume it, and existing fi
 
 | Layer | Protects against | Runs |
 |---|---|---|
-| [Fuzzing](CONTRIBUTING.md#fuzzing) of the parser, the rules and a whole scan | crashes and hangs on hostile or broken YAML | 45 s per target on pull requests and pushes to `main` that change Go code or fixtures, 10 minutes weekly |
+| [Fuzzing](CONTRIBUTING.md#fuzzing) of the parser, the rules, all report formats and small file graphs through the scan path | crashes and hangs on hostile or broken YAML and include graphs | 45 s per target on pull requests and pushes to `main` that change Go code or fixtures, 10 minutes weekly |
 | [Linear scaling test](CONTRIBUTING.md#performance) | a rule whose run time grows faster than the pipeline | every pull request |
 | [Benchmarks](CONTRIBUTING.md#performance), pull request against its base | allocation regressions; time is reported | pull requests that change Go code; history recorded on `main` |
 | Race detector, Linux/macOS/Windows | data races, platform-specific bugs | every pull request |
