@@ -514,9 +514,9 @@ func scanRoot(file string, opt scanOptions) (findings []finding.Finding, suppres
 		return fail(file, valErr)
 	}
 
-	seen := map[string]bool{}
+	seen := map[string]*parser.Document{}
 	if abs, absErr := filepath.Abs(file); absErr == nil {
-		seen[abs] = true
+		seen[abs] = doc
 	}
 	// GitLab resolves trigger:include paths from the repository root, taken
 	// here as the directory of the pipeline being scanned.
@@ -868,7 +868,7 @@ func matchesExclude(file string, patterns []string) bool {
 // without running any rules. The first element is always the root document.
 // Child paths are relative to rootDir at every level, as in GitLab; a missing
 // or unparsable child, or one outside rootDir, is reported to w and skipped.
-func collectDocuments(w io.Writer, doc *parser.Document, rootDir string, excludePaths []string, seen map[string]bool) []*parser.Document {
+func collectDocuments(w io.Writer, doc *parser.Document, rootDir string, excludePaths []string, seen map[string]*parser.Document) []*parser.Document {
 	all := []*parser.Document{doc}
 	pipeline := doc
 	if doc.IncludedBy != nil {
@@ -880,10 +880,17 @@ func collectDocuments(w io.Writer, doc *parser.Document, rootDir string, exclude
 			return
 		}
 		abs, err := filepath.Abs(childPath)
-		if err != nil || seen[abs] {
+		if err != nil {
 			return
 		}
-		seen[abs] = true
+		if known, ok := seen[abs]; ok {
+			// Included again: GitLab merges it again, so its place can change.
+			if included && known != nil && known.IncludedBy == pipeline {
+				doc.Includes = append(doc.Includes, known)
+			}
+			return
+		}
+		seen[abs] = nil
 		// GitLab rejects local includes outside the project; reading them would
 		// let a pipeline file print lines of other files on the runner.
 		if !withinRoot(rootDir, childPath) {
@@ -895,8 +902,10 @@ func collectDocuments(w io.Writer, doc *parser.Document, rootDir string, exclude
 			_, _ = fmt.Fprintf(w, "warning: %s %s: %s\n", kind, output.Sanitize(filepath.ToSlash(childPath)), output.Sanitize(err.Error()))
 			return
 		}
+		seen[abs] = childDoc
 		if included {
 			childDoc.IncludedBy = pipeline
+			doc.Includes = append(doc.Includes, childDoc)
 		}
 		all = append(all, collectDocuments(w, childDoc, rootDir, excludePaths, seen)...)
 	}
@@ -918,17 +927,17 @@ func collectDocuments(w io.Writer, doc *parser.Document, rootDir string, exclude
 	return all
 }
 
-// withPipelineContext gives each file of a pipeline the global keywords and
-// hidden jobs of the files it includes or is included by (#810), so rules see
-// the configuration GitLab merges. A child pipeline is a pipeline of its own.
+// withPipelineContext gives each file of a pipeline the configuration of the
+// files it includes or is included by (#810, #1153, #1183), so rules see what
+// GitLab merges. A child pipeline is a pipeline of its own.
 func withPipelineContext(docs []*parser.Document) []*parser.Document {
-	members := map[*parser.Document][]*parser.Document{}
+	pipelines := map[*parser.Document][]*parser.Document{}
 	for _, d := range docs {
-		if d.IncludedBy != nil {
-			members[d.IncludedBy] = append(members[d.IncludedBy], d)
+		if d.IncludedBy != nil && pipelines[d.IncludedBy] == nil {
+			pipelines[d.IncludedBy] = parser.MergeOrder(d.IncludedBy)
 		}
 	}
-	if len(members) == 0 {
+	if len(pipelines) == 0 {
 		return docs
 	}
 	out := make([]*parser.Document, len(docs))
@@ -937,14 +946,10 @@ func withPipelineContext(docs []*parser.Document) []*parser.Document {
 		if d.IncludedBy != nil {
 			root = d.IncludedBy
 		}
-		group := append([]*parser.Document{root}, members[root]...)
-		others := make([]*parser.Document, 0, len(group)-1)
-		for _, o := range group {
-			if o != d {
-				others = append(others, o)
-			}
+		out[i] = d
+		if pipeline := pipelines[root]; pipeline != nil {
+			out[i] = parser.WithContext(d, pipeline)
 		}
-		out[i] = parser.WithContext(d, others)
 	}
 	return out
 }
