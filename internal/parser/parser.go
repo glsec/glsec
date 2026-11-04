@@ -34,6 +34,10 @@ type Document struct {
 	// in with `include: local` (#810): the pipeline's root document. The file
 	// is a fragment of that pipeline, like a component template.
 	IncludedBy *Document
+	// Includes lists the files this file pulls in with `include: local`, in
+	// the order of its include: list. A file several files include is listed
+	// in each of them; MergeOrder sorts that out.
+	Includes []*Document
 	// DuplicateKeys lists the keys the parser removed because the same
 	// mapping has them again later, in the spec: header and the body.
 	DuplicateKeys []DuplicateKey
