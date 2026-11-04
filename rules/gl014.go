@@ -71,20 +71,24 @@ func (r *gl014) Check(doc *yaml.Node, file string) []finding.Finding {
 		}
 		dotenv := dotenvArtifactNode(artifacts)
 		eachJobScriptLine(job, func(item *yaml.Node) bool {
+			// Comment lines carry no command, and an apostrophe in one would
+			// otherwise open a quote that hides the rest of the block. Blank
+			// them before masking, keeping offsets valid.
+			blanked := blankShellComments(item.Value)
 			// Mask new forms, so a separator inside an echo string such
 			// as `echo "hello; set > f"` is not read as a command boundary. The
 			// target is taken from the original line so a quoted file name still
 			// resolves (#1161).
-			masked := maskShellQuotes(item.Value)
+			masked := maskShellQuotes(blanked)
 			legacyStarts := map[int]bool{}
-			for _, loc := range legacyEnvDumpRe.FindAllStringIndex(item.Value, -1) {
+			for _, loc := range legacyEnvDumpRe.FindAllStringIndex(blanked, -1) {
 				legacyStarts[loc[0]] = true
 			}
 			maskedStarts := map[int]bool{}
 			for _, loc := range envDumpRe.FindAllStringSubmatchIndex(masked, -1) {
 				maskedStarts[loc[0]] = true
 			}
-			for _, m := range envDumpRe.FindAllStringSubmatchIndex(item.Value, -1) {
+			for _, m := range envDumpRe.FindAllStringSubmatchIndex(blanked, -1) {
 				if !legacyStarts[m[0]] && !maskedStarts[m[0]] {
 					continue
 				}

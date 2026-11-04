@@ -41,6 +41,9 @@ var legacyEnvFullDumpRe = regexp.MustCompile(`(?m)(?:^|[;&|(])\s*(?:/usr/bin/|/b
 
 // findEnvFullDump keeps a closing parenthesis as a boundary only when an
 // opening parenthesis precedes it. Otherwise set) and export) are case labels.
+// The same applies to the alternatives of a case label, such as set|get) and
+// export | import): the match ends at the |, and the words after it reach a )
+// without opening a parenthesis.
 // Legacy env/printenv retain their existing boundary behaviour (#1161).
 // The prefix is scanned once across all matches, without parsing shell syntax.
 func findEnvFullDump(text string, depth int) []int {
@@ -55,6 +58,59 @@ func findEnvFullDump(text string, depth int) []int {
 		return m
 	}
 	return nil
+}
+
+// caseAlternativeIn reports whether text reaches a ) at parenthesis depth 0.
+// A case label's alternatives end there; a pipeline with no parenthesis does
+// not.
+func caseAlternativeIn(text string) bool {
+	text = maskShellQuotes(text)
+	depth := 0
+	for _, c := range text {
+		switch c {
+		case '(':
+			depth++
+		case ')':
+			if depth == 0 {
+				return true
+			}
+			depth--
+		}
+	}
+	return false
+}
+
+// blankShellComments replaces every shell comment in s with spaces, keeping
+// the length and the newlines so regex offsets still point into the original
+// text. A # starts a comment where a word can start, outside quotes; a quote
+// inside a comment therefore cannot open a quoted region that hides the rest
+// of a block from quote masking.
+func blankShellComments(s string) string {
+	b := []byte(s)
+	var quote byte
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case quote != 0:
+			if c == '\\' && quote == '"' && i+1 < len(s) {
+				i++
+			} else if c == quote {
+				quote = 0
+			}
+		case c == '\\' && i+1 < len(s):
+			i++
+		case c == '\'' || c == '"':
+			quote = c
+		case c == '#' && (i == 0 || strings.IndexByte(" \t\n;|&()", s[i-1]) >= 0):
+			for ; i < len(s) && s[i] != '\n'; i++ {
+				b[i] = ' '
+			}
+			if i < len(s) {
+				i-- // the newline is not part of the comment
+			}
+		}
+	}
+	return string(b)
 }
 
 func envDumpParenDepth(text string, depth int) int {
@@ -82,18 +138,29 @@ func (r *gl062) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
 	EachScriptLine(doc, file, func(line *yaml.Node, file, job string) {
 		v := line.Value
-		if strings.HasPrefix(strings.TrimSpace(v), "#") {
+		// Drop comments before masking: an apostrophe in a comment would
+		// otherwise open a quote that hides every later line of the block.
+		blanked := blankShellComments(v)
+		if strings.TrimSpace(blanked) == "" {
 			return
 		}
 		// Preserve legacy matching in sh -c payloads. Mask only the new forms,
 		// so `echo "hello; set; done"` is not read as a dump (#1161).
-		if !legacyEnvFullDumpRe.MatchString(v) && !envFullDumpRe.MatchString(maskShellQuotes(v)) {
+		if !legacyEnvFullDumpRe.MatchString(blanked) && !envFullDumpRe.MatchString(maskShellQuotes(blanked)) {
 			return
 		}
-		cmds := shellCommands(v)
+		cmds := shellCommands(blanked)
 		depth := 0
 		for ci, cmd := range cmds {
 			masked := maskShellQuotes(cmd.text)
+			// set|get) is a case label, not a pipeline: the alternatives end
+			// at the ), and the | only separates them. A command that opens a
+			// parenthesis first, such as ( set | sort ), stays a pipeline.
+			if depth == 0 && cmd.piped && ci+1 < len(cmds) &&
+				!strings.Contains(masked, "(") && caseAlternativeIn(cmds[ci+1].text) {
+				depth = envDumpParenDepth(masked, depth)
+				continue
+			}
 			m := findEnvFullDump(masked, depth)
 			depth = envDumpParenDepth(masked, depth)
 			loc := legacyEnvFullDumpRe.FindStringIndex(cmd.text)
