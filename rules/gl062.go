@@ -19,13 +19,28 @@ var GL062 = &gl062{}
 
 func (r *gl062) ID() string { return "GL062" }
 
-// envFullDumpRe matches a standalone `printenv` or `env` command (optionally
-// path-prefixed) with no arguments — i.e. one that dumps the entire
-// environment. The command must sit at a shell command boundary and be
-// followed immediately by end-of-line or a shell separator, so
-// `printenv VAR` and `env VAR=v cmd` are not matched.
+// envFullDumpRe matches a command that prints the entire environment:
+// printenv, bare env (also env -0/--null), cat /proc/self/environ, bare set,
+// export/export -p, declare/typeset bare or with only -p/-x, and the
+// PowerShell env: enumeration (see psEnvDump). The command must sit at a
+// shell command boundary and be followed immediately by end-of-line or a
+// shell separator, so `printenv VAR`, `env VAR=v cmd`, `set -e`,
+// `export FOO=bar`, `declare -a arr=(…)` and `Get-ChildItem env:PATH` are not
+// matched.
 // (?m): in a multi-line block the command can be on any line (#975).
-var envFullDumpRe = regexp.MustCompile(`(?m)(?:^|[;&|(])\s*(?:/usr/bin/|/bin/)?(?:printenv|env)\s*(?:$|[;&|#)])`)
+var envFullDumpRe = regexp.MustCompile(`(?m)(?:^|[;&|(])\s*(?:/usr/bin/|/bin/)?(?:` +
+	`printenv|env(?:\s+(?:-0|--null))?|` +
+	`cat\s+/proc/(?:self|\$\$|[0-9]+)/environ|` +
+	`set|export(?:\s+-p)?|(?:declare|typeset)(?:\s+-[px]+)?|` +
+	psEnvDump +
+	`)\s*(?:$|[;&|#)])`)
+
+// psEnvDump matches a PowerShell command that lists every variable: the
+// Get-ChildItem aliases and Get-Item, with env: or env:* as the whole path
+// argument. The env: drive is case insensitive. `$env:NAME` and
+// `Get-ChildItem env:NAME` print a single variable and are not matched. Used
+// by GL062 and GL014 (#1161).
+const psEnvDump = `(?i:(?:gci|get-childitem|dir|ls|get-item)\s+(?:-path\s+)?env:(?:\*)?)`
 
 func (r *gl062) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
@@ -34,12 +49,14 @@ func (r *gl062) Check(doc *yaml.Node, file string) []finding.Finding {
 		if strings.HasPrefix(strings.TrimSpace(v), "#") {
 			return
 		}
-		if !envFullDumpRe.MatchString(v) {
+		// Mask quoted text first, so a separator inside an echo string such as
+		// `echo "hello; set; done"` is not read as a command boundary (#1161).
+		if !envFullDumpRe.MatchString(maskShellQuotes(v)) {
 			return
 		}
 		cmds := shellCommands(v)
 		for ci, cmd := range cmds {
-			loc := envFullDumpRe.FindStringIndex(cmd.text)
+			loc := envFullDumpRe.FindStringIndex(maskShellQuotes(cmd.text))
 			// Output captured by $(…) or backticks goes to a variable or an
 			// argument, not to the log: X=$(env | grep …), for v in $(env …).
 			if loc == nil || strings.Contains(cmd.text[:loc[1]], "$(") || strings.Contains(cmd.text[:loc[1]], "`") {
@@ -53,7 +70,7 @@ func (r *gl062) Check(doc *yaml.Node, file string) []finding.Finding {
 			if stdoutRedirectRe.MatchString(maskSingleQuoted(cmds[last].text)) {
 				continue
 			}
-			msg := "printenv/env with no arguments dumps every environment variable to the job log, including CI/CD secrets and tokens that may not be reliably masked — print only the specific variables you need"
+			msg := "a command that dumps every environment variable to the job log — printenv, env, set, export -p, declare -p or a PowerShell env: listing — includes CI/CD secrets and tokens that may not be reliably masked; print only the specific variables you need"
 			if cmd.piped && ci+1 < len(cmds) {
 				if pattern, ok := grepPattern(cmds[ci+1].text); ok {
 					if narrowEnvFilter(pattern) {

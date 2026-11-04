@@ -1,0 +1,34 @@
+# #1161: the other spellings of a whole-environment dump are reported, while
+# shell options, assignments, single-variable reads and quoted text stay clean.
+dump-log:
+  script:
+    - set
+    - export -p
+    - declare -p
+    - 'gci env:'
+
+dump-artifact-set:
+  script:
+    - set > vars.env
+  artifacts:
+    paths: [vars.env]
+    expire_in: 1 week
+
+dump-artifact-powershell:
+  script:
+    - 'Get-ChildItem Env: | Format-Table > env.txt'
+  artifacts:
+    paths: [env.txt]
+    expire_in: 1 week
+
+clean:
+  script:
+    - set -euo pipefail
+    - export FOO=bar
+    - declare -a arr
+    - Get-ChildItem env:PATH
+    - 'Get-ChildItem env: | Select-String PATH > path.txt'
+    - 'echo "hello; set; done"'
+  artifacts:
+    paths: [path.txt]
+    expire_in: 1 week
