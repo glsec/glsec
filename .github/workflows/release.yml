@@ -65,3 +65,21 @@ jobs:
       id-token: write # keyless signing of the provenance via Sigstore
       attestations: write # write the attestation to the GitHub attestations API
     uses: $/.github/workflows/build-release.yml
+
+  # A release commit usually changes no Go file, so the push to main doesn't
+  # measure it, and the website's performance chart would stop at the last
+  # backfill. A separate run keeps every release comparable, and a release
+  # published with this job's token wouldn't start a workflow by itself.
+  benchmarks:
+    name: Queue the benchmark of every release
+    needs: release
+    if: ${{ !contains(github.ref_name, '-') }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write # start benchmark-history.yml
+    steps:
+      - name: Start the backfill
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: gh workflow run benchmark-history.yml --repo "$REPO" --ref main -f backfill=true
