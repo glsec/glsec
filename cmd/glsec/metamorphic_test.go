@@ -53,9 +53,9 @@ func TestMetamorphic(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					orig, ok := metamorphicFindings(t, string(src))
+					orig, errOut, ok := metamorphicFindings(t, string(src))
 					if !ok {
-						t.Skip("glsec can't scan the original")
+						t.Fatalf("glsec can't scan the original:\n%s", errOut)
 					}
 					out, err := tr.apply(string(src))
 					if errors.Is(err, errNotApplicable) {
@@ -64,9 +64,9 @@ func TestMetamorphic(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					got, ok := metamorphicFindings(t, out)
+					got, errOut, ok := metamorphicFindings(t, out)
 					if !ok {
-						t.Fatalf("glsec can't scan the rewritten pipeline:\n%s", out)
+						t.Fatalf("glsec can't scan the rewritten pipeline:\n%s\n%s", errOut, out)
 					}
 					got = mapJobs(got, tr.jobName)
 					var unexpected []string
@@ -414,13 +414,13 @@ func (f metamorphicFinding) String() string {
 	return fmt.Sprintf("%s [%s] %s", f.Rule, f.Job, f.Message)
 }
 
-// metamorphicFindings scans src as .gitlab-ci.yml; ok is false on exit 2.
-func metamorphicFindings(t *testing.T, src string) (findings []metamorphicFinding, ok bool) {
+// metamorphicFindings scans src as .gitlab-ci.yml; ok is false on exit 2, with stderr returned.
+func metamorphicFindings(t *testing.T, src string) (findings []metamorphicFinding, stderr string, ok bool) {
 	t.Helper()
-	code, stdout, _ := runCLI(t, map[string]string{".gitlab-ci.yml": src},
+	code, stdout, errOut := runCLI(t, map[string]string{".gitlab-ci.yml": src},
 		"--no-cache", "--no-repo-config", "--format", "json", ".gitlab-ci.yml")
 	if code == 2 {
-		return nil, false
+		return nil, errOut, false
 	}
 	var out struct {
 		Findings []metamorphicFinding `json:"findings"`
@@ -431,7 +431,17 @@ func metamorphicFindings(t *testing.T, src string) (findings []metamorphicFindin
 	for i := range out.Findings {
 		out.Findings[i].Message = position.ReplaceAllString(out.Findings[i].Message, "$1 N")
 	}
-	return out.Findings, true
+	return out.Findings, errOut, true
+}
+
+func TestMetamorphicFindingsExit2PreservesStderr(t *testing.T) {
+	_, errOut, ok := metamorphicFindings(t, "job:\n  script: [unclosed\n")
+	if ok {
+		t.Fatal("expected ok=false for unscannable YAML (exit 2)")
+	}
+	if strings.TrimSpace(errOut) == "" {
+		t.Fatal("expected non-empty stderr message when scan exits 2")
+	}
 }
 
 // position matches the line and column numbers messages mention, which a
