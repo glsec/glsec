@@ -16,10 +16,59 @@ import (
 	"testing"
 	"time"
 
+	"github.com/glsec/glsec/internal/cache"
 	"github.com/glsec/glsec/internal/output"
 	"github.com/glsec/glsec/internal/shellcheck"
 	"github.com/glsec/glsec/rules"
 )
+
+// TestMain lets the compiled test binary act as a portable fake ShellCheck on
+// Linux, macOS, and Windows when GLSEC_FAKE_SHELLCHECK=1 is set (#1184).
+func TestMain(m *testing.M) {
+	if os.Getenv("GLSEC_FAKE_SHELLCHECK") == "1" {
+		switch os.Getenv("FAKE_SC_MODE") {
+		case "bad":
+			_, _ = io.WriteString(os.Stderr, "broken\n")
+			os.Exit(3)
+		case "finding":
+			_, _ = io.WriteString(os.Stdout, `{"comments":[{"line":1,"column":1,"level":"error","code":2086,"message":"Double quote to prevent globbing."}]}`+"\n")
+			os.Exit(1)
+		default:
+			_, _ = io.WriteString(os.Stdout, `{"comments":[]}`+"\n")
+			os.Exit(0)
+		}
+	}
+	os.Exit(m.Run())
+}
+
+func copyFakeShellcheck(t *testing.T, dir, name string) string {
+	t.Helper()
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	dst := filepath.Join(dir, name)
+	srcFile, err := os.Open(exe) //nolint:gosec // G304: test binary path from os.Executable
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = srcFile.Close() }()
+	dstFile, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o700) //nolint:gosec // G302/G304: executable copy in temp dir
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.Copy(dstFile, srcFile); err != nil {
+		_ = dstFile.Close()
+		t.Fatal(err)
+	}
+	if err := dstFile.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return dst
+}
 
 const (
 	cleanPipeline = `workflow:
@@ -638,6 +687,93 @@ func TestRun_FailingShellcheckFailsTheScan(t *testing.T) {
 				t.Errorf("the scan took %s", d)
 			}
 		})
+	}
+}
+
+// #1184: a warm result cache must not hide a ShellCheck failure or stale
+// findings when the selected binary is switched, replaced in place, or removed.
+func TestRun_CacheInvalidatesOnShellcheckBinaryChange(t *testing.T) {
+	files := map[string]string{
+		".glsec.yml":   "shellcheck:\n  enabled: true\n",
+		"disabled.yml": "shellcheck:\n  enabled: false\n",
+		"ci.yml":       "job:\n  script:\n    - echo hello\n",
+	}
+	setupCLI(t, files)
+	t.Setenv("CI", "true")
+	t.Setenv("GLSEC_FAKE_SHELLCHECK", "1")
+
+	binDir := t.TempDir()
+	scGood := copyFakeShellcheck(t, binDir, "sc-good")
+	scBad := copyFakeShellcheck(t, binDir, "sc-bad")
+
+	runCached := func(bin string, extra ...string) (int, string, string) {
+		args := append([]string{"--cache", "--only", "GL001,SC2086", "--format", "json", "--shellcheck-path", bin}, extra...)
+		args = append(args, "ci.yml")
+		var out, errOut bytes.Buffer
+		code := run(args, &out, &errOut)
+		return code, out.String(), errOut.String()
+	}
+
+	// 1. Warm the cache with sc-good and prove a cache entry was created and hit.
+	t.Setenv("FAKE_SC_MODE", "good")
+	if code, _, stderr := runCached(scGood); code != 0 {
+		t.Fatalf("sc-good: exit %d, want 0; stderr:\n%s", code, stderr)
+	}
+	entries, err := os.ReadDir(cache.Dir())
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("expected 1 warm cache entry in %s, got %d (err %v)", cache.Dir(), len(entries), err)
+	}
+	// Flip FAKE_SC_MODE to bad without touching scGood: a cache hit must still exit 0.
+	t.Setenv("FAKE_SC_MODE", "bad")
+	if code, _, stderr := runCached(scGood); code != 0 {
+		t.Fatalf("unchanged sc-good should hit warm cache (exit 0), got exit %d; stderr:\n%s", code, stderr)
+	}
+
+	// 2. Switching --shellcheck-path to sc-bad misses the cache and exits 2.
+	if code, _, stderr := runCached(scBad); code != 2 || !strings.Contains(stderr, "exit status 3: broken") {
+		t.Fatalf("sc-bad after warm cache: exit %d, want 2; stderr:\n%s", code, stderr)
+	}
+
+	// 3. Updating sc-good in place (mtime change) invalidates the cache and exits 2.
+	future := time.Now().Add(3 * time.Second)
+	if err := os.Chtimes(scGood, future, future); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, stderr := runCached(scGood); code != 2 || !strings.Contains(stderr, "exit status 3: broken") {
+		t.Fatalf("replaced sc-good: exit %d, want 2; stderr:\n%s", code, stderr)
+	}
+
+	// 4. Warm cache with a finding (exit 1), remove the binary, and verify no cache hit.
+	t.Setenv("FAKE_SC_MODE", "finding")
+	moreFuture := future.Add(3 * time.Second)
+	if err := os.Chtimes(scGood, moreFuture, moreFuture); err != nil {
+		t.Fatal(err)
+	}
+	if code, stdout, stderr := runCached(scGood); code != 1 || !strings.Contains(stdout, "SC2086") {
+		t.Fatalf("sc-good finding warm: exit %d, want 1; stdout:\n%s\nstderr:\n%s", code, stdout, stderr)
+	}
+	if err := os.Remove(scGood); err != nil {
+		t.Fatal(err)
+	}
+	// With scGood removed while the warm SC2086 entry remains in cache.Dir(),
+	// the scan must miss the cache and skip ShellCheck rather than returning exit 1.
+	if code, stdout, stderr := runCached(scGood); code != 0 || strings.Contains(stdout, "SC2086") {
+		t.Fatalf("removed sc-good must not hit cache: exit %d, stdout:\n%s\nstderr:\n%s", code, stdout, stderr)
+	}
+
+	// 5. With ShellCheck disabled, switching --shellcheck-path keeps the same cache key.
+	if err := cache.Clear(); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, stderr := runCached(scBad, "--config", "disabled.yml"); code != 0 {
+		t.Fatalf("disabled shellcheck warm: exit %d, stderr:\n%s", code, stderr)
+	}
+	if code, _, stderr := runCached(scGood, "--config", "disabled.yml"); code != 0 {
+		t.Fatalf("disabled shellcheck with switched path: exit %d, stderr:\n%s", code, stderr)
+	}
+	entries, err = os.ReadDir(cache.Dir())
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("disabled shellcheck must keep one cache key across --shellcheck-path changes, got %d entries (err %v)", len(entries), err)
 	}
 }
 

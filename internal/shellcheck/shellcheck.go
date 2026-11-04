@@ -55,7 +55,7 @@ var Timeout = 30 * time.Second
 // error (#907): ShellCheck was turned on, so a run without its findings must
 // not pass as clean.
 func Run(doc *yaml.Node, file string, binPath string) ([]finding.Finding, error) {
-	bin, err := resolveBinary(binPath)
+	bin, err := ResolveBinary(binPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "warning: shellcheck: %v — skipping\n", err)
 		return nil, nil
@@ -197,7 +197,9 @@ func withStderr(err error, stderr string) error {
 	return fmt.Errorf("%w: %s", err, msg)
 }
 
-func resolveBinary(path string) (string, error) {
+// ResolveBinary returns the path to the ShellCheck executable that Run will
+// invoke for the configured path, or from PATH when path is empty.
+func ResolveBinary(path string) (string, error) {
 	if path != "" {
 		if _, err := os.Stat(path); err != nil { //nolint:gosec // G703: the path comes from --shellcheck-path or an explicit --config, never from a config glsec found by itself
 			return "", fmt.Errorf("binary not found at %q", path)
