@@ -265,6 +265,39 @@ func readsScriptFromStdin(words []string) bool {
 	return true
 }
 
+// blankShellComments replaces every shell comment in s with spaces, keeping
+// the length and the newlines so regex offsets still point into the original
+// text. A # starts a comment where a word can start, outside quotes; a quote
+// inside a comment therefore cannot open a quoted region that hides the rest
+// of a block from quote masking.
+func blankShellComments(s string) string {
+	b := []byte(s)
+	var quote byte
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case quote != 0:
+			if c == '\\' && quote == '"' && i+1 < len(s) {
+				i++
+			} else if c == quote {
+				quote = 0
+			}
+		case c == '\\' && i+1 < len(s):
+			i++
+		case c == '\'' || c == '"':
+			quote = c
+		case c == '#' && (i == 0 || strings.IndexByte(" \t\n;|&()", s[i-1]) >= 0):
+			for ; i < len(s) && s[i] != '\n'; i++ {
+				b[i] = ' '
+			}
+			if i < len(s) {
+				i-- // the newline is not part of the comment
+			}
+		}
+	}
+	return string(b)
+}
+
 func isShellSpace(c byte) bool { return c == ' ' || c == '\t' }
 
 // blankCaseLabels replaces each case label in a script with spaces, keeping

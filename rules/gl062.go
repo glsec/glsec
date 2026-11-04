@@ -81,8 +81,11 @@ const psEnvDump = `(?i:(?:gci|get-childitem|dir|ls|get-item)\s+(?:-path\s+)?env:
 func (r *gl062) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
 	EachScriptLine(doc, file, func(line *yaml.Node, file, job string) {
-		v := blankCaseLabels(line.Value)
-		if strings.HasPrefix(strings.TrimSpace(v), "#") {
+		// Comments go first: an apostrophe in one would open a quote that
+		// hides every later line of the block, and a block that starts with
+		// one may still run a dump below it (#1176).
+		v := blankCaseLabels(blankShellComments(line.Value))
+		if strings.TrimSpace(v) == "" {
 			return
 		}
 		// Preserve legacy matching in sh -c payloads. Mask only the new forms,
