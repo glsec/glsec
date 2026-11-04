@@ -1,0 +1,132 @@
+# Copyright The glsec Authors
+# SPDX-License-Identifier: Apache-2.0
+#
+# Known attacks behind glsec's rules. cmd/glsec/advisories_test.go checks this
+# file. Wording elsewhere: glsec detects the configuration shape an attack
+# used, it does not protect against the CVE.
+#
+# An attack is listed when it depends on something .gitlab-ci.yml can carry.
+# GitLab server bugs are left out: a linter cannot see them.
+#
+# Keys:
+#   id        CVE, GHSA or campaign name. Entries are sorted by id within their
+#             kind, in the order cve, analogue, campaign.
+#   aliases   other ids of the same advisory
+#   kind      cve       the attack applies to GitLab CI directly
+#             analogue  a GitHub Actions attack, listed as the same attack class
+#                       in GitLab CI, never as detection of that CVE
+#             campaign  a named campaign without one id
+#   product   the affected product
+#   fixed     the first fixed version, when there is one
+#   summary   one short sentence for the website, with no working attack in it
+#   coverage  full, partial or none
+#   rules     rule and severity the fixture testdata/advisories/<id>.yml must
+#             produce; required unless coverage is none
+#   reason    why glsec does not see everything; required unless coverage is full
+#               not-static   needs run-time state a file scan cannot see
+#               no-rule-yet  visible in a file, not reported yet; needs issue
+#               by-design    deliberately not reported; needs note
+#   issue     tracking issue for no-rule-yet
+#   note      one sentence on what is missing
+#   steps     for a campaign: each step with the rules that see it, or a reason
+
+- id: CVE-2021-42574
+  kind: cve
+  product: Unicode
+  summary: "Trojan Source: bidirectional controls make text read differently to a person than to a parser."
+  coverage: full
+  rules:
+    - {rule: GL078, severity: warn}
+
+- id: CVE-2025-10894
+  kind: cve
+  product: Nx
+  summary: "Malicious Nx packages collected credentials and started local AI agents with their approvals disabled."
+  coverage: partial
+  rules:
+    - {rule: GL085, severity: error}
+  reason: not-static
+  note: "glsec reports an agent run with approvals disabled in a pipeline, not the malicious package."
+
+- id: CVE-2026-33634
+  aliases: [GHSA-69fq-xp46-6x23]
+  kind: cve
+  product: Trivy
+  summary: "A malicious Trivy 0.69.4 release reached jobs that pull a moving image tag."
+  coverage: partial
+  rules:
+    - {rule: GL001, severity: error}
+  reason: by-design
+  note: "A version tag such as 0.69.4 is only reported with require_image_digest: true."
+
+- id: CVE-2023-49291
+  aliases: [GHSA-8v8w-v8xg-79rf]
+  kind: analogue
+  product: tj-actions/branch-names
+  fixed: "7.0.7"
+  summary: "A crafted branch name ran as code in a workflow step."
+  coverage: full
+  rules:
+    - {rule: GL002, severity: warn}
+
+- id: CVE-2025-30066
+  aliases: [GHSA-mrrh-fwg8-r2c3]
+  kind: analogue
+  product: tj-actions/changed-files
+  fixed: "46.0.1"
+  summary: "Moved version tags pointed every workflow that used the action at malicious code."
+  coverage: partial
+  rules:
+    - {rule: GL003, severity: error}
+    - {rule: GL041, severity: warn}
+  reason: no-rule-yet
+  issue: 1175
+  note: "An include on a branch is reported, an include on a tag is not, and moving a tag was the attack."
+
+- id: CVE-2025-30154
+  aliases: [GHSA-qmg3-hpqr-gqvc]
+  kind: analogue
+  product: reviewdog/action-setup
+  summary: "A moved version tag pointed workflows that used the action at malicious code."
+  coverage: partial
+  rules:
+    - {rule: GL003, severity: error}
+    - {rule: GL041, severity: warn}
+  reason: no-rule-yet
+  issue: 1175
+  note: "An include on a branch is reported, an include on a tag is not, and moving a tag was the attack."
+
+- id: GHSA-7x29-qqmq-v6qc
+  kind: analogue
+  product: ultralytics/actions
+  fixed: "0.0.3"
+  summary: "A crafted branch name ran as code in a workflow step."
+  coverage: full
+  rules:
+    - {rule: GL002, severity: warn}
+
+- id: Codecov Bash Uploader
+  kind: campaign
+  product: Codecov
+  summary: "An altered uploader script, piped into a shell by CI jobs, sent their environment to the attackers."
+  coverage: partial
+  rules:
+    - {rule: GL011, severity: error}
+  reason: not-static
+  note: "glsec reports the download piped into a shell, not what the script does."
+  steps:
+    - {step: "A job downloads a script and pipes it into a shell.", rules: [GL011]}
+    - {step: "The altered script sends the job's environment out.", reason: not-static}
+
+- id: Shai-Hulud
+  kind: campaign
+  product: npm
+  summary: "A worm spread through install scripts that stole npm tokens and published infected versions."
+  coverage: partial
+  rules:
+    - {rule: GL090, severity: warn}
+  reason: not-static
+  note: "glsec reports install scripts in a job that publishes, not the malicious dependency."
+  steps:
+    - {step: "A job that publishes also runs dependency install scripts.", rules: [GL090]}
+    - {step: "A malicious install script steals the token and publishes.", reason: not-static}
