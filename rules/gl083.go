@@ -252,10 +252,10 @@ var (
 )
 
 // environmentSource reports whether a command fragment produces the job's
-// environment or another process's: a bare env/printenv, /proc/<pid>/environ
-// or /mem, or ps with the e modifier.
+// environment or another process's: a full dump recognised by GL062,
+// /proc/<pid>/environ or /mem, or ps with the e modifier.
 func environmentSource(s string) bool {
-	return envFullDumpRe.MatchString(s) || procSecretRe.MatchString(s) || psEnvRe.MatchString(s)
+	return findEnvFullDump(s, 0) != nil || procSecretRe.MatchString(s) || psEnvRe.MatchString(s)
 }
 
 // environmentExfilKind reports the job's environment, which holds every CI/CD

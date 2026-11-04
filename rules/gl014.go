@@ -34,10 +34,17 @@ const psEnvFormat = `(?:\s*\|\s*(?i:format-table|format-list|out-string)(?:\s+-(
 // start a command, so "cat .env > f", "printenv VAR > f" (a single
 // variable), "set -e > f", "export FOO=bar > f" and "declare -a arr > f"
 // don't match. Group 1 or 2 is the target file.
+// (?m) lets a command start on any line of a block scalar (#1161).
 var envDumpRe = regexp.MustCompile(
-	`(?:(?:^|[\s;&|(])(?:env(?:\s+(?:-0|--null))?|printenv|export\s+-p|` +
+	`(?m)(?:(?:^|[\s;&|(])(?:env(?:\s+(?:-0|--null))?|printenv|export\s+-p|` +
 		`cat\s+/proc/(?:self|\$\$|[0-9]+)/environ)` +
 		`|(?:^|[;&|(])\s*(?:set|export|(?:declare|typeset)(?:\s+-[px]+)?|` + psEnvDump + psEnvFormat + `))\s*` +
+		`(?:>>?\s*(\S+)|\|\s*tee\s+(?:(?:-a|--append)\s+)?(\S+))`)
+
+// Preserve pre-#1161 matches in quoted shell payloads and after comments
+// containing quotes. Masking is only a guard for the newly added forms.
+var legacyEnvDumpRe = regexp.MustCompile(
+	`(?:^|[\s;&|(])(?:env|printenv|export\s+-p|cat\s+/proc/(?:self|\$\$|[0-9]+)/environ)\s*` +
 		`(?:>>?\s*(\S+)|\|\s*tee\s+(?:(?:-a|--append)\s+)?(\S+))`)
 
 // projectDirPrefixRe matches a target written relative to the project
@@ -64,17 +71,21 @@ func (r *gl014) Check(doc *yaml.Node, file string) []finding.Finding {
 		}
 		dotenv := dotenvArtifactNode(artifacts)
 		eachJobScriptLine(job, func(item *yaml.Node) bool {
-			// Mask quoted text first, so a separator inside an echo string such
+			// Mask new forms, so a separator inside an echo string such
 			// as `echo "hello; set > f"` is not read as a command boundary. The
 			// target is taken from the original line so a quoted file name still
 			// resolves (#1161).
 			masked := maskShellQuotes(item.Value)
+			legacyStarts := map[int]bool{}
+			for _, loc := range legacyEnvDumpRe.FindAllStringIndex(item.Value, -1) {
+				legacyStarts[loc[0]] = true
+			}
 			maskedStarts := map[int]bool{}
 			for _, loc := range envDumpRe.FindAllStringSubmatchIndex(masked, -1) {
 				maskedStarts[loc[0]] = true
 			}
 			for _, m := range envDumpRe.FindAllStringSubmatchIndex(item.Value, -1) {
-				if !maskedStarts[m[0]] {
+				if !legacyStarts[m[0]] && !maskedStarts[m[0]] {
 					continue
 				}
 				target := ""
