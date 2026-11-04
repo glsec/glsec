@@ -349,6 +349,17 @@ Then:
 - add a row ``| [GLNNN](rules/GLNNN.md) | `warn` | one-line description |`` to the table of the rule's OWASP category in `docs/rules.md`
 - add the rule ID to the matching row of the category table in `README.md` and raise the "N rules across …" count
 
+### Step 8 — record a known attack
+
+If the rule or a change to it relates to a known attack, or its doc cites a CVE or GHSA, add or update the entry in [`docs/advisories.yml`](docs/advisories.yml); the top of that file explains the keys:
+
+- List an attack when it depends on something `.gitlab-ci.yml` can carry. GitLab server bugs stay out.
+- A GitHub Actions attack is `kind: analogue`: the same attack class in GitLab CI, never detection of that CVE.
+- Add a fixture `testdata/advisories/<id>.yml` with the configuration shape only: inert commands, `example.invalid` hosts, no working payload.
+- Cite the id in `docs/rules/GLNNN.md`, under `## Known attacks`.
+
+Say "glsec detects the configuration shape this attack used", never "protects against CVE-X". `TestAdvisories_*` in `cmd/glsec/advisories_test.go` checks the structure, the fixtures at the listed severity, and both directions of the link to the rule docs.
+
 ## Developer Certificate of Origin
 
 Every commit must be signed off. A sign-off is a line at the end of the commit message:
