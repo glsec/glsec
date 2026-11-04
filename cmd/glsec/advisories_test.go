@@ -35,6 +35,7 @@ type advisoryStep struct {
 type advisory struct {
 	ID       string         `yaml:"id"`
 	Aliases  []string       `yaml:"aliases"`
+	Repo     string         `yaml:"repo"`
 	Kind     string         `yaml:"kind"`
 	Product  string         `yaml:"product"`
 	Fixed    string         `yaml:"fixed"`
@@ -56,6 +57,9 @@ const (
 
 // advisoryIDRe matches the ids a rule doc can cite.
 var advisoryIDRe = regexp.MustCompile(`CVE-\d{4}-\d{4,}|GHSA-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{4}`)
+
+// advisoryRepoRe is the owner/name form of the repo key.
+var advisoryRepoRe = regexp.MustCompile(`^[\w.-]+/[\w.-]+$`)
 
 func loadAdvisories(t *testing.T) []advisory {
 	t.Helper()
@@ -96,6 +100,9 @@ func checkAdvisory(a advisory, known map[string]bool) []string {
 			report("alias " + alias + " is not a CVE or GHSA id")
 		}
 	}
+	if a.Repo != "" && (!advisoryRepoRe.MatchString(a.Repo) || !slices.ContainsFunc(advisoryIDs(a), isGHSA)) {
+		report("repo must be owner/name, on an entry with a GHSA")
+	}
 	bad = append(bad, checkAdvisoryKind(a)...)
 	bad = append(bad, checkAdvisoryCoverage(a)...)
 	bad = append(bad, checkAdvisoryReason(a.Reason, a.Issue, a.Note)...)
@@ -124,6 +131,8 @@ func checkAdvisory(a advisory, known map[string]bool) []string {
 	}
 	return bad
 }
+
+func isGHSA(id string) bool { return strings.HasPrefix(id, "GHSA-") }
 
 func checkAdvisoryKind(a advisory) []string {
 	switch a.Kind {
@@ -257,6 +266,8 @@ func TestAdvisories_StructureCheck(t *testing.T) {
 		"bad id":         func(a *advisory) { a.ID = "CVE-1" },
 		"analogue id":    func(a *advisory) { a.Kind, a.ID = "analogue", "Name" },
 		"bad alias":      func(a *advisory) { a.Aliases = []string{"nope"} },
+		"repo form":      func(a *advisory) { a.Repo, a.Aliases = "nope", []string{"GHSA-aaaa-bbbb-cccc"} },
+		"repo no ghsa":   func(a *advisory) { a.Repo = "owner/name" },
 		"coverage":       func(a *advisory) { a.Coverage = "most" },
 		"full no rules":  func(a *advisory) { a.Rules = nil },
 		"full reason":    func(a *advisory) { a.Reason, a.Note = "not-static", "n." },

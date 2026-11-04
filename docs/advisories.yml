@@ -12,6 +12,8 @@
 #   id        CVE, GHSA or campaign name. Entries are sorted by id within their
 #             kind, in the order cve, analogue, campaign.
 #   aliases   other ids of the same advisory
+#   repo      owner/name of the repository that publishes the GHSA, when it is
+#             not in the GitHub Advisory Database
 #   kind      cve       the attack applies to GitLab CI directly
 #             analogue  a GitHub Actions attack, listed as the same attack class
 #                       in GitLab CI, never as detection of that CVE

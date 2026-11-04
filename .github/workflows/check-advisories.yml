@@ -1,0 +1,79 @@
+name: Check advisories
+
+# Weekly: every CVE and GHSA in docs/advisories.yml must still be valid (#1174).
+# A rejected, withdrawn or unknown id opens an issue, so the entry can be removed
+# or marked and the website stops citing it. A service that could not be asked
+# only fails the run: an outage says nothing about the ids. Not run on pull
+# requests, so this repository's CI doesn't depend on outside services.
+
+on:
+  schedule:
+    - cron: "30 8 * * 1" # 08:30 UTC every Monday
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Print the report instead of opening an issue"
+        type: boolean
+        default: false
+
+permissions: {}
+
+jobs:
+  check:
+    name: Check advisory ids
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write # open the issue
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Check the ids
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+
+          report="$RUNNER_TEMP/advisories.md"
+          # Not go run: it exits 1 for any failure, and exit 2 means no finding.
+          go build -o "$RUNNER_TEMP/advisorycheck" ./cmd/advisorycheck
+          rc=0
+          "$RUNNER_TEMP/advisorycheck" > "$report" || rc=$?
+          cat "$report"
+          cat "$report" >> "$GITHUB_STEP_SUMMARY"
+
+          case "$rc" in
+            0) exit 0 ;;
+            1) ;;
+            *)
+              echo "::error::some ids could not be checked; see the report"
+              exit "$rc"
+              ;;
+          esac
+
+          title="Advisory update: an id in docs/advisories.yml is no longer valid"
+          if [ "${DRY_RUN:-}" = "true" ]; then
+            echo "[dry-run] would open: $title"
+            exit 0
+          fi
+          if [ "$(gh issue list --state open --search "\"$title\" in:title" --json number --jq 'length')" != "0" ]; then
+            echo "an open issue already exists: $title"
+            exit 0
+          fi
+          {
+            cat "$report"
+            echo
+            echo "Remove or mark each entry in \`docs/advisories.yml\`. The rule stays: the configuration can be risky without the advisory."
+            echo
+            echo "Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          } > "$RUNNER_TEMP/issue.md"
+          gh issue create --title "$title" --label enhancement --body-file "$RUNNER_TEMP/issue.md"

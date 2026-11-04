@@ -356,6 +356,7 @@ If the rule or a change to it relates to a known attack, or its doc cites a CVE 
 - List an attack when it depends on something `.gitlab-ci.yml` can carry. GitLab server bugs stay out.
 - A GitHub Actions attack is `kind: analogue`: the same attack class in GitLab CI, never detection of that CVE.
 - Add a fixture `testdata/advisories/<id>.yml` with the configuration shape only: inert commands, `example.invalid` hosts, no working payload.
+- Give a GHSA that only its repository publishes a `repo` key, because the weekly validity check (`cmd/advisorycheck`) asks that repository.
 - Cite the id in `docs/rules/GLNNN.md`, under `## Known attacks`.
 
 Say "glsec detects the configuration shape this attack used", never "protects against CVE-X". `TestAdvisories_*` in `cmd/glsec/advisories_test.go` checks the structure, the fixtures at the listed severity, and both directions of the link to the rule docs.

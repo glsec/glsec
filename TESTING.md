@@ -96,7 +96,7 @@ Manual checks a maintainer runs before tagging, see [RELEASING.md](RELEASING.md)
 
 ### Scheduled watches
 
-Scheduled jobs also watch what glsec depends on from outside: the example projects' version pins, the CI/CD Catalog list GL064 compares against, new releases of the security frameworks glsec maps to, and the keywords in GitLab's CI schema, so a new keyword doesn't go unnoticed by the rules. They open an issue when something drifts.
+Scheduled jobs also watch what glsec depends on from outside: the example projects' version pins, the CI/CD Catalog list GL064 compares against, new releases of the security frameworks glsec maps to, and the keywords in GitLab's CI schema, so a new keyword doesn't go unnoticed by the rules. They open an issue when something drifts. A weekly job also asks cve.org and GitHub whether the ids in `docs/advisories.yml` are still valid, and opens an issue when one was rejected or withdrawn.
 
 ## Adding a rule
 
