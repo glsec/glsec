@@ -535,3 +535,59 @@ func TestGitLogOnlyPath_NoGitDir(t *testing.T) {
 		t.Error("a path outside .git is not a .git log path")
 	}
 }
+
+// Package manager and registry config files hold auth tokens (#1133).
+func TestGL005_CredentialConfigFiles(t *testing.T) {
+	for _, tc := range []struct {
+		path    string
+		pattern string // "" means no finding
+	}{
+		{".npmrc", ".npmrc"},
+		{"frontend/.npmrc", ".npmrc"},
+		{".yarnrc.yml", ".yarnrc.yml"},
+		{".pypirc", ".pypirc"},
+		{".netrc", ".netrc"},
+		{"_netrc", "_netrc"},
+		{".dockercfg", ".dockercfg"},
+		{".docker/config.json", ".docker/config.json"},
+		{"./.docker/config.json", ".docker/config.json"},
+		{"home/.docker/config.json", ".docker/config.json"},
+		{".Docker/Config.json", ".docker/config.json"},
+		// A bare config.json is usually an app config.
+		{"config.json", ""},
+		{"dist/config.json", ""},
+		{"x.docker/config.json", ""},
+		{".docker/", ""},
+		{".npmrc.example.txt", ""},
+		{".yarnrc", ""},
+	} {
+		t.Run(tc.path, func(t *testing.T) {
+			f := findings005(t, fmt.Sprintf("build:\n  script: [make]\n  artifacts:\n    paths: [%q]\n    expire_in: 1 day\n", tc.path))
+			if tc.pattern == "" {
+				if len(f) != 0 {
+					t.Errorf("expected no finding, got %v", f)
+				}
+				return
+			}
+			want := fmt.Sprintf("artifact path %q matches sensitive file pattern %q — exclude secrets from artifacts", tc.path, tc.pattern)
+			if len(f) != 1 || f[0].Severity != finding.Error || f[0].Message != want || f[0].Line != 4 {
+				t.Errorf("expected one error %q on line 4, got %v", want, f)
+			}
+		})
+	}
+}
+
+// A credential file listed under exclude: is the fix, not the problem.
+func TestGL005_CredentialConfigFilesExcluded(t *testing.T) {
+	f := findings005(t, `
+build:
+  script: [make]
+  artifacts:
+    paths: [dist/]
+    exclude: [.npmrc, .docker/config.json]
+    expire_in: 1 day
+`)
+	if len(f) != 0 {
+		t.Errorf("expected no finding for excluded credential files, got %v", f)
+	}
+}

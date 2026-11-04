@@ -31,6 +31,18 @@ var sensitivePatterns = []string{
 	"*.token",
 	"kubeconfig", "*.kubeconfig",
 	"*.tfstate", "*.tfvars",
+	// Package manager and registry config files that hold auth tokens:
+	// npm/Yarn, PyPI uploads, netrc logins, and docker login (#1133).
+	".npmrc", ".yarnrc.yml", ".pypirc",
+	".netrc", "_netrc",
+	".dockercfg",
+}
+
+// sensitivePathPatterns are files whose base name alone is too common to
+// flag (a bare config.json is usually an app config), so the parent
+// directory is part of the match.
+var sensitivePathPatterns = []string{
+	".docker/config.json",
 }
 
 // gitlabReportArtifacts are GitLab's own Secret Detection artifacts: the
@@ -199,6 +211,12 @@ func matchesSensitivePattern(path string) string {
 			if ok, _ := filepath.Match(pat, target); ok {
 				return pat
 			}
+		}
+	}
+	lower := "/" + strings.TrimPrefix(strings.ToLower(filepath.ToSlash(path)), "./")
+	for _, pat := range sensitivePathPatterns {
+		if strings.HasSuffix(lower, "/"+pat) {
+			return pat
 		}
 	}
 	return ""
