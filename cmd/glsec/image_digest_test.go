@@ -6,25 +6,61 @@ package main
 import (
 	"bytes"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/glsec/glsec/internal/cache"
 )
 
+// The cache key covers the config: a warm entry must not outlive a policy
+// change. The test runs under CI=true with --cache, the mode a project that
+// keeps the cache in CI uses, so it means the same locally and in CI.
 func TestRun_RequireImageDigestCache(t *testing.T) {
-	files := map[string]string{
+	setupCLI(t, map[string]string{
 		".glsec.yml":     "require_image_digest: true\n",
 		".gitlab-ci.yml": "job:\n  image: node:22.1.0\n  script: [make]\n",
+	})
+	t.Setenv("CI", "true")
+	scan := func() (int, string, string) {
+		var out, stderr bytes.Buffer
+		code := run([]string{"--cache", "--only", "GL001", "--format", "json"}, &out, &stderr)
+		return code, out.String(), stderr.String()
 	}
-	args := []string{"--only", "GL001", "--format", "json"}
-	if code, out, stderr := runCLI(t, files, args...); code != 0 || !strings.Contains(out, "GL001") {
+
+	if code, out, stderr := scan(); code != 0 || !strings.Contains(out, "GL001") {
 		t.Fatalf("initial scan: exit %d, %s, %s", code, out, stderr)
 	}
+	repo, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if withinRoot(repo, cache.Dir()) {
+		t.Fatalf("cache %s is inside the scanned repository %s", cache.Dir(), repo)
+	}
+	entries, err := filepath.Glob(filepath.Join(cache.Dir(), "*.json"))
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("%d cache entries, want 1 (%v)", len(entries), err)
+	}
+
+	// Only a scan that reads the entry can report this message.
+	const marker = "message from the cache entry"
+	key := strings.TrimSuffix(filepath.Base(entries[0]), ".json")
+	entry, ok := cache.Load(key)
+	if !ok || len(entry.Findings) != 1 {
+		t.Fatalf("stored entry: %+v, loaded %v", entry, ok)
+	}
+	entry.Findings[0].Message = marker
+	cache.Store(key, entry)
+	if code, out, stderr := scan(); code != 0 || !strings.Contains(out, marker) {
+		t.Fatalf("unchanged input missed the cache: exit %d, %s, %s", code, out, stderr)
+	}
+
 	if err := os.WriteFile(".glsec.yml", []byte("require_image_digest: false\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	var out, stderr bytes.Buffer
-	if code := run(args, &out, &stderr); code != 0 || strings.Contains(out.String(), "GL001") {
-		t.Fatalf("stale policy finding after config change: exit %d, %s, %s", code, &out, &stderr)
+	if code, out, stderr := scan(); code != 0 || strings.Contains(out, "GL001") || strings.Contains(out, marker) {
+		t.Fatalf("stale policy finding after config change: exit %d, %s, %s", code, out, stderr)
 	}
 }
 
