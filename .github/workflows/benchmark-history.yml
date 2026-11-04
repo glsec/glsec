@@ -1,7 +1,7 @@
 name: Benchmark history
 
 # Records how long glsec takes to scan one fixed pipeline, for every push to
-# main and, on request, for every release (#875). The records go to
+# main and, after each release or on request, for every release (#875). The records go to
 # data/benchmarks.jsonl on the benchmarks branch, where glsec.github.io reads
 # them for its performance chart; the branch README describes the format.
 #
