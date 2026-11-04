@@ -1,0 +1,30 @@
+# #1161: full environment dumps on later block-script lines are artifacts too.
+block-set:
+  script: |
+    echo start
+    set > vars.txt
+  artifacts:
+    paths: [vars.txt]
+    expire_in: 1 week
+
+block-powershell:
+  script:
+    - |
+      echo start
+      Get-ChildItem Env: | Format-Table > env.txt
+  artifacts:
+    paths: [env.txt]
+    expire_in: 1 week
+
+clean:
+  script: |
+    echo start
+    set -e > vars.txt
+    export FOO=bar > vars.txt
+    declare -a arr > vars.txt
+    Get-ChildItem env:PATH > vars.txt
+    Get-ChildItem env: | Select-String PATH > vars.txt
+    echo "hello; set > vars.txt"
+  artifacts:
+    paths: [vars.txt]
+    expire_in: 1 week

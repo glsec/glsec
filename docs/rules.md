@@ -30,7 +30,7 @@ Secrets hardcoded, leaked through logs, or forwarded to unintended consumers.
 | [GL040](rules/GL040.md) | `warn`  | Script uses plain `ftp://` — credentials and content transmitted unencrypted |
 | [GL052](rules/GL052.md) | `warn`  | User-controlled variable in `environment:name:` — attacker can craft a branch name that resolves to a protected environment and access its secrets |
 | [GL059](rules/GL059.md) | `warn`  | `docker build --build-arg` with a secret-keyword name bakes the value into image layer metadata (visible via `docker history`) |
-| [GL062](rules/GL062.md) | `warn`  | `printenv` or bare `env` dumps every variable (including secrets) to the job log |
+| [GL062](rules/GL062.md) | `warn`  | `printenv`, bare `env`, `set`, `export -p`, `declare -p`, `env -0` or a PowerShell `env:` listing dumps every variable (including secrets) to the job log |
 | [GL068](rules/GL068.md) | `warn`  | `set -x` / xtrace in a script traces expanded commands — including secrets — to the job log |
 | [GL070](rules/GL070.md) | `warn`  | Static cloud service-account credential in script (`gcloud --key-file`, `aws_secret_access_key`, `az --password`) — prefer keyless OIDC |
 | [GL073](rules/GL073.md) | `warn`/`error` | Artifacts readable by everyone who can see the pipeline (`artifacts:public: true` / `artifacts:access: all`) — `error` when an exposed path looks sensitive |

@@ -4,6 +4,7 @@
 package rules
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -167,6 +168,73 @@ func TestGL062_GrepFilter(t *testing.T) {
 		case tc.want != "" && (len(f) != 1 || !strings.Contains(f[0].Message, tc.want)):
 			t.Errorf("%s: got %v, want a finding saying %q", tc.line, f, tc.want)
 		}
+	}
+}
+
+// Every other command that prints the whole environment is reported, while
+// options that only set shell flags and per-variable filters stay clean
+// (#1161).
+func TestGL062_OtherDumpForms(t *testing.T) {
+	cases := []struct {
+		line string
+		want bool
+	}{
+		{"set", true},
+		{"set; echo done", true},
+		{"make build && set", true},
+		{"( set )", true},
+		{"export", true},
+		{"export -p", true},
+		{"declare", true},
+		{"declare -p", true},
+		{"declare -x", true},
+		{"declare -px", true},
+		{"typeset -x", true},
+		{"env -0", true},
+		{"env --null", true},
+		{"cat /proc/self/environ", true},
+		{"gci env:", true},
+		{"Get-ChildItem env:", true},
+		{"Get-ChildItem Env: | Format-Table", true},
+		{"Get-ChildItem -Path env:", true},
+		{"dir env:", true},
+		{"ls env:", true},
+		{"Get-Item env:*", true},
+		// Options and arguments that keep the command from dumping anything.
+		{"set -e", false},
+		{"set -u", false},
+		{"set -euo pipefail", false},
+		{"set -o pipefail", false},
+		{"set +x", false},
+		{"set --", false},
+		{"export FOO=bar", false},
+		{"export PATH=\"$PATH:/x\"", false},
+		{"declare -r foo=bar", false},
+		{"declare -a arr=(1 2)", false},
+		{"declare -x FOO=bar", false},
+		{"declare -p FOO", false},
+		{"typeset -x FOO", false},
+		{"env -i ls", false},
+		{"cat .env", false},
+		{"echo $env:PATH", false},
+		{"Get-ChildItem env:PATH", false},
+		{"Get-Item env:FOO", false},
+		// Text inside quotes is not a command, even with separators in it.
+		{`echo "hello; set; done"`, false},
+		{`echo "hello; export -p"`, false},
+		{`echo 'set'`, false},
+		{`echo "hello; set > f"`, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.line, func(t *testing.T) {
+			f := findings062(t, fmt.Sprintf("job:\n  script:\n    - %q\n", tc.line))
+			switch {
+			case tc.want && len(f) != 1:
+				t.Fatalf("got %v, want one finding", f)
+			case !tc.want && len(f) != 0:
+				t.Fatalf("got %v, want no finding", f)
+			}
+		})
 	}
 }
 

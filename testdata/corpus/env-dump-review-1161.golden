@@ -1,0 +1,7 @@
+1 GL053 info -
+5 GL062 warn quoted-bash
+9 GL062 warn quoted-sh
+12 GL014 warn quoted-artifact
+19 GL014 warn comment-artifact
+35 GL062 warn environment-send
+35 GL083 error environment-send

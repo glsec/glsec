@@ -19,12 +19,31 @@ var GL014 = &gl014{}
 
 func (r *gl014) ID() string { return "GL014" }
 
+// psEnvFormat lets the PowerShell env: enumeration pass through the cmdlets
+// that keep every variable (Format-Table, Format-List, Out-String) before the
+// output is redirected or teed. Filters that can drop variables, such as
+// Select-Object, Where-Object or Select-String, are deliberately not allowed.
+// Used by GL014 (#1161).
+const psEnvFormat = `(?:\s*\|\s*(?i:format-table|format-list|out-string)(?:\s+-(?i:[a-z]+))?)*`
+
 // envDumpRe matches a command that writes the whole environment to a file:
-// env, printenv, export -p or cat /proc/self/environ, redirected with > or >>
-// or piped into tee. The command has to start a command, so "cat .env > f"
-// and "printenv VAR > f" (a single variable) don't match. Group 1 or 2 is the
-// target file.
+// env (also env -0/--null), printenv, export/export -p, set, declare/typeset
+// bare or with only -p/-x, cat /proc/self/environ and the PowerShell env:
+// enumeration (optionally through a formatting cmdlet),
+// redirected with > or >> or piped into tee. The command has to
+// start a command, so "cat .env > f", "printenv VAR > f" (a single
+// variable), "set -e > f", "export FOO=bar > f" and "declare -a arr > f"
+// don't match. Group 1 or 2 is the target file.
+// (?m) lets a command start on any line of a block scalar (#1161).
 var envDumpRe = regexp.MustCompile(
+	`(?m)(?:(?:^|[\s;&|(])(?:env(?:\s+(?:-0|--null))?|printenv|export\s+-p|` +
+		`cat\s+/proc/(?:self|\$\$|[0-9]+)/environ)` +
+		`|(?:^|[;&|(])\s*(?:set|export|(?:declare|typeset)(?:\s+-[px]+)?|` + psEnvDump + psEnvFormat + `))\s*` +
+		`(?:>>?\s*(\S+)|\|\s*tee\s+(?:(?:-a|--append)\s+)?(\S+))`)
+
+// Preserve pre-#1161 matches in quoted shell payloads and after comments
+// containing quotes. Masking is only a guard for the newly added forms.
+var legacyEnvDumpRe = regexp.MustCompile(
 	`(?:^|[\s;&|(])(?:env|printenv|export\s+-p|cat\s+/proc/(?:self|\$\$|[0-9]+)/environ)\s*` +
 		`(?:>>?\s*(\S+)|\|\s*tee\s+(?:(?:-a|--append)\s+)?(\S+))`)
 
@@ -52,8 +71,29 @@ func (r *gl014) Check(doc *yaml.Node, file string) []finding.Finding {
 		}
 		dotenv := dotenvArtifactNode(artifacts)
 		eachJobScriptLine(job, func(item *yaml.Node) bool {
-			for _, m := range envDumpRe.FindAllStringSubmatch(item.Value, -1) {
-				target := m[1] + m[2]
+			// Mask new forms, so a separator inside an echo string such
+			// as `echo "hello; set > f"` is not read as a command boundary. The
+			// target is taken from the original line so a quoted file name still
+			// resolves (#1161).
+			masked := maskShellQuotes(item.Value)
+			legacyStarts := map[int]bool{}
+			for _, loc := range legacyEnvDumpRe.FindAllStringIndex(item.Value, -1) {
+				legacyStarts[loc[0]] = true
+			}
+			maskedStarts := map[int]bool{}
+			for _, loc := range envDumpRe.FindAllStringSubmatchIndex(masked, -1) {
+				maskedStarts[loc[0]] = true
+			}
+			for _, m := range envDumpRe.FindAllStringSubmatchIndex(item.Value, -1) {
+				if !legacyStarts[m[0]] && !maskedStarts[m[0]] {
+					continue
+				}
+				target := ""
+				if m[2] >= 0 {
+					target = item.Value[m[2]:m[3]]
+				} else {
+					target = item.Value[m[4]:m[5]]
+				}
 				var msg string
 				switch {
 				case dotenv != nil:
