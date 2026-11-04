@@ -85,13 +85,18 @@ gobco lists every branch the tests never take. Both totals are on the summary pa
 
 ### Fuzzing
 
-glsec reads pipeline files other people wrote, so the parser, the rules and a whole scan have native Go fuzz targets. `go test ./...` replays their seed corpus (the fixtures) like ordinary tests. To fuzz one target:
+glsec reads pipeline files other people wrote, so it has native Go fuzz targets for the parser, the rules, one document through all report formats (`FuzzScan`), and small file graphs through the production scan path (`FuzzScanGraph`). `go test ./...` replays their seed corpus like ordinary tests: the fixtures, and for `FuzzScanGraph` a table of graph shapes (shared includes, cycles, independent child pipelines, conflicting configuration). To fuzz one target:
 
 ```sh
 go test ./internal/parser -run '^$' -fuzz '^FuzzParse$' -fuzztime 2m
 go test ./rules           -run '^$' -fuzz '^FuzzRules$' -fuzztime 2m
 go test ./cmd/glsec       -run '^$' -fuzz '^FuzzScan$'  -fuzztime 2m
+go test ./cmd/glsec       -run '^$' -fuzz '^FuzzScanGraph$' -fuzztime 2m -fuzzminimizetime 100x
 ```
+
+`FuzzScanGraph` writes up to four files of 16 KiB each to a temporary directory and calls `scanRoot`, so it covers file validation, includes, child pipelines, pipeline context, rules and every report format, including a fixed template. It uses no network and no ShellCheck.
+
+These layers stay outside fuzzing: flag parsing and target discovery (`run`, `--recursive`), `.glsec.yml` and `.glsec-ignore`, the result cache, the baseline diff of `--new-only`, stdin input, symbolic links, and the ShellCheck integration. Their unit and CLI tests cover them.
 
 The `Fuzz` workflow runs each target for 45 s on pull requests and pushes to `main`, and for 10 minutes every week. When a target fails, Go writes the input to `<package>/testdata/fuzz/<Target>/`, and CI uploads it as an artifact. Fix the bug and commit that file with the fix: it then replays on every `go test`.
 

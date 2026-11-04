@@ -1,9 +1,10 @@
 name: Fuzz
 
 # Native Go fuzzing of the code that reads untrusted .gitlab-ci.yml files
-# (#536): the parser and its expansion steps, every rule, and a whole scan
-# through all output formats. Short runs on pull requests and pushes catch
-# regressions; the weekly run digs deeper. The generated corpus is kept in the
+# (#536): the parser and its expansion steps, every rule, one document through
+# all output formats, and small file graphs through the production scan path.
+# CONTRIBUTING.md lists what stays outside. Short runs on pull requests and
+# pushes catch regressions; the weekly run digs deeper. The generated corpus is kept in the
 # Actions cache so each run continues where the last one stopped.
 #
 # A crash uploads the failing input. Commit it under
@@ -47,10 +48,19 @@ jobs:
         include:
           - package: ./internal/parser
             target: FuzzParse
+            minimize: 10s
           - package: ./rules
             target: FuzzRules
+            minimize: 10s
           - package: ./cmd/glsec
             target: FuzzScan
+            minimize: 10s
+          # Starts from a few seeds, so nearly every early input is new: with
+          # 10s it spends a 45 s run on minimizing, at 16 inputs instead of
+          # 16,000 in 30 s.
+          - package: ./cmd/glsec
+            target: FuzzScanGraph
+            minimize: 100x
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -75,10 +85,11 @@ jobs:
         env:
           PACKAGE: ${{ matrix.package }}
           TARGET: ${{ matrix.target }}
+          MINIMIZE: ${{ matrix.minimize }}
           FUZZTIME: ${{ github.event_name == 'schedule' && '10m' || '45s' }}
         # Minimizing each new interesting input may take up to 60 s by
         # default, which would eat most of a 45 s run.
-        run: go test "$PACKAGE" -run '^$' -fuzz "^${TARGET}\$" -fuzztime "$FUZZTIME" -fuzzminimizetime 10s
+        run: go test "$PACKAGE" -run '^$' -fuzz "^${TARGET}\$" -fuzztime "$FUZZTIME" -fuzzminimizetime "$MINIMIZE"
 
       - name: Upload the failing input
         if: failure()
