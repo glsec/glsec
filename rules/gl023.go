@@ -86,7 +86,7 @@ var lockfileChecks = []lockfileCheck{
 		// A package argument doesn't match: adding a package is GL022's. Bun
 		// doesn't freeze the lockfile in CI by itself; --production implies it.
 		manager:    "Bun",
-		trigger:    regexp.MustCompile(`(?m)\bbun\s+(?:install|i)(?:\s+--?[\w=@./:-]+)*\s*(?:$|[|&;"')])`),
+		trigger:    regexp.MustCompile(`(?m)\bbun\s+(?:install|i)(?:\s+--?[\w=@./:-]+)*\s*(?:$|[|&;#"')])`),
 		strictFlag: regexp.MustCompile(`--frozen-lockfile\b|--production\b`),
 		skip:       regexp.MustCompile(`\s(?:-g|--global)\b`),
 		hint:       "bun ci",
