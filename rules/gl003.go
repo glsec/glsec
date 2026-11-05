@@ -14,11 +14,19 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-type gl003 struct{}
+type gl003 struct {
+	requireIncludeSHA bool
+}
 
 var GL003 = &gl003{}
 
 func (r *gl003) ID() string { return "GL003" }
+
+// SetRequireIncludeSHA enables the opt-in policy for project includes (#1175).
+// The zero value keeps the default behavior, which accepts tags.
+func (r *gl003) SetRequireIncludeSHA(required bool) {
+	r.requireIncludeSHA = required
+}
 
 // shaPattern matches a full or short commit SHA (8–40 hex chars).
 var shaPattern = regexp.MustCompile(`^[0-9a-f]{8,40}$`)
@@ -39,12 +47,12 @@ func (r *gl003) Check(doc *yaml.Node, file string) []finding.Finding {
 	mapping := parser.Unwrap(doc)
 	var findings []finding.Finding
 	for _, item := range parser.IncludeItems(parser.FindKey(mapping, "include")) {
-		findings = append(findings, checkIncludeItem(item, file)...)
+		findings = append(findings, checkIncludeItem(item, file, r.requireIncludeSHA)...)
 	}
 	return findings
 }
 
-func checkIncludeItem(node *yaml.Node, file string) []finding.Finding {
+func checkIncludeItem(node *yaml.Node, file string, requireSHA bool) []finding.Finding {
 	if parser.FindKey(node, "local") != nil || parser.FindKey(node, "template") != nil {
 		return nil
 	}
@@ -69,17 +77,17 @@ func checkIncludeItem(node *yaml.Node, file string) []finding.Finding {
 	}
 
 	if component := parser.FindKey(node, "component"); component != nil {
-		return checkComponentRef(component, file)
+		return checkComponentRef(component, file, requireSHA)
 	}
 
 	if project := parser.FindKey(node, "project"); project != nil {
-		return checkProjectRef(node, project, file)
+		return checkProjectRef(node, project, file, requireSHA)
 	}
 
 	return nil
 }
 
-func checkProjectRef(node *yaml.Node, projectNode *yaml.Node, file string) []finding.Finding {
+func checkProjectRef(node *yaml.Node, projectNode *yaml.Node, file string, requireSHA bool) []finding.Finding {
 	refNode := parser.FindKey(node, "ref")
 	if refNode == nil {
 		return []finding.Finding{{
@@ -95,7 +103,18 @@ func checkProjectRef(node *yaml.Node, projectNode *yaml.Node, file string) []fin
 		return []finding.Finding{{
 			RuleID:   "GL003",
 			Severity: finding.Error,
-			Message:  fmt.Sprintf("project include %q uses mutable ref %q — pin to a commit SHA or tag", projectNode.Value, refNode.Value),
+			Message:  fmt.Sprintf("project include %q uses mutable ref %q — %s", projectNode.Value, refNode.Value, includePinAdvice(requireSHA, "pin to a commit SHA or tag")),
+			File:     file,
+			Line:     refNode.Line,
+			Col:      refNode.Column,
+		}}
+	}
+	// As with require_image_digest, a ref held in a variable is not judged.
+	if requireSHA && !fullSHARe.MatchString(refNode.Value) && !strings.Contains(refNode.Value, "$") {
+		return []finding.Finding{{
+			RuleID:   "GL003",
+			Severity: finding.Warn,
+			Message:  fmt.Sprintf("project include %q uses ref %q, which can be moved or be ambiguous — require_include_sha is enabled; pin to a full commit SHA", projectNode.Value, refNode.Value),
 			File:     file,
 			Line:     refNode.Line,
 			Col:      refNode.Column,
@@ -104,14 +123,23 @@ func checkProjectRef(node *yaml.Node, projectNode *yaml.Node, file string) []fin
 	return nil
 }
 
-func checkComponentRef(node *yaml.Node, file string) []finding.Finding {
+// includePinAdvice returns the advice for an unpinned include, which under
+// require_include_sha can't suggest a tag.
+func includePinAdvice(requireSHA bool, advice string) string {
+	if requireSHA {
+		return "pin to a full commit SHA"
+	}
+	return advice
+}
+
+func checkComponentRef(node *yaml.Node, file string, requireSHA bool) []finding.Finding {
 	// component refs follow the format: "gitlab.com/org/component@ref"
 	at := strings.LastIndex(node.Value, "@")
 	if at < 0 {
 		return []finding.Finding{{
 			RuleID:   "GL003",
 			Severity: finding.Error,
-			Message:  fmt.Sprintf("component include %q missing version — add @<tag-or-sha>", node.Value),
+			Message:  fmt.Sprintf("component include %q missing version — %s", node.Value, includePinAdvice(requireSHA, "add @<tag-or-sha>")),
 			File:     file,
 			Line:     node.Line,
 			Col:      node.Column,
@@ -122,7 +150,7 @@ func checkComponentRef(node *yaml.Node, file string) []finding.Finding {
 		return []finding.Finding{{
 			RuleID:   "GL003",
 			Severity: finding.Error,
-			Message:  fmt.Sprintf("component include %q uses mutable ref %q — pin to a tag or commit SHA", node.Value, ref),
+			Message:  fmt.Sprintf("component include %q uses mutable ref %q — %s", node.Value, ref, includePinAdvice(requireSHA, "pin to a tag or commit SHA")),
 			File:     file,
 			Line:     node.Line,
 			Col:      node.Column,

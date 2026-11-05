@@ -54,6 +54,18 @@ func TestRequireImageDigest(t *testing.T) {
 	}
 }
 
+func TestRequireIncludeSHA(t *testing.T) {
+	if Default().RequireIncludeSHA {
+		t.Fatal("include policy must be opt-in")
+	}
+	if !parseStr(t, "require_include_sha: true").RequireIncludeSHA {
+		t.Error("require_include_sha: true not read")
+	}
+	if _, err := parse([]byte("require_include_sha: not-a-bool"), "test.yml"); err == nil {
+		t.Error("accepted invalid boolean")
+	}
+}
+
 func TestLoad_MissingDefaultFile(t *testing.T) {
 	dir := t.TempDir()
 	orig, _ := os.Getwd()
