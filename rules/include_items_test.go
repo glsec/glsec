@@ -122,3 +122,29 @@ func TestTriggerInclude_VariableIsNotGL084(t *testing.T) {
 		t.Errorf("got %v", f)
 	}
 }
+
+// An allowlist that trigger:include could get around wouldn't be one.
+func TestGL075_TriggerInclude(t *testing.T) {
+	const src = `child:
+  trigger:
+    include:
+      - project: attacker-group/evil-ci
+        ref: a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2
+        file: /c.yml
+      - project: my-group/ci-templates
+        ref: a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2
+        file: /c.yml
+      - local: child.yml
+`
+	f := findings075(t, src, []string{"my-group"})
+	if len(f) != 1 || f[0].Line != 4 || f[0].Job != "child" {
+		t.Fatalf("got %v, want one finding on line 4 of child", f)
+	}
+}
+
+func TestGL064_TriggerInclude(t *testing.T) {
+	f := findings064(t, "child:\n  trigger:\n    include:\n      - component: componets/opentofu/opentofu@1.0.0\n")
+	if len(f) != 1 || f[0].Line != 4 || f[0].Job != "child" {
+		t.Fatalf("got %v, want one finding on line 4 of child", f)
+	}
+}

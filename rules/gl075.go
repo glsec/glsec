@@ -33,11 +33,13 @@ func (r *gl075) Check(doc *yaml.Node, file string) []finding.Finding {
 		return nil
 	}
 
-	mapping := parser.Unwrap(doc)
 	var findings []finding.Finding
-	for _, item := range parser.IncludeItems(parser.FindKey(mapping, "include")) {
-		findings = append(findings, r.checkIncludeItem(item, file)...)
-	}
+	eachIncludeItem(doc, func(item *yaml.Node, job string) {
+		for _, f := range r.checkIncludeItem(item, file) {
+			f.Job = job
+			findings = append(findings, f)
+		}
+	})
 	return findings
 }
 
