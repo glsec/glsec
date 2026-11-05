@@ -485,6 +485,8 @@ and review the snapshot diff before committing it. Cases for issues that are sti
 
 `TestMetamorphic` rewrites every pipeline in `testdata/fixtures` and `testdata/corpus` into forms that mean the same to GitLab (CRLF, flow style, other quoting, `script:` as a string or a list, jobs reversed, anchors expanded, keys moved into a template the job `extends:` or merges with `<<:`) and fails when the findings change; lines may move. A difference is either a rule that matches on spelling instead of meaning, or a rewrite that isn't equivalent for that rule. The second kind, and rule gaps that have an issue, go into `knownDifferences` as `transform/rule` with the reason. The test also fails on an entry that no longer matches, so remove it when you fix the rule.
 
+`TestMetamorphicWrappers` runs every single script line of the fixtures under `timeout 600`, `nice -n 10`, `sudo` and `sudo -Hu node` and fails when a rule loses a finding. Read the command with `commandWords`, which goes through wrappers, or use `unwrappedLine` when a rule finds the command position with a regular expression.
+
 ```sh
 go test ./cmd/glsec -run TestMetamorphic
 ```

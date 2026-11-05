@@ -314,7 +314,9 @@ func blankHeredocBodies(orig string) string {
 			if line[j] != '<' || line[j+1] != '<' || j+2 < len(line) && line[j+2] == '<' {
 				continue
 			}
-			if m := heredocRe.FindStringSubmatch(orig[i+j:]); m != nil {
+			if inArithmetic(line[:j]) {
+				j++
+			} else if m := heredocRe.FindStringSubmatch(orig[i+j:]); m != nil {
 				delims = append(delims, m[1]+m[2]+m[3])
 				j += len(m[0]) - 1
 			} else {

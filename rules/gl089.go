@@ -67,13 +67,13 @@ func (r *gl089) Check(doc *yaml.Node, file string) []finding.Finding {
 				continue
 			}
 			for _, item := range block.Content {
-				if item.Kind != yaml.ScalarNode || !runsRenovate.get(item, func() bool { return renovateCmdRe.MatchString(item.Value) }) {
+				if item.Kind != yaml.ScalarNode || !runsRenovate.get(item, func() bool { return renovateCmdRe.MatchString(unwrappedLine(item.Value)) }) {
 					continue
 				}
 				if !varsDone {
 					vars, varsDone = jobVariableBlocks(in, job, pipelineVars), true
 				}
-				for _, line := range strings.Split(strings.ReplaceAll(item.Value, "\\\n", " "), "\n") {
+				for _, line := range strings.Split(unwrappedLine(strings.ReplaceAll(item.Value, "\\\n", " ")), "\n") {
 					if !unlimitedAutodiscover(line, vars) {
 						continue
 					}

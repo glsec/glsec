@@ -63,7 +63,7 @@ func (r *gl085) Check(doc *yaml.Node, file string) []finding.Finding {
 		found := agents.get(item, func() []agentLine {
 			var out []agentLine
 			for _, l := range logicalLines(item.Value) {
-				if f, ok := checkAgentLine(l.text); ok {
+				if f, ok := checkAgentLine(unwrappedLine(l.text)); ok {
 					f.line = l.line
 					out = append(out, f)
 				}

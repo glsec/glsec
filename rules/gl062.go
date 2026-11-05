@@ -85,6 +85,7 @@ func (r *gl062) Check(doc *yaml.Node, file string) []finding.Finding {
 		if strings.HasPrefix(strings.TrimSpace(v), "#") {
 			return
 		}
+		v = unwrappedLine(v)
 		// Preserve legacy matching in sh -c payloads. Mask only the new forms,
 		// so `echo "hello; set; done"` is not read as a dump (#1161).
 		if !legacyEnvFullDumpRe.MatchString(v) && !envFullDumpRe.MatchString(maskShellQuotes(v)) {
