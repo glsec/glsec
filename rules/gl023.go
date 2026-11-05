@@ -86,7 +86,7 @@ var lockfileChecks = []lockfileCheck{
 		// A package argument doesn't match: adding a package is GL022's. Bun
 		// doesn't freeze the lockfile in CI by itself; --production implies it.
 		manager:    "Bun",
-		trigger:    regexp.MustCompile(`\bbun\s+(?:install|i)(?:\s+--?[\w=@./:-]+)*\s*(?:$|[|&;"')])`),
+		trigger:    regexp.MustCompile(`(?m)\bbun\s+(?:install|i)(?:\s+--?[\w=@./:-]+)*\s*(?:$|[|&;"')])`),
 		strictFlag: regexp.MustCompile(`--frozen-lockfile\b|--production\b`),
 		skip:       regexp.MustCompile(`\s(?:-g|--global)\b`),
 		hint:       "bun ci",
@@ -190,6 +190,11 @@ type lockfileHit struct {
 func lockfileHits(l *yaml.Node, file string) []lockfileHit {
 	var hits []lockfileHit
 	for i, lc := range lockfileChecks {
+		// The trigger on the whole item keeps shellCommands off the many
+		// lines that don't name the manager.
+		if !lc.trigger.MatchString(l.Value) {
+			continue
+		}
 		line, ok := l.Line, false
 		if lc.byCommand {
 			for _, c := range shellCommands(l.Value) {
