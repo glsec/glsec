@@ -26,7 +26,7 @@ type shellCommand struct {
 }
 
 // heredocRe matches a here-document operator and its delimiter, quoted or not.
-var heredocRe = regexp.MustCompile(`^<<-?\s*(?:'([^']+)'|"([^"]+)"|\\?([A-Za-z_][A-Za-z0-9_]*))`)
+var heredocRe = regexp.MustCompile(`^<<-?\s*(?:'([^']+)'|"([^"]+)"|\\?([A-Za-z_][A-Za-z0-9_.-]*))`)
 
 // inArithmetic reports whether text ends inside (( … )) or $(( … )), where <<
 // is a shift and not a here-document.
@@ -37,12 +37,15 @@ func inArithmetic(text string) bool {
 // shellCommands splits a script item into simple commands. Quotes and
 // backslash escapes are respected, a backslash-newline continues the command,
 // comments are dropped, and the bodies of here-documents are skipped, so text
-// that is only data never reads as a command.
+// that is only data never reads as a command. A body a local shell reads as
+// its script is split into commands instead, after the line that opens it
+// (#1216): on another machine, as with ssh, it stays data.
 func shellCommands(script string) []shellCommand {
 	var cmds []shellCommand
 	var cur strings.Builder
 	line, start := 0, -1
 	var heredocs []string
+	heredocCmd := 0 // index in cmds of the command that opens them
 	emit := func(piped bool) {
 		if t := strings.TrimSpace(cur.String()); t != "" {
 			cmds = append(cmds, shellCommand{text: t, line: start, piped: piped})
@@ -120,6 +123,9 @@ func shellCommands(script string) []shellCommand {
 			}
 		case c == '<' && strings.HasPrefix(script[i:], "<<") && !strings.HasPrefix(script[i:], "<<<") && !inArithmetic(cur.String()):
 			if m := heredocRe.FindStringSubmatch(script[i:]); m != nil {
+				if len(heredocs) == 0 {
+					heredocCmd = len(cmds)
+				}
 				heredocs = append(heredocs, m[1]+m[2]+m[3])
 				add(m[0])
 				i += len(m[0]) - 1
@@ -129,8 +135,13 @@ func shellCommands(script string) []shellCommand {
 		case c == '\n':
 			emit(false)
 			line++
+			runs := len(heredocs) == 1 && shellReadsHeredoc(cmds, heredocCmd)
 			for _, delim := range heredocs {
+				start, first := i+1, line
 				i = skipHeredoc(script, i, delim, &line)
+				if runs {
+					cmds = append(cmds, heredocCommands(script[start:i], delim, first)...)
+				}
 			}
 			heredocs = nil
 		case c == ';':
@@ -175,6 +186,50 @@ func skipHeredoc(script string, i int, delim string, line *int) int {
 		j += end + 1
 	}
 	return len(script)
+}
+
+// heredocCommands splits a here-document body, up to its delimiter line, into
+// commands. first is the item line the body starts on.
+func heredocCommands(body, delim string, first int) []shellCommand {
+	if i := strings.LastIndexByte(body, '\n'); strings.TrimSpace(body[i+1:]) == delim {
+		body = body[:i+1]
+	}
+	cmds := shellCommands(body)
+	for i := range cmds {
+		cmds[i].line += first
+	}
+	return cmds
+}
+
+// shellReadsHeredoc reports whether the here-document opened by cmds[at] is the
+// script of a local shell: bash <<EOF or cat <<EOF | bash.
+func shellReadsHeredoc(cmds []shellCommand, at int) bool {
+	text, _, _ := strings.Cut(cmds[at].text, "<<")
+	return readsScriptFromStdin(commandWords(text)) ||
+		cmds[at].piped && at+1 < len(cmds) && readsScriptFromStdin(commandWords(cmds[at+1].text))
+}
+
+// readsScriptFromStdin reports a shell that takes its script from stdin: it
+// has neither -c nor a script file, or it has -s.
+func readsScriptFromStdin(words []string) bool {
+	if !posixShells[commandName(words)] {
+		return false
+	}
+	for i := 1; i < len(words); i++ {
+		w := words[i]
+		switch {
+		case w == "-o" || w == "+o" || w == "-O" || w == "+O":
+			i++
+		case strings.HasPrefix(w, "--") && w != "--" || strings.HasPrefix(w, "+"):
+		case !strings.HasPrefix(w, "-") || w == "--":
+			return false
+		case strings.Contains(w, "c"):
+			return false
+		case strings.Contains(w, "s"):
+			return true
+		}
+	}
+	return true
 }
 
 func isShellSpace(c byte) bool { return c == ' ' || c == '\t' }

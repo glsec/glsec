@@ -24,6 +24,13 @@ func TestShellCommands(t *testing.T) {
 		{"echo ${#ARR} $# x#y", []shellCommand{{text: "echo ${#ARR} $# x#y", line: 0}}},
 		{"cat <<EOF > f\nsudo x | y\nEOF\nz", []shellCommand{{text: "cat <<EOF > f", line: 0}, {text: "z", line: 3}}},
 		{"cat <<-'END'\n\tsudo x\n\tEND\nz", []shellCommand{{text: "cat <<-'END'", line: 0}, {text: "z", line: 3}}},
+		{"bash <<EOF\nsudo x | y\nEOF\nz", []shellCommand{{text: "bash <<EOF", line: 0}, {text: "sudo x", line: 1}, {text: "y", line: 1}, {text: "z", line: 3}}},
+		{"cat <<EOF | sh\n\nsudo x\nEOF\nz", []shellCommand{{text: "cat <<EOF", line: 0}, {text: "sh", line: 0}, {text: "sudo x", line: 2}, {text: "z", line: 4}}},
+		{"sh -s <<END-OF-SCRIPT\nsudo x\nEND-OF-SCRIPT\nz", []shellCommand{{text: "sh -s <<END-OF-SCRIPT", line: 0}, {text: "sudo x", line: 1}, {text: "z", line: 3}}},
+		{"ssh h <<EOF\nsudo x\nEOF\nz", []shellCommand{{text: "ssh h <<EOF", line: 0}, {text: "z", line: 3}}},
+		{"ssh h bash <<EOF\nsudo x\nEOF", []shellCommand{{text: "ssh h bash <<EOF", line: 0}}},
+		{"bash <<EOF\nsudo x", []shellCommand{{text: "bash <<EOF", line: 0}, {text: "sudo x", line: 1}}},
+		{"bash <<A 3<<B\nsudo x\nA\ny\nB", []shellCommand{{text: "bash <<A 3<<B", line: 0}}},
 		{"cat <<< \"$x\" | y", []shellCommand{{text: `cat <<< "$x"`, line: 0}, {text: "y", line: 0}}},
 		{"echo \"line1\nline2\" && b", []shellCommand{{text: "echo \"line1\nline2\"", line: 0}, {text: "b", line: 1}}},
 	} {
