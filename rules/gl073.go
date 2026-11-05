@@ -77,7 +77,7 @@ func checkArtifactExposure(node *yaml.Node, file string) []finding.Finding {
 // artifacts block.
 func artifactExposure(node *yaml.Node) (*yaml.Node, string) {
 	if k, v := parser.FindKeyNode(node, "public"); v != nil && v.Kind == yaml.ScalarNode {
-		if strings.EqualFold(v.Value, "true") {
+		if parser.IsTrue(v) {
 			return k, "public: true"
 		}
 	}

@@ -167,7 +167,7 @@ func artifactCovers(artifacts *yaml.Node, target string) bool {
 	if known && artifactGlobsMatch(parser.FindKey(artifacts, "exclude"), target) {
 		return false
 	}
-	if u := parser.FindKey(artifacts, "untracked"); u != nil && u.Value == "true" {
+	if u := parser.FindKey(artifacts, "untracked"); parser.IsTrue(u) {
 		return true
 	}
 	return known && artifactGlobsMatch(parser.FindKey(artifacts, "paths"), target)

@@ -342,7 +342,7 @@ func inheritAllows(value *yaml.Node, key string) bool {
 	case value == nil:
 		return true
 	case value.Kind == yaml.ScalarNode:
-		return value.Value != "false"
+		return !parser.IsFalse(value)
 	case value.Kind == yaml.SequenceNode:
 		for _, item := range value.Content {
 			if item.Value == key {

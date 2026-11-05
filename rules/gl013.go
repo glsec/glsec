@@ -119,7 +119,7 @@ func publishesMainPages(jobName string, p *yaml.Node) bool {
 	}
 	switch p.Kind {
 	case yaml.ScalarNode:
-		return p.Value != "false"
+		return !parser.IsFalse(p)
 	case yaml.MappingNode:
 		prefix := parser.FindKey(p, "path_prefix")
 		return prefix == nil || (prefix.Kind == yaml.ScalarNode && prefix.Value == "")
