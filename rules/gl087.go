@@ -22,6 +22,12 @@ func (r *gl087) ID() string { return "GL087" }
 func (r *gl087) Check(*yaml.Node, string) []finding.Finding { return nil }
 
 func gl087Message(d parser.DuplicateKey) string {
+	if d.Merge != nil {
+		if d.Anchor != "" {
+			return fmt.Sprintf("key %q — the <<: at line %d overrides it with the value at line %d; the anchor &%s in its value is still used through its aliases", d.Key.Value, d.Merge.Line, d.Winner.Line, d.Anchor)
+		}
+		return fmt.Sprintf("key %q — the <<: at line %d overrides it, so GitLab ignores this value and uses the one at line %d; move the key below the <<: or delete it", d.Key.Value, d.Merge.Line, d.Winner.Line)
+	}
 	if d.Anchor != "" {
 		return fmt.Sprintf("duplicate key %q — the key at line %d replaces this one here; the anchor &%s in its value is still used through its aliases, so give it a key of its own", d.Key.Value, d.Winner.Line, d.Anchor)
 	}
@@ -29,8 +35,9 @@ func gl087Message(d parser.DuplicateKey) string {
 }
 
 // CheckDocument reports every key the parser dropped because the same mapping
-// has it again later (#633). GitLab uses the last value, so the earlier one is
-// dead configuration that readers and reviewers still take at face value.
+// has it again later (#633), or a later << overrides it (#1152). GitLab uses
+// the last value, so the earlier one is dead configuration that readers and
+// reviewers still take at face value.
 func (r *gl087) CheckDocument(doc *parser.Document, file string) []finding.Finding {
 	findings := make([]finding.Finding, 0, len(doc.DuplicateKeys))
 	for _, d := range doc.DuplicateKeys {

@@ -187,3 +187,76 @@ func TestExpandAliases_NestedAliasBudget(t *testing.T) {
 		t.Errorf("expanded tree exceeds the budget: more than %d nodes", limit)
 	}
 }
+
+// Each expected mapping is what `ruby -ryaml` loads from this document with
+// aliases: true, key order included (#1152).
+func TestExpandAliases_PsychOrder(t *testing.T) {
+	m := parseExpanded(t, `.a: &a
+  x: from-a
+  y: from-a
+.b: &b
+  y: from-b
+  z: from-b
+before:
+  x: own
+  <<: *a
+after:
+  <<: *a
+  x: own
+list_before:
+  y: own
+  <<: [*a, *b]
+list_after:
+  <<: [*a, *b]
+  y: own
+two:
+  <<: *a
+  <<: *b
+two_own_between:
+  <<: *a
+  x: own
+  <<: *b
+own_between_override:
+  x: own
+  <<: *b
+  y: own2
+  <<: *a
+nested:
+  outer: &outer
+    x: own
+    <<: *a
+  use:
+    <<: *outer
+    z: own
+inline:
+  x: own
+  <<: {x: inline}
+`)
+	dump := func(n *yaml.Node) string {
+		var parts []string
+		for i := 0; i+1 < len(n.Content); i += 2 {
+			parts = append(parts, n.Content[i].Value+"="+n.Content[i+1].Value)
+		}
+		return strings.Join(parts, " ")
+	}
+	nested := FindKey(m, "nested")
+	for name, tc := range map[string]struct {
+		node *yaml.Node
+		want string
+	}{
+		"before":               {FindKey(m, "before"), "x=from-a y=from-a"},
+		"after":                {FindKey(m, "after"), "x=own y=from-a"},
+		"list_before":          {FindKey(m, "list_before"), "y=from-a z=from-b x=from-a"},
+		"list_after":           {FindKey(m, "list_after"), "y=own z=from-b x=from-a"},
+		"two":                  {FindKey(m, "two"), "x=from-a y=from-b z=from-b"},
+		"two_own_between":      {FindKey(m, "two_own_between"), "x=own y=from-b z=from-b"},
+		"own_between_override": {FindKey(m, "own_between_override"), "x=from-a y=from-a z=from-b"},
+		"nested outer":         {FindKey(nested, "outer"), "x=from-a y=from-a"},
+		"nested use":           {FindKey(nested, "use"), "x=from-a y=from-a z=own"},
+		"inline":               {FindKey(m, "inline"), "x=inline"},
+	} {
+		if got := dump(tc.node); got != tc.want {
+			t.Errorf("%s: got %q, want %q", name, got, tc.want)
+		}
+	}
+}

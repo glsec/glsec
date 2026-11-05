@@ -4,6 +4,7 @@
 package rules
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -593,5 +594,28 @@ deploy_prod:
 				t.Errorf("unexpected message: %s", f[0].Message)
 			}
 		})
+	}
+}
+
+// GitLab reads a mapping in order, so the merged rules replace the guard
+// written above the <<: (#1152).
+func TestGL080_RulesOverriddenByMergeKey(t *testing.T) {
+	const src = `
+.always: &always
+  rules:
+    - when: always
+
+deploy-prod:
+  stage: deploy
+  %s
+  script:
+    - ./deploy.sh
+`
+	guard := "rules:\n    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH"
+	if f := findings080(t, fmt.Sprintf(src, guard+"\n  <<: *always")); len(f) != 1 {
+		t.Errorf("guard above the <<: is replaced: got %v", f)
+	}
+	if f := findings080(t, fmt.Sprintf(src, "<<: *always\n  "+guard)); len(f) != 0 {
+		t.Errorf("guard below the <<: stays: got %v", f)
 	}
 }

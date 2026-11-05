@@ -128,3 +128,35 @@ build:
 		t.Fatalf("unexpected findings: %v", f)
 	}
 }
+
+func TestGL087_KeyOverriddenByMergeKey(t *testing.T) {
+	f := findings087(t, `.always: &always
+  rules:
+    - when: always
+deploy:
+  rules:
+    - if: $CI_COMMIT_TAG
+  <<: *always
+  script: [make]
+`)
+	if len(f) != 1 || f[0].Line != 5 || f[0].Job != "deploy" {
+		t.Fatalf("got %v, want one finding on line 5 of deploy", f)
+	}
+	if !strings.Contains(f[0].Message, "<<: at line 7") || !strings.Contains(f[0].Message, "at line 2") {
+		t.Errorf("message should name the <<: and the value used: %s", f[0].Message)
+	}
+}
+
+func TestGL087_KeyAfterMergeKeyNotFlagged(t *testing.T) {
+	f := findings087(t, ".a: &a\n  image: a:1\njob:\n  <<: *a\n  image: own:1\n  script: [make]\n")
+	if len(f) != 0 {
+		t.Errorf("a key below the <<: overrides it on purpose: %v", f)
+	}
+}
+
+func TestGL087_OverriddenValueWithAnchor(t *testing.T) {
+	f := findings087(t, ".a: &a\n  image: a:1\njob:\n  image: &img own:1\n  <<: *a\nother:\n  image: *img\n")
+	if len(f) != 1 || !strings.Contains(f[0].Message, "anchor &img") {
+		t.Fatalf("got %v", f)
+	}
+}
