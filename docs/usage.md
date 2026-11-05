@@ -295,6 +295,10 @@ The script-analysis rules (e.g. GL002, GL024, GL025, GL047, GL048, GL050) assume
 
 Rules that check variable values read every `variables:` block GitLab can apply: top-level, `default:`, per job, and the `variables:` of each `workflow:rules` and job `rules:` entry. A value moved into a rule is committed in the file all the same, so it is reported where it is set. glsec doesn't evaluate the `if:` conditions; [GL082](rules/GL082.md) alone skips rules that only match scheduled pipelines.
 
+## Scripts
+
+glsec's script rules read `before_script:`, `script:`, `after_script:`, `hooks:pre_get_sources_script:` and `run:` steps. They also read a shell script in an `entrypoint:` of `image:` or `services:`, or a `command:` of `services:`, when the array calls a POSIX shell with `-c`: `["/bin/sh", "-c", "…"]`, `["bash", "-ec", "…"]` or `["/usr/bin/env", "bash", "-c", "…"]`. Such a script runs in a container that gets the job's CI/CD variables. Other arrays, such as `["postgres", "-c", "max_connections=200"]`, are not scripts.
+
 ## Reusable configuration
 
 glsec resolves YAML anchors, aliases and merge keys (`&anchor` / `*alias` / `<<: *anchor`) and GitLab [`!reference` tags](https://docs.gitlab.com/ci/yaml/yaml_optimization/#reference-tags) that point within the same file. Content pulled in either way is analysed as if it were inlined into the job that uses it, so issues hidden in shared `.template` blocks are caught. A finding in an anchor that several jobs share is reported once, at the anchor. References that resolve into `include:`d files are not yet expanded.
