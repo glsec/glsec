@@ -55,6 +55,10 @@ func serverControlled(name string) bool {
 	return false
 }
 
+// Check reads the top-level include: only. A variable in a trigger:include
+// path expands in the child pipeline, where the trigger job's variables: and
+// default variables are forwarded, so it mostly comes from the file under
+// review, as with a parallel:matrix of child pipelines (#1162).
 func (r *gl084) Check(doc *yaml.Node, file string) []finding.Finding {
 	mapping := parser.Unwrap(doc)
 	var findings []finding.Finding

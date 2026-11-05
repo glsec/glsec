@@ -41,17 +41,17 @@ var (
 )
 
 func (r *gl041) Check(doc *yaml.Node, file string) []finding.Finding {
-	mapping := parser.Unwrap(doc)
 	var findings []finding.Finding
-	for _, item := range parser.IncludeItems(parser.FindKey(mapping, "include")) {
+	eachIncludeItem(doc, func(item *yaml.Node, job string) {
 		component := parser.FindKey(item, "component")
 		if component == nil {
-			continue
+			return
 		}
 		if f := checkComponentVersion(component, file, r.requireIncludeSHA); f != nil {
+			f.Job = job
 			findings = append(findings, *f)
 		}
-	}
+	})
 	return findings
 }
 

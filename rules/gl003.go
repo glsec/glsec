@@ -44,11 +44,13 @@ var mutableRefs = map[string]bool{
 }
 
 func (r *gl003) Check(doc *yaml.Node, file string) []finding.Finding {
-	mapping := parser.Unwrap(doc)
 	var findings []finding.Finding
-	for _, item := range parser.IncludeItems(parser.FindKey(mapping, "include")) {
-		findings = append(findings, checkIncludeItem(item, file, r.requireIncludeSHA)...)
-	}
+	eachIncludeItem(doc, func(item *yaml.Node, job string) {
+		for _, f := range checkIncludeItem(item, file, r.requireIncludeSHA) {
+			f.Job = job
+			findings = append(findings, f)
+		}
+	})
 	return findings
 }
 
