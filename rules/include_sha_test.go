@@ -21,11 +21,15 @@ func TestGL003_RequireIncludeSHA(t *testing.T) {
 		severity  finding.Severity
 	}{
 		{"default version tag", "v1.2.3", false, ""},
-		{"default short SHA", "deadbeef", false, ""},
-		{"default other branch", "release", false, ""},
+		{"default short SHA", "deadbeef", false, finding.Warn},
+		{"default date tag", "20241105", false, ""},
+		{"default other branch", "sse", false, ""},
+		{"default release branch", "release", false, finding.Error},
+		{"default development branch", "development", false, finding.Error},
 		{"default known branch", "main", false, finding.Error},
 		{"version tag", "v1.2.3", true, finding.Warn},
 		{"short SHA", "deadbeef", true, finding.Warn},
+		{"date tag", "20241105", true, finding.Warn},
 		{"other branch", "unstable/2024q4", true, finding.Warn},
 		{"known branch stays error", "main", true, finding.Error},
 		{"full SHA", testFullSHA, true, ""},
