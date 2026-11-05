@@ -39,21 +39,21 @@ func loadCatalogComponents() []string {
 }
 
 func (r *gl064) Check(doc *yaml.Node, file string) []finding.Finding {
-	mapping := parser.Unwrap(doc)
 	var findings []finding.Finding
-	for _, item := range parser.IncludeItems(parser.FindKey(mapping, "include")) {
+	eachIncludeItem(doc, func(item *yaml.Node, job string) {
 		component := parser.FindKey(item, "component")
 		if component == nil || component.Kind != yaml.ScalarNode {
-			continue
+			return
 		}
 		resource := componentResourcePath(component.Value)
 		if resource == "" {
-			continue
+			return
 		}
 		if match, ok := nearestTyposquat(resource); ok {
 			findings = append(findings, finding.Finding{
 				RuleID:   "GL064",
 				Severity: finding.Warn,
+				Job:      job,
 				Message: fmt.Sprintf(
 					"component path %q is one edit away from the popular component %q under a different namespace — verify it is not a typosquat",
 					resource, match,
@@ -63,7 +63,7 @@ func (r *gl064) Check(doc *yaml.Node, file string) []finding.Finding {
 				Col:  component.Column,
 			})
 		}
-	}
+	})
 	return findings
 }
 
