@@ -380,6 +380,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 	// The reports carry the errors too, so a failed scan doesn't look like a
 	// clean one (#809).
 	var scanErrors []output.ScanError
+	scanOpts.reportError = func(e output.ScanError) {
+		_, _ = fmt.Fprintf(stderr, "error: %s\n", e.Message)
+		scanErrors = append(scanErrors, e)
+	}
 	scanned := 0
 	for _, file := range targets {
 		if matchesExclude(file, cfg.ExcludePaths) {
@@ -393,8 +397,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		}
 		findings, suppressed, jobCount, unjustified, scanErr := scanRoot(file, scanOpts)
 		if scanErr != nil {
-			_, _ = fmt.Fprintf(stderr, "error: %s\n", scanErr.Message)
-			scanErrors = append(scanErrors, *scanErr)
+			scanOpts.reportError(*scanErr)
 			continue
 		}
 		allFindings = append(allFindings, findings...)
@@ -480,6 +483,8 @@ type scanOptions struct {
 	// With readStdin, the root pipeline is stdin, read into stdin (#833).
 	stdin     []byte
 	readStdin bool
+	// reportError records a file that breaks the scan without ending it.
+	reportError func(output.ScanError)
 }
 
 // scanRoot parses one root pipeline file (and its child pipelines), runs the
@@ -524,7 +529,20 @@ func scanRoot(file string, opt scanOptions) (findings []finding.Finding, suppres
 	// here as the directory of the pipeline being scanned.
 	allDocs := []*parser.Document{doc}
 	if file != parser.StdinName {
-		allDocs = collectDocuments(opt.stderr, doc, filepath.Dir(file), opt.cfg.ExcludePaths, seen)
+		rootDir := filepath.Dir(file)
+		files := pipelineFiles{w: opt.stderr, rootDir: rootDir, excludePaths: opt.cfg.ExcludePaths, seen: seen}
+		// Outside the repository root a path is looked up in the wrong
+		// place, so a file that isn't found says nothing about the pipeline.
+		strictRead := opt.cfg.Strict && isRepositoryRoot(rootDir)
+		files.unread = func(kind, path string, err error, optional bool) {
+			msg := fmt.Sprintf("%s %s: %s", kind, output.Sanitize(filepath.ToSlash(path)), output.Sanitize(err.Error()))
+			if strictRead && !optional {
+				opt.reportError(output.ScanError{File: path, Message: msg})
+				return
+			}
+			_, _ = fmt.Fprintf(opt.stderr, "warning: %s\n", msg)
+		}
+		allDocs = files.collect(doc, false)
 	} else if len(parser.LocalIncludePaths(doc.Root)) > 0 || len(parser.ChildPipelinePaths(doc.Root)) > 0 {
 		_, _ = fmt.Fprintf(opt.stderr, "note: %s: local includes and child pipelines are not read; name the file with --stdin-filename to resolve them\n", file)
 	}
@@ -877,64 +895,79 @@ func matchesExclude(file string, patterns []string) bool {
 	return false
 }
 
-// collectDocuments recursively collects all pipeline documents (main + children)
+// pipelineFiles reads the files of a pipeline.
+type pipelineFiles struct {
+	w            io.Writer
+	rootDir      string
+	excludePaths []string
+	seen         map[string]*parser.Document
+	// unread reports a file that could not be read. optional says the
+	// pipeline can be valid without it (#1167).
+	unread func(kind, path string, err error, optional bool)
+}
+
+// collect recursively collects all pipeline documents (main + children)
 // without running any rules. The first element is always the root document.
 // Child paths are relative to rootDir at every level, as in GitLab; a missing
-// or unparsable child, or one outside rootDir, is reported to w and skipped.
-func collectDocuments(w io.Writer, doc *parser.Document, rootDir string, excludePaths []string, seen map[string]*parser.Document) []*parser.Document {
+// or unparsable child is passed to unread and skipped, and one outside rootDir
+// is reported to w and skipped. optional marks doc as included through rules:,
+// which then holds for the files it names too.
+func (p *pipelineFiles) collect(doc *parser.Document, optional bool) []*parser.Document {
 	all := []*parser.Document{doc}
 	pipeline := doc
 	if doc.IncludedBy != nil {
 		pipeline = doc.IncludedBy
 	}
-	follow := func(kind, path string, included bool) {
-		childPath := filepath.Join(rootDir, strings.TrimPrefix(path, "/"))
-		if matchesExclude(childPath, excludePaths) {
+	follow := func(kind, path string, included, optional bool) {
+		childPath := filepath.Join(p.rootDir, strings.TrimPrefix(path, "/"))
+		if matchesExclude(childPath, p.excludePaths) {
 			return
 		}
 		abs, err := filepath.Abs(childPath)
 		if err != nil {
 			return
 		}
-		if known, ok := seen[abs]; ok {
+		if known, ok := p.seen[abs]; ok {
 			// Included again: GitLab merges it again, so its place can change.
 			if included && known != nil && known.IncludedBy == pipeline {
 				doc.Includes = append(doc.Includes, known)
 			}
 			return
 		}
-		seen[abs] = nil
+		p.seen[abs] = nil
 		// GitLab rejects local includes outside the project; reading them would
 		// let a pipeline file print lines of other files on the runner.
-		if !withinRoot(rootDir, childPath) {
-			_, _ = fmt.Fprintf(w, "warning: %s %s: outside the repository, skipped\n", kind, output.Sanitize(filepath.ToSlash(childPath)))
+		if !withinRoot(p.rootDir, childPath) {
+			_, _ = fmt.Fprintf(p.w, "warning: %s %s: outside the repository, skipped\n", kind, output.Sanitize(filepath.ToSlash(childPath)))
 			return
 		}
 		childDoc, err := parser.ParseFile(childPath)
 		if err != nil {
-			_, _ = fmt.Fprintf(w, "warning: %s %s: %s\n", kind, output.Sanitize(filepath.ToSlash(childPath)), output.Sanitize(err.Error()))
+			// A path with a variable is only a guess at the real file.
+			p.unread(kind, childPath, err, optional || strings.Contains(path, "$"))
 			return
 		}
-		seen[abs] = childDoc
+		p.seen[abs] = childDoc
 		if included {
 			childDoc.IncludedBy = pipeline
 			doc.Includes = append(doc.Includes, childDoc)
 		}
-		all = append(all, collectDocuments(w, childDoc, rootDir, excludePaths, seen)...)
+		all = append(all, p.collect(childDoc, optional)...)
 	}
 	for _, child := range parser.ChildPipelinePaths(doc.Root) {
-		follow("child pipeline", child, false)
+		follow("child pipeline", child, false, optional)
 	}
 	// Files pulled in with include: local are part of this pipeline (#810).
-	for _, include := range parser.LocalIncludePaths(doc.Root) {
-		pattern := strings.TrimPrefix(include, "/")
+	for _, include := range parser.LocalIncludes(doc.Root) {
+		pattern := strings.TrimPrefix(include.Path, "/")
+		conditional := optional || include.Conditional
 		re := parser.IncludeGlob(pattern)
 		if re == nil {
-			follow("include", pattern, true)
+			follow("include", pattern, true, conditional)
 			continue
 		}
-		for _, path := range globIncludes(w, rootDir, pattern, re) {
-			follow("include", path, true)
+		for _, path := range globIncludes(p.w, p.rootDir, pattern, re) {
+			follow("include", path, true, conditional)
 		}
 	}
 	return all
@@ -1002,6 +1035,24 @@ func globIncludes(w io.Writer, rootDir, pattern string, re *regexp.Regexp) []str
 		return nil
 	})
 	return paths
+}
+
+// isRepositoryRoot reports whether dir is the top of a Git repository, or in
+// none. It looks for .git like git rev-parse --show-toplevel, without needing
+// git in the image or a repository owned by the user running glsec.
+func isRepositoryRoot(dir string) bool {
+	start, err := resolvePath(dir)
+	if err != nil {
+		return false
+	}
+	for d := start; ; d = filepath.Dir(d) {
+		if _, err := os.Lstat(filepath.Join(d, ".git")); err == nil { //nolint:gosec // G703: only asks whether .git exists next to the scanned file or above it
+			return d == start
+		}
+		if d == filepath.Dir(d) {
+			return true
+		}
+	}
 }
 
 // withinRoot reports whether path, after resolving symbolic links, lies inside
