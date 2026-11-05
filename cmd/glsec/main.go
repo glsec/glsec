@@ -1287,9 +1287,10 @@ func movedToJob(doc *parser.Document, f finding.Finding, job *yaml.Node) finding
 	return f
 }
 
-// originNote is what movedToJob adds to a message.
+// originNote is what movedToJob adds to a message. The path reads the same on
+// every platform.
 func originNote(o finding.Origin) string {
-	return fmt.Sprintf(" (from %s:%d)", o.File, o.Line)
+	return fmt.Sprintf(" (from %s:%d)", filepath.ToSlash(o.File), o.Line)
 }
 
 // reportUnjustified prints every inline suppression that carries no reason and
