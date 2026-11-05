@@ -404,6 +404,91 @@ func splitScript(name, job *yaml.Node) (base *yaml.Node, keep []*yaml.Node) {
 	return base, keep
 }
 
+// TestMetamorphicWrappers runs every single script line of every fixture
+// under a wrapper. The wrapper doesn't change what runs, so no rule may lose a
+// finding; a rule that reads the command name without unwrapping does (#1149).
+// New findings are fine: sudo is one itself.
+func TestMetamorphicWrappers(t *testing.T) {
+	paths, err := filepath.Glob(filepath.Join("..", "..", "testdata", "fixtures", "*.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(paths) == 0 {
+		t.Fatal("no fixtures")
+	}
+	for _, wrapper := range []string{"timeout 600", "nice -n 10", "sudo", "sudo -Hu node"} {
+		t.Run(wrapper, func(t *testing.T) {
+			for _, path := range paths {
+				t.Run(filepath.Base(path), func(t *testing.T) {
+					src, err := os.ReadFile(path) //nolint:gosec // G304: the repository's own test pipelines
+					if err != nil {
+						t.Fatal(err)
+					}
+					out, err := rewrite(func(root *yaml.Node) bool { return wrapScripts(root, wrapper) })(string(src))
+					if errors.Is(err, errNotApplicable) {
+						t.Skip("no script line to wrap")
+					}
+					if err != nil {
+						t.Fatal(err)
+					}
+					orig, errOut, ok := metamorphicFindings(t, string(src))
+					if !ok {
+						t.Fatalf("glsec can't scan the original:\n%s", errOut)
+					}
+					got, errOut, ok := metamorphicFindings(t, out)
+					if !ok {
+						t.Fatalf("glsec can't scan the rewritten pipeline:\n%s\n%s", errOut, out)
+					}
+					count := map[[2]string]int{}
+					for _, f := range got {
+						count[[2]string{f.Rule, f.Job}]++
+					}
+					for _, f := range orig {
+						key := [2]string{f.Rule, f.Job}
+						if count[key]--; count[key] < 0 {
+							t.Errorf("lost %s\nrewritten pipeline:\n%s", f, out)
+						}
+					}
+				})
+			}
+		})
+	}
+}
+
+// unwrappable matches lines a wrapper can't run: builtins, compound commands,
+// assignments and comments.
+var unwrappable = regexp.MustCompile(`^(?:[A-Za-z_][A-Za-z0-9_]*=|[#({$\[.:!]|` +
+	`(?:set|unset|export|cd|source|eval|exec|if|for|while|until|case|function|alias|read|local|` +
+	`declare|typeset|readonly|trap|shopt|exit|return|ulimit|umask|wait|pushd|popd|test|true|false)(?:\s|$))`)
+
+// wrapScripts puts wrapper in front of each single script line that runs a
+// program.
+func wrapScripts(root *yaml.Node, wrapper string) bool {
+	changed := false
+	wrap := func(n *yaml.Node) {
+		if n.Kind == yaml.ScalarNode && n.Tag != "!reference" && !strings.Contains(strings.TrimSpace(n.Value), "\n") &&
+			!unwrappable.MatchString(strings.TrimSpace(n.Value)) {
+			n.Value = wrapper + " " + strings.TrimSpace(n.Value)
+			changed = true
+		}
+	}
+	parser.EachJob(root, func(_, job *yaml.Node) {
+		for _, key := range []string{"script", "before_script", "after_script"} {
+			v := parser.FindKey(job, key)
+			switch {
+			case v == nil:
+			case v.Kind == yaml.SequenceNode:
+				for _, item := range v.Content {
+					wrap(item)
+				}
+			default:
+				wrap(v)
+			}
+		}
+	})
+	return changed
+}
+
 type metamorphicFinding struct {
 	Rule    string `json:"rule"`
 	Job     string `json:"job"`

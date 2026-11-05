@@ -56,7 +56,7 @@ func TestCommandWords(t *testing.T) {
 		{`curl -o "a b" url`, []string{"curl", "-o", "a b", "url"}},
 		{`FOO=1 BAR="x y" curl url`, []string{"curl", "url"}},
 		{`X=$(curl -sS url`, []string{"curl", "-sS", "url"}},
-		{`if sudo -n true`, []string{"sudo", "-n", "true"}},
+		{`if sudo -n true`, []string{"true"}},
 		{`env A=1 wget url`, []string{"wget", "url"}},
 		{`( cd dir`, []string{"cd", "dir"}},
 		{`A=1`, nil},
@@ -65,8 +65,8 @@ func TestCommandWords(t *testing.T) {
 			t.Errorf("commandWords(%q) = %q, want %q", tc.text, got, tc.want)
 		}
 	}
-	if got := withoutSudo([]string{"sudo", "-u", "nobody", "-E", "make"}); !reflect.DeepEqual(got, []string{"make"}) {
-		t.Errorf("withoutSudo = %q", got)
+	if got := unwrapCommand([]string{"sudo", "-u", "nobody", "-E", "make"}); !reflect.DeepEqual(got, []string{"make"}) {
+		t.Errorf("unwrapCommand = %q", got)
 	}
 }
 

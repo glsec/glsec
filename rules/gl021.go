@@ -20,10 +20,6 @@ var GL021 = &gl021{}
 func (r *gl021) ID() string { return "GL021" }
 
 var (
-	// assignRe matches a leading shell env assignment (VAR=value) that precedes
-	// a command without being one.
-	assignRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*=`)
-
 	// gl021VarRefRe also accepts PowerShell's $env:NAME and ${env:NAME}.
 	// The env: drive is case insensitive; the capture is the variable name.
 	gl021VarRefRe = regexp.MustCompile(`\$\{?(?i:env:)?([A-Za-z_][A-Za-z0-9_]*)\}?`)
@@ -238,14 +234,6 @@ func isPredefinedVar(name string) bool {
 	return (strings.HasPrefix(name, "CI_") || strings.HasPrefix(name, "GITLAB_")) && !secretNameRe.MatchString(name)
 }
 
-// gl021PrefixTokens are leading tokens that introduce a command without being
-// one (group/subshell openers and shell keywords). Env assignments are matched
-// separately by assignRe.
-var gl021PrefixTokens = map[string]bool{
-	"{": true, "(": true, "!": true,
-	"then": true, "do": true, "else": true, "elif": true,
-}
-
 // segmentPrintCommand returns the print command at the start of a segment,
 // canonicalizing PowerShell command names. It skips leading env assignments and
 // group/keyword openers, then checks the first real token — so an `echo` that
@@ -255,19 +243,18 @@ func segmentPrintCommand(segHead string) string {
 	// Quoted placeholders preserve redirect targets, but command recognition
 	// keeps the earlier behavior of treating single-quoted spans as blanks.
 	segHead = strings.ReplaceAll(segHead, "''", " ")
-	for _, tok := range strings.Fields(segHead) {
-		if assignRe.MatchString(tok) || gl021PrefixTokens[tok] {
-			continue
-		}
-		if tok == "echo" || tok == "printf" || tok == "print" {
-			return tok
-		}
-		command := strings.ToLower(tok)
-		switch command {
-		case "write-host", "write-output", "write-information", "write":
-			return command
-		}
+	words := unwrapCommand(strings.Fields(segHead))
+	if len(words) == 0 {
 		return ""
+	}
+	tok := words[0]
+	if tok == "echo" || tok == "printf" || tok == "print" {
+		return tok
+	}
+	command := strings.ToLower(tok)
+	switch command {
+	case "write-host", "write-output", "write-information", "write":
+		return command
 	}
 	return ""
 }

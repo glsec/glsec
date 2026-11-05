@@ -190,7 +190,7 @@ func (r *gl090) Check(doc *yaml.Node, file string) []finding.Finding {
 		var off [len(lifecycleEcosystems)]bool
 		for _, item := range items {
 			for _, cmd := range shellCommands(item.Value) {
-				words := withoutSudo(commandWords(cmd.text))
+				words := commandWords(cmd.text)
 				for i, eco := range lifecycleEcosystems {
 					offHere := eco.offRe != nil && eco.offRe.MatchString(cmd.text)
 					switch {

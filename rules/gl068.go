@@ -163,7 +163,7 @@ var shellNames = map[string]bool{
 // script, not the shell, so it is not flagged. `-o xtrace` counts; `+o
 // xtrace` (disabling) does not.
 func shellInvocationXtrace(cmd string) (string, bool) {
-	words := withoutSudo(commandWords(cmd))
+	words := commandWords(cmd)
 	if len(words) == 0 {
 		return "", false
 	}

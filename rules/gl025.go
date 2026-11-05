@@ -100,7 +100,7 @@ func userVarInRequest(script string) (string, int) {
 		// passed to jq or another command of the same pipeline doesn't.
 		var parts []string
 		for _, text := range commandsWithSubstitutions(line) {
-			if name := commandName(withoutSudo(commandWords(text))); name == "curl" || name == "wget" {
+			if name := commandName(commandWords(text)); name == "curl" || name == "wget" {
 				parts = append(parts, text)
 			}
 		}

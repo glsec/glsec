@@ -92,7 +92,7 @@ func gl024Scan(script string) gl024Line {
 		if !strings.Contains(cmd.text, "sh") {
 			continue
 		}
-		via, inner, errexit, ok := childShellScript(withoutSudo(commandWords(cmd.text)))
+		via, inner, errexit, ok := childShellScript(commandWords(cmd.text))
 		if !ok || pipefailRe.MatchString(inner) || !needsPipefail(inner, errexit || errexitRe.MatchString(inner)) {
 			continue
 		}
