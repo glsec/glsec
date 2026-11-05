@@ -85,29 +85,29 @@ func (r *gl062) Check(doc *yaml.Node, file string) []finding.Finding {
 		if strings.HasPrefix(strings.TrimSpace(v), "#") {
 			return
 		}
-		v = unwrappedLine(v)
 		// Preserve legacy matching in sh -c payloads. Mask only the new forms,
 		// so `echo "hello; set; done"` is not read as a dump (#1161).
-		if !legacyEnvFullDumpRe.MatchString(v) && !envFullDumpRe.MatchString(maskShellQuotes(v)) {
+		if !mayRunShellC(v) && !wrapperWordRe.MatchString(v) && !legacyEnvFullDumpRe.MatchString(v) && !envFullDumpRe.MatchString(maskShellQuotes(v)) {
 			return
 		}
 		cmds := shellCommands(v)
 		depth := 0
 		for ci, cmd := range cmds {
-			masked := maskShellQuotes(cmd.text)
+			text := unwrappedLine(cmd.text)
+			masked := maskShellQuotes(text)
 			m := findEnvFullDump(masked, depth)
 			depth = envDumpParenDepth(masked, depth)
-			loc := legacyEnvFullDumpRe.FindStringIndex(cmd.text)
+			loc := legacyEnvFullDumpRe.FindStringIndex(text)
 			dump := "printenv/env with no arguments"
 			legacy := true
 			if m != nil && (loc == nil || m[0] < loc[0]) {
 				loc = m[:2]
-				dump = cmd.text[m[2]:m[3]]
+				dump = text[m[2]:m[3]]
 				legacy = false
 			}
 			// Output captured by $(…) or backticks goes to a variable or an
 			// argument, not to the log: X=$(env | grep …), for v in $(env …).
-			if loc == nil || strings.Contains(cmd.text[:loc[1]], "$(") || strings.Contains(cmd.text[:loc[1]], "`") {
+			if loc == nil || strings.Contains(text[:loc[1]], "$(") || strings.Contains(text[:loc[1]], "`") {
 				continue
 			}
 			// The pipeline's output written to a file doesn't reach the log.

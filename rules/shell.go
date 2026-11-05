@@ -39,7 +39,9 @@ func inArithmetic(text string) bool {
 // comments are dropped, and the bodies of here-documents are skipped, so text
 // that is only data never reads as a command. A body a local shell reads as
 // its script is split into commands instead, after the line that opens it
-// (#1216): on another machine, as with ssh, it stays data.
+// (#1216): on another machine, as with ssh, it stays data. So is the script of
+// a local sh -c, after all other commands so that a pipeline stays in order
+// (#1218).
 func shellCommands(script string) []shellCommand {
 	var cmds []shellCommand
 	var cur strings.Builder
@@ -166,7 +168,38 @@ func shellCommands(script string) []shellCommand {
 		}
 	}
 	emit(false)
+	if mayRunShellC(script) {
+		for _, cmd := range cmds {
+			if inner, ok := shellCText(cmd.text); ok {
+				for _, c := range shellCommands(inner) {
+					c.line += cmd.line
+					cmds = append(cmds, c)
+				}
+			}
+		}
+	}
 	return cmds
+}
+
+// mayRunShellC cheaply rules out scripts without a shell's -c.
+func mayRunShellC(script string) bool {
+	return strings.Contains(script, "sh ") && strings.Contains(script, "c ")
+}
+
+// shellCText returns the script of a command that runs a local shell with -c.
+func shellCText(text string) (string, bool) {
+	if !strings.Contains(text, "sh ") {
+		return "", false
+	}
+	words := commandWords(text)
+	if !posixShells[commandName(words)] {
+		return "", false
+	}
+	i := shellCArg(words[1:])
+	if i < 0 {
+		return "", false
+	}
+	return words[i+1], true
 }
 
 // skipHeredoc moves past a here-document body that starts after the newline

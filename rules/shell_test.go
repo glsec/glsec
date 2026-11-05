@@ -31,6 +31,12 @@ func TestShellCommands(t *testing.T) {
 		{"ssh h bash <<EOF\nsudo x\nEOF", []shellCommand{{text: "ssh h bash <<EOF", line: 0}}},
 		{"bash <<EOF\nsudo x", []shellCommand{{text: "bash <<EOF", line: 0}, {text: "sudo x", line: 1}}},
 		{"bash <<A 3<<B\nsudo x\nA\ny\nB", []shellCommand{{text: "bash <<A 3<<B", line: 0}}},
+		{"bash -c 'a | b' | c", []shellCommand{{text: "bash -c 'a | b'", line: 0}, {text: "c", line: 0}, {text: "a", line: 0}, {text: "b", line: 0}}},
+		{"x\ntimeout 5 sh -ec \"a\nb\"", []shellCommand{{text: "x", line: 0}, {text: "timeout 5 sh -ec \"a\nb\"", line: 1}, {text: "a", line: 1}, {text: "b", line: 2}}},
+		{"bash -c 'sh -c a'", []shellCommand{{text: "bash -c 'sh -c a'", line: 0}, {text: "sh -c a", line: 0}, {text: "a", line: 0}}},
+		{"ssh h 'sh -c a'", []shellCommand{{text: "ssh h 'sh -c a'", line: 0}}},
+		{"bash run.sh -c a", []shellCommand{{text: "bash run.sh -c a", line: 0}}},
+		{"python -c a; sh -c", []shellCommand{{text: "python -c a", line: 0}, {text: "sh -c", line: 0}}},
 		{"cat <<< \"$x\" | y", []shellCommand{{text: `cat <<< "$x"`, line: 0}, {text: "y", line: 0}}},
 		{"echo \"line1\nline2\" && b", []shellCommand{{text: "echo \"line1\nline2\"", line: 0}, {text: "b", line: 1}}},
 	} {
