@@ -159,17 +159,16 @@ two:
 }
 
 func TestCollapse_MergeKeysUnchanged(t *testing.T) {
-	// Explicit keys override merged ones whatever their order, and two merge
-	// keys are not duplicates.
+	// A key after a merge overrides it, and two merge keys are not duplicates.
 	doc := mustParse(t, `
 .a: &a
   image: a:1
 .b: &b
   stage: b
 job:
-  image: explicit:1
   <<: *a
   <<: *b
+  image: explicit:1
   script: [make]
 `)
 	job := FindKey(doc.MappingNode(), "job")
@@ -234,5 +233,68 @@ build:
 func TestFirstAnchor_Nil(t *testing.T) {
 	if got := firstAnchor(nil); got != "" {
 		t.Errorf("firstAnchor(nil) = %q", got)
+	}
+}
+
+// A key a later << overrides is dead like a duplicate, and is reported once,
+// where it is written (#1152).
+func TestExpandAliases_ReportsOverriddenKeys(t *testing.T) {
+	doc := mustParse(t, `
+.a: &a
+  image: a:1
+  stage: a
+.b: &b
+  stage: b
+job:
+  image: own:1
+  <<: *a
+later:
+  <<: *a
+  image: own:1
+merges:
+  <<: *a
+  <<: *b
+.tpl: &tpl
+  stage: tpl
+  <<: *b
+first:
+  <<: *tpl
+second:
+  <<: *tpl
+`)
+	if len(doc.DuplicateKeys) != 2 {
+		t.Fatalf("want two overridden keys, got %+v", doc.DuplicateKeys)
+	}
+	d := doc.DuplicateKeys[0]
+	if d.Key.Value != "image" || d.Key.Line != 8 || d.Merge.Line != 9 || d.Winner.Line != 3 || d.Job != "job" {
+		t.Errorf("got key %d, merge %d, winner %d, job %q", d.Key.Line, d.Merge.Line, d.Winner.Line, d.Job)
+	}
+	if d = doc.DuplicateKeys[1]; d.Key.Value != "stage" || d.Key.Line != 17 || d.Job != ".tpl" {
+		t.Errorf("got %s on line %d in %q", d.Key.Value, d.Key.Line, d.Job)
+	}
+}
+
+func TestExpandAliases_OverriddenTopLevelKey(t *testing.T) {
+	doc := mustParse(t, ".a: &a\n  variables: {X: merged}\n  job:\n    script: [merged]\nvariables: {X: own}\njob:\n  script: [own]\n<<: *a\n")
+	jobs := map[string]string{}
+	for _, d := range doc.DuplicateKeys {
+		jobs[d.Key.Value] = d.Job
+	}
+	if j, ok := jobs["job"]; !ok || j != "job" {
+		t.Errorf("job: got %q", j)
+	}
+	if j, ok := jobs["variables"]; !ok || j != "" {
+		t.Errorf("variables is a reserved key: got %q", j)
+	}
+}
+
+// An anchor on the overridden value is still used through its aliases.
+func TestExpandAliases_OverriddenValueKeepsAnchor(t *testing.T) {
+	doc := mustParse(t, ".a: &a\n  image: a:1\njob:\n  image: &img own:1\n  <<: *a\nother:\n  image: *img\n")
+	if len(doc.DuplicateKeys) != 1 || doc.DuplicateKeys[0].Anchor != "img" {
+		t.Fatalf("got %+v", doc.DuplicateKeys)
+	}
+	if got := FindKey(FindKey(doc.MappingNode(), "other"), "image"); got == nil || got.Value != "own:1" {
+		t.Errorf("the alias must still resolve: %v", got)
 	}
 }

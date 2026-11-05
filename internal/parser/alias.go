@@ -23,9 +23,15 @@ const maxExpandedNodes = 250_000
 // Two kinds of alias stay unexpanded, as they were before expansion existed:
 // one that points at an enclosing node, which would make the tree cyclic, and
 // any alias past the maxExpandedNodes budget.
-func ExpandAliases(node *yaml.Node) {
-	e := &expander{done: map[*yaml.Node]bool{}, onPath: map[*yaml.Node]bool{}, sizes: map[*yaml.Node]int{}}
+//
+// It returns the keys written on a mapping that a later << overrides.
+func ExpandAliases(node *yaml.Node) []DuplicateKey {
+	if node == nil {
+		return nil
+	}
+	e := &expander{done: map[*yaml.Node]bool{}, onPath: map[*yaml.Node]bool{}, sizes: map[*yaml.Node]int{}, root: Unwrap(node)}
 	e.expand(node)
+	return e.overridden
 }
 
 type expander struct {
@@ -33,6 +39,10 @@ type expander struct {
 	onPath map[*yaml.Node]bool
 	sizes  map[*yaml.Node]int
 	used   int
+	root   *yaml.Node // the top-level mapping
+	job    string     // the top-level key being expanded
+	// overridden lists the own keys a << replaced.
+	overridden []DuplicateKey
 }
 
 func (e *expander) expand(node *yaml.Node) {
@@ -50,6 +60,9 @@ func (e *expander) expand(node *yaml.Node) {
 		}
 	case yaml.MappingNode:
 		for i := 1; i < len(node.Content); i += 2 {
+			if node == e.root {
+				e.job = node.Content[i-1].Value
+			}
 			node.Content[i] = e.resolve(node.Content[i])
 		}
 		e.foldMergeKeys(node)
@@ -115,48 +128,101 @@ func (e *expander) size(node *yaml.Node) int {
 	return n
 }
 
-// foldMergeKeys replaces a mapping's << entries with the keys they merge in.
-// Keys set directly on the mapping win, and earlier merge sources win over
-// later ones, as the YAML merge-key spec defines. A source that stayed an
-// alias (a cycle, or over budget) keeps its << entry unfolded.
+// foldMergeKeys replaces a mapping's << entries with the keys they merge in,
+// the way GitLab's YAML loader, Ruby's Psych, reads a mapping: entry by entry.
+// A << overrides the keys written before it and a key written after it
+// overrides the <<, unlike the YAML merge-key spec, where own keys always win
+// (#1152). A key keeps the position it was first set at, and an own key a <<
+// overrides is recorded in overridden. A source that stayed an alias (a cycle,
+// or over budget) keeps its << entry unfolded.
 func (e *expander) foldMergeKeys(node *yaml.Node) {
-	var merges []*yaml.Node
-	own := make([]*yaml.Node, 0, len(node.Content))
-	present := map[string]bool{}
+	hasMerge := false
 	for i := 0; i+1 < len(node.Content); i += 2 {
-		key, value := node.Content[i], node.Content[i+1]
-		if key.Tag == "!!merge" {
-			merges = append(merges, key, value)
-			continue
-		}
-		own = append(own, key, value)
-		present[key.Value] = true
+		hasMerge = hasMerge || node.Content[i].Tag == "!!merge"
 	}
-	if merges == nil {
+	if !hasMerge {
 		return
 	}
-	for i := 0; i < len(merges); i += 2 {
-		sources := []*yaml.Node{merges[i+1]}
-		if merges[i+1].Kind == yaml.SequenceNode {
-			sources = merges[i+1].Content
+	out := make([]*yaml.Node, 0, len(node.Content))
+	at := map[dupID]int{} // where each key sits in out
+	own := map[int]bool{} // positions in out written on this mapping itself
+	put := func(key, value *yaml.Node) int {
+		id, ok := keyID(key)
+		if pos, seen := at[id]; ok && seen {
+			out[pos], out[pos+1] = key, value
+			return pos
 		}
-		for _, src := range sources {
-			// resolve already expanded the << value, or kept it an alias.
-			if src.Kind != yaml.MappingNode {
-				own = append(own, merges[i], merges[i+1])
-				break
-			}
-			for j := 0; j+1 < len(src.Content); j += 2 {
-				key := src.Content[j]
-				if present[key.Value] {
-					continue
+		if ok {
+			at[id] = len(out)
+		}
+		out = append(out, key, value)
+		return len(out) - 2
+	}
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		key, value := node.Content[i], node.Content[i+1]
+		if key.Tag != "!!merge" {
+			own[put(key, value)] = true
+			continue
+		}
+		merged, complete := mergedEntries(value)
+		for j := 0; j+1 < len(merged); j += 2 {
+			if id, ok := keyID(merged[j]); ok {
+				if pos, seen := at[id]; seen && own[pos] {
+					e.reportOverride(node, out[pos], out[pos+1], merged[j], key)
+					delete(own, pos)
 				}
-				present[key.Value] = true
-				own = append(own, key, src.Content[j+1])
 			}
+			put(merged[j], merged[j+1])
+		}
+		if !complete {
+			out = append(out, key, value)
 		}
 	}
-	node.Content = own
+	node.Content = out
+}
+
+// mergedEntries returns the key/value pairs a << value merges in. In a list
+// earlier sources win, and, as in Psych, the last source's keys come first.
+// complete is false when a source isn't a mapping: resolve kept it an alias.
+func mergedEntries(value *yaml.Node) (entries []*yaml.Node, complete bool) {
+	sources := []*yaml.Node{value}
+	if value.Kind == yaml.SequenceNode {
+		sources = value.Content
+	}
+	complete = true
+	at := map[dupID]int{}
+	for i := len(sources) - 1; i >= 0; i-- {
+		src := sources[i]
+		if src.Kind != yaml.MappingNode {
+			complete = false
+			continue
+		}
+		for j := 0; j+1 < len(src.Content); j += 2 {
+			key, val := src.Content[j], src.Content[j+1]
+			id, ok := keyID(key)
+			if pos, seen := at[id]; ok && seen {
+				entries[pos], entries[pos+1] = key, val
+				continue
+			}
+			if ok {
+				at[id] = len(entries)
+			}
+			entries = append(entries, key, val)
+		}
+	}
+	return entries, complete
+}
+
+// reportOverride records an own key whose value a << replaced.
+func (e *expander) reportOverride(node, key, value, winner, merge *yaml.Node) {
+	job := e.job
+	if node == e.root {
+		job = key.Value
+	}
+	if reservedKeys[job] {
+		job = ""
+	}
+	e.overridden = append(e.overridden, DuplicateKey{Key: key, Winner: winner, Merge: merge, Job: job, Anchor: firstAnchor(value)})
 }
 
 func deref(node *yaml.Node) *yaml.Node {
