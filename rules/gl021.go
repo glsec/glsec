@@ -105,6 +105,14 @@ func (r *gl021) Check(doc *yaml.Node, file string) []finding.Finding {
 // A pipeline can itself print the data (for example, tee), so it is not
 // assumed to redact the file's contents.
 func printedCredentialFile(line string) string {
+	// Most script lines do not mention a credential file. Avoid shell parsing
+	// and its allocations unless one of the supported names may be present.
+	if !strings.Contains(line, ".npmrc") && !strings.Contains(line, ".yarnrc.yml") &&
+		!strings.Contains(line, ".pypirc") && !strings.Contains(line, ".netrc") &&
+		!strings.Contains(line, "_netrc") && !strings.Contains(line, ".dockercfg") &&
+		!strings.Contains(line, ".docker") {
+		return ""
+	}
 	for _, cmd := range shellCommands(line) {
 		words := commandWords(cmd.text)
 		if len(words) < 2 {
