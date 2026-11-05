@@ -19,7 +19,7 @@ files ─▶ resolve targets ─▶ parse ─▶ validate ─▶ follow includes
 7. **Baseline** (`internal/baseline`). With `--new-only`, findings already in a baseline file are dropped.
 8. **Output** (`internal/output`). Findings are written as text, table, JSON, SARIF, GitLab Code Quality, JUnit, a GitLab SAST report or through a Go template to stdout, with the scan errors in the format's own field. Secret values in messages and source lines are masked first (`internal/redact`) unless `--no-redact` is given. The exit code is 0, 1 for error findings (or warn findings with `--strict`), or 2 for usage, scan and policy errors.
 
-Results can be cached per input (`internal/cache`, under `$XDG_CACHE_HOME/glsec`), keyed on the glsec version, the date, the GitLab version, every input file, the configuration, `.glsec-ignore`, the excluded paths and the selected rules. The cache is off in CI (`CI=true`) unless `--cache` is given, and for stdin, `--no-ignores`, `--new-only`, `--generate-ignore` and `require_ignore_reason`.
+Results can be cached per input (`internal/cache`, under `$XDG_CACHE_HOME/glsec`), keyed on the glsec version, the date, the GitLab version, every input file, the configuration, `.glsec-ignore`, the excluded paths, the selected rules and, when ShellCheck is enabled, the ShellCheck binary. The cache is off in CI (`CI=true`) unless `--cache` is given, and for stdin, `--no-ignores`, `--new-only`, `--generate-ignore` and `require_ignore_reason`.
 
 ### Interfaces
 
