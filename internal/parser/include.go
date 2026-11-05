@@ -54,17 +54,33 @@ func shorthandInclude(value *yaml.Node) *yaml.Node {
 	}
 }
 
-// LocalIncludePaths returns the files a pipeline pulls in with a top-level
+// LocalInclude is a file named by a top-level `include:`. Conditional reports
+// that the entry has `rules:`, so GitLab accepts it while the file is absent.
+type LocalInclude struct {
+	Path        string
+	Conditional bool
+}
+
+// LocalIncludePaths returns the paths of LocalIncludes.
+func LocalIncludePaths(doc *yaml.Node) []string {
+	var paths []string
+	for _, include := range LocalIncludes(doc) {
+		paths = append(paths, include.Path)
+	}
+	return paths
+}
+
+// LocalIncludes returns the files a pipeline pulls in with a top-level
 // `include:` of local files (#810): `local:` entries and the string
 // shorthand, whatever their `rules:` say, since the file may be included.
 // A path with a variable or an input can't be resolved without the
 // pipeline's context and is left out. Paths may contain GitLab's wildcards;
 // see MatchIncludeGlob.
-func LocalIncludePaths(doc *yaml.Node) []string {
+func LocalIncludes(doc *yaml.Node) []LocalInclude {
 	if doc.Kind == yaml.DocumentNode && len(doc.Content) > 0 {
 		doc = doc.Content[0]
 	}
-	var paths []string
+	var includes []LocalInclude
 	for _, item := range IncludeItems(FindKey(doc, "include")) {
 		local := FindKey(item, "local")
 		if local == nil || local.Kind != yaml.ScalarNode || local.Value == "" {
@@ -73,9 +89,9 @@ func LocalIncludePaths(doc *yaml.Node) []string {
 		if strings.Contains(local.Value, "$") {
 			continue
 		}
-		paths = append(paths, local.Value)
+		includes = append(includes, LocalInclude{Path: local.Value, Conditional: FindKey(item, "rules") != nil})
 	}
-	return paths
+	return includes
 }
 
 // IncludeGlob compiles a wildcard `include: local` path the way GitLab
