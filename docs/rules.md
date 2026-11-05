@@ -50,7 +50,7 @@ Mutable references that allow silent substitution of images, templates, or packa
 | [GL011](rules/GL011.md) | `error` | Download-and-execute pattern in script (`curl \| bash`, `wget \| sh`) |
 | [GL016](rules/GL016.md) | varies  | Insecure transport — HTTP or `git://` (`include:remote`, scripts, variables) |
 | [GL022](rules/GL022.md) | `warn`  | Package manager install or fetch-and-run launcher (`npx -y`, `dlx`, `uvx`) without version pin, or explicit update-to-latest in CI |
-| [GL023](rules/GL023.md) | `warn`  | Lockfile not enforced (`npm install` instead of `npm ci`, `yarn install` without `--frozen-lockfile`, etc.) |
+| [GL023](rules/GL023.md) | `warn`  | Lockfile not enforced (`npm install` instead of `npm ci`, `yarn install` without `--frozen-lockfile`, `uv sync` without `--locked`, `bun install` instead of `bun ci`, etc.) |
 | [GL046](rules/GL046.md) | `error`/`warn` | Cache poisoning across the protected-branch boundary — `cache: key:` from a user-controlled variable, or `cache: unprotect: true` on a job that writes the cache |
 | [GL026](rules/GL026.md) | `warn`  | `git clone`/`checkout` uses a mutable ref (branch or tag) instead of a pinned commit SHA |
 | [GL064](rules/GL064.md) | `warn`  | `include: component:` path is one edit from a popular component under a different namespace (typosquat) |
