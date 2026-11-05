@@ -31,6 +31,10 @@ allowed_registries:
 # Also report version tags without a sha256 digest (GL001).
 require_image_digest: false
 
+# Also report project includes (GL003) and components (GL041) pinned to
+# anything but a full commit SHA, such as a version tag.
+require_include_sha: false
+
 # Sources include:project, include:component and include:remote may use (GL075).
 allowed_include_sources:
   - my-group/ci-templates

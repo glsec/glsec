@@ -13,11 +13,19 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-type gl041 struct{}
+type gl041 struct {
+	requireIncludeSHA bool
+}
 
 var GL041 = &gl041{}
 
 func (r *gl041) ID() string { return "GL041" }
+
+// SetRequireIncludeSHA enables the opt-in policy for components (#1175). The
+// zero value keeps the default behavior, which accepts exact version tags.
+func (r *gl041) SetRequireIncludeSHA(required bool) {
+	r.requireIncludeSHA = required
+}
 
 var (
 
@@ -40,21 +48,21 @@ func (r *gl041) Check(doc *yaml.Node, file string) []finding.Finding {
 		if component == nil {
 			continue
 		}
-		if f := checkComponentVersion(component, file); f != nil {
+		if f := checkComponentVersion(component, file, r.requireIncludeSHA); f != nil {
 			findings = append(findings, *f)
 		}
 	}
 	return findings
 }
 
-func checkComponentVersion(node *yaml.Node, file string) *finding.Finding {
+func checkComponentVersion(node *yaml.Node, file string, requireSHA bool) *finding.Finding {
 	val := node.Value
 	at := strings.LastIndex(val, "@")
 	if at < 0 {
 		return &finding.Finding{
 			RuleID:   "GL041",
 			Severity: finding.Warn,
-			Message:  fmt.Sprintf("component include %q has no version — add @<semver-tag> or @<sha> to pin it", val),
+			Message:  fmt.Sprintf("component include %q has no version — %s", val, includePinAdvice(requireSHA, "add @<semver-tag> or @<sha> to pin it")),
 			File:     file,
 			Line:     node.Line,
 			Col:      node.Column,
@@ -67,21 +75,34 @@ func checkComponentVersion(node *yaml.Node, file string) *finding.Finding {
 		return &finding.Finding{
 			RuleID:   "GL041",
 			Severity: finding.Warn,
-			Message:  fmt.Sprintf("component include %q uses tilde version %q — pin to an exact semver tag or commit SHA", val, ref),
+			Message:  fmt.Sprintf("component include %q uses tilde version %q — %s", val, ref, includePinAdvice(requireSHA, "pin to an exact semver tag or commit SHA")),
 			File:     file,
 			Line:     node.Line,
 			Col:      node.Column,
 		}
 	}
 
-	if fullSHARe.MatchString(ref) || componentSemverRe.MatchString(ref) || componentCommitSHARe.MatchString(ref) {
+	if fullSHARe.MatchString(ref) || componentCommitSHARe.MatchString(ref) {
 		return nil
+	}
+	if componentSemverRe.MatchString(ref) {
+		if !requireSHA {
+			return nil
+		}
+		return &finding.Finding{
+			RuleID:   "GL041",
+			Severity: finding.Warn,
+			Message:  fmt.Sprintf("component include %q uses version tag %q, which can be moved — require_include_sha is enabled; pin to a full commit SHA", val, ref),
+			File:     file,
+			Line:     node.Line,
+			Col:      node.Column,
+		}
 	}
 	if componentPartialRe.MatchString(ref) {
 		return &finding.Finding{
 			RuleID:   "GL041",
 			Severity: finding.Warn,
-			Message:  fmt.Sprintf("component include %q uses partial version %q, which GitLab resolves to the latest matching release — pin to an exact version (e.g. %s.0) or a full commit SHA", val, ref, ref),
+			Message:  fmt.Sprintf("component include %q uses partial version %q, which GitLab resolves to the latest matching release — %s", val, ref, includePinAdvice(requireSHA, fmt.Sprintf("pin to an exact version (e.g. %s.0) or a full commit SHA", ref))),
 			File:     file,
 			Line:     node.Line,
 			Col:      node.Column,
@@ -91,7 +112,7 @@ func checkComponentVersion(node *yaml.Node, file string) *finding.Finding {
 	return &finding.Finding{
 		RuleID:   "GL041",
 		Severity: finding.Warn,
-		Message:  fmt.Sprintf("component include %q uses mutable ref %q — pin to a semver tag (e.g. 1.0.0) or a full commit SHA", val, ref),
+		Message:  fmt.Sprintf("component include %q uses mutable ref %q — %s", val, ref, includePinAdvice(requireSHA, "pin to a semver tag (e.g. 1.0.0) or a full commit SHA")),
 		File:     file,
 		Line:     node.Line,
 		Col:      node.Column,

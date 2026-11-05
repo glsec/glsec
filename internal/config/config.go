@@ -76,6 +76,10 @@ type Config struct {
 	// RequireImageDigest makes GL001 warn on literal version tags without a
 	// SHA256 digest. Off by default; version tags remain accepted otherwise.
 	RequireImageDigest bool `yaml:"require_image_digest"`
+	// RequireIncludeSHA makes GL003 and GL041 warn on a project include or
+	// component pinned to anything but a full commit SHA, such as a version
+	// tag. Off by default; version tags remain accepted otherwise.
+	RequireIncludeSHA bool `yaml:"require_include_sha"`
 	// AllowedIncludeSources is an opt-in allowlist of include sources (project
 	// namespaces, component hosts/paths, or remote hosts). When non-empty, GL075
 	// flags any include:project / include:component / include:remote whose source
