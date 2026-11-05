@@ -102,7 +102,7 @@ jobs:
       - name: Coverage summary
         if: matrix.os == 'ubuntu-latest'
         env:
-          COVERAGE_FLOOR: "92.0"
+          COVERAGE_FLOOR: "96.5"
         run: |
           awk '
             NR > 1 {
@@ -135,6 +135,15 @@ jobs:
             exit 1
           fi
           echo "test coverage ${total}% (floor ${COVERAGE_FLOOR}%)"
+      # A pull request's changed lines must be covered too, so new code can't
+      # hide behind the total (#1229). HEAD is the merge commit, and its first
+      # parent is the target branch.
+      - name: Patch coverage
+        if: matrix.os == 'ubuntu-latest' && github.event_name == 'pull_request'
+        run: |
+          git fetch --depth=2 origin "$GITHUB_SHA"
+          git diff --unified=0 HEAD^1 HEAD -- '*.go' ':!*_test.go' > "$RUNNER_TEMP/change.diff"
+          go run ./cmd/patchcoverage -diff "$RUNNER_TEMP/change.diff" | tee -a "$GITHUB_STEP_SUMMARY"
       # Upload coverage from one OS only — a shared artifact name collides across
       # matrix legs, and Linux coverage is representative.
       - if: matrix.os == 'ubuntu-latest'
@@ -230,7 +239,7 @@ jobs:
       - run: go install github.com/rillig/gobco@v1.3.4
       - name: Branch coverage
         env:
-          BRANCH_FLOOR: "85.0"
+          BRANCH_FLOOR: "92.5"
         run: |
           for dir in $(go list -f '{{.Dir}}' ./...); do
             pkg=${dir#"$PWD"}; pkg=${pkg#/}; [ -n "$pkg" ] || pkg=.
