@@ -81,7 +81,7 @@ const psEnvDump = `(?i:(?:gci|get-childitem|dir|ls|get-item)\s+(?:-path\s+)?env:
 func (r *gl062) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
 	EachScriptLine(doc, file, func(line *yaml.Node, file, job string) {
-		v := line.Value
+		v := blankCaseLabels(line.Value)
 		if strings.HasPrefix(strings.TrimSpace(v), "#") {
 			return
 		}
