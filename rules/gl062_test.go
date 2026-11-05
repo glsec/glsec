@@ -304,3 +304,42 @@ func TestBlankCaseLabels(t *testing.T) {
 		}
 	}
 }
+
+func TestGL062_PowerShellPipelines(t *testing.T) {
+	for _, tc := range []struct {
+		line string
+		want int
+	}{
+		{`gci env: | Select-String PATH`, 0},
+		{`Get-ChildItem env: | Select-String -Pattern "PATH"`, 0},
+		{`gci env: | Where-Object Name -eq PATH`, 0},
+		{`gci env: | where Name -match 'PATH'`, 0},
+		{`gci env: | Where-Object { $_.Name -match "album" }`, 0},
+		{`gci env: | ? { $_.Name -eq "HOME" } | Format-Table -AutoSize`, 0},
+		{`gci env: | Select-String TOKEN`, 1},
+		{`gci env: | Select-String CI_`, 1},
+		{`gci env: | Select-String -NotMatch PATH`, 1},
+		{`gci env: | Sort-Object Name`, 1},
+		{`gci env: | Where-Object Name -eq CI_JOB_TOKEN`, 1},
+		{`gci env: | Where-Object Value -eq PATH`, 1},
+		{`gci env: | Where-Object { $_.Name -match "album" -or $_.Value -match "album" }`, 1},
+		{`gci env: | Where-Object { $_.Value -match "album" }`, 1},
+		{`gci env: | Out-File env.txt`, 0},
+		{`gci env: | Sort-Object Name | Set-Content env.txt`, 0},
+		{`gci env: | Add-Content -Path env.txt`, 0},
+		{`gci env: | Tee-Object env.txt`, 1},
+	} {
+		t.Run(tc.line, func(t *testing.T) {
+			if got := checkRule(t, GL062, fmt.Sprintf("job:\n  script:\n    - %q\n", tc.line)); len(got) != tc.want {
+				t.Errorf("got %d findings, want %d: %v", len(got), tc.want, got)
+			}
+		})
+	}
+}
+
+func TestGL062_FilterNamedInMessage(t *testing.T) {
+	got := checkRule(t, GL062, "job:\n  script:\n    - 'gci env: | Select-String TOKEN'\n")
+	if len(got) != 1 || !strings.Contains(got[0].Message, `filtered with Select-String "TOKEN"`) {
+		t.Errorf("got %v", got)
+	}
+}

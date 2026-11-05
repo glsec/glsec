@@ -297,3 +297,30 @@ func TestGL014_CaseArm(t *testing.T) {
 		})
 	}
 }
+
+func TestGL014_PowerShellFileCmdlets(t *testing.T) {
+	for _, tc := range []struct {
+		line string
+		want int
+	}{
+		{`gci env: | Out-File env.txt`, 1},
+		{`gci env: | Out-File -FilePath env.txt`, 1},
+		{`gci env: | Out-File -Append -FilePath env.txt`, 1},
+		{`gci env: | Set-Content env.txt`, 1},
+		{`gci env: | Set-Content -Path env.txt`, 1},
+		{`gci env: | Add-Content env.txt`, 1},
+		{`gci env: | Tee-Object env.txt`, 1},
+		{`gci env: | Tee-Object -FilePath env.txt`, 1},
+		{`gci env: | Format-List | Out-File env.txt`, 1},
+		{`gci env: | Out-File other.txt`, 0},
+		{`gci env: | Tee-Object -Variable env.txt`, 0},
+		{`gci env: | Select-String PATH | Out-File env.txt`, 0},
+	} {
+		t.Run(tc.line, func(t *testing.T) {
+			src := fmt.Sprintf("job:\n  script:\n    - %q\n  artifacts:\n    paths:\n      - env.txt\n", tc.line)
+			if got := checkRule(t, GL014, src); len(got) != tc.want {
+				t.Errorf("got %d findings, want %d: %v", len(got), tc.want, got)
+			}
+		})
+	}
+}

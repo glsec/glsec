@@ -26,20 +26,25 @@ func (r *gl014) ID() string { return "GL014" }
 // Used by GL014 (#1161).
 const psEnvFormat = `(?:\s*\|\s*(?i:format-table|format-list|out-string)(?:\s+-(?i:[a-z]+))?)*`
 
+// psFileTarget matches the PowerShell cmdlets that write the pipeline's output
+// to a file, with or without a path parameter (#1172).
+const psFileTarget = `\|\s*(?i:out-file|set-content|add-content|tee-object)(?:\s+-(?i:filepath|literalpath|path|append|force))*\s+([^\s-]\S*)`
+
 // envDumpRe matches a command that writes the whole environment to a file:
 // env (also env -0/--null), printenv, export/export -p, set, declare/typeset
 // bare or with only -p/-x, cat /proc/self/environ and the PowerShell env:
 // enumeration (optionally through a formatting cmdlet),
-// redirected with > or >> or piped into tee. The command has to
+// redirected with > or >>, piped into tee or into a PowerShell cmdlet that
+// writes a file (see psFileTarget). The command has to
 // start a command, so "cat .env > f", "printenv VAR > f" (a single
 // variable), "set -e > f", "export FOO=bar > f" and "declare -a arr > f"
-// don't match. Group 1 or 2 is the target file.
+// don't match. Group 1, 2 or 3 is the target file.
 // (?m) lets a command start on any line of a block scalar (#1161).
 var envDumpRe = regexp.MustCompile(
 	`(?m)(?:(?:^|[\s;&|(])(?:env(?:\s+(?:-0|--null))?|printenv|export\s+-p|` +
 		`cat\s+/proc/(?:self|\$\$|[0-9]+)/environ)` +
 		`|(?:^|[;&|(])\s*(?:set|export|(?:declare|typeset)(?:\s+-[px]+)?|` + psEnvDump + psEnvFormat + `))\s*` +
-		`(?:>>?\s*(\S+)|\|\s*tee\s+(?:(?:-a|--append)\s+)?(\S+))`)
+		`(?:>>?\s*(\S+)|\|\s*tee\s+(?:(?:-a|--append)\s+)?(\S+)|` + psFileTarget + `)`)
 
 // Preserve pre-#1161 matches in quoted shell payloads and after comments
 // containing quotes. Masking is only a guard for the newly added forms.
@@ -90,10 +95,10 @@ func (r *gl014) Check(doc *yaml.Node, file string) []finding.Finding {
 					continue
 				}
 				target := ""
-				if m[2] >= 0 {
-					target = script[m[2]:m[3]]
-				} else {
-					target = script[m[4]:m[5]]
+				for g := 2; g+1 < len(m); g += 2 {
+					if m[g] >= 0 {
+						target = script[m[g]:m[g+1]]
+					}
 				}
 				var msg string
 				switch {

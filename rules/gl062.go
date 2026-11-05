@@ -115,12 +115,12 @@ func (r *gl062) Check(doc *yaml.Node, file string) []finding.Finding {
 			for last < len(cmds)-1 && cmds[last].piped {
 				last++
 			}
-			if stdoutRedirectRe.MatchString(maskSingleQuoted(cmds[last].text)) {
+			if stdoutRedirectRe.MatchString(maskSingleQuoted(cmds[last].text)) || psFileWriteRe.MatchString(cmds[last].text) {
 				continue
 			}
 			msg := fmt.Sprintf("%s dumps every environment variable to the job log, including CI/CD secrets and tokens that may not be reliably masked — print only the specific variables you need", dump)
 			if cmd.piped && ci+1 < len(cmds) {
-				if pattern, ok := grepPattern(cmds[ci+1].text); ok {
+				if filter, pattern, ok := envFilter(cmds[ci+1].text); ok {
 					if narrowEnvFilter(pattern) {
 						continue // env | grep THREADS: one variable, like printenv THREADS (#996)
 					}
@@ -128,7 +128,7 @@ func (r *gl062) Check(doc *yaml.Node, file string) []finding.Finding {
 					if legacy {
 						name = "env/printenv"
 					}
-					msg = fmt.Sprintf("%s filtered with grep %q prints every variable that matches, including CI/CD secrets such as CI_JOB_TOKEN or CI_REGISTRY_PASSWORD whose names match — print only the specific variables you need", name, pattern)
+					msg = fmt.Sprintf("%s filtered with %s %q prints every variable that matches, including CI/CD secrets such as CI_JOB_TOKEN or CI_REGISTRY_PASSWORD whose names match — print only the specific variables you need", name, filter, pattern)
 				}
 			}
 			f := finding.Finding{
@@ -147,6 +147,35 @@ func (r *gl062) Check(doc *yaml.Node, file string) []finding.Finding {
 		}
 	})
 	return findings
+}
+
+// PowerShell forms of a pipeline stage after an env: listing (#1172).
+var (
+	// psFileWriteRe matches a cmdlet that takes the pipeline's output to a
+	// file. Tee-Object writes to the log as well, so it isn't one.
+	psFileWriteRe = regexp.MustCompile(`(?i)^(?:out-file|set-content|add-content)\b`)
+	// psSelectStringRe matches Select-String with one pattern and no other
+	// option. Group 1 is the pattern.
+	psSelectStringRe = regexp.MustCompile(`(?i)^(?:select-string|sls)\s+(?:-pattern\s+)?["']?([^\s"']+)["']?$`)
+	// psWhereNameRe matches Where-Object on the name alone, as a comparison
+	// or a script block. A test of $_.Value selects by content, and anything
+	// more than one comparison doesn't match.
+	psWhereNameRe = regexp.MustCompile(`(?i)^(?:where-object|where|\?)\s+(?:name\s+-i?(?:eq|match|like)\s+["']?([^\s"']+)["']?|\{\s*\$_\.name\s+-i?(?:eq|match|like)\s+["']?([^\s"']+)["']?\s*\})$`)
+)
+
+// envFilter returns the filter in a pipeline stage after a dump, named for the
+// message, and the pattern it selects variables by.
+func envFilter(cmd string) (filter, pattern string, ok bool) {
+	if p, ok := grepPattern(cmd); ok {
+		return "grep", p, true
+	}
+	if m := psSelectStringRe.FindStringSubmatch(cmd); m != nil {
+		return "Select-String", m[1], true
+	}
+	if m := psWhereNameRe.FindStringSubmatch(cmd); m != nil {
+		return "Where-Object", m[1] + m[2], true
+	}
+	return "", "", false
 }
 
 // grepPattern returns the pattern a grep, egrep or fgrep command filters by.
