@@ -54,12 +54,12 @@ func (r *gl089) Check(doc *yaml.Node, file string) []finding.Finding {
 	// an anchor (#766); the rest depends on the job's variables.
 	runsRenovate := nodeMemo[bool]{}
 	// Collected once: walking every job for them per job was quadratic (#838).
-	pipelineVars := pipelineVariableBlocks(doc)
+	pipelineVars := pipelineVariablesOf(doc)
 	parser.EachJob(doc, func(name, job *yaml.Node) {
 		if strings.HasPrefix(name.Value, ".") {
 			return
 		}
-		var vars []*yaml.Node
+		var vars jobVariables
 		varsDone := false
 		for _, key := range []string{"before_script", "script"} {
 			block := in.Key(job, key)
@@ -71,7 +71,7 @@ func (r *gl089) Check(doc *yaml.Node, file string) []finding.Finding {
 					continue
 				}
 				if !varsDone {
-					vars, varsDone = jobVariableBlocks(in, job, pipelineVars), true
+					vars, varsDone = variablesOf(in, job, pipelineVars), true
 				}
 				for _, line := range strings.Split(unwrappedLine(strings.ReplaceAll(item.Value, "\\\n", " ")), "\n") {
 					if !unlimitedAutodiscover(line, vars) {
@@ -97,7 +97,7 @@ func (r *gl089) Check(doc *yaml.Node, file string) []finding.Finding {
 // unlimitedAutodiscover reports whether line runs Renovate with autodiscovery
 // switched on, by flag or variable, and neither a flag nor a variable limits
 // it. A flag on the command line wins over the variable, as in Renovate.
-func unlimitedAutodiscover(line string, vars []*yaml.Node) bool {
+func unlimitedAutodiscover(line string, vars jobVariables) bool {
 	m := renovateCmdRe.FindStringIndex(line)
 	if m == nil {
 		return false
@@ -107,116 +107,14 @@ func unlimitedAutodiscover(line string, vars []*yaml.Node) bool {
 		args = args[:end]
 	}
 	on := autodiscoverOnRe.MatchString(args) ||
-		!autodiscoverOffRe.MatchString(args) && varIsTrue(vars, "RENOVATE_AUTODISCOVER")
+		!autodiscoverOffRe.MatchString(args) && vars.sometimes("RENOVATE_AUTODISCOVER", isTrueValue)
 	if !on || autodiscoverLimitRe.MatchString(args) {
 		return false
 	}
 	for _, name := range autodiscoverLimitVars {
-		if varIsSet(vars, name) {
+		if vars.always(name, isSetValue) {
 			return false
 		}
 	}
 	return true
-}
-
-// jobVariableBlocks returns every variables: block whose values can reach a
-// job: its own and its rules: entries', those of the jobs it extends in the
-// same file (GitLab merges variables: along extends:), and the pipeline-level
-// blocks as far as inherit:variables lets them through.
-func jobVariableBlocks(in *Inheritance, job *yaml.Node, pipelineVars []*yaml.Node) []*yaml.Node {
-	var blocks []*yaml.Node
-	add := func(container *yaml.Node) {
-		if v := parser.FindKey(container, "variables"); v != nil {
-			blocks = append(blocks, v)
-		}
-		eachRuleVariables(container, func(vars, _ *yaml.Node) { blocks = append(blocks, vars) })
-	}
-	seen := map[*yaml.Node]bool{}
-	var walk func(n *yaml.Node, depth int)
-	walk = func(n *yaml.Node, depth int) {
-		if n == nil || n.Kind != yaml.MappingNode || seen[n] || depth > maxExtendsDepth {
-			return
-		}
-		seen[n] = true
-		add(n)
-		ext := parser.FindKey(n, "extends")
-		if ext == nil {
-			return
-		}
-		parents := []*yaml.Node{ext}
-		if ext.Kind == yaml.SequenceNode {
-			parents = ext.Content
-		}
-		for _, p := range parents {
-			if p.Kind == yaml.ScalarNode {
-				walk(in.jobs[p.Value], depth+1)
-			}
-		}
-	}
-	walk(job, 0)
-	inherit := in.inheritValue(job, "variables")
-	if inherit == nil {
-		return append(blocks, pipelineVars...)
-	}
-	for _, block := range pipelineVars {
-		blocks = append(blocks, inheritedVariables(block, inherit))
-	}
-	return blocks
-}
-
-// inheritedVariables returns the entries of a variables: block that an
-// inherit:variables value lets through.
-func inheritedVariables(block, inherit *yaml.Node) *yaml.Node {
-	out := &yaml.Node{Kind: yaml.MappingNode, Tag: block.Tag}
-	for i := 0; i+1 < len(block.Content); i += 2 {
-		if inheritAllows(inherit, block.Content[i].Value) {
-			out.Content = append(out.Content, block.Content[i], block.Content[i+1])
-		}
-	}
-	return out
-}
-
-// pipelineVariableBlocks returns the variables: blocks that apply to every job:
-// the top-level and default: ones and those of the workflow:rules entries.
-func pipelineVariableBlocks(doc *yaml.Node) []*yaml.Node {
-	var blocks []*yaml.Node
-	mapping := parser.Unwrap(doc)
-	add := func(v *yaml.Node) {
-		if v != nil {
-			blocks = append(blocks, v)
-		}
-	}
-	add(parser.FindKey(mapping, "variables"))
-	if def := parser.FindKey(mapping, "default"); def != nil {
-		add(parser.FindKey(def, "variables"))
-	}
-	if workflow := parser.FindKey(mapping, "workflow"); workflow != nil {
-		eachRuleVariables(workflow, func(vars, _ *yaml.Node) { add(vars) })
-	}
-	return blocks
-}
-
-// varIsTrue reports whether any block sets name to true, as a string or a
-// YAML boolean.
-func varIsTrue(blocks []*yaml.Node, name string) bool {
-	for _, b := range blocks {
-		for _, v := range varValues(b, name) {
-			if strings.EqualFold(v, "true") {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-// varIsSet reports whether any block gives name a non-empty value.
-func varIsSet(blocks []*yaml.Node, name string) bool {
-	for _, b := range blocks {
-		for _, v := range varValues(b, name) {
-			if strings.TrimSpace(v) != "" {
-				return true
-			}
-		}
-	}
-	return false
 }
