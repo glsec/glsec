@@ -678,3 +678,28 @@ build:
 		t.Fatalf("expected 1 finding, got %d", len(f))
 	}
 }
+
+func TestGL006_ServiceVariables(t *testing.T) {
+	const token = "glpat-AbCdEfGhIjKlMnOpQrSt" //nolint:gosec // G101: test value
+	for _, tc := range []struct {
+		name, src, job string
+		line, want     int
+	}{
+		{"job", "build:\n  services:\n    - name: postgres:16\n      variables:\n        GITLAB_TOKEN: " + token + "\n  script: [x]\n", "build", 5, 1},
+		{"default", "default:\n  services:\n    - name: postgres:16\n      variables:\n        GITLAB_TOKEN: " + token + "\nbuild:\n  script: [x]\n", "", 5, 1},
+		{"top level", "services:\n  - name: postgres:16\n    variables:\n      GITLAB_TOKEN: " + token + "\nbuild:\n  script: [x]\n", "", 4, 1},
+		{"long form", "build:\n  services:\n    - name: postgres:16\n      variables:\n        T:\n          value: " + token + "\n  script: [x]\n", "build", 6, 1},
+		{"plain string service", "build:\n  services:\n    - postgres:16\n  script: [x]\n", "", 0, 0},
+		{"variable reference", "build:\n  services:\n    - name: postgres:16\n      variables:\n        GITLAB_TOKEN: $TOKEN\n  script: [x]\n", "", 0, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := checkRule(t, GL006, tc.src)
+			if len(got) != tc.want {
+				t.Fatalf("got %d findings, want %d: %+v", len(got), tc.want, got)
+			}
+			if tc.want == 1 && (got[0].Line != tc.line || got[0].Job != tc.job) {
+				t.Errorf("got %+v, want line %d, job %q", got[0], tc.line, tc.job)
+			}
+		})
+	}
+}

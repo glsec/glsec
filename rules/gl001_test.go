@@ -4,6 +4,7 @@
 package rules
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 
@@ -422,7 +423,8 @@ func TestGL001_JobInputImage(t *testing.T) {
 		{"job:\n  inputs:\n    img:\n      default: node:latest\n  image: ${{ job.inputs.img }}\n  script: [x]\n", 1},
 		{"job:\n  inputs:\n    img:\n      default: node:22.1.0\n      options: [node:22.1.0, node:latest]\n  image: ${{ job.inputs.img }}\n  script: [x]\n", 1},
 		{"job:\n  inputs:\n    img:\n      default: node:22.1.0\n  image: ${{ job.inputs.img }}\n  script: [x]\n", 0},
-		{"job:\n  inputs:\n    v:\n      default: \"22\"\n  image: registry.example.com/node${{ job.inputs.v }}\n  script: [x]\n", 0},
+		{"job:\n  inputs:\n    v:\n      default: \"22\"\n  image: registry.example.com/node:${{ job.inputs.v }}\n  script: [x]\n", 0},
+		{"job:\n  inputs:\n    v:\n      default: \"22\"\n  image: registry.example.com/node${{ job.inputs.v }}\n  script: [x]\n", 1},
 	}
 	for _, tc := range cases {
 		doc, err := parser.Parse([]byte(tc.src), "test.yml")
@@ -432,5 +434,80 @@ func TestGL001_JobInputImage(t *testing.T) {
 		if f := GL001.Check(doc.Root, "test.yml"); len(f) != tc.want {
 			t.Errorf("%q: got %d findings, want %d: %+v", tc.src, len(f), tc.want, f)
 		}
+	}
+}
+
+func TestGL001_VariableInsideReference(t *testing.T) {
+	for _, tc := range []struct {
+		name, src string
+		want      int
+	}{
+		{"top-level variable", "variables:\n  NODE: latest\nbuild:\n  image: node:$NODE\n  script: [x]\n", 1},
+		{"braces", "variables:\n  NODE: latest\nbuild:\n  image: node:${NODE}\n  script: [x]\n", 1},
+		{"job variable", "build:\n  variables:\n    NODE: latest\n  image: node:$NODE\n  script: [x]\n", 1},
+		{"rules variable", "build:\n  image: node:$NODE\n  rules:\n    - if: $X\n      variables:\n        NODE: latest\n  script: [x]\n", 1},
+		{"matrix scalar", "build:\n  image: node:$NODE\n  parallel:\n    matrix:\n      - NODE: latest\n  script: [x]\n", 1},
+		{"matrix list", "build:\n  image: node:$NODE\n  parallel:\n    matrix:\n      - NODE: [latest, \"20\"]\n  script: [x]\n", 1},
+		{"service", "variables:\n  PG: latest\nbuild:\n  services:\n    - postgres:$PG\n  script: [x]\n", 1},
+		{"pinned", "variables:\n  NODE: \"20\"\nbuild:\n  image: node:$NODE\n  script: [x]\n", 0},
+		{"unset", "build:\n  image: node:$UNSET\n  script: [x]\n", 0},
+		{"unset registry, known tag", "variables:\n  TAG: latest\nbuild:\n  image: $CI_REGISTRY/node:$TAG\n  script: [x]\n", 1},
+		{"known registry, unset tag", "variables:\n  R: registry.example.com\nbuild:\n  image: $R/node:$TAG\n  script: [x]\n", 0},
+		{"value is a reference", "variables:\n  NODE: $OTHER\nbuild:\n  image: node:$NODE\n  script: [x]\n", 0},
+		{"empty value", "variables:\n  NODE: \"\"\nbuild:\n  image: node:$NODE\n  script: [x]\n", 0},
+		{"name is a prefix of another", "variables:\n  NODE: latest\nbuild:\n  image: node:$NODE_TAG\n  script: [x]\n", 0},
+		{"two variables", "variables:\n  A: node\n  B: latest\nbuild:\n  image: $A:$B\n  script: [x]\n", 1},
+		{"same variable twice", "variables:\n  A: latest\nbuild:\n  image: reg/$A:$A\n  script: [x]\n", 1},
+		{"variant value", "variables:\n  T: alpine\nbuild:\n  image: node:$T\n  script: [x]\n", 1},
+		{"digest variable", "variables:\n  D: sha256:abc\nbuild:\n  image: node@$D\n  script: [x]\n", 0},
+		{"hidden job doesn't use the global", "variables:\n  NODE: latest\n.t:\n  image: node:$NODE\n  script: [x]\n", 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := checkRule(t, GL001, tc.src); len(got) != tc.want {
+				t.Errorf("got %d findings, want %d: %+v", len(got), tc.want, got)
+			}
+		})
+	}
+}
+
+func TestGL001_Combinations(t *testing.T) {
+	resolve := func(name string) []string {
+		var values []string
+		for i := range 20 {
+			values = append(values, name+strconv.Itoa(i))
+		}
+		return values
+	}
+	forms := expandRef("$A:$B", resolve)
+	if len(forms) != 20 || !strings.Contains(forms[0], "$B") {
+		t.Fatalf("a single variable keeps all its values, a second one past the limit stays: %d forms, %q", len(forms), forms[0])
+	}
+	few := func(name string) []string { return []string{name + "1", name + "2", name + "3", name + "4"} }
+	forms = expandRef("$A/$B/$C:$D", few)
+	if len(forms) != maxRefForms || !strings.Contains(forms[0], "$D") {
+		t.Fatalf("got %d forms, first %q", len(forms), forms[0])
+	}
+}
+
+func TestGL001_SpecInputs(t *testing.T) {
+	for _, tc := range []struct {
+		name, src string
+		want      int
+	}{
+		{"default", "spec:\n  inputs:\n    image:\n      default: node:latest\n---\nbuild:\n  image: $[[ inputs.image ]]\n  script: [x]\n", 1},
+		{"tag", "spec:\n  inputs:\n    tag:\n      default: latest\n---\nbuild:\n  image: node:$[[ inputs.tag ]]\n  script: [x]\n", 1},
+		{"pinned options", "spec:\n  inputs:\n    tag:\n      default: latest\n      options: [\"20\", \"22\"]\n---\nbuild:\n  image: node:$[[ inputs.tag ]]\n  script: [x]\n", 0},
+		{"options with latest", "spec:\n  inputs:\n    tag:\n      options: [\"20\", latest]\n---\nbuild:\n  image: node:$[[ inputs.tag ]]\n  script: [x]\n", 1},
+		{"no default", "spec:\n  inputs:\n    tag:\n---\nbuild:\n  image: node:$[[ inputs.tag ]]\n  script: [x]\n", 0},
+		{"function", "spec:\n  inputs:\n    tag:\n      default: latest\n---\nbuild:\n  image: node:$[[ inputs.tag | truncate(0, 6) ]]\n  script: [x]\n", 0},
+		{"hidden job", "spec:\n  inputs:\n    tag:\n      default: latest\n---\n.t:\n  image: node:$[[ inputs.tag ]]\n  script: [x]\n", 1},
+		{"top-level image", "spec:\n  inputs:\n    tag:\n      default: latest\n---\nimage: node:$[[ inputs.tag ]]\nbuild:\n  script: [x]\n", 1},
+		{"no spec", "build:\n  image: node:$[[ inputs.tag ]]\n  script: [x]\n", 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := checkRule(t, GL001, tc.src); len(got) != tc.want {
+				t.Errorf("got %d findings, want %d: %+v", len(got), tc.want, got)
+			}
+		})
 	}
 }
