@@ -1,0 +1,5 @@
+deploy:
+  stage: deploy
+  image: alpine:3.20
+  script:
+    - sudo ./deploy.sh

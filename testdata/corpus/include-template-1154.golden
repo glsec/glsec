@@ -1,0 +1,4 @@
+.gitlab-ci.yml:0009 GL090 warn publish (from ci/tpl.yml:3)
+.gitlab-ci.yml:0013 GL045 warn publish
+.gitlab-ci.yml:0018 GL045 warn publish-again
+ci/tpl.yml:0005 GL001 error .pinned-badly

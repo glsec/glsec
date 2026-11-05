@@ -1,0 +1,10 @@
+# #1208: under --strict a local file that can't be read stops the scan, unless
+# GitLab may not need it: an include with rules: is only read when they match.
+include:
+  - local: ci/present.yml
+  - local: ci/optional.yml
+    rules:
+      - if: $CI_COMMIT_TAG
+workflow:
+  rules:
+    - if: $CI_COMMIT_TAG

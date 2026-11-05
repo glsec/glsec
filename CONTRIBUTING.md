@@ -481,6 +481,10 @@ go test ./cmd/glsec -run TestCorpus -update
 
 and review the snapshot diff before committing it. Cases for issues that are still open record today's behaviour and say so in their comment; the snapshot changes with the fix.
 
+A directory in `testdata/corpus/` holds a whole pipeline: its `.gitlab-ci.yml` and the files that pulls in, with `<directory>.golden` next to it. Use one for anything that depends on more than one file: `include:`, templates from another file, child pipelines. Its snapshot adds the file and, for a finding moved to a job, the place it comes from (`.gitlab-ci.yml:0009 GL090 warn publish (from ci/tpl.yml:3)`). These scans run with `--strict`, so a file that can't be read fails the test unless GitLab may run without it.
+
+A finding from the [precision review](RELEASING.md) that a fix changes goes into the corpus the same way: cut the pipeline down to what triggers it, replace project names, hosts and values with made-up ones, and name the issue in a comment. Don't copy a third-party file as it is.
+
 ## Metamorphic test
 
 `TestMetamorphic` rewrites every pipeline in `testdata/fixtures` and `testdata/corpus` into forms that mean the same to GitLab (CRLF, flow style, other quoting, `script:` as a string or a list, jobs reversed, anchors expanded, keys moved into a template the job `extends:` or merges with `<<:`) and fails when the findings change; lines may move. A difference is either a rule that matches on spelling instead of meaning, or a rewrite that isn't equivalent for that rule. The second kind, and rule gaps that have an issue, go into `knownDifferences` as `transform/rule` with the reason. The test also fails on an entry that no longer matches, so remove it when you fix the rule.
