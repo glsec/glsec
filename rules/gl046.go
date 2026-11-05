@@ -80,7 +80,7 @@ func checkCacheUnprotect(node *yaml.Node, file, job string, severity finding.Sev
 	var findings []finding.Finding
 	for _, entry := range cacheEntries(node) {
 		unprotect := parser.FindKey(entry, "unprotect")
-		if unprotect == nil || unprotect.Value != "true" {
+		if !parser.IsTrue(unprotect) {
 			continue
 		}
 		if policy := parser.FindKey(entry, "policy"); policy != nil && policy.Value == "pull" {
@@ -130,7 +130,7 @@ func checkCacheMapping(node *yaml.Node, file, job string) []finding.Finding {
 	// Only under unprotect: true do protected and unprotected caches share a
 	// namespace; without it a steerable key can't cross the boundary, so the
 	// key is flagged only together with unprotect: true (#1105).
-	if u := parser.FindKey(node, "unprotect"); u == nil || u.Value != "true" {
+	if u := parser.FindKey(node, "unprotect"); !parser.IsTrue(u) {
 		return nil
 	}
 	keyNode := parser.FindKey(node, "key")

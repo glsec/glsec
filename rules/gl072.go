@@ -88,5 +88,5 @@ func checkNeedsRef(project, refNode *yaml.Node, file string) *finding.Finding {
 // artifacts: false. Absent defaults to true (artifacts are downloaded).
 func artifactsDisabled(item *yaml.Node) bool {
 	a := parser.FindKey(item, "artifacts")
-	return a != nil && a.Kind == yaml.ScalarNode && a.Value == "false"
+	return parser.IsFalse(a)
 }

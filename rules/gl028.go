@@ -27,7 +27,7 @@ func (r *gl028) Check(doc *yaml.Node, file string) []finding.Finding {
 		}
 
 		untrackedNode := parser.FindKey(artifactsNode, "untracked")
-		if untrackedNode == nil || untrackedNode.Value != "true" {
+		if !parser.IsTrue(untrackedNode) {
 			return
 		}
 

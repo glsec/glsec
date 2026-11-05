@@ -35,7 +35,7 @@ func (r *gl010) Check(doc *yaml.Node, file string) []finding.Finding {
 			return
 		}
 		pv := parser.FindKey(forward, "pipeline_variables")
-		if pv == nil || pv.Kind != yaml.ScalarNode || pv.Value != "true" {
+		if !parser.IsTrue(pv) {
 			return
 		}
 		findings = append(findings, finding.Finding{
