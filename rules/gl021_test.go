@@ -35,6 +35,31 @@ debug:
 	}
 }
 
+func TestGL021_CredentialFilesInLog(t *testing.T) {
+	for _, tc := range []struct {
+		line string
+		want int
+	}{
+		{`cat .npmrc`, 1}, {`head -n 5 .pypirc`, 1},
+		{`tail ~/.netrc`, 1}, {`less /kaniko/.docker/config.json`, 1},
+		{`more .dockercfg`, 1}, {`cat .yarnrc.yml`, 1}, {`cat _netrc`, 1},
+		{`cat ./app/config.json`, 0}, {`echo cat .npmrc`, 0},
+		{`cat .npmrc > copy.txt`, 0}, {`cat .npmrc | tee output.txt`, 1},
+		{`cat .npmrc 2>/dev/null`, 1}, {`# cat .npmrc`, 0},
+		{`cat '.npmrc'`, 1}, {`cat .npmrc > 'copy file'`, 0},
+		{`cat .npmrc 1>&2`, 1}, {`sudo cat /tmp/.netrc`, 1},
+		{`{ cat .npmrc; } > copy.txt`, 0},
+		{`cat other.txt`, 0},
+	} {
+		t.Run(tc.line, func(t *testing.T) {
+			f := findings021(t, "job:\n  script:\n    - "+strconv.Quote(tc.line)+"\n")
+			if len(f) != tc.want {
+				t.Fatalf("got %d findings, want %d: %v", len(f), tc.want, f)
+			}
+		})
+	}
+}
+
 func TestGL021_EchoPassword(t *testing.T) {
 	f := findings021(t, `
 debug:

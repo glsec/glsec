@@ -5,6 +5,7 @@ package rules
 
 import (
 	"fmt"
+	"path"
 	"regexp"
 	"strings"
 
@@ -75,14 +76,19 @@ func (r *gl021) Check(doc *yaml.Node, file string) []finding.Finding {
 				for _, l := range logicalLines(item.Value) {
 					i, line := l.line, l.text
 					match, ok := printedSecret(line)
-					if !ok {
+					message := ""
+					if ok {
+						message = fmt.Sprintf("script prints secret variable %s — value may appear in job logs", match)
+					} else if file := printedCredentialFile(line); file != "" {
+						message = fmt.Sprintf("script prints credential file %s — its contents may appear in job logs", file)
+					} else {
 						continue
 					}
 					findings = append(findings, finding.Finding{
 						RuleID:   "GL021",
 						Severity: finding.Warn,
 						Job:      name.Value,
-						Message:  fmt.Sprintf("script prints secret variable %s — value may appear in job logs", match),
+						Message:  message,
 						File:     file,
 						Line:     parser.ScalarContentLine(item, i),
 						Col:      item.Column,
@@ -93,6 +99,40 @@ func (r *gl021) Check(doc *yaml.Node, file string) []finding.Finding {
 	})
 
 	return findings
+}
+
+// printedCredentialFile detects common credential files printed to stdout.
+// A pipeline can itself print the data (for example, tee), so it is not
+// assumed to redact the file's contents.
+func printedCredentialFile(line string) string {
+	for _, cmd := range shellCommands(line) {
+		words := commandWords(cmd.text)
+		if len(words) < 2 {
+			continue
+		}
+		switch commandName(words) {
+		case "cat", "head", "tail", "less", "more":
+		default:
+			continue
+		}
+		if stdoutRedirectRe.MatchString(maskShellQuotes(cmd.text)) {
+			continue
+		}
+		if at := strings.Index(line, cmd.text); at >= 0 && groupOutputDiverted(line, at+len(cmd.text)-1) {
+			continue
+		}
+		for _, arg := range words[1:] {
+			name := path.Clean(strings.ReplaceAll(arg, `\`, "/"))
+			switch path.Base(name) {
+			case ".npmrc", ".yarnrc.yml", ".pypirc", ".netrc", "_netrc", ".dockercfg":
+				return arg
+			}
+			if strings.HasSuffix("/"+strings.TrimPrefix(name, "/"), "/.docker/config.json") {
+				return arg
+			}
+		}
+	}
+	return ""
 }
 
 // printedSecret reports whether a script line actually prints a secret variable
