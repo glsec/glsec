@@ -123,7 +123,7 @@ deploy:
 			t.Errorf("%s not added", key)
 			continue
 		}
-		if k.Line != ContextLine || v.Line != ContextLine {
+		if !IsContextLine(k.Line) || !IsContextLine(v.Line) {
 			t.Errorf("%s added on line %d/%d, want ContextLine", key, k.Line, v.Line)
 		}
 	}
@@ -132,7 +132,7 @@ deploy:
 			t.Errorf("%s added, want only global keywords and hidden jobs", key)
 		}
 	}
-	if v := FindKey(FindKey(m, "variables"), "A"); v == nil || v.Value != "root" || v.Line != ContextLine {
+	if v := FindKey(FindKey(m, "variables"), "A"); v == nil || v.Value != "root" || !IsContextLine(v.Line) {
 		t.Errorf("the root's variable doesn't override the included one: %v", v)
 	}
 
@@ -148,7 +148,7 @@ func TestWithContext_NoTracedLines(t *testing.T) {
 	job := mustParse(t, "job:\n  script: [x]\n")
 	got := WithContext(job, []*Document{job, root})
 	item := FindKey(FindKey(got.MappingNode(), ".tpl"), "script").Content[0]
-	if line := ScalarContentLine(item, 0); line != ContextLine {
+	if line := ScalarContentLine(item, 0); !IsContextLine(line) {
 		t.Errorf("line = %d, want ContextLine", line)
 	}
 }
@@ -239,17 +239,17 @@ func TestWithContext_MergesLikeGitLab(t *testing.T) {
 		t.Error("the file's own entry lost its line")
 	}
 	tpl := FindKey(m, ".tpl")
-	if v := FindKey(tpl, "image"); v.Value != "second" || v.Line != ContextLine {
+	if v := FindKey(tpl, "image"); v.Value != "second" || !IsContextLine(v.Line) {
 		t.Errorf(".tpl image = %v, want the second file's on ContextLine", v)
 	}
 	if v := FindKey(tpl, "tags"); v == nil || v.Line != 7-1 {
 		t.Errorf(".tpl tags = %v, want the file's own", v)
 	}
 	jobKey, job := FindKeyNode(m, "job")
-	if jobKey.Line != ContextLine || job.Line != ContextLine {
+	if !IsContextLine(jobKey.Line) || !IsContextLine(job.Line) {
 		t.Error("a job several files set belongs to the last of them")
 	}
-	if v := FindKey(job, "script"); v.Line != ContextLine || v.Content[0].Value != "root" {
+	if v := FindKey(job, "script"); !IsContextLine(v.Line) || v.Content[0].Value != "root" {
 		t.Errorf("script = %v, want the root's: lists are replaced", v)
 	}
 	if v := FindKey(FindKey(job, "variables"), "V"); v == nil || v.Value != "second" {
@@ -265,5 +265,38 @@ func TestWithContext_MergesLikeGitLab(t *testing.T) {
 	}
 	if len(FindKey(root.MappingNode(), "job").Content) != 2 {
 		t.Error("the document was changed")
+	}
+}
+
+func TestContextOrigin(t *testing.T) {
+	tpl, err := Parse([]byte(".a:\n  script:\n    - |\n      one\n      two\n"), "ci/tpl.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := Parse([]byte("\n\n.b:\n  image: x\n"), "ci/other.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err := Parse([]byte("job:\n  extends: .a\n"), "root.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := WithContext(root, []*Document{tpl, other, root})
+	m := doc.MappingNode()
+	item := FindKey(FindKey(m, ".a"), "script").Content[0]
+	for _, tc := range []struct {
+		line, want int
+		file       string
+	}{
+		{item.Line, 3, "ci/tpl.yml"},
+		{ScalarContentLine(item, 1), 5, "ci/tpl.yml"},
+		{FindKey(FindKey(m, ".b"), "image").Line, 4, "ci/other.yml"},
+	} {
+		if file, at, ok := doc.ContextOrigin(tc.line); !ok || file != tc.file || at != tc.want {
+			t.Errorf("ContextOrigin(%d) = %s:%d %v, want %s:%d", tc.line, file, at, ok, tc.file, tc.want)
+		}
+	}
+	if _, _, ok := doc.ContextOrigin(ContextLine); ok {
+		t.Error("ContextLine itself has no origin")
 	}
 }

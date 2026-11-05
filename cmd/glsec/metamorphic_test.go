@@ -455,6 +455,112 @@ func TestMetamorphicWrappers(t *testing.T) {
 	}
 }
 
+// TestMetamorphicSplitTemplates moves each job's keys into a hidden template,
+// as the extends transform does, and the templates into an included file.
+// GitLab merges it back, so a finding of a job that runs must still be
+// reported somewhere in the pipeline (#1154).
+func TestMetamorphicSplitTemplates(t *testing.T) {
+	paths, err := filepath.Glob(filepath.Join("..", "..", "testdata", "fixtures", "*.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(paths) == 0 {
+		t.Fatal("no fixtures")
+	}
+	for _, path := range paths {
+		t.Run(filepath.Base(path), func(t *testing.T) {
+			src, err := os.ReadFile(path) //nolint:gosec // G304: the repository's own test pipelines
+			if err != nil {
+				t.Fatal(err)
+			}
+			extended, err := rewrite(moveIntoExtends)(string(src))
+			if errors.Is(err, errNotApplicable) {
+				t.Skip("no job to move")
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			root, templates, ok := splitTemplates(t, extended)
+			if !ok {
+				t.Skip("no hidden job to move")
+			}
+			orig, errOut, ok := metamorphicFindings(t, extended)
+			if !ok {
+				t.Fatalf("glsec can't scan the original:\n%s", errOut)
+			}
+			code, stdout, errOut := runCLI(t, map[string]string{".gitlab-ci.yml": root, "ci/templates.yml": templates},
+				"--no-cache", "--no-repo-config", "--format", "json", ".gitlab-ci.yml")
+			if code == 2 {
+				t.Fatalf("glsec can't scan the split pipeline:\n%s\n%s", errOut, root)
+			}
+			var out struct {
+				Findings []metamorphicFinding `json:"findings"`
+			}
+			if err := json.Unmarshal([]byte(stdout), &out); err != nil {
+				t.Fatal(err)
+			}
+			count := map[string]int{}
+			for _, f := range out.Findings {
+				count[f.Rule]++
+			}
+			for _, f := range orig {
+				if strings.HasPrefix(f.Job, ".") {
+					continue
+				}
+				if count[f.Rule]--; count[f.Rule] < 0 {
+					t.Errorf("lost %s\n%s\n---\n%s", f, root, templates)
+				}
+			}
+		})
+	}
+}
+
+// splitTemplates returns src without its hidden jobs, including a file that
+// has them. A fixture with anchors can't be split: an alias doesn't reach
+// across files.
+func splitTemplates(t *testing.T, src string) (root, templates string, ok bool) {
+	t.Helper()
+	var doc yaml.Node
+	if err := yaml.Unmarshal([]byte(src), &doc); err != nil || doc.Kind != yaml.DocumentNode {
+		return "", "", false
+	}
+	if strings.Contains(src, "\n---") || strings.Contains(src, "*") && strings.Contains(src, "&") {
+		return "", "", false
+	}
+	mapping := doc.Content[0]
+	var keep, moved []*yaml.Node
+	hasInclude := false
+	for i := 0; i+1 < len(mapping.Content); i += 2 {
+		k, v := mapping.Content[i], mapping.Content[i+1]
+		switch {
+		case strings.HasPrefix(k.Value, "."):
+			moved = append(moved, k, v)
+		case k.Value == "include":
+			hasInclude = true
+			keep = append(keep, k, v)
+		default:
+			keep = append(keep, k, v)
+		}
+	}
+	if len(moved) == 0 || hasInclude {
+		return "", "", false
+	}
+	mapping.Content = append([]*yaml.Node{
+		{Kind: yaml.ScalarNode, Tag: "!!str", Value: "include"},
+		{Kind: yaml.ScalarNode, Tag: "!!str", Value: "ci/templates.yml"},
+	}, keep...)
+	r, err := yaml.Marshal(&doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mapping.Content = moved
+	m, err := yaml.Marshal(&doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(r), string(m), true
+}
+
 // unwrappable matches lines a wrapper can't run: builtins, compound commands,
 // assignments and comments.
 var unwrappable = regexp.MustCompile(`^(?:[A-Za-z_][A-Za-z0-9_]*=|[#({$\[.:!]|` +

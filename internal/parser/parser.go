@@ -34,6 +34,8 @@ type Document struct {
 	// in with `include: local` (#810): the pipeline's root document. The file
 	// is a fragment of that pipeline, like a component template.
 	IncludedBy *Document
+	// contextFiles are the other files WithContext took nodes from.
+	contextFiles []contextFile
 	// Includes lists the files this file pulls in with `include: local`, in
 	// the order of its include: list. A file several files include is listed
 	// in each of them; MergeOrder sorts that out.
