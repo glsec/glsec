@@ -278,3 +278,22 @@ build:
 		t.Fatalf("expected one dotenv finding, got %v", f)
 	}
 }
+
+// A dump after a case label writes the file like any other command (#1178).
+func TestGL014_CaseArm(t *testing.T) {
+	for arm, want := range map[string]int{
+		"debug) env > vars.txt ;;":     1,
+		"debug) set > vars.txt ;;":     1,
+		"debug) export > vars.txt ;;":  1,
+		"set|debug) set > vars.txt ;;": 1,
+		"set) make > vars.txt ;;":      0,
+		"debug) set -e > vars.txt ;;":  0,
+	} {
+		t.Run(arm, func(t *testing.T) {
+			src := "build:\n  script:\n    - |\n      case \"$1\" in\n        " + arm + "\n      esac\n  artifacts:\n    paths: [vars.txt]\n"
+			if f := findings014(t, src); len(f) != want {
+				t.Fatalf("got %v, want %d findings", f, want)
+			}
+		})
+	}
+}

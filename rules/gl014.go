@@ -71,28 +71,29 @@ func (r *gl014) Check(doc *yaml.Node, file string) []finding.Finding {
 		}
 		dotenv := dotenvArtifactNode(artifacts)
 		eachJobScriptLine(job, func(item *yaml.Node) bool {
+			script := blankCaseLabels(item.Value)
 			// Mask new forms, so a separator inside an echo string such
 			// as `echo "hello; set > f"` is not read as a command boundary. The
 			// target is taken from the original line so a quoted file name still
 			// resolves (#1161).
-			masked := maskShellQuotes(item.Value)
+			masked := maskShellQuotes(script)
 			legacyStarts := map[int]bool{}
-			for _, loc := range legacyEnvDumpRe.FindAllStringIndex(item.Value, -1) {
+			for _, loc := range legacyEnvDumpRe.FindAllStringIndex(script, -1) {
 				legacyStarts[loc[0]] = true
 			}
 			maskedStarts := map[int]bool{}
 			for _, loc := range envDumpRe.FindAllStringSubmatchIndex(masked, -1) {
 				maskedStarts[loc[0]] = true
 			}
-			for _, m := range envDumpRe.FindAllStringSubmatchIndex(item.Value, -1) {
+			for _, m := range envDumpRe.FindAllStringSubmatchIndex(script, -1) {
 				if !legacyStarts[m[0]] && !maskedStarts[m[0]] {
 					continue
 				}
 				target := ""
 				if m[2] >= 0 {
-					target = item.Value[m[2]:m[3]]
+					target = script[m[2]:m[3]]
 				} else {
-					target = item.Value[m[4]:m[5]]
+					target = script[m[4]:m[5]]
 				}
 				var msg string
 				switch {

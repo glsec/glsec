@@ -171,6 +171,44 @@ func skipHeredoc(script string, i int, delim string, line *int) int {
 
 func isShellSpace(c byte) bool { return c == ' ' || c == '\t' }
 
+// blankCaseLabels replaces each case label in a script with spaces, keeping
+// offsets and lines, so the command after it starts a command: `debug) env ;;`
+// reads as `       env ;;` (#1178). A label is a ) with no ( open before it,
+// outside quotes and comments.
+func blankCaseLabels(script string) string {
+	if !strings.Contains(script, ")") {
+		return script
+	}
+	masked := maskShellQuotes(script)
+	if len(masked) != len(script) {
+		return script
+	}
+	b := []byte(script)
+	depth, start := 0, 0
+	for i := 0; i < len(masked); i++ {
+		switch c := masked[i]; {
+		case c == '\\':
+			i++
+		case c == '#' && (i == 0 || isShellSpace(masked[i-1]) || masked[i-1] == '\n'):
+			for i+1 < len(masked) && masked[i+1] != '\n' {
+				i++
+			}
+		case c == '\n' || c == ';' || c == '&' || c == '|':
+			start = i + 1
+		case c == '(':
+			depth++
+		case c == ')' && depth > 0:
+			depth--
+		case c == ')':
+			for j := start; j <= i; j++ {
+				b[j] = ' '
+			}
+			start = i + 1
+		}
+	}
+	return string(b)
+}
+
 // shellKeywords are reserved words and wrappers that come before the command
 // a simple command runs.
 var shellKeywords = map[string]bool{

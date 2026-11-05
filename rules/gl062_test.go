@@ -250,3 +250,57 @@ func TestGrepPattern(t *testing.T) {
 		}
 	}
 }
+
+// A dump after a case label is a command like any other; the label itself is
+// not one (#1178).
+func TestGL062_CaseArm(t *testing.T) {
+	for _, tc := range []struct {
+		arm  string
+		want int
+	}{
+		{"debug) env ;;", 1},
+		{"debug) set ;;", 1},
+		{"debug) export -p ;;", 1},
+		{"get|debug) printenv ;;", 1},
+		{"set) env ;;", 1},
+		{"debug) env | sort ;;", 1},
+		{"debug) printenv VAR ;;", 0},
+		{"debug) set -e ;;", 0},
+		{"debug) env > vars.txt ;;", 0},
+		{"set) do_it ;;", 0},
+		{"env) do_it ;;", 0},
+		{"debug) do_it ;;", 0},
+	} {
+		t.Run(tc.arm, func(t *testing.T) {
+			src := "job:\n  script:\n    - |\n      case \"$1\" in\n        " + tc.arm + "\n      esac\n"
+			f := findings062(t, src)
+			if len(f) != tc.want {
+				t.Fatalf("got %v, want %d findings", f, tc.want)
+			}
+			if tc.want == 1 && f[0].Line != 5 {
+				t.Errorf("reported on line %d, want 5", f[0].Line)
+			}
+		})
+	}
+}
+
+func TestBlankCaseLabels(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{"debug) env", "       env"},
+		{"a) env ;; b) set", "   env ;;    set"},
+		{"get|debug) env", "get|       env"},
+		{`case "$1" in debug) env ;; esac`, "                    env ;; esac"},
+		{"( set )", "( set )"},
+		{"(\n  make\n) > log", "(\n  make\n) > log"},
+		{"echo $(date) done", "echo $(date) done"},
+		{`echo "a) env"`, `echo "a) env"`},
+		{"# a) env", "# a) env"},
+		{"make # a) env", "make # a) env"},
+		{`echo a\) env`, `echo a\) env`},
+		{"no label", "no label"},
+	} {
+		if got := blankCaseLabels(tc.in); got != tc.want {
+			t.Errorf("blankCaseLabels(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
