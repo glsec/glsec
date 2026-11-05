@@ -42,8 +42,7 @@ func (r *gl037) Check(doc *yaml.Node, file string) []finding.Finding {
 		if !in.Has(job, "trigger") {
 			return
 		}
-		job = in.Effective(job)
-		trigger := parser.FindKey(job, "trigger")
+		trigger := parser.FindKey(in.Effective(job), "trigger")
 		if trigger == nil {
 			return
 		}
@@ -52,7 +51,7 @@ func (r *gl037) Check(doc *yaml.Node, file string) []finding.Finding {
 		if trigger.Kind == yaml.MappingNode && parser.FindKey(trigger, "project") == nil {
 			return
 		}
-		if !inheritsAnyOf(parser.FindKey(job, "inherit"), secrets) {
+		if !inheritsAnyOf(in.inheritValue(job, "variables"), secrets) {
 			return
 		}
 		findings = append(findings, finding.Finding{
@@ -98,26 +97,13 @@ func collectForwardedSecrets(node *yaml.Node, out map[string]bool) {
 // secretRefRe matches a variable reference; group 1 is the name.
 var secretRefRe = regexp.MustCompile(`\$\{?([A-Za-z_][A-Za-z0-9_]*)`)
 
-// inheritsAnyOf reports whether a trigger job receives any of the named
-// top-level variables: inherit: variables: false receives none, a list only
-// the names it lists.
-func inheritsAnyOf(inherit *yaml.Node, names map[string]bool) bool {
-	if inherit == nil || inherit.Kind != yaml.MappingNode {
-		return true
-	}
-	v := parser.FindKey(inherit, "variables")
-	switch {
-	case v == nil:
-		return true
-	case v.Kind == yaml.ScalarNode:
-		return v.Value != "false"
-	case v.Kind == yaml.SequenceNode:
-		for _, n := range v.Content {
-			if names[n.Value] {
-				return true
-			}
+// inheritsAnyOf reports whether a trigger job's inherit:variables value lets
+// any of the named top-level variables through.
+func inheritsAnyOf(value *yaml.Node, names map[string]bool) bool {
+	for name := range names {
+		if inheritAllows(value, name) {
+			return true
 		}
-		return false
 	}
-	return true
+	return false
 }

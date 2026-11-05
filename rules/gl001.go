@@ -45,8 +45,9 @@ func (r *gl001) Check(doc *yaml.Node, file string) []finding.Finding {
 		findings = append(findings, r.checkServicesNode(parser.FindKey(def, "services"), file, resolveGlobal)...)
 	}
 
+	in := NewInheritance(doc)
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
-		resolve := jobVarResolver(name.Value, job, resolveGlobal)
+		resolve := jobVarResolver(in, name.Value, job, resolveGlobal)
 		for _, f := range r.checkImageNode(parser.FindKey(job, "image"), file, resolve) {
 			f.Job = name.Value
 			findings = append(findings, f)
@@ -140,7 +141,7 @@ func (r *gl001) checkRefResolved(ref string, line, col int, file string, resolve
 // workflow:rules). Pipeline-level values are not used for hidden jobs
 // (templates whose users may override them), for jobs that inherit through
 // extends: (not resolved by glsec), or when inherit:variables excludes the name.
-func jobVarResolver(jobName string, job *yaml.Node, resolveGlobal varResolver) varResolver {
+func jobVarResolver(in *Inheritance, jobName string, job *yaml.Node, resolveGlobal varResolver) varResolver {
 	jobVars := parser.FindKey(job, "variables")
 	useGlobal := !strings.HasPrefix(jobName, ".") && parser.FindKey(job, "extends") == nil
 	return func(name string) []string {
@@ -148,7 +149,7 @@ func jobVarResolver(jobName string, job *yaml.Node, resolveGlobal varResolver) v
 			return jobInputValues(job, input)
 		}
 		fallback := varValues(jobVars, name)
-		if fallback == nil && useGlobal && inheritsGlobalVar(job, name) {
+		if fallback == nil && useGlobal && in.Inherits(job, "variables", name) {
 			fallback = resolveGlobal(name)
 		}
 		// A matching rule overrides the other values, so each value a rule
@@ -253,29 +254,6 @@ func matrixValues(job *yaml.Node, name string) (values []string, complete bool) 
 		}
 	}
 	return values, complete
-}
-
-// inheritsGlobalVar reports whether inherit:variables lets the job see the
-// top-level variable name.
-func inheritsGlobalVar(job *yaml.Node, name string) bool {
-	inherit := parser.FindKey(job, "inherit")
-	if inherit == nil || inherit.Kind != yaml.MappingNode {
-		return true
-	}
-	v := parser.FindKey(inherit, "variables")
-	switch {
-	case v == nil:
-		return true
-	case v.Kind == yaml.ScalarNode:
-		return v.Value != "false"
-	case v.Kind == yaml.SequenceNode:
-		for _, item := range v.Content {
-			if item.Value == name {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 // varRefName returns the variable name of a bare reference ($X or ${X}).
