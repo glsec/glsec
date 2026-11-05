@@ -40,7 +40,7 @@ var mutableRefs = map[string]bool{
 	"main": true, "master": true, "dev": true, "develop": true,
 	"staging": true, "production": true, "latest": true, "HEAD": true,
 	"nightly": true, "canary": true, "edge": true,
-	"stable": true, "trunk": true,
+	"stable": true, "trunk": true, "release": true, "development": true,
 }
 
 func (r *gl003) Check(doc *yaml.Node, file string) []finding.Finding {
@@ -109,12 +109,22 @@ func checkProjectRef(node *yaml.Node, projectNode *yaml.Node, file string, requi
 			Col:      refNode.Column,
 		}}
 	}
+	if isShortSHA(refNode.Value) {
+		return []finding.Finding{{
+			RuleID:   "GL003",
+			Severity: finding.Warn,
+			Message:  fmt.Sprintf("project include %q uses short SHA %q, which might be ambiguous — pin to the full commit SHA", projectNode.Value, refNode.Value),
+			File:     file,
+			Line:     refNode.Line,
+			Col:      refNode.Column,
+		}}
+	}
 	// As with require_image_digest, a ref held in a variable is not judged.
 	if requireSHA && !fullSHARe.MatchString(refNode.Value) && !strings.Contains(refNode.Value, "$") {
 		return []finding.Finding{{
 			RuleID:   "GL003",
 			Severity: finding.Warn,
-			Message:  fmt.Sprintf("project include %q uses ref %q, which can be moved or be ambiguous — require_include_sha is enabled; pin to a full commit SHA", projectNode.Value, refNode.Value),
+			Message:  fmt.Sprintf("project include %q uses ref %q, which can be moved — require_include_sha is enabled; pin to a full commit SHA", projectNode.Value, refNode.Value),
 			File:     file,
 			Line:     refNode.Line,
 			Col:      refNode.Column,
@@ -166,6 +176,12 @@ func isMutableRef(ref string) bool {
 		return false
 	}
 	return mutableRefs[ref]
+}
+
+// isShortSHA reports a ref that looks like an abbreviated commit SHA. Digits
+// alone read as a date tag such as 20241105, not as a SHA.
+func isShortSHA(ref string) bool {
+	return shaPattern.MatchString(ref) && !fullSHARe.MatchString(ref) && strings.ContainsAny(ref, "abcdef")
 }
 
 // IsMutableRef reports whether ref is a well-known branch name that moves,
