@@ -74,7 +74,16 @@ The golden file stores portable key fields rather than the baseline matcher's pr
 
 ### Coverage
 
-CI fails when statement coverage (`go test -cover`) drops below 92 % or branch coverage below 85 %. Branch coverage is measured with [gobco](https://github.com/rillig/gobco), one package at a time:
+CI fails when statement coverage (`go test -cover`) drops below 96.5 % or branch coverage below 92.5 %, or when a pull request covers less than 80 % of the lines it changes. Up to three uncovered lines always pass, so one error path doesn't fail a small change. There are no exclusions. To check a change locally:
+
+```sh
+go test ./... -coverprofile=coverage.out
+git diff --unified=0 main -- '*.go' ':!*_test.go' > change.diff
+go run ./cmd/patchcoverage -diff change.diff
+```
+
+The floors are about half a point below the stable values, so they catch a real drop. Raise them on purpose, never lower one to make a change pass.
+ Branch coverage is measured with [gobco](https://github.com/rillig/gobco), one package at a time:
 
 ```sh
 go install github.com/rillig/gobco@v1.3.4

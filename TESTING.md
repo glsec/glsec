@@ -52,7 +52,7 @@ Whether the output stays readable for the tools that consume it, and existing fi
 
 | Layer | Protects against | Runs |
 |---|---|---|
-| [Coverage](CONTRIBUTING.md#coverage): statement and branch coverage with thresholds | code no test exercises | every pull request |
+| [Coverage](CONTRIBUTING.md#coverage): statement and branch coverage with floors, and coverage of the lines a pull request changes | code no test exercises, also when the total stays high | every pull request |
 | Static analysis of the code: [golangci-lint](CONTRIBUTING.md#linting) with gosec, CodeQL | bugs and insecure patterns in glsec's own code | every pull request, CodeQL also weekly |
 | Unreachable code: [deadcode](https://pkg.go.dev/golang.org/x/tools/cmd/deadcode) from `main`, against the allowlist [`.github/deadcode-allow.txt`](.github/deadcode-allow.txt) (golangci-lint's `unused` covers unexported code) | exported functions nothing calls any more, such as a wrapper only tests use after a refactor, so the tests check a path production doesn't take; allowlist entries that went stale | every pull request |
 
