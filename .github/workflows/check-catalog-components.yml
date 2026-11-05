@@ -81,12 +81,14 @@ jobs:
             if [ -n "$missing_popular" ]; then
               echo "**Popular components missing from the list** (in the API top 40 — a detection gap):"
               echo
+              # shellcheck disable=SC2001 # prefixes every line, which ${x//} can't
               echo "$missing_popular" | sed 's/^/- /'
               echo
             fi
             if [ -n "$dropped" ]; then
               echo "**List entries no longer in the API top 100** (candidates to drop):"
               echo
+              # shellcheck disable=SC2001 # prefixes every line, which ${x//} can't
               echo "$dropped" | sed 's/^/- /'
               echo
             fi
