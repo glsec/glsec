@@ -109,6 +109,8 @@ go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
 golangci-lint run   # or: make lint
 ```
 
+Enabled linters: `errcheck`, `govet`, `staticcheck`, `revive`, `gosec`, `misspell`, plus the `gofmt` formatter. The full config is in `.golangci.yml`.
+
 CI also checks the workflows with [actionlint](https://github.com/rhysd/actionlint), including the shell in their `run:` blocks, and the repository's scripts with [ShellCheck](https://www.shellcheck.net/). To run them locally, with `shellcheck` in `PATH`:
 
 ```sh
@@ -118,8 +120,6 @@ shellcheck .github/scripts/*.sh bin/glsec
 ```
 
 The scripts are POSIX `sh` or `bash`, as their first line says. Switch off a diagnostic only where it applies, with a `# shellcheck disable=SCxxxx` comment that gives the reason.
-
-Enabled linters: `errcheck`, `govet`, `staticcheck`, `revive`, `gosec`, `misspell`, plus the `gofmt` formatter. The full config is in `.golangci.yml`.
 
 ## How to add a rule
 

@@ -80,7 +80,7 @@ jobs:
       # A real ShellCheck, pinned by version and checksum, for the tests in
       # internal/shellcheck that skip without one elsewhere (#1227).
       - if: matrix.os == 'ubuntu-latest'
-        uses: ./.github/actions/install-shellcheck
+        uses: $/.github/actions/install-shellcheck
       # The race detector isn't supported on windows/arm64, so that leg runs
       # the tests without it; coverage is read from the Linux leg anyway.
       - env:
@@ -184,7 +184,7 @@ jobs:
           version: latest
       # The workflows' syntax and expressions, and the shell in their run:
       # blocks and in the repository's scripts (#1228).
-      - uses: ./.github/actions/install-shellcheck
+      - uses: $/.github/actions/install-shellcheck
       - run: go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
       - name: Workflows
         run: actionlint
@@ -593,6 +593,7 @@ jobs:
               grep -oE 'GLSEC_VERSION=[0-9]+\.[0-9]+\.[0-9]+' \
                 mega-linter-plugin-glsec/glsec.megalinter-descriptor.yml |
                 grep -oE '[0-9]+\.[0-9]+\.[0-9]+'
+              # shellcheck disable=SC2016 # literal backticks in a pattern
               grep -hoE \
                 -e 'glsec_[0-9]+\.[0-9]+\.[0-9]+_' \
                 -e 'ghcr\.io/glsec/glsec:[0-9]+\.[0-9]+\.[0-9]+' \

@@ -34,7 +34,7 @@ EOF
 abspath() {
 	_d=$(dirname -- "$1")
 	_b=$(basename -- "$1")
-	_r=$(CDPATH= cd -- "$_d" 2>/dev/null && pwd -P) || return 1
+	_r=$(CDPATH='' cd -- "$_d" 2>/dev/null && pwd -P) || return 1
 	printf '%s/%s\n' "$_r" "$_b"
 }
 
