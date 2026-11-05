@@ -832,3 +832,108 @@ func TestWriteOutput_MasksSecretsInScanErrors(t *testing.T) {
 		}
 	}
 }
+
+func TestTemplateFromIncludedFile(t *testing.T) {
+	root := `include:
+  - local: ci/tpl.yml
+workflow:
+  rules:
+    - if: $CI_COMMIT_TAG
+publish:
+  extends: .node
+  image: node:22.11.0
+  script:
+    - npm publish
+other:
+  extends: .node
+  image: node:22.11.0
+  script:
+    - npm publish
+`
+	type result struct {
+		Rule    string `json:"rule"`
+		File    string `json:"file"`
+		Line    int    `json:"line"`
+		Job     string `json:"job"`
+		Message string `json:"message"`
+	}
+	scan := func(t *testing.T, tpl string) []result {
+		t.Helper()
+		_, stdout, _ := runCLI(t, map[string]string{".gitlab-ci.yml": root, "ci/tpl.yml": tpl},
+			"--no-cache", "--no-repo-config", "--only", "GL090,GL001", "--format", "json", ".gitlab-ci.yml")
+		var out struct {
+			Findings []result `json:"findings"`
+		}
+		if err := json.Unmarshal([]byte(stdout), &out); err != nil {
+			t.Fatalf("%v\n%s", err, stdout)
+		}
+		return out.Findings
+	}
+
+	t.Run("reported at the first job, naming the template's file", func(t *testing.T) {
+		got := scan(t, ".node:\n  before_script:\n    - npm ci\n")
+		if len(got) != 1 {
+			t.Fatalf("got %+v, want one finding", got)
+		}
+		f := got[0]
+		if f.Rule != "GL090" || f.File != ".gitlab-ci.yml" || f.Line != 6 || f.Job != "publish" {
+			t.Errorf("got %+v", f)
+		}
+		if !strings.HasSuffix(f.Message, "(from ci/tpl.yml:3)") {
+			t.Errorf("message %q doesn't name the template's line", f.Message)
+		}
+	})
+	t.Run("suppression next to the template", func(t *testing.T) {
+		if got := scan(t, ".node:\n  before_script:\n    - npm ci # glsec:ignore GL090 -- reviewed\n"); len(got) != 0 {
+			t.Errorf("got %+v", got)
+		}
+	})
+	t.Run("a job elsewhere in the pipeline isn't moved here", func(t *testing.T) {
+		got := scan(t, ".node:\n  image: node:latest\n")
+		n := 0
+		for _, f := range got {
+			if f.Rule == "GL001" {
+				n++
+				if f.File != "ci/tpl.yml" {
+					t.Errorf("template finding moved: %+v", f)
+				}
+			}
+		}
+		if n != 1 {
+			t.Errorf("got %+v, want it once in the template's file", got)
+		}
+	})
+}
+
+// A template's configuration keeps its findings when it moves to an included
+// file (#1154): the same pipeline, once whole and once split.
+func TestTemplateFindingsSurviveTheSplit(t *testing.T) {
+	for _, tc := range []struct{ rule, template, job string }{
+		{"GL090", "  before_script:\n    - npm ci\n", "  script:\n    - npm publish\n"},
+		{"GL014", "  script:\n    - env > env.txt\n", "  artifacts:\n    paths:\n      - env.txt\n"},
+		{"GL049", "  interruptible: true\n", "  environment: production\n  script:\n    - ./deploy.sh\n"},
+		{"GL005", "  artifacts:\n    paths:\n      - .\n", "  script:\n    - make\n"},
+	} {
+		t.Run(tc.rule, func(t *testing.T) {
+			job := "workflow:\n  rules:\n    - if: $CI_COMMIT_TAG\npublish:\n  extends: .tpl\n" + tc.job
+			template := ".tpl:\n" + tc.template
+			count := func(files map[string]string) int {
+				_, stdout, _ := runCLI(t, files, "--no-cache", "--no-repo-config", "--only", tc.rule, "--format", "json", ".gitlab-ci.yml")
+				var out struct {
+					Findings []struct {
+						Rule string `json:"rule"`
+					} `json:"findings"`
+				}
+				if err := json.Unmarshal([]byte(stdout), &out); err != nil {
+					t.Fatalf("%v\n%s", err, stdout)
+				}
+				return len(out.Findings)
+			}
+			whole := count(map[string]string{".gitlab-ci.yml": template + job})
+			split := count(map[string]string{".gitlab-ci.yml": "include:\n  - local: ci/tpl.yml\n" + job, "ci/tpl.yml": template})
+			if whole == 0 || split != whole {
+				t.Errorf("whole pipeline %d findings, split %d", whole, split)
+			}
+		})
+	}
+}

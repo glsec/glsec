@@ -34,6 +34,7 @@ import (
 	"github.com/glsec/glsec/internal/validate"
 	gitlabver "github.com/glsec/glsec/internal/version"
 	"github.com/glsec/glsec/rules"
+	"gopkg.in/yaml.v3"
 )
 
 // Set via ldflags at build time by GoReleaser.
@@ -613,7 +614,7 @@ func scanRoot(file string, opt scanOptions) (findings []finding.Finding, suppres
 		suppressed = append(suppressed, s...)
 		unjustified += u
 	}
-	findings, suppressed = finding.Dedupe(findings), finding.DedupeSuppressed(suppressed)
+	findings, suppressed = finding.DedupeMoved(finding.Dedupe(findings), originNote), finding.DedupeSuppressed(suppressed)
 
 	if useCache && cacheKey != "" {
 		cache.Store(cacheKey, &cache.Entry{Findings: findings, Suppressed: suppressed, JobCount: jobCount})
@@ -1185,23 +1186,34 @@ func collectFindings(doc *parser.Document, path string, cfg *config.Config, gitl
 	// that suddenly reappears is traceable to the date rather than looking like
 	// a new violation.
 	var suppressed []finding.Suppressed
-	keep := func(f finding.Finding) bool {
-		// On configuration another file of the pipeline contributes (#810):
-		// that file reports it.
-		if f.Line <= parser.ContextLine/2 {
-			return false
+	jobs := ownJobs(doc)
+	keep := func(f finding.Finding) (finding.Finding, bool) {
+		// On configuration another file of the pipeline contributes (#810).
+		// A job in this file that uses it reports it, and a suppression next
+		// to the configuration still counts. Otherwise that file reports it.
+		if parser.IsContextLine(f.Line) {
+			at := f.Line
+			job, ok := jobs[f.Job]
+			if !ok {
+				return f, false
+			}
+			f = movedToJob(doc, f, job)
+			if e, ok := sm.Active(at, f.RuleID, now); ok && !skipSuppress {
+				suppressed = append(suppressed, finding.Suppressed{Finding: f, Source: e.Source, Reason: e.Reason, Expires: e.Expiry})
+				return f, false
+			}
 		}
 		if skipSuppress {
-			return true
+			return f, true
 		}
 		if e, ok := sm.Active(f.Line, f.RuleID, now); ok {
 			suppressed = append(suppressed, finding.Suppressed{Finding: f, Source: e.Source, Reason: e.Reason, Expires: e.Expiry})
-			return false
+			return f, false
 		}
 		if sm.ExpiredAt(f.Line, f.RuleID, now) {
 			fmt.Fprintf(os.Stderr, "%s:%d: %s suppression has expired, reporting the finding again\n", output.Sanitize(path), f.Line, f.RuleID)
 		}
-		return true
+		return f, true
 	}
 
 	var findings []finding.Finding
@@ -1223,10 +1235,9 @@ func collectFindings(doc *parser.Document, path string, cfg *config.Config, gitl
 			if !cfg.AboveMinSeverity(f) {
 				continue
 			}
-			if !keep(f) {
-				continue
+			if f, ok := keep(f); ok {
+				findings = append(findings, f)
 			}
-			findings = append(findings, f)
 		}
 	}
 
@@ -1243,14 +1254,43 @@ func collectFindings(doc *parser.Document, path string, cfg *config.Config, gitl
 			if !cfg.AboveMinSeverity(f) {
 				continue
 			}
-			if !keep(f) {
-				continue
+			if f, ok := keep(f); ok {
+				findings = append(findings, f)
 			}
-			findings = append(findings, f)
 		}
 	}
 
 	return finding.Dedupe(findings), finding.DedupeSuppressed(suppressed), unjustified, nil
+}
+
+// ownJobs returns the keys of the document's top-level entries in the file
+// itself, by name.
+func ownJobs(doc *parser.Document) map[string]*yaml.Node {
+	jobs := map[string]*yaml.Node{}
+	mapping := doc.MappingNode()
+	for i := 0; i+1 < len(mapping.Content); i += 2 {
+		if key := mapping.Content[i]; !parser.IsContextLine(key.Line) {
+			jobs[key.Value] = key
+		}
+	}
+	return jobs
+}
+
+// movedToJob points a finding on another file's configuration at the job that
+// uses it, and says where that configuration is (#1154).
+func movedToJob(doc *parser.Document, f finding.Finding, job *yaml.Node) finding.Finding {
+	if file, line, ok := doc.ContextOrigin(f.Line); ok {
+		f.Origin = finding.Origin{File: file, Line: line}
+		f.Message += originNote(f.Origin)
+	}
+	f.Line, f.Col = job.Line, job.Column
+	return f
+}
+
+// originNote is what movedToJob adds to a message. The path reads the same on
+// every platform.
+func originNote(o finding.Origin) string {
+	return fmt.Sprintf(" (from %s:%d)", filepath.ToSlash(o.File), o.Line)
 }
 
 // reportUnjustified prints every inline suppression that carries no reason and
@@ -1265,7 +1305,7 @@ func reportUnjustified(sm suppress.Map, path string) int {
 	})
 	n := 0
 	for _, e := range entries {
-		if e.Reason != "" || e.Line <= parser.ContextLine/2 {
+		if e.Reason != "" || parser.IsContextLine(e.Line) {
 			continue
 		}
 		n++
