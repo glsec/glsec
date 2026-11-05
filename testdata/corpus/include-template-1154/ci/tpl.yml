@@ -1,0 +1,5 @@
+.node:
+  before_script:
+    - npm ci
+.pinned-badly:
+  image: node:latest

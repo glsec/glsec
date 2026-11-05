@@ -1,0 +1,4 @@
+build:
+  image: alpine:latest
+  script:
+    - make

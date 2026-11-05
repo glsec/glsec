@@ -1,0 +1,9 @@
+# #810: an included file is checked in the pipeline. The workflow:rules here
+# guard the job over there, and the missing workflow: check is made once.
+include:
+  - local: ci/deploy.yml
+workflow:
+  rules:
+    - if: $CI_COMMIT_TAG
+variables:
+  DEPLOY_TARGET: staging

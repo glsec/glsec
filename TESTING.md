@@ -24,7 +24,7 @@ Whether glsec reports the right findings, and only those.
 | Unit tests of the shared helpers: the shell parsing (`rules/shell.go`) and the inheritance, block-walking and position helpers (`rules/helpers.go`), each tested on its own (`*_unit_test.go`) | a bug in a building block that many rules use, shown at the helper instead of as many failing rule tests | every pull request |
 | [Consistency tests](CONTRIBUTING.md#step-4--satisfy-the-consistency-tests) | a rule without fixture, docs page, OWASP or CWE mapping; doc examples that don't trigger, or safe examples that do | every pull request |
 | [Fixtures](CONTRIBUTING.md#fixture-validation), checked against the GitLab CI schema and GitLab's CI Lint API | test pipelines and doc examples GitLab would reject | every pull request (the CI Lint part after merge for forks) |
-| [Regression corpus](CONTRIBUTING.md#regression-corpus) with snapshot files | a fixed false positive or missed finding coming back | every pull request |
+| [Regression corpus](CONTRIBUTING.md#regression-corpus) with snapshot files, single files and whole pipelines | a fixed false positive or missed finding coming back; a finding reported in the wrong file or nowhere | every pull request |
 | [Metamorphic test](CONTRIBUTING.md#metamorphic-test) | rules that match on how the YAML is written instead of what it means (quoting, flow style, CRLF, job order, anchors, `extends:`) | every pull request |
 
 ### Reports and configuration

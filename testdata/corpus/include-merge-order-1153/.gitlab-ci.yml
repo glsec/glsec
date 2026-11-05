@@ -1,0 +1,12 @@
+# #1153: a later include overrides an earlier one and the main file overrides
+# both, at any depth. Only the image that is really used may be reported.
+include:
+  - local: ci/first.yml
+  - local: ci/second.yml
+workflow:
+  rules:
+    - if: $CI_COMMIT_TAG
+build:
+  image: node:22.11.0
+  script:
+    - make

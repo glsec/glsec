@@ -1,0 +1,6 @@
+include:
+  - local: ci/shared.yml
+two-job:
+  extends: .shared
+  script:
+    - make two
