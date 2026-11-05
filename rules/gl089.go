@@ -122,7 +122,7 @@ func unlimitedAutodiscover(line string, vars []*yaml.Node) bool {
 // jobVariableBlocks returns every variables: block whose values can reach a
 // job: its own and its rules: entries', those of the jobs it extends in the
 // same file (GitLab merges variables: along extends:), and the pipeline-level
-// blocks unless inherit:variables is false.
+// blocks as far as inherit:variables lets them through.
 func jobVariableBlocks(in *Inheritance, job *yaml.Node, pipelineVars []*yaml.Node) []*yaml.Node {
 	var blocks []*yaml.Node
 	add := func(container *yaml.Node) {
@@ -154,12 +154,26 @@ func jobVariableBlocks(in *Inheritance, job *yaml.Node, pipelineVars []*yaml.Nod
 		}
 	}
 	walk(job, 0)
-	if inherit := parser.FindKey(job, "inherit"); inherit != nil {
-		if v := parser.FindKey(inherit, "variables"); v != nil && v.Value == "false" {
-			return blocks
+	inherit := in.inheritValue(job, "variables")
+	if inherit == nil {
+		return append(blocks, pipelineVars...)
+	}
+	for _, block := range pipelineVars {
+		blocks = append(blocks, inheritedVariables(block, inherit))
+	}
+	return blocks
+}
+
+// inheritedVariables returns the entries of a variables: block that an
+// inherit:variables value lets through.
+func inheritedVariables(block, inherit *yaml.Node) *yaml.Node {
+	out := &yaml.Node{Kind: yaml.MappingNode, Tag: block.Tag}
+	for i := 0; i+1 < len(block.Content); i += 2 {
+		if inheritAllows(inherit, block.Content[i].Value) {
+			out.Content = append(out.Content, block.Content[i], block.Content[i+1])
 		}
 	}
-	return append(blocks, pipelineVars...)
+	return out
 }
 
 // pipelineVariableBlocks returns the variables: blocks that apply to every job:

@@ -4,6 +4,7 @@
 package rules
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -183,5 +184,29 @@ lint:
 				t.Fatalf("expected no finding, got %v", f)
 			}
 		})
+	}
+}
+
+func TestGL089_InheritVariablesList(t *testing.T) {
+	src := `
+variables:
+  RENOVATE_AUTODISCOVER: "true"
+  FOO: bar
+renovate:
+  inherit:
+    variables: %s
+  script:
+    - renovate
+`
+	for _, tc := range []struct {
+		inherit string
+		want    int
+	}{
+		{"[FOO]", 0},
+		{"[RENOVATE_AUTODISCOVER]", 1},
+	} {
+		if got := checkRule(t, GL089, fmt.Sprintf(src, tc.inherit)); len(got) != tc.want {
+			t.Errorf("inherit %s: got %d findings, want %d: %v", tc.inherit, len(got), tc.want, got)
+		}
 	}
 }

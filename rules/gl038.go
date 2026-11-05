@@ -126,7 +126,7 @@ func jobServiceAliases(doc *yaml.Node, in *Inheritance) (map[string]map[string]b
 			}
 			collectServiceHosts(services, hosts)
 		}
-		if defServices != nil && inheritsDefault(job, "services") {
+		if defServices != nil && in.Inherits(job, "default", "services") {
 			if defServices.Kind == yaml.SequenceNode && len(defServices.Content) > 0 {
 				has = true
 			}

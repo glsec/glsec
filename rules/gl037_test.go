@@ -4,6 +4,7 @@
 package rules
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/glsec/glsec/internal/parser"
@@ -109,5 +110,31 @@ deploy:
 				}
 			}
 		})
+	}
+}
+
+func TestGL037_InheritFromTemplate(t *testing.T) {
+	src := `
+variables:
+  DEPLOY_TOKEN: $DEPLOY_TOKEN
+.t:
+  inherit:
+    variables: %s
+job:
+  extends: .t
+  trigger: group/project
+`
+	for _, tc := range []struct {
+		inherit string
+		want    int
+	}{
+		{"false", 0},
+		{"[OTHER]", 0},
+		{"[DEPLOY_TOKEN]", 1},
+		{"true", 1},
+	} {
+		if got := checkRule(t, GL037, fmt.Sprintf(src, tc.inherit)); len(got) != tc.want {
+			t.Errorf("inherit %s: got %d findings, want %d: %v", tc.inherit, len(got), tc.want, got)
+		}
 	}
 }

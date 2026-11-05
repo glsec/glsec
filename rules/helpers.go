@@ -130,7 +130,7 @@ func (in *Inheritance) Key(job *yaml.Node, key string) *yaml.Node {
 	if v := in.extendedKey(job, key, 0, map[*yaml.Node]bool{}); v != nil {
 		return v
 	}
-	if inheritsDefault(job, key) {
+	if in.Inherits(job, "default", key) {
 		if def := parser.FindKey(in.mapping, "default"); def != nil {
 			if v := parser.FindKey(def, key); v != nil {
 				return v
@@ -318,22 +318,34 @@ func (in *Inheritance) extendsResolved(job *yaml.Node, depth int, seen map[*yaml
 	return true
 }
 
-// inheritsDefault reports whether the job takes key from default:.
-// inherit: default: false opts out of all keys, a list opts in to the keys it names.
-func inheritsDefault(job *yaml.Node, key string) bool {
-	inherit := parser.FindKey(job, "inherit")
-	if inherit == nil {
-		return true
+// Inherits reports whether the job takes key from what kind names: "default"
+// for the default: keyword and the top-level scripts, "variables" for the
+// pipeline-level variables.
+func (in *Inheritance) Inherits(job *yaml.Node, kind, key string) bool {
+	return inheritAllows(in.inheritValue(job, kind), key)
+}
+
+// inheritValue returns the job's inherit:<kind>, nil when it has none. GitLab
+// deep-merges extends: before it reads the keyword, so a template's inherit:
+// applies, and the job overrides it key by key.
+func (in *Inheritance) inheritValue(job *yaml.Node, kind string) *yaml.Node {
+	if !in.Has(job, "inherit") {
+		return nil
 	}
-	d := parser.FindKey(inherit, "default")
+	return parser.FindKey(parser.FindKey(in.Effective(job), "inherit"), kind)
+}
+
+// inheritAllows reports whether an inherit:<kind> value lets key through:
+// false lets nothing through, a list only what it names.
+func inheritAllows(value *yaml.Node, key string) bool {
 	switch {
-	case d == nil:
+	case value == nil:
 		return true
-	case d.Kind == yaml.ScalarNode:
-		return d.Value != "false"
-	case d.Kind == yaml.SequenceNode:
-		for _, k := range d.Content {
-			if k.Value == key {
+	case value.Kind == yaml.ScalarNode:
+		return value.Value != "false"
+	case value.Kind == yaml.SequenceNode:
+		for _, item := range value.Content {
+			if item.Value == key {
 				return true
 			}
 		}

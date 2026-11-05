@@ -455,3 +455,73 @@ bare:
 		t.Errorf("eachVariablesBlock = %q, want %q", got, want)
 	}
 }
+
+func TestInherits(t *testing.T) {
+	for _, tc := range []struct {
+		name, src, kind, key string
+		want                 bool
+	}{
+		{"nothing set", "job: {script: [a]}", "default", "image", true},
+		{"true default", "job: {inherit: {default: true}}", "default", "image", true},
+		{"false default", "job: {inherit: {default: false}}", "default", "image", false},
+		{"list default, named", "job: {inherit: {default: [image]}}", "default", "image", true},
+		{"list default, other", "job: {inherit: {default: [tags]}}", "default", "image", false},
+		{"true variables", "job: {inherit: {variables: true}}", "variables", "A", true},
+		{"false variables", "job: {inherit: {variables: false}}", "variables", "A", false},
+		{"list variables, named", "job: {inherit: {variables: [A]}}", "variables", "A", true},
+		{"list variables, other", "job: {inherit: {variables: [B]}}", "variables", "A", false},
+		{"other kind untouched", "job: {inherit: {variables: false}}", "default", "image", true},
+		{"not a mapping", "job: {inherit: true}", "default", "image", true},
+		{"mapping as value", "job: {inherit: {default: {a: b}}}", "default", "image", true},
+		{"from a template", ".t: {inherit: {default: false}}\njob: {extends: .t}", "default", "image", false},
+		{"from a template's template", ".a: {inherit: {default: false}}\n.b: {extends: .a}\njob: {extends: .b}", "default", "image", false},
+		{"job overrides template", ".t: {inherit: {default: false}}\njob: {extends: .t, inherit: {default: true}}", "default", "image", true},
+		{"job overrides key by key", ".t: {inherit: {default: false}}\njob: {extends: .t, inherit: {variables: true}}", "default", "image", false},
+		{"list replaces list", ".t: {inherit: {variables: [A]}}\njob: {extends: .t, inherit: {variables: [B]}}", "variables", "A", false},
+		{"later template wins", ".a: {inherit: {default: false}}\n.b: {inherit: {default: true}}\njob: {extends: [.a, .b]}", "default", "image", true},
+		{"two templates merge", ".a: {inherit: {default: false}}\n.b: {inherit: {variables: false}}\njob: {extends: [.a, .b]}", "variables", "A", false},
+		{"two templates merge, first", ".a: {inherit: {default: false}}\n.b: {inherit: {variables: false}}\njob: {extends: [.a, .b]}", "default", "image", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			doc := parseDoc(t, tc.src)
+			in := NewInheritance(doc)
+			if got := in.Inherits(parser.FindKey(parser.Unwrap(doc), "job"), tc.kind, tc.key); got != tc.want {
+				t.Errorf("got %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestKeyHonoursInheritFromTemplate(t *testing.T) {
+	doc := parseDoc(t, `
+default:
+  image: alpine
+before_script:
+  - a
+.off:
+  inherit:
+    default: false
+.some:
+  inherit:
+    default: [before_script]
+off:
+  extends: .off
+some:
+  extends: .some
+`)
+	in := NewInheritance(doc)
+	root := parser.Unwrap(doc)
+	for _, tc := range []struct {
+		job, key string
+		want     bool
+	}{
+		{"off", "image", false},
+		{"off", "before_script", false},
+		{"some", "image", false},
+		{"some", "before_script", true},
+	} {
+		if got := in.Key(parser.FindKey(root, tc.job), tc.key) != nil; got != tc.want {
+			t.Errorf("Key(%s, %s) found = %v, want %v", tc.job, tc.key, got, tc.want)
+		}
+	}
+}
