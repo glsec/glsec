@@ -83,7 +83,7 @@ go run ./cmd/patchcoverage -diff change.diff
 ```
 
 The floors are about half a point below the stable values, so they catch a real drop. Raise them on purpose, never lower one to make a change pass.
- Branch coverage is measured with [gobco](https://github.com/rillig/gobco), one package at a time:
+Branch coverage is measured with [gobco](https://github.com/rillig/gobco), one package at a time:
 
 ```sh
 go install github.com/rillig/gobco@v1.3.4
