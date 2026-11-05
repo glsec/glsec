@@ -4,6 +4,8 @@
 package rules
 
 import (
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -297,5 +299,87 @@ run_danger:
 `
 	if f := findings023(t, noFrozenAnywhere); len(f) != 1 {
 		t.Errorf("no frozen anywhere: expected 1 finding, got %d", len(f))
+	}
+}
+
+func TestGL023_UvAndBun(t *testing.T) {
+	for _, tc := range []struct {
+		script string
+		want   int
+	}{
+		{"uv sync", 1},
+		{"uv sync --group dev", 1},
+		{"uv sync --all-groups", 1},
+		{"cd app && uv sync", 1},
+		{"uv venv && uv sync --extra test", 1},
+		{"uv sync --locked", 0},
+		{"uv sync --frozen --group dev", 0},
+		{"uv sync --check", 0},
+		{"uv sync --dry-run", 0},
+		{"uv pip sync requirements.txt", 0},
+		{"uv lock --check && uv sync", 0},
+		{"UV_FROZEN=1 uv sync", 0},
+		{"export UV_LOCKED=true; uv sync", 0},
+		{"UV_FROZEN=0 uv sync", 1},
+		{"# uv sync", 0},
+		{"bun install", 1},
+		{"bun i", 1},
+		{"bun install --ignore-scripts", 1},
+		{"cd cli && bun install && bun run build", 1},
+		{`su - ci -c "cd cli && bun install"`, 1},
+		{"bun install --frozen-lockfile", 0},
+		{"bun i --frozen-lockfile", 0},
+		{"bun install --production", 0},
+		{"bun ci", 0},
+		{"bun install -g netlify-cli", 0},
+		{"bun install -g", 0},
+		{"bun add lodash", 0},
+		{"bun install lodash", 0},
+	} {
+		t.Run(tc.script, func(t *testing.T) {
+			f := findings023(t, "build:\n  script:\n    - "+strconv.Quote(tc.script)+"\n")
+			if len(f) != tc.want {
+				t.Fatalf("got %v, want %d findings", f, tc.want)
+			}
+		})
+	}
+}
+
+// Each command of a block counts on its own: a comment doesn't report, and a
+// strict call doesn't vouch for the bare one.
+func TestGL023_UvByCommand(t *testing.T) {
+	f := findings023(t, "build:\n  script:\n    - |\n      # uv sync would re-lock\n      uv sync --locked\n      uv sync --extra docs\n")
+	if len(f) != 1 || f[0].Line != 6 {
+		t.Fatalf("got %v, want one finding on line 6", f)
+	}
+}
+
+func TestGL023_UvVariables(t *testing.T) {
+	for _, tc := range []struct {
+		name, src string
+		want      int
+	}{
+		{"global", "variables:\n  UV_FROZEN: \"1\"\nbuild:\n  script: [uv sync]\n", 0},
+		{"job", "build:\n  variables:\n    UV_LOCKED: \"true\"\n  script: [uv sync]\n", 0},
+		{"yes", "build:\n  variables:\n    UV_FROZEN: \"Yes\"\n  script: [uv sync]\n", 0},
+		{"value key", "variables:\n  UV_FROZEN:\n    value: \"1\"\n    description: d\nbuild:\n  script: [uv sync]\n", 0},
+		{"inherited", ".t:\n  variables:\n    UV_FROZEN: \"1\"\nbuild:\n  extends: .t\n  variables:\n    OTHER: x\n  script: [uv sync]\n", 0},
+		{"off", "variables:\n  UV_FROZEN: \"0\"\nbuild:\n  script: [uv sync]\n", 1},
+		{"other manager's variable", "variables:\n  BUNDLE_FROZEN: \"true\"\nbuild:\n  script: [uv sync]\n", 1},
+		{"uv variable leaves bundler alone", "variables:\n  UV_FROZEN: \"1\"\nbuild:\n  script: [bundle install]\n", 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if f := findings023(t, tc.src); len(f) != tc.want {
+				t.Fatalf("got %v, want %d findings", f, tc.want)
+			}
+		})
+	}
+}
+
+// A frozen manager doesn't hide another manager on the same line.
+func TestGL023_FrozenManagerKeepsOthersOnTheLine(t *testing.T) {
+	f := findings023(t, "variables:\n  BUNDLE_FROZEN: \"true\"\nbuild:\n  script:\n    - bundle install && npm install\n")
+	if len(f) != 1 || !strings.Contains(f[0].Message, "npm ci") {
+		t.Fatalf("got %v, want the npm finding", f)
 	}
 }
