@@ -41,12 +41,13 @@ func Dir() string {
 // Key computes a deterministic hex key from all inputs that affect scan results.
 // filePaths must include the main pipeline file and all discovered child pipeline files.
 // configPath and ignorePath are read from disk if they exist.
+// shellcheckBin, when non-empty, records the resolved ShellCheck binary metadata.
 //
 // day is the current date as YYYY-MM-DD. It is part of the key because
 // suppressions can carry an expiry date: without it, a suppression that expired
 // overnight would keep hiding its finding until some file happened to change.
 // The cost is one cache miss per day.
-func Key(version, day, gitlabVersion string, filePaths []string, configPath, ignorePath string, excludePatterns, only, skip []string) (string, error) {
+func Key(version, day, gitlabVersion string, filePaths []string, configPath, ignorePath string, excludePatterns, only, skip []string, shellcheckBin string) (string, error) {
 	h := sha256.New()
 
 	_, _ = fmt.Fprintf(h, "version:%s\n", version)
@@ -81,7 +82,32 @@ func Key(version, day, gitlabVersion string, filePaths []string, configPath, ign
 		}
 	}
 
+	if shellcheckBin != "" {
+		if err := hashShellCheck(h, shellcheckBin); err != nil {
+			return "", err
+		}
+	}
+
 	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// hashShellCheck records the resolved path, byte size, and modification time of
+// the selected ShellCheck binary so switching, replacing, or removing it
+// invalidates the cache without reading the whole executable on every scan (#1184).
+func hashShellCheck(h io.Writer, binPath string) error {
+	resolved, err := filepath.EvalSymlinks(binPath)
+	if err == nil {
+		resolved, err = filepath.Abs(resolved)
+	}
+	var fi os.FileInfo
+	if err == nil {
+		fi, err = os.Stat(resolved)
+	}
+	if err != nil {
+		return err
+	}
+	_, _ = fmt.Fprintf(h, "shellcheck:%s:%d:%d\n", resolved, fi.Size(), fi.ModTime().UnixNano())
+	return nil
 }
 
 // hashSorted writes a sorted, labelled list into the cache key so order does

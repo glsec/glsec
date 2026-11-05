@@ -296,13 +296,13 @@ func TestRun_EmptyPipelineDoesNotCallShellcheck(t *testing.T) {
 }
 
 func TestResolveBinary(t *testing.T) {
-	if _, err := resolveBinary(filepath.Join(t.TempDir(), "missing")); err == nil {
+	if _, err := ResolveBinary(filepath.Join(t.TempDir(), "missing")); err == nil {
 		t.Error("an explicit path that doesn't exist should be an error")
 	}
 
 	dir := t.TempDir()
 	t.Setenv("PATH", dir)
-	if _, err := resolveBinary(""); err == nil {
+	if _, err := ResolveBinary(""); err == nil {
 		t.Error("an empty PATH should not find shellcheck")
 	}
 
@@ -313,7 +313,7 @@ func TestResolveBinary(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o700); err != nil { //nolint:gosec // executable stub for LookPath
 		t.Fatal(err)
 	}
-	got, err := resolveBinary("")
+	got, err := ResolveBinary("")
 	if err != nil {
 		t.Fatalf("shellcheck on PATH not found: %v", err)
 	}

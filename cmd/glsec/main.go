@@ -555,10 +555,21 @@ func scanRoot(file string, opt scanOptions) (findings []finding.Finding, suppres
 		for i, d := range allDocs {
 			filePaths[i] = d.File
 		}
-		if key, kerr := cache.Key(resolvedVersion(), time.Now().Format("2006-01-02"), opt.versionStr, filePaths, opt.configPath, suppress.IgnoreFile, opt.cfg.ExcludePaths, opt.only, opt.skip); kerr == nil {
-			cacheKey = key
-			if entry, hit := cache.Load(cacheKey); hit {
-				return entry.Findings, entry.Suppressed, entry.JobCount, 0, nil
+		var scBin string
+		scReady := true
+		if opt.cfg.ShellCheck.Enabled {
+			if bin, berr := shellcheck.ResolveBinary(opt.cfg.ShellCheck.Path); berr == nil {
+				scBin = bin
+			} else {
+				scReady = false
+			}
+		}
+		if scReady {
+			if key, kerr := cache.Key(resolvedVersion(), time.Now().Format("2006-01-02"), opt.versionStr, filePaths, opt.configPath, suppress.IgnoreFile, opt.cfg.ExcludePaths, opt.only, opt.skip, scBin); kerr == nil {
+				cacheKey = key
+				if entry, hit := cache.Load(cacheKey); hit {
+					return entry.Findings, entry.Suppressed, entry.JobCount, 0, nil
+				}
 			}
 		}
 	}
