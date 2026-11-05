@@ -97,6 +97,31 @@ func (in *Inheritance) IncludedOverride(job *yaml.Node) bool {
 	return true
 }
 
+// eachIncludeItem calls fn for every include entry of doc: the top-level
+// include: (job is empty) and each job's trigger:include, which takes the same
+// entries and loads the child pipeline's configuration (#1162). A template's
+// entry is visited once, in the template, for every job that extends it.
+func eachIncludeItem(doc *yaml.Node, fn func(item *yaml.Node, job string)) {
+	for _, item := range parser.IncludeItems(parser.FindKey(parser.Unwrap(doc), "include")) {
+		fn(item, "")
+	}
+	seen := map[*yaml.Node]bool{}
+	parser.EachJob(doc, func(name, job *yaml.Node) {
+		trigger := parser.FindKey(job, "trigger")
+		if trigger == nil {
+			return
+		}
+		include := parser.FindKey(trigger, "include")
+		if include == nil || seen[include] {
+			return
+		}
+		seen[include] = true
+		for _, item := range parser.IncludeItems(include) {
+			fn(item, name.Value)
+		}
+	})
+}
+
 // Key returns the value of key that applies to job: its own, else from the
 // jobs it extends in the same file (later entries of an extends: list override
 // earlier ones), else from default:, else from the top-level
