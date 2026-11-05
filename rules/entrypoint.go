@@ -63,22 +63,36 @@ func shellCScript(array *yaml.Node) *yaml.Node {
 	if !posixShells[path.Base(shell)] {
 		return nil
 	}
-	sawC := false
-	for i := 0; i < len(rest); i++ {
-		item := rest[i]
-		switch {
-		case item.Kind != yaml.ScalarNode:
-			return nil
-		case item.Value == "-o" || item.Value == "+o":
-			i++ // its argument is the option's name
-		case strings.HasPrefix(item.Value, "--"):
-		case strings.HasPrefix(item.Value, "-") || strings.HasPrefix(item.Value, "+"):
-			sawC = sawC || strings.HasPrefix(item.Value, "-") && strings.Contains(item.Value, "c")
-		case sawC:
-			return item
-		default:
-			return nil // a script file
+	var args []string
+	for _, item := range rest {
+		if item.Kind != yaml.ScalarNode {
+			break
 		}
+		args = append(args, item.Value)
+	}
+	if i := shellCArg(args); i >= 0 {
+		return rest[i]
 	}
 	return nil
+}
+
+// shellCArg returns the index in a shell's arguments of the script after -c,
+// or -1 without one.
+func shellCArg(args []string) int {
+	sawC := false
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "-o" || a == "+o":
+			i++ // its argument is the option's name
+		case strings.HasPrefix(a, "--"):
+		case strings.HasPrefix(a, "-") || strings.HasPrefix(a, "+"):
+			sawC = sawC || strings.HasPrefix(a, "-") && strings.Contains(a, "c")
+		case sawC:
+			return i
+		default:
+			return -1 // a script file
+		}
+	}
+	return -1
 }

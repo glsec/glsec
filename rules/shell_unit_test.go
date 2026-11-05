@@ -358,6 +358,14 @@ func TestWrappedCommandsReachRules(t *testing.T) {
 		{"GL050 stdin of a script", GL050, "bash run.sh <<EOF\nsudo apt-get update\nEOF", 0},
 		{"GL062 local heredoc", GL062, "sudo sh -s <<'EOF'\nprintenv\nEOF", 1},
 		{"GL062 ssh heredoc", GL062, "ssh h <<'EOF'\nprintenv\nEOF", 0},
+		{"GL050 sh -c", GL050, "bash -c 'sudo apt-get update'", 1},
+		{"GL050 sh -ec behind a wrapper", GL050, `timeout 60 sh -ec "sudo apt-get update"`, 1},
+		{"GL050 ssh", GL050, "ssh h 'sudo apt-get update'", 0},
+		{"GL050 quoted text", GL050, `echo "bash -c sudo"`, 0},
+		{"GL062 sh -c", GL062, "bash -c 'printenv'", 1},
+		{"GL062 sudo in sh -c", GL062, "bash -c 'sudo printenv'", 1},
+		{"GL062 ssh", GL062, "ssh h 'printenv'", 0},
+		{"GL020 sh -c", GL020, `sh -c "wget https://x.example/a.tgz"`, 1},
 		{"GL068 timeout", GL068, "timeout 60 bash -x build.sh", 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
