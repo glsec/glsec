@@ -24,8 +24,9 @@ var (
 	// interactiveShellRe matches a shell invoked with the interactive flag, in
 	// any of the -i, -it, -si spellings. The interactive flag is what separates
 	// a reverse shell from the wait-for-service probe, which opens the socket
-	// and closes it again without ever attaching a shell to it.
-	interactiveShellRe = mustCompilePrefiltered(`\b(?:ba|z|k|da)?sh\b[^|;&\n]*\s-[a-zA-Z]*i\b`)
+	// and closes it again without ever attaching a shell to it. A name ending
+	// in .sh is a script, whose -i belongs to it.
+	interactiveShellRe = mustCompilePrefiltered(`(?:^|[^.\w-])(?:ba|z|k|da)?sh\b[^|;&\n]*\s-[a-zA-Z]*i\b`)
 
 	// netcatExecRe matches netcat asked to run a *shell* on connect. The flag
 	// alone is not enough: nc -lc "printf ..." is a one-shot HTTP responder, so

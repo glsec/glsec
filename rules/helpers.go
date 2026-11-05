@@ -360,7 +360,8 @@ func isScriptList(n *yaml.Node) bool {
 }
 
 // CollectJobScriptLines returns all scalar script lines from a job's
-// before_script, script, after_script, and hooks:pre_get_sources_script sections.
+// before_script, script, after_script, and hooks:pre_get_sources_script
+// sections, and the shell scripts in its image: and services: (#1160).
 func CollectJobScriptLines(job *yaml.Node) []*yaml.Node {
 	var lines []*yaml.Node
 	appendScalars := func(node *yaml.Node) {
@@ -378,12 +379,13 @@ func CollectJobScriptLines(job *yaml.Node) []*yaml.Node {
 	}
 	appendScalars(hookScriptNode(job))
 	lines = append(lines, parser.RunStepScripts(job)...)
-	return lines
+	return append(lines, containerScripts(job)...)
 }
 
 // EachScriptBlock calls fn for every script sequence of the file: the
 // top-level and default: before_script/after_script, each job's script,
-// before_script, after_script and hooks, and run: step scripts. A sequence
+// before_script, after_script and hooks, run: step scripts, and as a block of
+// its own, each shell script in image: and services: (#1160). A sequence
 // shared by several jobs through a YAML anchor is visited once, for the first
 // job that uses it: a rule's result for it doesn't depend on the job, and the
 // findings of the other jobs would only be merged by finding.Dedupe (#766).
@@ -423,16 +425,34 @@ func EachScriptBlockPerJob(doc *yaml.Node, file string, fn func(node *yaml.Node,
 			fn(node, file, job)
 		}
 	}
+	// One block per script, so that a script shared through an anchor is the
+	// same block for every job.
+	var blocks map[*yaml.Node]*yaml.Node
+	visitContainer := func(container *yaml.Node, job string) {
+		for _, script := range containerScripts(container) {
+			block := blocks[script]
+			if block == nil {
+				if blocks == nil {
+					blocks = map[*yaml.Node]*yaml.Node{}
+				}
+				block = &yaml.Node{Kind: yaml.SequenceNode, Line: script.Line, Column: script.Column, Content: []*yaml.Node{script}}
+				blocks[script] = block
+			}
+			fn(block, file, job)
+		}
+	}
 
 	for _, key := range []string{"before_script", "after_script"} {
 		visit(parser.FindKey(mapping, key), "")
 	}
+	visitContainer(mapping, "")
 
 	if def := parser.FindKey(mapping, "default"); def != nil {
 		for _, key := range []string{"before_script", "after_script"} {
 			visit(parser.FindKey(def, key), "")
 		}
 		visit(hookScriptNode(def), "")
+		visitContainer(def, "")
 	}
 
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
@@ -443,6 +463,7 @@ func EachScriptBlockPerJob(doc *yaml.Node, file string, fn func(node *yaml.Node,
 		for _, block := range parser.RunStepBlocks(job) {
 			fn(block, file, name.Value)
 		}
+		visitContainer(job, name.Value)
 	})
 }
 
