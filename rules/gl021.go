@@ -20,7 +20,6 @@ var GL021 = &gl021{}
 func (r *gl021) ID() string { return "GL021" }
 
 var (
-
 	// gl021VarRefRe also accepts PowerShell's $env:NAME and ${env:NAME}.
 	// The env: drive is case insensitive; the capture is the variable name.
 	gl021VarRefRe = regexp.MustCompile(`\$\{?(?i:env:)?([A-Za-z_][A-Za-z0-9_]*)\}?`)
