@@ -180,15 +180,10 @@ func blankCaseLabels(script string) string {
 		return script
 	}
 	masked := maskShellQuotes(script)
-	if len(masked) != len(script) {
-		return script
-	}
 	b := []byte(script)
 	depth, start := 0, 0
 	for i := 0; i < len(masked); i++ {
 		switch c := masked[i]; {
-		case c == '\\':
-			i++
 		case c == '#' && (i == 0 || isShellSpace(masked[i-1]) || masked[i-1] == '\n'):
 			for i+1 < len(masked) && masked[i+1] != '\n' {
 				i++
