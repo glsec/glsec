@@ -1,0 +1,39 @@
+# #1171: an .npmrc the job writes with an escaped ${CI_JOB_TOKEN} placeholder
+# holds no token, so GL005 and GL073 stay silent on it. An expanded secret, a
+# file the job doesn't write, and .pypirc/.netrc (read literally) are reported.
+placeholder-escaped:
+  script:
+    - echo "${NPM_PROJECT_LEVEL_ENDPOINT}:_authToken=\${CI_JOB_TOKEN}" >> .npmrc
+    - npm publish
+  artifacts:
+    access: all
+    paths: [.npmrc]
+    expire_in: 1 day
+
+placeholder-single-quoted:
+  script:
+    - echo '//registry.npmjs.org/:_authToken=${NPM_TOKEN}' > .npmrc
+  artifacts:
+    paths: [.npmrc]
+    expire_in: 1 day
+
+expanded-secret:
+  script:
+    - echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > .npmrc
+  artifacts:
+    access: all
+    paths: [.npmrc]
+    expire_in: 1 day
+
+not-written:
+  script: [npm ci]
+  artifacts:
+    paths: [.npmrc]
+    expire_in: 1 day
+
+pypirc-placeholder:
+  script:
+    - echo 'password = ${PYPI_TOKEN}' > .pypirc
+  artifacts:
+    paths: [.pypirc]
+    expire_in: 1 day

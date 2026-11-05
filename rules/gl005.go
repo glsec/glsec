@@ -58,21 +58,21 @@ var gitlabReportArtifacts = []string{
 func (r *gl005) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
 	mapping := parser.Unwrap(doc)
+	in := NewInheritance(doc)
 
 	if def := parser.FindKey(mapping, "default"); def != nil {
 		if artifactsNode := parser.FindKey(def, "artifacts"); artifactsNode != nil {
-			findings = append(findings, checkArtifactPaths(artifactsNode, file)...)
+			findings = append(findings, checkArtifactPaths(doc, nil, artifactsNode, file)...)
 			if _, e := parser.FindKeyNode(artifactsNode, "expire_in"); e == nil {
 				findings = append(findings, missingExpireIn(artifactsNode, file))
 			}
 		}
 	}
 
-	in := NewInheritance(doc)
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
 		// Paths are checked where they are written, templates included.
 		if own := parser.FindKey(job, "artifacts"); own != nil {
-			for _, f := range checkArtifactPaths(own, file) {
+			for _, f := range checkArtifactPaths(doc, in, own, file) {
 				f.Job = name.Value
 				findings = append(findings, f)
 			}
@@ -99,7 +99,8 @@ func (r *gl005) Check(doc *yaml.Node, file string) []finding.Finding {
 	return findings
 }
 
-func checkArtifactPaths(node *yaml.Node, file string) []finding.Finding {
+// in is nil for the artifacts block under default:.
+func checkArtifactPaths(doc *yaml.Node, in *Inheritance, node *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
 
 	for _, section := range []string{"paths", "exclude"} {
@@ -109,6 +110,9 @@ func checkArtifactPaths(node *yaml.Node, file string) []finding.Finding {
 		}
 		for _, item := range seqNode.Content {
 			if item.Kind != yaml.ScalarNode {
+				continue
+			}
+			if section == "paths" && writesPlaceholderOnly(doc, in, node, item.Value) {
 				continue
 			}
 			// Excluding a sensitive file is the fix, not the problem.
