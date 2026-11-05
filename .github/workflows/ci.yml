@@ -79,17 +79,8 @@ jobs:
       - run: go mod verify
       # A real ShellCheck, pinned by version and checksum, for the tests in
       # internal/shellcheck that skip without one elsewhere (#1227).
-      - name: Install ShellCheck
-        if: matrix.os == 'ubuntu-latest'
-        env:
-          SHELLCHECK_VERSION: v0.11.0
-          SHELLCHECK_SHA256: 8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198
-        run: |
-          archive="$RUNNER_TEMP/shellcheck.tar.xz"
-          curl -fsSL -o "$archive" "https://github.com/koalaman/shellcheck/releases/download/$SHELLCHECK_VERSION/shellcheck-$SHELLCHECK_VERSION.linux.x86_64.tar.xz"
-          echo "$SHELLCHECK_SHA256  $archive" | sha256sum -c -
-          tar -xJf "$archive" -C "$RUNNER_TEMP"
-          echo "$RUNNER_TEMP/shellcheck-$SHELLCHECK_VERSION" >> "$GITHUB_PATH"
+      - if: matrix.os == 'ubuntu-latest'
+        uses: ./.github/actions/install-shellcheck
       # The race detector isn't supported on windows/arm64, so that leg runs
       # the tests without it; coverage is read from the Linux leg anyway.
       - env:
@@ -191,6 +182,15 @@ jobs:
       - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
           version: latest
+      # The workflows' syntax and expressions, and the shell in their run:
+      # blocks and in the repository's scripts (#1228).
+      - uses: ./.github/actions/install-shellcheck
+      - run: go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+      - name: Workflows
+        run: actionlint
+      - name: Shell scripts
+        if: ${{ !cancelled() }}
+        run: shellcheck .github/scripts/*.sh bin/glsec
       # golangci-lint's unused only sees unexported code. deadcode follows the
       # calls from main and reports exported functions nothing reaches, such as
       # a wrapper only tests still call after a refactor (#1076). It must be
