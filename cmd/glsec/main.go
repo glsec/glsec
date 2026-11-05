@@ -521,16 +521,12 @@ func scanRoot(file string, opt scanOptions) (findings []finding.Finding, suppres
 		return fail(file, valErr)
 	}
 
-	seen := map[string]*parser.Document{}
-	if abs, absErr := filepath.Abs(file); absErr == nil {
-		seen[abs] = doc
-	}
 	// GitLab resolves trigger:include paths from the repository root, taken
 	// here as the directory of the pipeline being scanned.
 	allDocs := []*parser.Document{doc}
 	if file != parser.StdinName {
 		rootDir := filepath.Dir(file)
-		files := pipelineFiles{w: opt.stderr, rootDir: rootDir, excludePaths: opt.cfg.ExcludePaths, seen: seen}
+		files := newPipelineFiles(opt.stderr, rootDir, opt.cfg.ExcludePaths, file, doc)
 		// Outside the repository root a path is looked up in the wrong
 		// place, so a file that isn't found says nothing about the pipeline.
 		strictRead := opt.cfg.Strict && isRepositoryRoot(rootDir)
@@ -546,7 +542,15 @@ func scanRoot(file string, opt scanOptions) (findings []finding.Finding, suppres
 	} else if len(parser.LocalIncludePaths(doc.Root)) > 0 || len(parser.ChildPipelinePaths(doc.Root)) > 0 {
 		_, _ = fmt.Fprintf(opt.stderr, "note: %s: local includes and child pipelines are not read; name the file with --stdin-filename to resolve them\n", file)
 	}
+	// A file several pipelines include is in allDocs once per pipeline.
+	unique := map[string]*parser.Document{}
+	var filePaths []string
 	for _, d := range allDocs {
+		if unique[d.File] != nil {
+			continue
+		}
+		unique[d.File] = d
+		filePaths = append(filePaths, d.File)
 		if opt.scannedFiles != nil {
 			opt.scannedFiles[d.File] = true
 		}
@@ -560,8 +564,7 @@ func scanRoot(file string, opt scanOptions) (findings []finding.Finding, suppres
 		}
 	}
 
-	jobCount = parser.CountJobs(doc.Root)
-	for _, d := range allDocs[1:] {
+	for _, d := range unique {
 		jobCount += parser.CountJobs(d.Root)
 	}
 
@@ -571,10 +574,6 @@ func scanRoot(file string, opt scanOptions) (findings []finding.Finding, suppres
 
 	var cacheKey string
 	if useCache {
-		filePaths := make([]string, len(allDocs))
-		for i, d := range allDocs {
-			filePaths[i] = d.File
-		}
 		var scBin string
 		scReady := true
 		if opt.cfg.ShellCheck.Enabled {
@@ -595,8 +594,18 @@ func scanRoot(file string, opt scanOptions) (findings []finding.Finding, suppres
 	}
 
 	skipSuppress := opt.generateIgnore || opt.noIgnores
+	// Checks that don't depend on the pipeline run once per file.
+	again := *opt.cfg
+	again.RequireIgnoreReason = false
+	again.ShellCheck.Enabled = false
+	checked := map[string]bool{}
 	for _, d := range withPipelineContext(allDocs) {
-		f, s, u, err := collectFindings(d, d.File, opt.cfg, opt.gitlabVersion, skipSuppress, opt.newOnly)
+		cfg := opt.cfg
+		if checked[d.File] {
+			cfg = &again
+		}
+		checked[d.File] = true
+		f, s, u, err := collectFindings(d, d.File, cfg, opt.gitlabVersion, skipSuppress, opt.newOnly)
 		if err != nil {
 			return fail(d.File, err)
 		}
@@ -604,6 +613,7 @@ func scanRoot(file string, opt scanOptions) (findings []finding.Finding, suppres
 		suppressed = append(suppressed, s...)
 		unjustified += u
 	}
+	findings, suppressed = finding.Dedupe(findings), finding.DedupeSuppressed(suppressed)
 
 	if useCache && cacheKey != "" {
 		cache.Store(cacheKey, &cache.Entry{Findings: findings, Suppressed: suppressed, JobCount: jobCount})
@@ -895,15 +905,61 @@ func matchesExclude(file string, patterns []string) bool {
 	return false
 }
 
-// pipelineFiles reads the files of a pipeline.
+// pipelineFiles reads the files of a pipeline and its child pipelines. A file
+// belongs to every pipeline that includes it, with a Document of its own there
+// sharing the parsed tree, so each pipeline gets its context (#1166).
 type pipelineFiles struct {
 	w            io.Writer
 	rootDir      string
 	excludePaths []string
-	seen         map[string]*parser.Document
+	// parsed caches each file by absolute path; nil if it could not be read.
+	parsed map[string]*parser.Document
+	// members holds the files of each pipeline by absolute path. It stops
+	// include cycles; a value is nil while the file is being read.
+	members map[*parser.Document]map[string]*parser.Document
+	// children holds the pipelines started so far by absolute path, which
+	// stops cycles of child pipelines.
+	children map[string]bool
+	// skipped holds the paths already reported as outside rootDir.
+	skipped map[string]bool
 	// unread reports a file that could not be read. optional says the
 	// pipeline can be valid without it (#1167).
 	unread func(kind, path string, err error, optional bool)
+}
+
+func newPipelineFiles(w io.Writer, rootDir string, excludePaths []string, file string, root *parser.Document) *pipelineFiles {
+	p := &pipelineFiles{
+		w: w, rootDir: rootDir, excludePaths: excludePaths,
+		parsed:   map[string]*parser.Document{},
+		members:  map[*parser.Document]map[string]*parser.Document{},
+		children: map[string]bool{},
+		skipped:  map[string]bool{},
+	}
+	if abs, err := filepath.Abs(file); err == nil {
+		p.children[abs] = true
+		p.members[root] = map[string]*parser.Document{abs: root}
+	} else {
+		p.members[root] = map[string]*parser.Document{}
+	}
+	return p
+}
+
+// read returns a Document for path, which is abs, parsing the file the first
+// time. A file that can't be read is reported once.
+func (p *pipelineFiles) read(kind, path, abs string, optional bool) *parser.Document {
+	doc, ok := p.parsed[abs]
+	if !ok {
+		parsed, err := parser.ParseFile(path)
+		if err != nil {
+			p.unread(kind, path, err, optional)
+		}
+		p.parsed[abs], doc = parsed, parsed
+	}
+	if doc == nil {
+		return nil
+	}
+	own := *doc
+	return &own
 }
 
 // collect recursively collects all pipeline documents (main + children)
@@ -927,30 +983,41 @@ func (p *pipelineFiles) collect(doc *parser.Document, optional bool) []*parser.D
 		if err != nil {
 			return
 		}
-		if known, ok := p.seen[abs]; ok {
-			// Included again: GitLab merges it again, so its place can change.
-			if included && known != nil && known.IncludedBy == pipeline {
-				doc.Includes = append(doc.Includes, known)
+		if included {
+			if known, ok := p.members[pipeline][abs]; ok {
+				// Included again: GitLab merges it again, so its place can change.
+				if known != nil && known.IncludedBy == pipeline {
+					doc.Includes = append(doc.Includes, known)
+				}
+				return
 			}
-			return
+			p.members[pipeline][abs] = nil
+		} else {
+			if p.children[abs] {
+				return
+			}
+			p.children[abs] = true
 		}
-		p.seen[abs] = nil
 		// GitLab rejects local includes outside the project; reading them would
 		// let a pipeline file print lines of other files on the runner.
 		if !withinRoot(p.rootDir, childPath) {
-			_, _ = fmt.Fprintf(p.w, "warning: %s %s: outside the repository, skipped\n", kind, output.Sanitize(filepath.ToSlash(childPath)))
+			if !p.skipped[abs] {
+				p.skipped[abs] = true
+				_, _ = fmt.Fprintf(p.w, "warning: %s %s: outside the repository, skipped\n", kind, output.Sanitize(filepath.ToSlash(childPath)))
+			}
 			return
 		}
-		childDoc, err := parser.ParseFile(childPath)
-		if err != nil {
-			// A path with a variable is only a guess at the real file.
-			p.unread(kind, childPath, err, optional || strings.Contains(path, "$"))
+		// A path with a variable is only a guess at the real file.
+		childDoc := p.read(kind, childPath, abs, optional || strings.Contains(path, "$"))
+		if childDoc == nil {
 			return
 		}
-		p.seen[abs] = childDoc
 		if included {
+			p.members[pipeline][abs] = childDoc
 			childDoc.IncludedBy = pipeline
 			doc.Includes = append(doc.Includes, childDoc)
+		} else {
+			p.members[childDoc] = map[string]*parser.Document{abs: childDoc}
 		}
 		all = append(all, p.collect(childDoc, optional)...)
 	}
