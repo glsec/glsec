@@ -203,6 +203,38 @@ func TestUnwrappedLine(t *testing.T) {
 	}
 }
 
+func TestReadsScriptFromStdin(t *testing.T) {
+	for _, tc := range []struct {
+		in   string
+		want bool
+	}{
+		{"bash", true},
+		{"/bin/sh", true},
+		{"sudo -u node bash", true},
+		{"timeout 60 bash -e", true},
+		{"bash -ex", true},
+		{"bash -s", true},
+		{"bash -s -- a b", true},
+		{"bash -es arg", true},
+		{"bash -o pipefail", true},
+		{"bash +x", true},
+		{"bash --norc", true},
+		{"bash -c true", false},
+		{"bash -ec true", false},
+		{"bash script.sh", false},
+		{"bash -e script.sh", false},
+		{"bash -- script.sh", false},
+		{"cat", false},
+		{"python3", false},
+		{"ssh host bash", false},
+		{"", false},
+	} {
+		if got := readsScriptFromStdin(commandWords(tc.in)); got != tc.want {
+			t.Errorf("readsScriptFromStdin(%q) = %v, want %v", tc.in, got, tc.want)
+		}
+	}
+}
+
 func TestShellCommandsArithmeticShift(t *testing.T) {
 	var got []string
 	for _, c := range shellCommands("echo $((a<<b))\ncurl x\nb\n((c<<d))\nwget y\ncat <<EOF\nnot a command\nEOF\nls") {
@@ -319,6 +351,13 @@ func TestWrappedCommandsReachRules(t *testing.T) {
 		{"GL062 filtered", GL062, "sudo env | grep THREADS", 0},
 		{"GL062 captured", GL062, "X=$(sudo env)", 0},
 		{"GL062 package", GL062, "sudo apt install env", 0},
+		{"GL050 local heredoc", GL050, "bash <<EOF\nsudo apt-get update\nEOF", 1},
+		{"GL050 piped heredoc", GL050, "cat <<EOF | bash\nsudo apt-get update\nEOF", 1},
+		{"GL050 ssh heredoc", GL050, "ssh h <<EOF\nsudo apt-get update\nEOF", 0},
+		{"GL050 written heredoc", GL050, "cat > f <<EOF\nsudo apt-get update\nEOF", 0},
+		{"GL050 stdin of a script", GL050, "bash run.sh <<EOF\nsudo apt-get update\nEOF", 0},
+		{"GL062 local heredoc", GL062, "sudo sh -s <<'EOF'\nprintenv\nEOF", 1},
+		{"GL062 ssh heredoc", GL062, "ssh h <<'EOF'\nprintenv\nEOF", 0},
 		{"GL068 timeout", GL068, "timeout 60 bash -x build.sh", 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
