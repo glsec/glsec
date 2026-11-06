@@ -1,0 +1,9 @@
+# The same limit as cmd/patchcoverage, so a change that passes the pull request
+# gate doesn't turn main red: Codecov only sees main, and without a target it
+# measures a change against the coverage of the whole repository.
+coverage:
+  status:
+    project: off
+    patch:
+      default:
+        target: 80%
