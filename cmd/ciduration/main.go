@@ -111,7 +111,7 @@ func realMain(args []string, token string, stdout, stderr io.Writer) int {
 	if at != "" {
 		parsed, err := time.Parse(time.RFC3339, at)
 		if err != nil {
-			fmt.Fprintln(stderr, err)
+			_, _ = fmt.Fprintln(stderr, err)
 			return exitError
 		}
 		opt.now = parsed
@@ -120,12 +120,12 @@ func realMain(args []string, token string, stdout, stderr io.Writer) int {
 	ctx := context.Background()
 	runs, err := fetchRuns(ctx, opt)
 	if err != nil {
-		fmt.Fprintln(stderr, err)
+		_, _ = fmt.Fprintln(stderr, err)
 		return exitError
 	}
 	jobs, err := fetchJobs(ctx, opt, runs)
 	if err != nil {
-		fmt.Fprintln(stderr, err)
+		_, _ = fmt.Fprintln(stderr, err)
 		return exitError
 	}
 
@@ -139,7 +139,7 @@ func realMain(args []string, token string, stdout, stderr io.Writer) int {
 	}
 	if opt.recordPath != "" {
 		if err := writeRecord(opt.recordPath, rec); err != nil {
-			fmt.Fprintln(stderr, err)
+			_, _ = fmt.Fprintln(stderr, err)
 			return exitError
 		}
 	}
