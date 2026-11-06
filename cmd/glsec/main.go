@@ -26,6 +26,7 @@ import (
 	"github.com/glsec/glsec/internal/color"
 	"github.com/glsec/glsec/internal/config"
 	"github.com/glsec/glsec/internal/finding"
+	"github.com/glsec/glsec/internal/gctune"
 	"github.com/glsec/glsec/internal/output"
 	"github.com/glsec/glsec/internal/parser"
 	"github.com/glsec/glsec/internal/redact"
@@ -54,6 +55,7 @@ var stdin io.Reader = os.Stdin
 // run is the whole CLI: it parses args, scans, writes the report to stdout and
 // returns the process exit code instead of exiting, so tests can drive it.
 func run(args []string, stdout, stderr io.Writer) int {
+	gctune.Release()
 	if len(args) >= 1 && args[0] == "list" {
 		return runList(args[1:], stdout, stderr)
 	}
