@@ -525,3 +525,5 @@ benchstat old.txt new.txt
 ```
 
 `BenchmarkParse`, `BenchmarkRules` and `BenchmarkRun` use a pipeline of 2,000 jobs with `extends:` and `!reference` chains, anchors, long script blocks and a very long line.
+
+The collector stays relaxed until `run` starts, because the regexps compiled during package initialisation live until the process exits (`internal/gctune`). Measure startup with `GODEBUG=inittrace=1 glsec --version`, which prints the time and allocations of each package.
