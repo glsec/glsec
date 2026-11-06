@@ -37,7 +37,7 @@ var envFullDumpRe = regexp.MustCompile(`(?m)(?:^|[;&|(])\s*(?:/usr/bin/|/bin/)?(
 
 // Keep the original env/printenv matching and message, including commands
 // inside a quoted sh -c payload. Quote suppression applies only to new forms.
-var legacyEnvFullDumpRe = regexp.MustCompile(`(?m)(?:^|[;&|(])\s*(?:/usr/bin/|/bin/)?(?:printenv|env)\s*(?:$|[;&|#)])`)
+var legacyEnvFullDumpRe = mustCompilePrefiltered(`(?m)(?:^|[;&|(])\s*(?:/usr/bin/|/bin/)?(?:printenv|env)\s*(?:$|[;&|#)])`)
 
 // findEnvFullDump keeps a closing parenthesis as a boundary only when an
 // opening parenthesis precedes it. Otherwise set) and export) are case labels.

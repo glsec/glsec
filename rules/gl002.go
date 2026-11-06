@@ -73,7 +73,7 @@ var userVarRe = regexp.MustCompile(
 // including the opening double quote of that argument. The outer shell
 // expands variables inside the double quotes first, so the command then
 // parses the attacker's value as code: quoting protects nothing here.
-var evalArgRe = regexp.MustCompile(
+var evalArgRe = mustCompilePrefiltered(
 	`(?:^|[\s;&|/(` + "`" + `])(eval|(?:ba|z|da|k)?sh[ \t]+(?:-[a-zA-Z]+[ \t]+)*-[a-zA-Z]*c|python[23]?(?:\.\d+)?[ \t]+(?:-[a-zA-Z]+[ \t]+)*-c|node[ \t]+(?:-e|--eval|-p|--print)|(?:perl|ruby)[ \t]+(?:-[a-zA-Z]+[ \t]+)*-[a-zA-Z]*e)[ \t]+"`,
 )
 

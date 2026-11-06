@@ -5,7 +5,6 @@ package rules
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -21,45 +20,45 @@ func (r *gl042) ID() string { return "GL042" }
 
 type tlsCheck struct {
 	tool string
-	re   *regexp.Regexp
+	re   prefiltered
 	msg  string
 }
 
 var tlsChecks = []tlsCheck{
 	{
 		tool: "curl",
-		re:   regexp.MustCompile(`\bcurl\b.*\s(?:-k|--insecure)\b`),
+		re:   mustCompilePrefiltered(`\bcurl\b.*\s(?:-k|--insecure)\b`),
 		msg:  `curl invoked with "%s" — TLS certificate verification disabled; use --cacert to trust a specific CA instead`,
 	},
 	{
 		tool: "wget",
-		re:   regexp.MustCompile(`\bwget\b.*--no-check-certificate\b`),
+		re:   mustCompilePrefiltered(`\bwget\b.*--no-check-certificate\b`),
 		msg:  `wget invoked with "--no-check-certificate" — TLS certificate verification disabled; add the CA certificate to the system trust store instead`,
 	},
 	{
 		tool: "git",
-		re:   regexp.MustCompile(`\bgit\b.*-c\s+http\.sslVerify\s*=\s*false\b`),
+		re:   mustCompilePrefiltered(`\bgit\b.*-c\s+http\.sslVerify\s*=\s*false\b`),
 		msg:  `git invoked with "http.sslVerify=false" — TLS certificate verification disabled; configure the CA with http.sslCAInfo instead`,
 	},
 	{
 		tool: "npm",
-		re:   regexp.MustCompile(`\bnpm\b.*--strict-ssl\s*=?\s*false\b`),
+		re:   mustCompilePrefiltered(`\bnpm\b.*--strict-ssl\s*=?\s*false\b`),
 		msg:  `npm invoked with "--strict-ssl=false" — TLS certificate verification disabled; use cafile in .npmrc to trust a specific CA instead`,
 	},
 	{
 		tool: "npm config",
-		re:   regexp.MustCompile(`\bnpm\s+(?:config\s+set|set)\s+strict-ssl\s+false\b`),
+		re:   mustCompilePrefiltered(`\bnpm\s+(?:config\s+set|set)\s+strict-ssl\s+false\b`),
 		msg:  `npm strict-ssl disabled via "npm config set" — TLS certificate verification disabled for all subsequent npm commands`,
 	},
 	{
 		tool: "pip",
-		re:   regexp.MustCompile(`\bpip[0-9]*\b.*--trusted-host\b`),
+		re:   mustCompilePrefiltered(`\bpip[0-9]*\b.*--trusted-host\b`),
 		msg:  `pip invoked with "--trusted-host" — TLS certificate verification disabled for the package index, allowing a man-in-the-middle to swap package contents; add the proxy CA to the system trust store instead`,
 	},
 }
 
 // gitSSLNoVerifyRe matches GIT_SSL_NO_VERIFY=true/1 as a variable export or inline env.
-var gitSSLNoVerifyRe = regexp.MustCompile(`\bGIT_SSL_NO_VERIFY\s*=\s*(?:true|1)\b`)
+var gitSSLNoVerifyRe = mustCompilePrefiltered(`\bGIT_SSL_NO_VERIFY\s*=\s*(?:true|1)\b`)
 
 func (r *gl042) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
@@ -135,7 +134,7 @@ func checkTLSLines(node *yaml.Node, file, job string) []finding.Finding {
 			line, col := scriptMatchPos(item, loc[0])
 			msg := check.msg
 			if check.tool == "curl" {
-				flag := regexp.MustCompile(`-k|--insecure`).FindString(m)
+				flag := mustCompilePrefiltered(`-k|--insecure`).FindString(m)
 				msg = fmt.Sprintf(msg, flag)
 			}
 			findings = append(findings, finding.Finding{

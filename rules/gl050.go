@@ -4,7 +4,6 @@
 package rules
 
 import (
-	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -19,7 +18,7 @@ var GL050 = &gl050{}
 func (r *gl050) ID() string { return "GL050" }
 
 // sudoSubstRe matches sudo run inside a command substitution: test $(sudo …).
-var sudoSubstRe = regexp.MustCompile("(?:\\$\\(|`)\\s*sudo\\b")
+var sudoSubstRe = mustCompilePrefiltered("(?:\\$\\(|`)\\s*sudo\\b")
 
 func (r *gl050) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding

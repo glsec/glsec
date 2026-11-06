@@ -26,7 +26,7 @@ var (
 	gitCloneRe = regexp.MustCompile(`\bgit\b[^|;&]*\bclone\b`)
 
 	// gitCheckoutRe matches a git checkout invocation.
-	gitCheckoutRe = regexp.MustCompile(`\bgit\b[^|;&]*\bcheckout\b`)
+	gitCheckoutRe = mustCompilePrefiltered(`\bgit\b[^|;&]*\bcheckout\b`)
 
 	// branchFlagRe captures the value of --branch or -b.
 	// Handles both space-separated (--branch main) and equals-sign (--branch=main) forms.

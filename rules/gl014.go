@@ -40,7 +40,7 @@ const psFileTarget = `\|\s*(?i:out-file|set-content|add-content|tee-object)(?:\s
 // variable), "set -e > f", "export FOO=bar > f" and "declare -a arr > f"
 // don't match. Group 1, 2 or 3 is the target file.
 // (?m) lets a command start on any line of a block scalar (#1161).
-var envDumpRe = regexp.MustCompile(
+var envDumpRe = mustCompilePrefiltered(
 	`(?m)(?:(?:^|[\s;&|(])(?:env(?:\s+(?:-0|--null))?|printenv|export\s+-p|` +
 		`cat\s+/proc/(?:self|\$\$|[0-9]+)/environ)` +
 		`|(?:^|[;&|(])\s*(?:set|export|(?:declare|typeset)(?:\s+-[px]+)?|` + psEnvDump + psEnvFormat + `))\s*` +
@@ -48,7 +48,7 @@ var envDumpRe = regexp.MustCompile(
 
 // Preserve pre-#1161 matches in quoted shell payloads and after comments
 // containing quotes. Masking is only a guard for the newly added forms.
-var legacyEnvDumpRe = regexp.MustCompile(
+var legacyEnvDumpRe = mustCompilePrefiltered(
 	`(?:^|[\s;&|(])(?:env|printenv|export\s+-p|cat\s+/proc/(?:self|\$\$|[0-9]+)/environ)\s*` +
 		`(?:>>?\s*(\S+)|\|\s*tee\s+(?:(?:-a|--append)\s+)?(\S+))`)
 

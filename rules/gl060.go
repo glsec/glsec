@@ -27,7 +27,7 @@ var mountFlagRe = regexp.MustCompile(`(?:^|\s)--mount[=\s]+(\S+)`)
 // containerRunRe matches run and create commands of the container engines
 // whose bind mounts this rule covers. It is local to GL060 so the wider
 // dockerRunRe, shared with other rules, keeps its existing meaning.
-var containerRunRe = regexp.MustCompile(`\b(?:docker|podman|nerdctl)\s+(?:container\s+)?(?:run|create)\b`)
+var containerRunRe = mustCompilePrefiltered(`\b(?:docker|podman|nerdctl)\s+(?:container\s+)?(?:run|create)\b`)
 
 // errorMountPaths are host source paths whose exposure is critical.
 var errorMountPaths = []string{"/etc", "/root", "/proc", "/sys"}

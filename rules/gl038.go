@@ -5,7 +5,6 @@ package rules
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -21,7 +20,7 @@ func (r *gl038) ID() string { return "GL038" }
 
 type credCheck struct {
 	tool string
-	re   *regexp.Regexp
+	re   prefiltered
 	msg  string
 	// db reports whether the credential goes to a database CLI whose
 	// target host can be a job service container, or localhost when the
@@ -35,31 +34,31 @@ type credCheck struct {
 var credChecks = []credCheck{
 	{
 		tool: "sqlcmd",
-		re:   regexp.MustCompile(`\bsqlcmd\b.*-P\s+["']?[^$"'\s]`),
+		re:   mustCompilePrefiltered(`\bsqlcmd\b.*-P\s+["']?[^$"'\s]`),
 		msg:  "script passes hardcoded credential to sqlcmd via -P flag — use a masked CI variable instead",
 		db:   true,
 	},
 	{
 		tool: "mysql",
-		re:   regexp.MustCompile(`\bmysql(?:dump|pump)?\b.*\s-p[A-Za-z0-9!@#%^&*()\[\]{}<>]`),
+		re:   mustCompilePrefiltered(`\bmysql(?:dump|pump)?\b.*\s-p[A-Za-z0-9!@#%^&*()\[\]{}<>]`),
 		msg:  "script passes hardcoded credential to mysql via -p flag — use a masked CI variable instead",
 		db:   true,
 	},
 	{
 		tool: "mysql",
-		re:   regexp.MustCompile(`\bmysql(?:dump|pump)?\b.*--password=[^$'"\s]`),
+		re:   mustCompilePrefiltered(`\bmysql(?:dump|pump)?\b.*--password=[^$'"\s]`),
 		msg:  "script passes hardcoded credential to mysql via --password flag — use a masked CI variable instead",
 		db:   true,
 	},
 	{
 		tool: "psql/PGPASSWORD",
-		re:   regexp.MustCompile(`PGPASSWORD=[^$'"\s]`),
+		re:   mustCompilePrefiltered(`PGPASSWORD=[^$'"\s]`),
 		msg:  "script passes hardcoded credential via PGPASSWORD — use a masked CI variable instead",
 		db:   true,
 	},
 	{
 		tool: "mongosh",
-		re:   regexp.MustCompile(`\bmongo(?:sh|dump|restore|import|export)?\b.*--password\s+[^$\s"']`),
+		re:   mustCompilePrefiltered(`\bmongo(?:sh|dump|restore|import|export)?\b.*--password\s+[^$\s"']`),
 		msg:  "script passes hardcoded credential via --password flag — use a masked CI variable instead",
 		db:   true,
 	},
@@ -67,25 +66,25 @@ var credChecks = []credCheck{
 		// A literal after -p/--password; $VAR, "$VAR", \$VAR (in a heredoc
 		// for a remote shell), --password-stdin and another flag are not.
 		tool: "docker login",
-		re:   regexp.MustCompile(`\b(?:docker|podman)\s+login\b[^;&|\n]*\s(?:-p|--password)(?:\s+|=)["']?[^$"'\s\\-]`),
+		re:   mustCompilePrefiltered(`\b(?:docker|podman)\s+login\b[^;&|\n]*\s(?:-p|--password)(?:\s+|=)["']?[^$"'\s\\-]`),
 		msg:  "script passes a hardcoded password to docker login — anyone who can read the repository can use it; store it in a masked CI/CD variable and pipe it to --password-stdin",
 	},
 	{
 		// user:password with a literal password. $VAR or ${VAR} after the
 		// colon, user: (curl prompts) and : (Kerberos/NTLM) are not.
 		tool: "curl -u",
-		re:   regexp.MustCompile(`\bcurl\b[^;&|\n]*\s(?:-u|--user)(?:\s+|=)["']?[^\s"':]*:([^$\s"'\\][^\s"']*)`),
+		re:   mustCompilePrefiltered(`\bcurl\b[^;&|\n]*\s(?:-u|--user)(?:\s+|=)["']?[^\s"':]*:([^$\s"'\\][^\s"']*)`),
 		msg:  "script passes a hardcoded password to curl -u — anyone who can read the repository can use it; use a masked CI/CD variable, e.g. -u \"$API_USER:$API_PASSWORD\"",
 	},
 	{
 		// A literal after Bearer, Basic or Token, not $VAR or <token>.
 		tool: "Authorization header",
-		re:   regexp.MustCompile(`(?i)\b(?:curl|wget)\b[^\n]*(?:-H|--header)(?:\s+|=)["']?Authorization:\s*(?:Bearer|Basic|Token)\s+([^$<\s"'\\]{8,})`),
+		re:   mustCompilePrefiltered(`(?i)\b(?:curl|wget)\b[^\n]*(?:-H|--header)(?:\s+|=)["']?Authorization:\s*(?:Bearer|Basic|Token)\s+([^$<\s"'\\]{8,})`),
 		msg:  "script sends a hardcoded credential in an Authorization header — anyone who can read the repository can use it; use a masked CI/CD variable, e.g. \"Authorization: Bearer $API_TOKEN\"",
 	},
 	{
 		tool: "sed",
-		re:   regexp.MustCompile(`\bsed\b.+s/[^/]+/[^/:]*:[^$][^@]*@/`),
+		re:   mustCompilePrefiltered(`\bsed\b.+s/[^/]+/[^/:]*:[^$][^@]*@/`),
 		msg:  "script rewrites URL with hardcoded password literal via sed — use a masked CI variable instead",
 	},
 }
@@ -194,8 +193,8 @@ func imageHosts(ref string) []string {
 // in a script item: -h / --host (mysql, psql, mongosh), -S (sqlcmd) and
 // PGHOST (psql). hostOptionAttachedRe covers the attached short forms
 // (-hmysql, -Smssql).
-var hostOptionRe = regexp.MustCompile(`(?:^|[\s;&|])(?:-h|-S|--host|PGHOST)(?:\s+|=)\s*["']?([^\s;&|"']+)`)
-var hostOptionAttachedRe = regexp.MustCompile(`(?:^|[\s;&|])-[hS]["']?([^\s;&|"']+)`)
+var hostOptionRe = mustCompilePrefiltered(`(?:^|[\s;&|])(?:-h|-S|--host|PGHOST)(?:\s+|=)\s*["']?([^\s;&|"']+)`)
+var hostOptionAttachedRe = mustCompilePrefiltered(`(?:^|[\s;&|])-[hS]["']?([^\s;&|"']+)`)
 
 var localHosts = map[string]bool{
 	"localhost": true,
@@ -354,7 +353,7 @@ func credentialOffset(m []int) int {
 // secretAssignmentRe matches a shell assignment in command position: at the start
 // of a command, or after export. An assignment inside an argument, such as
 // --build-arg API_KEY=…, is not one (GL059 covers build args).
-var secretAssignmentRe = regexp.MustCompile(`(?:^|[;&|(]\s*|\bexport\s+)([A-Za-z_][A-Za-z0-9_]*)=("[^"$]*"|'[^']*'|[^\s;&|"'$]*)(?:[\s;&|)]|$)`)
+var secretAssignmentRe = mustCompilePrefiltered(`(?:^|[;&|(]\s*|\bexport\s+)([A-Za-z_][A-Za-z0-9_]*)=("[^"$]*"|'[^']*'|[^\s;&|"'$]*)(?:[\s;&|)]|$)`)
 
 // exportedSecret reports whether a script line assigns a literal to a
 // variable with a secret-like name (#910), with the name GL027 would use and
