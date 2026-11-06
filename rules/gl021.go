@@ -79,8 +79,8 @@ func (r *gl021) Check(doc *yaml.Node, file string) []finding.Finding {
 					message := ""
 					if ok {
 						message = fmt.Sprintf("script prints secret variable %s — value may appear in job logs", match)
-					} else if file := printedCredentialFile(line); file != "" {
-						message = fmt.Sprintf("script prints credential file %s — its contents may appear in job logs", file)
+					} else if credentialFile := printedCredentialFile(line); credentialFile != "" {
+						message = fmt.Sprintf("script prints credential file %s — its contents may appear in job logs", credentialFile)
 					} else {
 						continue
 					}
@@ -101,19 +101,32 @@ func (r *gl021) Check(doc *yaml.Node, file string) []finding.Finding {
 	return findings
 }
 
+// The .docker entry is a directory; only its config.json is a credential file.
+var gl021CredentialNames = []string{".npmrc", ".yarnrc.yml", ".pypirc", ".netrc", "_netrc", ".dockercfg", ".docker"}
+
 // printedCredentialFile detects common credential files printed to stdout.
-// A pipeline can itself print the data (for example, tee), so it is not
-// assumed to redact the file's contents.
+// Piped output is not logged unless the next command is tee.
 func printedCredentialFile(line string) string {
 	// Most script lines do not mention a credential file. Avoid shell parsing
 	// and its allocations unless one of the supported names may be present.
-	if !strings.Contains(line, ".npmrc") && !strings.Contains(line, ".yarnrc.yml") &&
-		!strings.Contains(line, ".pypirc") && !strings.Contains(line, ".netrc") &&
-		!strings.Contains(line, "_netrc") && !strings.Contains(line, ".dockercfg") &&
-		!strings.Contains(line, ".docker") {
+	foundName := false
+	for _, name := range gl021CredentialNames {
+		if strings.Contains(line, name) {
+			foundName = true
+			break
+		}
+	}
+	if !foundName {
 		return ""
 	}
-	for _, cmd := range shellCommands(line) {
+	cmds := shellCommands(line)
+	scanAt := 0
+	for i, cmd := range cmds {
+		at := -1
+		if offset := strings.Index(line[scanAt:], cmd.text); offset >= 0 {
+			at = scanAt + offset
+			scanAt = at + len(cmd.text)
+		}
 		words := commandWords(cmd.text)
 		if len(words) < 2 {
 			continue
@@ -123,24 +136,74 @@ func printedCredentialFile(line string) string {
 		default:
 			continue
 		}
-		if stdoutRedirectRe.MatchString(maskShellQuotes(cmd.text)) {
+		masked := maskShellQuotes(cmd.text)
+		if stdoutRedirectRe.MatchString(masked) || strings.Contains(masked, "&>") {
 			continue
 		}
-		if at := strings.Index(line, cmd.text); at >= 0 && groupOutputDiverted(line, at+len(cmd.text)-1) {
+		if cmd.piped {
+			if i+1 >= len(cmds) || commandName(commandWords(cmds[i+1].text)) != "tee" {
+				continue
+			}
+			next := maskShellQuotes(cmds[i+1].text)
+			if stdoutRedirectRe.MatchString(next) || strings.Contains(next, "&>") {
+				continue
+			}
+		}
+		if at >= 0 && groupOutputDiverted(line, at+len(cmd.text)-1) {
 			continue
 		}
 		for _, arg := range words[1:] {
-			name := path.Clean(strings.ReplaceAll(arg, `\`, "/"))
-			switch path.Base(name) {
-			case ".npmrc", ".yarnrc.yml", ".pypirc", ".netrc", "_netrc", ".dockercfg":
-				return arg
+			if offset := strings.Index(cmd.text, arg); at >= 0 && offset >= 0 && gl021InSubstitution(line[:at+offset]) {
+				continue
 			}
-			if strings.HasSuffix("/"+strings.TrimPrefix(name, "/"), "/.docker/config.json") {
-				return arg
+			name := path.Clean(strings.ReplaceAll(arg, `\`, "/"))
+			for _, credential := range gl021CredentialNames {
+				if credential == ".docker" {
+					if strings.HasSuffix("/"+strings.TrimPrefix(name, "/"), "/.docker/config.json") {
+						return arg
+					}
+				} else if path.Base(name) == credential {
+					return arg
+				}
 			}
 		}
 	}
 	return ""
+}
+
+// gl021InSubstitution reports whether a command begins inside $(...).
+func gl021InSubstitution(prefix string) bool {
+	var quote byte
+	var stack []byte
+	for i := 0; i < len(prefix); i++ {
+		c := prefix[i]
+		switch {
+		case c == '\\' && quote != '\'':
+			i++
+		case c == '\'' && quote != '"':
+			if quote == '\'' {
+				quote = 0
+			} else {
+				quote = '\''
+			}
+		case c == '"' && quote != '\'':
+			if quote == '"' {
+				quote = 0
+			} else {
+				quote = '"'
+			}
+		case c == '$' && quote != '\'' && i+1 < len(prefix) && prefix[i+1] == '(':
+			stack = append(stack, quote)
+			quote = 0
+			i++
+		case c == '(' && quote == 0 && len(stack) > 0:
+			stack = append(stack, 0)
+		case c == ')' && quote == 0 && len(stack) > 0:
+			quote = stack[len(stack)-1]
+			stack = stack[:len(stack)-1]
+		}
+	}
+	return len(stack) > 0
 }
 
 // printedSecret reports whether a script line actually prints a secret variable
