@@ -31,6 +31,7 @@ jobs:
   check:
     name: Sensitive paths
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       pull-requests: write # remove the label after a new push
     env:

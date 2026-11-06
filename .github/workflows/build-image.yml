@@ -19,6 +19,7 @@ jobs:
   docker:
     name: Build and push Docker image
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     env:
       # ghcr.io/glsec/glsec here; a fork's own registry path when testing there.
       IMAGE: ghcr.io/${{ github.repository }}

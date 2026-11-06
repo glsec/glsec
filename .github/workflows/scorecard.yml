@@ -25,6 +25,7 @@ jobs:
   analysis:
     name: Scorecard analysis
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       actions: read # read workflow runs for the CI-Tests and Dangerous-Workflow checks

@@ -26,6 +26,7 @@ jobs:
   check:
     name: Check CI Catalog component list freshness
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: read
       issues: write

@@ -527,3 +527,13 @@ benchstat old.txt new.txt
 `BenchmarkParse`, `BenchmarkRules` and `BenchmarkRun` use a pipeline of 2,000 jobs with `extends:` and `!reference` chains, anchors, long script blocks and a very long line.
 
 The collector stays relaxed until `run` starts, because the regexps compiled during package initialisation live until the process exits (`internal/gctune`). Measure startup with `GODEBUG=inittrace=1 glsec --version`, which prints the time and allocations of each package.
+
+The pipelines have limits of their own. Every job sets `timeout-minutes`, three to four times its usual duration, and a test fails when one is missing. A job that calls a reusable workflow can't set one; the jobs inside it do.
+
+Every Monday `ci-durations.yml` runs `cmd/ciduration` over the successful runs of the last 7 days, from pull requests and pushes to `main`. It appends median, p90 and maximum per workflow and for the jobs of `CI` to `data/ci-durations.jsonl` on the `benchmarks` branch. A workflow with at least 5 runs and a p90 above 10 minutes opens or updates an issue. To see the current numbers:
+
+```sh
+GITHUB_TOKEN=$(gh auth token) go run ./cmd/ciduration
+```
+
+Exit 1 from the command above means a workflow is over the budget. The budget is not a check on pull requests, because shared runners vary by 10 to 30%.
