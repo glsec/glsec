@@ -320,7 +320,7 @@ func writeReport(w io.Writer, rec record, over []stat) {
 		_, _ = fmt.Fprintf(w, "**Over the budget of %g minutes (p90):** %s\n\n", rec.Budget, strings.Join(names, ", "))
 	}
 	writeTable(w, "Workflow", rec.Workflows)
-	fmt.Fprintln(w)
+	_, _ = fmt.Fprintln(w)
 	writeTable(w, "Job", rec.Jobs)
 }
 
