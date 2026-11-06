@@ -18,7 +18,7 @@ var GL056 = &gl056{}
 func (r *gl056) ID() string { return "GL056" }
 
 var (
-	dockerRunRe          = regexp.MustCompile(`\bdocker\s+(?:container\s+)?run\b`)
+	dockerRunRe          = mustCompilePrefiltered(`\bdocker\s+(?:container\s+)?run\b`)
 	privilegedFlagRe     = regexp.MustCompile(`--privileged\b`)
 	privilegedDisabledRe = regexp.MustCompile(`--privileged=(?:false|0)\b`)
 )

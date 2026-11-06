@@ -4,7 +4,6 @@
 package rules
 
 import (
-	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -19,7 +18,7 @@ var GL069 = &gl069{}
 func (r *gl069) ID() string { return "GL069" }
 
 type pkgAuthCheck struct {
-	re  *regexp.Regexp
+	re  prefiltered
 	msg string
 	// keep, if set, decides whether a match of re counts.
 	keep func(match string) bool
@@ -70,59 +69,59 @@ var pkgAuthChecks = []pkgAuthCheck{
 		// Scoped to an apt command on the same line: "--allow-unauthenticated"
 		// is also a GCP Cloud Run flag (gcloud run deploy --allow-unauthenticated)
 		// meaning public service access, which is unrelated to package signatures.
-		re:  regexp.MustCompile(`\b(?:apt-get|apt|aptitude)\b[^\n]*--allow-unauthenticated\b`),
+		re:  mustCompilePrefiltered(`\b(?:apt-get|apt|aptitude)\b[^\n]*--allow-unauthenticated\b`),
 		msg: `apt "--allow-unauthenticated" disables package signature verification — an unsigned or tampered package from a compromised or MITM'd mirror would install without error; import the repository signing key and reference it with signed-by= instead`,
 	},
 	{
-		re:  regexp.MustCompile(`(?i)allowunauthenticated"?\s*=\s*"?(?:true|1|yes)\b`),
+		re:  mustCompilePrefiltered(`(?i)allowunauthenticated"?\s*=\s*"?(?:true|1|yes)\b`),
 		msg: `apt option "APT::Get::AllowUnauthenticated=true" disables package signature verification — unsigned packages install without error; keep verification on and trust the repository via its signing key (signed-by=) instead`,
 	},
 	{
-		re:  regexp.MustCompile(`(?i)\[[^][]*\btrusted\s*=\s*(?:yes|true|1)\b[^][]*\]`),
+		re:  mustCompilePrefiltered(`(?i)\[[^][]*\btrusted\s*=\s*(?:yes|true|1)\b[^][]*\]`),
 		msg: `apt source marked "[trusted=yes]" disables package signature verification for that repository — use "signed-by=<keyring>" to verify packages against the repository's GPG key instead`,
 	},
 	{
-		re:  regexp.MustCompile(`\b(?:apt-get|apt|aptitude)\b[^\n]*--allow-insecure-repositories\b`),
+		re:  mustCompilePrefiltered(`\b(?:apt-get|apt|aptitude)\b[^\n]*--allow-insecure-repositories\b`),
 		msg: `apt "--allow-insecure-repositories" lets apt use repositories without a valid signature — a compromised or MITM'd mirror can serve any package; import the repository signing key and reference it with signed-by= instead`,
 	},
 	{
-		re:  regexp.MustCompile(`(?i)\bAllowInsecureRepositories"?\s*=?\s*"?(?:true|1|yes)\b`),
+		re:  mustCompilePrefiltered(`(?i)\bAllowInsecureRepositories"?\s*=?\s*"?(?:true|1|yes)\b`),
 		msg: `apt option "Acquire::AllowInsecureRepositories" lets apt use repositories without a valid signature — a compromised or MITM'd mirror can serve any package; import the repository signing key and reference it with signed-by= instead`,
 	},
 	{
 		// dnf5, yum, microdnf and tdnf share dnf's flag.
-		re:   regexp.MustCompile(`\b(?:dnf5?|yum|microdnf|tdnf)` + shellCommandRe),
+		re:   mustCompilePrefiltered(`\b(?:dnf5?|yum|microdnf|tdnf)` + shellCommandRe),
 		keep: remoteWithFlag("--nogpgcheck"),
 		msg:  `"--nogpgcheck" installs packages without checking their GPG signatures, for every repository in the command — a tampered package from a compromised or MITM'd mirror installs without error; import the repository's key with rpm --import instead`,
 	},
 	{
 		// repo_gpgcheck and localpkg_gpgcheck are other settings. The literal
 		// \n is echo -e's line break in a repo file written on one line.
-		re:  regexp.MustCompile(`(?im)(?:^|[^a-z0-9_]|\\n)gpgcheck\s*=\s*(?:0|false|no)\b`),
+		re:  mustCompilePrefiltered(`(?im)(?:^|[^a-z0-9_]|\\n)gpgcheck\s*=\s*(?:0|false|no)\b`),
 		msg: `"gpgcheck=0" turns off GPG signature checks for the repository — every later install from it is unverified; set gpgcheck=1 and point gpgkey= at the repository's key instead`,
 	},
 	{
-		re:   regexp.MustCompile(`\bzypper` + shellCommandRe),
+		re:   mustCompilePrefiltered(`\bzypper` + shellCommandRe),
 		keep: remoteWithFlag("--no-gpg-checks"),
 		msg:  `zypper "--no-gpg-checks" installs packages without checking their GPG signatures — a tampered package from a compromised or MITM'd mirror installs without error; import the repository's key with rpm --import instead`,
 	},
 	{
 		// RemoteFileSigLevel covers packages pacman -U fetches from a URL.
-		re:  regexp.MustCompile(`\b(?:RemoteFile)?SigLevel\s*=\s*Never\b`),
+		re:  mustCompilePrefiltered(`\b(?:RemoteFile)?SigLevel\s*=\s*Never\b`),
 		msg: `pacman "SigLevel = Never" turns off signature checks for packages and databases — a tampered package from a compromised or MITM'd mirror installs without error; keep the default and add the key with pacman-key instead`,
 	},
 	{
-		re:  regexp.MustCompile(`\bapk\b[^\n]*--allow-untrusted\b`),
+		re:  mustCompilePrefiltered(`\bapk\b[^\n]*--allow-untrusted\b`),
 		msg: `apk "--allow-untrusted" disables package signature verification — an unsigned or tampered package would install without error; add the repository's signing key to /etc/apk/keys instead`,
 	},
 	{
-		re:  regexp.MustCompile(`\bGOSUMDB=(?:"off"|'off'|off)(?:\s|$)`),
+		re:  mustCompilePrefiltered(`\bGOSUMDB=(?:"off"|'off'|off)(?:\s|$)`),
 		msg: `GOSUMDB=off disables the Go checksum database — modules are fetched without being verified against sum.golang.org, so a tampered dependency installs silently; keep the default and scope private modules with GOPRIVATE/GONOSUMDB instead`,
 	},
 	{
 		// A specific host such as GONOSUMDB=gitlab.example.com/* is the normal
 		// private-module setup, so only a bare wildcard is a bypass.
-		re:  regexp.MustCompile(`\b(?:GONOSUMDB|GOINSECURE)=(?:"\*"|'\*'|\*)(?:\s|$)`),
+		re:  mustCompilePrefiltered(`\b(?:GONOSUMDB|GOINSECURE)=(?:"\*"|'\*'|\*)(?:\s|$)`),
 		msg: `GONOSUMDB=* or GOINSECURE=* disables module checksum or TLS verification for every host, not just the private ones it was meant for — list your own module hosts instead of a wildcard`,
 	},
 }

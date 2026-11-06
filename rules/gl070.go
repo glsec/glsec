@@ -71,7 +71,7 @@ func isAzureStaticLogin(line string) bool {
 
 // awsSTSRe matches the keyless AWS flow: credentials from sts assume-role,
 // usually with the job's OIDC token (--web-identity-token).
-var awsSTSRe = regexp.MustCompile(`\bsts\s+assume-role|--web-identity-token\b`)
+var awsSTSRe = mustCompilePrefiltered(`\bsts\s+assume-role|--web-identity-token\b`)
 
 func (r *gl070) Check(doc *yaml.Node, file string) []finding.Finding {
 	// Jobs that get their AWS credentials from STS: the AWS_SECRET_ACCESS_KEY

@@ -29,9 +29,9 @@ func (r *gl016) SetTrustedHosts(hosts []string) {
 
 var (
 	gitURLRe       = regexp.MustCompile(`\bgit://[^\s'"]+`)
-	curlWgetHTTPRe = regexp.MustCompile(`\b(?:curl|wget)\b[^|]*\b(?i:http)://`)
+	curlWgetHTTPRe = mustCompilePrefiltered(`\b(?:curl|wget)\b[^|]*\b(?i:http)://`)
 	// git fetches remote content just like curl/wget, so the same HTTP check applies.
-	gitFetchHTTPRe = regexp.MustCompile(`\bgit\b[^|]*\b(?:clone|fetch|pull|remote\s+add|submodule\s+add)\b[^|]*\bhttp://`)
+	gitFetchHTTPRe = mustCompilePrefiltered(`\bgit\b[^|]*\b(?:clone|fetch|pull|remote\s+add|submodule\s+add)\b[^|]*\bhttp://`)
 	privateRanges  []*net.IPNet
 	internalTLDs   = []string{".local", ".internal", ".corp", ".lan"}
 )

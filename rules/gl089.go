@@ -23,7 +23,7 @@ func (r *gl089) ID() string { return "GL089" }
 // command, after npx/bunx/pnpm dlx/exec, behind a path, and after leading
 // VAR=value assignments. renovate-config-validator and "npm install renovate"
 // don't match.
-var renovateCmdRe = regexp.MustCompile(
+var renovateCmdRe = mustCompilePrefiltered(
 	`(?:^|[;&|(]|\$\()\s*(?:\w+=\S*\s+)*` +
 		`(?:(?:npx|bunx)\s+(?:-y\s+|--yes\s+)?|pnpm\s+dlx\s+|exec\s+)?` +
 		`(?:[\w./-]*/)?renovate(?:\s|$)`)

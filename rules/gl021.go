@@ -36,7 +36,7 @@ var (
 
 	// safeCheckRe matches patterns that reference the variable without printing its value:
 	// length checks (-n "$VAR", test -n "$VAR"), default expansions (${VAR:-}, ${VAR:+}).
-	safeCheckRe = regexp.MustCompile(`\[\s*(?:-n|-z)\s+|\btest\s+-[nz]\b|:\-|:\+`)
+	safeCheckRe = mustCompilePrefiltered(`\[\s*(?:-n|-z)\s+|\btest\s+-[nz]\b|:\-|:\+`)
 
 	// singleQuotedRe matches single-quoted spans, whose contents the shell does
 	// not expand (so a secret reference inside them is literal text).

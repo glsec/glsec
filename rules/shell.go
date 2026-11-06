@@ -411,7 +411,7 @@ func (c commandWrapper) skip(words []string) []string {
 
 // wrapperWordRe finds a line that may hold a wrapper, so unwrappedLine leaves
 // all others alone without parsing them.
-var wrapperWordRe = regexp.MustCompile(`(?:^|[\s;&|(/])(?:` +
+var wrapperWordRe = mustCompilePrefiltered(`(?:^|[\s;&|(/])(?:` +
 	strings.Join(slices.Sorted(maps.Keys(commandWrappers)), "|") + `)\s`)
 
 // unwrappedLine removes the wrappers in front of a line's commands, for rules

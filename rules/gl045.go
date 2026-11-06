@@ -19,7 +19,7 @@ var GL045 = &gl045{}
 func (r *gl045) ID() string { return "GL045" }
 
 // releasePushRe matches script lines that push artifacts to a registry or package index.
-var releasePushRe = regexp.MustCompile(
+var releasePushRe = mustCompilePrefiltered(
 	`\bdocker\s+push\b` +
 		`|\bcrane\s+push\b` +
 		`|\bhelm\s+push\b` +
@@ -61,7 +61,7 @@ func mrScopedEnv(env *yaml.Node) bool {
 }
 
 // releaseSigningRe matches script lines that cryptographically sign an artifact.
-var releaseSigningRe = regexp.MustCompile(
+var releaseSigningRe = mustCompilePrefiltered(
 	`\bcosign\s+sign\b` +
 		`|\bgpg\b.*--detach-sign\b` +
 		`|\bgpg\b.*\s-b\b` +
