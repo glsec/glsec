@@ -22,6 +22,7 @@ jobs:
   check:
     name: Check advisory ids
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       issues: write # open the issue

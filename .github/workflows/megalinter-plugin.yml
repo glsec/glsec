@@ -32,6 +32,7 @@ jobs:
   plugin:
     name: Run the plugin in MegaLinter
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     env:
       # Smallest flavor; plugins load into any flavor.
       MEGALINTER_IMAGE: ghcr.io/oxsecurity/megalinter-ci_light:v10.1.0@sha256:e40b320afe3152cd0e856019ff9c74a827d179ed45512148e5790871c3d08259

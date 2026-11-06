@@ -36,6 +36,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read # download the release assets
       attestations: read # verify their provenance
@@ -138,6 +139,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, windows-latest, windows-11-arm]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
     permissions: {}
     defaults:
       run:
@@ -181,6 +183,7 @@ jobs:
     name: Publish to PyPI
     needs: [build, smoke]
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     environment:
       name: pypi
       url: https://pypi.org/project/glsec/${{ needs.build.outputs.version }}/

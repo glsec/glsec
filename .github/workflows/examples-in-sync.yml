@@ -21,6 +21,7 @@ jobs:
   compare:
     name: Compare example pins
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: read
       issues: write # report drift as an issue
