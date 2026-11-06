@@ -537,3 +537,5 @@ GITHUB_TOKEN=$(gh auth token) go run ./cmd/ciduration
 ```
 
 Exit 1 from the command above means a workflow is over the budget. The budget is not a check on pull requests, because shared runners vary by 10 to 30%.
+
+Read the maximum with care. GitHub's timestamps can be wrong: on 2026-11-01 at 08:00 UTC, jobs running at that moment reported an end 60 minutes late, so a job of a few seconds shows as an hour. The p90 and the budget aren't affected by a single run like that; to check one, compare the job's end with its step times.
