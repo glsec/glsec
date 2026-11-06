@@ -83,6 +83,8 @@ go run ./cmd/patchcoverage -diff change.diff
 ```
 
 The floors are about half a point below the stable values, so they catch a real drop. Raise them on purpose, never lower one to make a change pass.
+
+Codecov runs on `main` only and reports `codecov/patch` after the merge. `codecov.yml` gives it the same 80 % as the pull request gate; keep the two in step.
 Branch coverage is measured with [gobco](https://github.com/rillig/gobco), one package at a time:
 
 ```sh
