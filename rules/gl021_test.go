@@ -60,6 +60,8 @@ func TestGL021_CredentialFilesInLog(t *testing.T) {
 		{`X=$(cat .npmrc)`, 0}, {`X=$(cat .npmrc | tee output.txt)`, 0},
 		{`X=$(cat .npmrc )`, 0}, {`X=$(echo test; cat .npmrc | tee out)`, 0},
 		{`X=$(cat .npmrc); cat .npmrc`, 1},
+		{`echo '$('; cat .npmrc`, 1}, {`echo "$(true)"; cat .npmrc`, 1},
+		{`echo \$(; cat .npmrc`, 1}, {`X=$(echo (a); cat .npmrc )`, 0},
 		{`cat .npmrc $(echo other)`, 1},
 		{`cat .npmrc &> out.log`, 0},
 		{`if [ -f .npmrc ]; then cat .npmrc; fi`, 1},
@@ -71,6 +73,33 @@ func TestGL021_CredentialFilesInLog(t *testing.T) {
 				t.Fatalf("got %d findings, want %d: %v", len(f), tc.want, f)
 			}
 		})
+	}
+}
+
+func TestGL021InSubstitution(t *testing.T) {
+	for prefix, want := range map[string]bool{
+		``:                 false,
+		`X=$(`:             true,
+		`X="$(`:            true,
+		`X=$(a) `:          false,
+		`X="$(a)" `:        false,
+		`X="$(a) `:         false,
+		`X=$(a "b" `:       true,
+		`X=$(a (b `:        true,
+		`X=$(a (b) `:       true,
+		`X=$(a (b)) `:      false,
+		`X=\$(`:            false,
+		`echo '$(' `:       false,
+		`echo '$(`:         false,
+		`echo "'$(" `:      true,
+		`echo "\"$(a) `:    false,
+		`echo '"' $(`:      true,
+		`echo "(" `:        false,
+		`echo ")" $(a ")"`: true,
+	} {
+		if got := gl021InSubstitution(prefix); got != want {
+			t.Errorf("gl021InSubstitution(%s) = %v, want %v", prefix, got, want)
+		}
 	}
 }
 
