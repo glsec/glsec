@@ -8,6 +8,8 @@
 // It counts successful runs of pull requests and of pushes to main: a failed
 // run stops early, and a release or a scheduled check says nothing about how
 // long a contributor waits. A run's duration includes its time in the queue.
+// Each workflow is searched on its own, because a search returns at most 1,000
+// runs and all workflows together have more than that in a week (#1241).
 //
 // The exit code says what the workflow has to do: 0 nothing, 1 a workflow's p90
 // is over the budget, 2 the numbers could not be read. The report goes to
@@ -36,7 +38,7 @@ const (
 
 	maxAttempts  = 3
 	maxBody      = 16 << 20
-	maxPages     = 10 // the API returns at most 1,000 runs for a search
+	maxRuns      = 1000 // the API returns no more for one search
 	perPage      = 100
 	requestLimit = 30 * time.Second
 	schema       = 1
@@ -50,6 +52,13 @@ type run struct {
 	HeadBranch string    `json:"head_branch"`
 	Started    time.Time `json:"run_started_at"`
 	Updated    time.Time `json:"updated_at"`
+}
+
+// workflow is what the search needs of one workflow.
+type workflow struct {
+	ID    int64  `json:"id"`
+	Path  string `json:"path"`
+	State string `json:"state"`
 }
 
 // job is what the report needs of one job of a run.
@@ -156,36 +165,81 @@ func counted(r run) bool {
 	return r.Event == "pull_request" || r.Event == "push" && r.HeadBranch == "main"
 }
 
+// fetchWorkflows lists the active workflows of the repository. Dependabot's and
+// other built-in ones have a path outside .github/workflows.
+func fetchWorkflows(ctx context.Context, opt options) ([]workflow, error) {
+	var workflows []workflow
+	for page := 1; ; page++ {
+		var body struct {
+			Workflows []workflow `json:"workflows"`
+		}
+		path := fmt.Sprintf("/repos/%s/actions/workflows?per_page=%d&page=%d", opt.repo, perPage, page)
+		if err := get(ctx, opt, path, &body); err != nil {
+			return nil, err
+		}
+		for _, w := range body.Workflows {
+			if w.State == "active" && strings.HasPrefix(w.Path, ".github/workflows/") {
+				workflows = append(workflows, w)
+			}
+		}
+		if len(body.Workflows) < perPage {
+			return workflows, nil
+		}
+	}
+}
+
 func fetchRuns(ctx context.Context, opt options) ([]run, error) {
+	workflows, err := fetchWorkflows(ctx, opt)
+	if err != nil {
+		return nil, err
+	}
+	var runs []run
+	for _, w := range workflows {
+		found, err := fetchWorkflowRuns(ctx, opt, w)
+		if err != nil {
+			return nil, err
+		}
+		runs = append(runs, found...)
+	}
+	return runs, nil
+}
+
+// fetchWorkflowRuns fails rather than return a part of the window: a record that
+// says 7 days must cover 7 days.
+func fetchWorkflowRuns(ctx context.Context, opt options, w workflow) ([]run, error) {
 	since := opt.now.UTC().AddDate(0, 0, -opt.days).Format("2006-01-02")
 	var runs []run
-	for page := 1; page <= maxPages; page++ {
+	for page := 1; ; page++ {
 		q := url.Values{}
 		q.Set("status", "success")
 		q.Set("created", ">="+since)
 		q.Set("per_page", fmt.Sprint(perPage))
 		q.Set("page", fmt.Sprint(page))
 		var body struct {
-			Runs []run `json:"workflow_runs"`
+			Total int   `json:"total_count"`
+			Runs  []run `json:"workflow_runs"`
 		}
-		if err := get(ctx, opt, "/repos/"+opt.repo+"/actions/runs?"+q.Encode(), &body); err != nil {
+		path := fmt.Sprintf("/repos/%s/actions/workflows/%d/runs?%s", opt.repo, w.ID, q.Encode())
+		if err := get(ctx, opt, path, &body); err != nil {
 			return nil, err
+		}
+		if body.Total > maxRuns {
+			return nil, fmt.Errorf("%s: %d runs since %s, a search returns at most %d", w.Path, body.Total, since, maxRuns)
 		}
 		for _, r := range body.Runs {
 			if counted(r) {
 				runs = append(runs, r)
 			}
 		}
-		if len(body.Runs) < perPage {
+		if len(body.Runs) < perPage || page*perPage >= body.Total {
 			return runs, nil
 		}
 	}
-	return runs, nil
 }
 
-// fetchJobs reads the jobs of the newest runs of one workflow. The API lists
-// runs newest first. One request per run, so the sample keeps a weekly run well
-// inside the rate limit.
+// fetchJobs reads the jobs of the newest runs of one workflow. The API lists a
+// workflow's runs newest first. One request per run, so the sample keeps a weekly
+// run well inside the rate limit.
 func fetchJobs(ctx context.Context, opt options, runs []run) ([]job, error) {
 	var jobs []job
 	read := 0
