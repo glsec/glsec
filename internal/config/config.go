@@ -175,17 +175,22 @@ func parse(data []byte, path string) (*Config, error) {
 	return &cfg, nil
 }
 
-// allowedTopLevelKeys are the YAML keys of Config's fields, taken from the
-// struct tags so a new field can't be left out (recursive_patterns was, #832).
-var allowedTopLevelKeys = func() map[string]bool {
+// yamlKeys returns the YAML keys of T's fields, taken from the struct tags so a
+// new field can't be left out (recursive_patterns was, #832).
+func yamlKeys[T any]() map[string]bool {
 	keys := map[string]bool{}
-	for _, f := range reflect.VisibleFields(reflect.TypeFor[Config]()) {
+	for _, f := range reflect.VisibleFields(reflect.TypeFor[T]()) {
 		if name, _, _ := strings.Cut(f.Tag.Get("yaml"), ","); name != "" && name != "-" {
 			keys[name] = true
 		}
 	}
 	return keys
-}()
+}
+
+var (
+	allowedTopLevelKeys   = yamlKeys[Config]()
+	allowedShellCheckKeys = yamlKeys[ShellCheckConfig]()
+)
 
 // Keys returns the top-level keys a config file may have.
 func Keys() []string {
@@ -202,6 +207,15 @@ func checkUnknownKeys(mapping *yaml.Node, path string) error {
 		key := mapping.Content[i].Value
 		if !allowedTopLevelKeys[key] {
 			return fmt.Errorf("%s:%d: unknown config key %q", path, mapping.Content[i].Line, key)
+		}
+		if key != "shellcheck" {
+			continue
+		}
+		section := mapping.Content[i+1]
+		for j := 0; section.Kind == yaml.MappingNode && j+1 < len(section.Content); j += 2 {
+			if name := section.Content[j].Value; !allowedShellCheckKeys[name] {
+				return fmt.Errorf("%s:%d: unknown config key %q", path, section.Content[j].Line, key+"."+name)
+			}
 		}
 	}
 	return nil

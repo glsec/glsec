@@ -430,3 +430,22 @@ func TestApplySeverity_Unchanged(t *testing.T) {
 		})
 	}
 }
+
+func TestParse_ShellCheckKeys(t *testing.T) {
+	for _, tc := range []struct {
+		name, src, wantErr string
+	}{
+		{"known keys", "shellcheck:\n  enabled: true\n  path: /bin/shellcheck\n", ""},
+		{"misspelt", "strict: false\nshellcheck:\n  enabeld: true\n", `.glsec.yml:3: unknown config key "shellcheck.enabeld"`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := parse([]byte(tc.src), DefaultFile)
+			if tc.wantErr == "" && err != nil {
+				t.Fatal(err)
+			}
+			if tc.wantErr != "" && (err == nil || err.Error() != tc.wantErr) {
+				t.Fatalf("err = %v, want %s", err, tc.wantErr)
+			}
+		})
+	}
+}
