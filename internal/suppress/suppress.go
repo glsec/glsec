@@ -75,11 +75,7 @@ func fromComment(comment string, line int) []Suppression {
 	// pattern has three groups, so every match has four entries; an optional
 	// group that didn't match is empty.
 	for _, match := range pattern.FindAllStringSubmatch(comment, -1) {
-		expiry := strings.TrimPrefix(match[2], "exp:")
-		if match[2] == "exp:" {
-			expiry = "exp:" // A present but empty expiry must fail date validation.
-		}
-		out = append(out, Suppression{RuleID: match[1], Line: line, Expiry: expiry, Reason: strings.TrimSpace(match[3])})
+		out = append(out, Suppression{RuleID: match[1], Line: line, Expiry: parseExpiry(match[2]), Reason: strings.TrimSpace(match[3])})
 	}
 	return out
 }
@@ -162,13 +158,22 @@ func (m Map) Merge(other Map) {
 	}
 }
 
+// parseExpiry returns the date of an exp: token. A token without a date stays
+// non-empty, so it fails date validation instead of reading as no expiry.
+func parseExpiry(token string) string {
+	if token == "exp:" {
+		return token
+	}
+	return strings.TrimPrefix(token, "exp:")
+}
+
 // IgnoreExpiry returns the exp: date of a .glsec-ignore line split into fields,
 // or "" when it has none.
 func IgnoreExpiry(fields []string) string {
 	expiry := ""
 	for _, extra := range fields[min(2, len(fields)):] {
-		if rest, ok := strings.CutPrefix(extra, "exp:"); ok {
-			expiry = rest
+		if strings.HasPrefix(extra, "exp:") {
+			expiry = parseExpiry(extra)
 		}
 	}
 	return expiry

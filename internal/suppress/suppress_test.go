@@ -5,6 +5,7 @@ package suppress
 
 import (
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -309,5 +310,22 @@ func TestBuild_InlineExpiry(t *testing.T) {
 				t.Fatalf("reason lost: %+v", entry)
 			}
 		})
+	}
+}
+
+func TestIgnoreExpiry(t *testing.T) {
+	for _, tc := range []struct {
+		line    string
+		expired bool
+	}{
+		{"ci.yml:2 GL001", false},
+		{"ci.yml:2 GL001 exp:2999-01-01", false},
+		{"ci.yml:2 GL001 exp:2000-01-01", true},
+		{"ci.yml:2 GL001 exp:tomorrow", true},
+		{"ci.yml:2 GL001 exp:", true},
+	} {
+		if got := (Entry{Expiry: IgnoreExpiry(strings.Fields(tc.line))}).Expired(time.Now()); got != tc.expired {
+			t.Errorf("%q: expired = %v, want %v", tc.line, got, tc.expired)
+		}
 	}
 }
