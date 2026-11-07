@@ -427,6 +427,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 
 	if *generateIgnoreFlag {
+		if len(scanErrors) > 0 {
+			return 2
+		}
 		ruleDidRun := func(id string) bool { return ruleRan(cfg, gitlabVersion, id) }
 		written, kept, err := writeIgnoreFile(suppress.IgnoreFile, allFindings, scanOpts.scannedFiles, ruleDidRun)
 		if err != nil {
