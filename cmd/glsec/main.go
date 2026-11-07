@@ -1183,7 +1183,7 @@ func collectFindings(doc *parser.Document, path string, cfg *config.Config, gitl
 	if cfg.RequireIgnoreReason && !skipSuppress {
 		unjustified = reportUnjustified(sm, path)
 	}
-	if !skipIgnoreFile {
+	if !skipIgnoreFile && !skipSuppress {
 		ignore, err := suppress.LoadIgnoreFile(suppress.IgnoreFile, path)
 		if err != nil {
 			return nil, nil, 0, fmt.Errorf("%s: %w", suppress.IgnoreFile, err)
