@@ -127,7 +127,11 @@ func TestGL033Severity(t *testing.T) {
 		"CI_DEBUG_TRACE":    finding.Error,
 		"CI_DEBUG_SERVICES": finding.Warn,
 	}
-	for _, f := range GL033.Check(doc.Root, "test.yml") {
+	got := GL033.Check(doc.Root, "test.yml")
+	if len(got) != len(want) {
+		t.Fatalf("got %d findings, want %d: %v", len(got), len(want), got)
+	}
+	for _, f := range got {
 		for varName, sev := range want {
 			if strings.Contains(f.Message, varName) && f.Severity != sev {
 				t.Errorf("%s: got severity %q, want %q", varName, f.Severity, sev)

@@ -91,8 +91,8 @@ variables:
 func TestGL018_NonSecretName_NoFinding(t *testing.T) {
 	f := findings018(t, `
 variables:
-  REGISTRY_URL: $CI_REGISTRY
-  NODE_ENV: production
+  REGISTRY_URL: $MY_REGISTRY
+  NODE_ENV: $MY_ENV
 `)
 	if len(f) != 0 {
 		t.Errorf("expected no finding for non-secret variable names, got %d", len(f))
@@ -145,7 +145,7 @@ func TestGL018_DefaultVariablesNonSecret_NoFinding(t *testing.T) {
 	f := findings018(t, `
 default:
   variables:
-    REGISTRY_URL: $CI_REGISTRY
+    REGISTRY_URL: $MY_REGISTRY
 
 build:
   script: go build

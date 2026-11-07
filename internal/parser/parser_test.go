@@ -117,13 +117,21 @@ func TestEachJob_SkipsReservedKeys(t *testing.T) {
 }
 
 func TestEachJob_LineNumbers(t *testing.T) {
-	doc, _ := Parse(sampleCI, "test.yml")
+	doc, err := Parse(sampleCI, "test.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
 
+	jobs := 0
 	EachJob(doc.Root, func(name *yaml.Node, _ *yaml.Node) {
+		jobs++
 		if name.Line == 0 {
 			t.Errorf("job %q has zero line number", name.Value)
 		}
 	})
+	if jobs == 0 {
+		t.Error("EachJob visited no job")
+	}
 }
 
 func TestParse_ComponentTemplate(t *testing.T) {
