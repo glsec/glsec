@@ -6,6 +6,7 @@ package validate
 import (
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/glsec/glsec/internal/parser"
@@ -56,20 +57,26 @@ var knownKeys = map[string]bool{
 	"after_script":  true,
 }
 
+// jobKeys are the job keywords that mark a mapping as a GitLab CI job. A job
+// in an included file may get its script through extends: or only override part
+// of a job from another file. Keywords other YAML formats use as well, such as
+// image: and environment: in a Compose service, are left out.
+var jobKeys = []string{"script", "run", "trigger", "extends", "needs", "rules", "stage", "tags", "variables"}
+
 // hasGitLabContent returns true if the mapping contains at least one known
-// top-level GitLab CI key or at least one job-like entry (mapping with a
-// "script", "run" or "trigger" key). run: is the CI/CD Steps alternative to
-// script: and is mutually exclusive with it, so a pipeline built entirely from
-// steps has no script: key anywhere. A trigger job has neither: a parent
-// pipeline may consist of nothing but triggers for its children.
+// top-level GitLab CI key, a hidden key or a job-like entry. run: is the CI/CD
+// Steps alternative to script: and is mutually exclusive with it, so a pipeline
+// built entirely from steps has no script: key anywhere. A trigger job has
+// neither: a parent pipeline may consist of nothing but triggers for its
+// children. A file of hidden keys is a template or anchor file for an include.
 func hasGitLabContent(mapping *yaml.Node) bool {
 	for i := 0; i+1 < len(mapping.Content); i += 2 {
 		key := mapping.Content[i].Value
 		val := mapping.Content[i+1]
-		if knownKeys[key] {
+		if knownKeys[key] || strings.HasPrefix(key, ".") {
 			return true
 		}
-		if val.Kind == yaml.MappingNode && (hasKey(val, "script") || hasKey(val, "run") || hasKey(val, "trigger")) {
+		if val.Kind == yaml.MappingNode && slices.ContainsFunc(jobKeys, func(k string) bool { return hasKey(val, k) }) {
 			return true
 		}
 	}
