@@ -138,3 +138,29 @@ func TestJSONSnapshot_MaskedAndUnmaskedMessagesMatch(t *testing.T) {
 		}
 	}
 }
+
+func TestIgnore_ExpiredEntryAcceptsNothing(t *testing.T) {
+	f := finding.Finding{RuleID: "GL001", File: "ci.yml"}
+	for _, tc := range []struct {
+		name, entry    string
+		isNew, expired bool
+	}{
+		{"past date", "ci.yml:2 GL001 exp:2000-01-01\n", true, true},
+		{"malformed date", "ci.yml:2 GL001 exp:someday\n", true, true},
+		{"future date", "ci.yml:2 GL001 exp:2999-01-01\n", false, false},
+		{"no date", "ci.yml:2 GL001\n", false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			b, err := Load(write(t, tc.entry))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := b.IsNew(f); got != tc.isNew {
+				t.Errorf("IsNew = %v, want %v", got, tc.isNew)
+			}
+			if got := b.Expired(f); got != tc.expired {
+				t.Errorf("Expired = %v, want %v", got, tc.expired)
+			}
+		})
+	}
+}

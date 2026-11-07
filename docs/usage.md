@@ -236,7 +236,7 @@ The same token works in the `.glsec-ignore` baseline, appended to a line:
 .gitlab-ci.yml:14 GL013 exp:2026-12-01
 ```
 
-Entries without the token never expire, so existing ignore files keep working unchanged.
+Entries without the token never expire, so existing ignore files keep working unchanged. An expired entry also stops counting as part of the baseline, so `--new-only` reports the finding again.
 
 Suppressed findings stay visible, so a merge request that adds a suppression doesn't look like one that fixes the problem. They never fail the run:
 

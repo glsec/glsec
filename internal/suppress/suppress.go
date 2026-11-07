@@ -158,6 +158,18 @@ func (m Map) Merge(other Map) {
 	}
 }
 
+// IgnoreExpiry returns the exp: date of a .glsec-ignore line split into fields,
+// or "" when it has none.
+func IgnoreExpiry(fields []string) string {
+	expiry := ""
+	for _, extra := range fields[min(2, len(fields)):] {
+		if rest, ok := strings.CutPrefix(extra, "exp:"); ok {
+			expiry = rest
+		}
+	}
+	return expiry
+}
+
 // LoadIgnoreFile reads a .glsec-ignore file and returns suppressions for the
 // given target file. Entries for other files are silently skipped.
 // A missing file is not an error: it returns an empty map and a nil error, so
@@ -190,12 +202,7 @@ func LoadIgnoreFile(ignorePath, targetFile string) (Map, error) {
 			continue
 		}
 		loc, ruleID := fields[0], fields[1]
-		expiry := ""
-		for _, extra := range fields[2:] {
-			if rest, ok := strings.CutPrefix(extra, "exp:"); ok {
-				expiry = rest
-			}
-		}
+		expiry := IgnoreExpiry(fields)
 		lastColon := strings.LastIndex(loc, ":")
 		if lastColon < 0 {
 			continue
