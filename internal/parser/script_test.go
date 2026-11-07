@@ -90,8 +90,13 @@ func TestNormalizeScripts_UnresolvedReferenceKept(t *testing.T) {
 
 func TestNormalizeScripts_NestingCap(t *testing.T) {
 	src := "job:\n  script: " + strings.Repeat("[", 50) + "echo deep" + strings.Repeat("]", 50) + "\n"
-	if _, err := Parse([]byte(src), "test.yml"); err != nil {
+	doc, err := Parse([]byte(src), "test.yml")
+	if err != nil {
 		t.Fatal(err)
+	}
+	script := FindKey(FindKey(doc.MappingNode(), "job"), "script")
+	if len(script.Content) != 1 || script.Content[0].Kind != yaml.SequenceNode {
+		t.Errorf("flattening went past the cap: %+v", script.Content)
 	}
 }
 

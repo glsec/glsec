@@ -4,6 +4,7 @@
 package validate
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/glsec/glsec/internal/parser"
@@ -66,8 +67,8 @@ func TestFile_NotAMapping(t *testing.T) {
 		t.Fatalf("parse error: %v", err)
 	}
 	_, valErr := File("test.yml", doc)
-	if valErr == nil {
-		t.Error("expected error for non-mapping top-level")
+	if valErr == nil || !strings.Contains(valErr.Error(), "expected a top-level mapping") {
+		t.Errorf("err = %v, want the top-level mapping error", valErr)
 	}
 }
 
