@@ -26,8 +26,14 @@ const dateLayout = "2006-01-02"
 //	# glsec:ignore GL001 exp:2026-12-01 -- accepted until the migration lands
 //	# glsec:ignore SC2086
 var pattern = regexp.MustCompile(
-	`glsec:ignore\s+((?:GL|SC)\d+)(?:\s+(exp:\S*))?(?:\s+--\s+(.+))?`,
+	`glsec:ignore\s+((?:GL|SC)\d+)(?:\s+(` + expiryPrefix + `\S*))?(?:\s+--\s+(.+))?`,
 )
+
+// expiryPrefix matches the start of a token meant as an expiry date. Only exp:
+// is valid, but a misspelt one must not read as a suppression without expiry.
+const expiryPrefix = `(?i:exp|expire|expires|expiry|expiration)[:=]`
+
+var expiryPrefixRe = regexp.MustCompile(`^` + expiryPrefix)
 
 // IgnoreFile is the default name of the baseline ignore file written by
 // --generate-ignore and read automatically on each run.
@@ -158,8 +164,9 @@ func (m Map) Merge(other Map) {
 	}
 }
 
-// parseExpiry returns the date of an exp: token. A token without a date stays
-// non-empty, so it fails date validation instead of reading as no expiry.
+// parseExpiry returns the date of an exp: token. A token without a date or with
+// another spelling stays as it is, so it fails date validation instead of
+// reading as no expiry.
 func parseExpiry(token string) string {
 	if token == "exp:" {
 		return token
@@ -172,7 +179,7 @@ func parseExpiry(token string) string {
 func IgnoreExpiry(fields []string) string {
 	expiry := ""
 	for _, extra := range fields[min(2, len(fields)):] {
-		if strings.HasPrefix(extra, "exp:") {
+		if expiryPrefixRe.MatchString(extra) {
 			expiry = parseExpiry(extra)
 		}
 	}

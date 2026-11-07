@@ -295,6 +295,12 @@ func TestBuild_InlineExpiry(t *testing.T) {
 		{" exp:tomorrow", false},
 		{" exp:2026-1-01", false},
 		{" exp:", false},
+		{" EXP:2999-01-01", false},
+		{" Exp:2999-01-01", false},
+		{" expires:2999-01-01", false},
+		{" expire:2999-01-01", false},
+		{" expiry=2999-01-01", false},
+		{" expiration:2999-01-01", false},
 	} {
 		t.Run(tc.token, func(t *testing.T) {
 			var doc yaml.Node
@@ -323,9 +329,22 @@ func TestIgnoreExpiry(t *testing.T) {
 		{"ci.yml:2 GL001 exp:2000-01-01", true},
 		{"ci.yml:2 GL001 exp:tomorrow", true},
 		{"ci.yml:2 GL001 exp:", true},
+		{"ci.yml:2 GL001 EXP:2999-01-01", true},
+		{"ci.yml:2 GL001 expires:2999-01-01", true},
+		{"ci.yml:2 GL001 expiry=2999-01-01", true},
+		{"ci.yml:2 GL001 expected:later", false},
 	} {
 		if got := (Entry{Expiry: IgnoreExpiry(strings.Fields(tc.line))}).Expired(time.Now()); got != tc.expired {
 			t.Errorf("%q: expired = %v, want %v", tc.line, got, tc.expired)
+		}
+	}
+}
+
+func TestFromComment_FreeTextIsNoExpiry(t *testing.T) {
+	for _, comment := range []string{"# glsec:ignore GL001 expected: flaky", "# glsec:ignore GL001 export: later"} {
+		sups := fromComment(comment, 1)
+		if len(sups) != 1 || sups[0].Expiry != "" {
+			t.Errorf("%q: got %+v, want a suppression without expiry", comment, sups)
 		}
 	}
 }
