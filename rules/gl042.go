@@ -55,6 +55,45 @@ var tlsChecks = []tlsCheck{
 		re:   mustCompilePrefiltered(`\bpip[0-9]*\b.*--trusted-host\b`),
 		msg:  `pip invoked with "--trusted-host" — TLS certificate verification disabled for the package index, allowing a man-in-the-middle to swap package contents; add the proxy CA to the system trust store instead`,
 	},
+	{
+		tool: "kubectl/helm",
+		re:   mustCompilePrefiltered(`\b(?:kubectl|helm)\b.*--insecure-skip-tls-verify(?:=true)?(?:\s|$)`),
+		msg:  `kubectl or helm invoked with "--insecure-skip-tls-verify" — the API server's certificate isn't checked, so a man-in-the-middle sees the cluster credentials; set certificate-authority in the kubeconfig instead`,
+	},
+	{
+		tool: "podman/buildah/skopeo",
+		re:   mustCompilePrefiltered(`\b(?:podman|buildah|skopeo)\b.*--(?:src-|dest-)?tls-verify=false\b`),
+		msg:  `container tool invoked with "--tls-verify=false" — TLS certificate verification disabled for the registry, allowing a man-in-the-middle to swap images; add the registry CA to the trust store instead`,
+	},
+	{
+		tool: "dockerd",
+		re:   mustCompilePrefiltered(`\bdockerd\b.*--insecure-registry\b`),
+		msg:  insecureRegistryMsg,
+	},
+}
+
+const insecureRegistryMsg = `dockerd started with "--insecure-registry" — TLS certificate verification disabled for the registry, allowing a man-in-the-middle to swap images; add the registry CA to the certs.d directory instead`
+
+// tlsVarChecks are environment variables that disable TLS verification, in a
+// script or in variables:.
+var tlsVarChecks = []struct {
+	name     string
+	re       prefiltered
+	insecure func(value string) bool
+	effect   string
+}{
+	{
+		name:     "NODE_TLS_REJECT_UNAUTHORIZED",
+		re:       mustCompilePrefiltered(`\bNODE_TLS_REJECT_UNAUTHORIZED\s*=\s*["']?0\b`),
+		insecure: func(value string) bool { return value == "0" },
+		effect:   "TLS certificate verification disabled for every Node.js process",
+	},
+	{
+		name:     "PIP_TRUSTED_HOST",
+		re:       mustCompilePrefiltered(`\bPIP_TRUSTED_HOST\s*=\s*["']?[^\s"']`),
+		insecure: func(value string) bool { return value != "" },
+		effect:   "TLS certificate verification disabled for the package index",
+	},
 }
 
 // gitSSLNoVerifyRe matches GIT_SSL_NO_VERIFY=true/1 as a variable export or inline env.
@@ -67,6 +106,7 @@ func (r *gl042) Check(doc *yaml.Node, file string) []finding.Finding {
 	eachVariablesBlock(doc, func(vars *yaml.Node, job string, _ *yaml.Node) {
 		if vars != nil {
 			findings = append(findings, checkGitSSLNoVerifyVars(vars, file, job)...)
+			findings = append(findings, checkTLSVars(vars, file, job)...)
 		}
 	})
 
@@ -75,7 +115,9 @@ func (r *gl042) Check(doc *yaml.Node, file string) []finding.Finding {
 			findings = append(findings, checkTLSLines(node, file, "")...)
 		}
 	}
+	findings = append(findings, checkInsecureRegistry(parser.FindKey(mapping, "services"), file, "")...)
 	if def := parser.FindKey(mapping, "default"); def != nil {
+		findings = append(findings, checkInsecureRegistry(parser.FindKey(def, "services"), file, "")...)
 		for _, key := range []string{"before_script", "after_script"} {
 			if node := parser.FindKey(def, key); node != nil {
 				findings = append(findings, checkTLSLines(node, file, "")...)
@@ -110,6 +152,9 @@ func (r *gl042) Check(doc *yaml.Node, file string) []finding.Finding {
 		}
 		if h := hookScriptNode(job); once(h) {
 			findings = append(findings, checkTLSLines(h, file, name.Value)...)
+		}
+		if s := parser.FindKey(job, "services"); once(s) {
+			findings = append(findings, checkInsecureRegistry(s, file, name.Value)...)
 		}
 	})
 
@@ -162,6 +207,79 @@ func checkTLSLines(node *yaml.Node, file, job string) []finding.Finding {
 				Line:     line,
 				Col:      col,
 			})
+		}
+		for _, check := range tlsVarChecks {
+			loc := check.re.FindStringIndex(item.Value)
+			if loc == nil {
+				continue
+			}
+			line, col := scriptMatchPos(item, loc[0])
+			findings = append(findings, finding.Finding{
+				RuleID:   "GL042",
+				Severity: finding.Warn,
+				Job:      job,
+				Message:  check.name + " set in script — " + check.effect,
+				File:     file,
+				Line:     line,
+				Col:      col,
+			})
+		}
+	}
+	return findings
+}
+
+// checkInsecureRegistry flags a service, such as docker:dind, whose command or
+// entrypoint passes --insecure-registry to dockerd.
+func checkInsecureRegistry(services *yaml.Node, file, job string) []finding.Finding {
+	if services == nil || services.Kind != yaml.SequenceNode {
+		return nil
+	}
+	var findings []finding.Finding
+	for _, service := range services.Content {
+		for _, key := range []string{"command", "entrypoint"} {
+			args := parser.FindKey(service, key)
+			if args == nil || args.Kind != yaml.SequenceNode {
+				continue
+			}
+			for _, arg := range args.Content {
+				if strings.HasPrefix(arg.Value, "--insecure-registry") {
+					findings = append(findings, finding.Finding{
+						RuleID:   "GL042",
+						Severity: finding.Warn,
+						Job:      job,
+						Message:  insecureRegistryMsg,
+						File:     file,
+						Line:     arg.Line,
+						Col:      arg.Column,
+					})
+				}
+			}
+		}
+	}
+	return findings
+}
+
+// checkTLSVars flags the tlsVarChecks variables set in a variables: block.
+func checkTLSVars(node *yaml.Node, file, job string) []finding.Finding {
+	if node.Kind != yaml.MappingNode {
+		return nil
+	}
+	var findings []finding.Finding
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		key := node.Content[i]
+		val := resolveScalar(node.Content[i+1])
+		for _, check := range tlsVarChecks {
+			if key.Value == check.name && val != nil && check.insecure(val.Value) {
+				findings = append(findings, finding.Finding{
+					RuleID:   "GL042",
+					Severity: finding.Warn,
+					Job:      job,
+					Message:  fmt.Sprintf("%s set to %q in variables — %s", check.name, val.Value, check.effect),
+					File:     file,
+					Line:     key.Line,
+					Col:      key.Column,
+				})
+			}
 		}
 	}
 	return findings
