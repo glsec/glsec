@@ -457,11 +457,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	if len(scanErrors) > 0 {
-		return 2
-	}
 	if totalUnjustified > 0 {
 		_, _ = fmt.Fprintf(stderr, "%d suppression(s) without a reason; require_ignore_reason is enabled\n", totalUnjustified)
+		return 2
+	}
+	if len(scanErrors) > 0 {
 		return 2
 	}
 	return exitCode(allFindings, cfg)
@@ -619,7 +619,10 @@ func scanRoot(file string, opt scanOptions) (findings []finding.Finding, suppres
 		}
 		findings = append(findings, f...)
 		suppressed = append(suppressed, s...)
-		unjustified += u
+		for _, policyErr := range u {
+			opt.reportError(policyErr)
+		}
+		unjustified += len(u)
 	}
 	findings, suppressed = finding.DedupeMoved(finding.Dedupe(findings), originNote), finding.DedupeSuppressed(suppressed)
 
@@ -1175,18 +1178,18 @@ func resolvePath(p string) (string, error) {
 // An unreadable .glsec-ignore comes back as an error: the caller stops the run
 // with exit 2, like an unreadable config file, instead of silently scanning
 // without the suppressions.
-func collectFindings(doc *parser.Document, path string, cfg *config.Config, gitlabVersion gitlabver.Version, skipSuppress, skipIgnoreFile bool) ([]finding.Finding, []finding.Suppressed, int, error) {
+func collectFindings(doc *parser.Document, path string, cfg *config.Config, gitlabVersion gitlabver.Version, skipSuppress, skipIgnoreFile bool) ([]finding.Finding, []finding.Suppressed, []output.ScanError, error) {
 	sm := suppress.Build(doc.Root)
 	// Checked against the inline map only: the .glsec-ignore baseline has no
 	// reason column, so requiring one there would be unsatisfiable.
-	unjustified := 0
+	var unjustified []output.ScanError
 	if cfg.RequireIgnoreReason && !skipSuppress {
-		unjustified = reportUnjustified(sm, path)
+		unjustified = suppressionPolicyErrors(sm, path)
 	}
 	if !skipIgnoreFile {
 		ignore, err := suppress.LoadIgnoreFile(suppress.IgnoreFile, path)
 		if err != nil {
-			return nil, nil, 0, fmt.Errorf("%s: %w", suppress.IgnoreFile, err)
+			return nil, nil, nil, fmt.Errorf("%s: %w", suppress.IgnoreFile, err)
 		}
 		sm.Merge(ignore)
 	}
@@ -1255,7 +1258,7 @@ func collectFindings(doc *parser.Document, path string, cfg *config.Config, gitl
 	if cfg.ShellCheck.Enabled {
 		scFindings, err := shellcheck.Run(doc.Root, path, cfg.ShellCheck.Path)
 		if err != nil {
-			return nil, nil, 0, fmt.Errorf("%s: %w", path, err)
+			return nil, nil, nil, fmt.Errorf("%s: %w", path, err)
 		}
 		for _, f := range scFindings {
 			if !cfg.RuleEnabled(f.RuleID) {
@@ -1304,9 +1307,8 @@ func originNote(o finding.Origin) string {
 	return fmt.Sprintf(" (from %s:%d)", filepath.ToSlash(o.File), o.Line)
 }
 
-// reportUnjustified prints every inline suppression that carries no reason and
-// returns how many there were.
-func reportUnjustified(sm suppress.Map, path string) int {
+// suppressionPolicyErrors identifies inline suppressions without a reason.
+func suppressionPolicyErrors(sm suppress.Map, path string) []output.ScanError {
 	entries := sm.Entries()
 	sort.Slice(entries, func(i, j int) bool {
 		if entries[i].Line != entries[j].Line {
@@ -1314,15 +1316,17 @@ func reportUnjustified(sm suppress.Map, path string) int {
 		}
 		return entries[i].RuleID < entries[j].RuleID
 	})
-	n := 0
+	var errs []output.ScanError
 	for _, e := range entries {
 		if e.Reason != "" || parser.IsContextLine(e.Line) {
 			continue
 		}
-		n++
-		fmt.Fprintf(os.Stderr, "%s:%d: %s is suppressed without a reason; add \"-- why\" to the glsec:ignore comment\n", output.Sanitize(path), e.Line, e.RuleID)
+		errs = append(errs, output.ScanError{
+			File:    path,
+			Message: fmt.Sprintf("%s:%d: %s is suppressed without a reason; add \"-- why\" to the glsec:ignore comment", output.Sanitize(path), e.Line, e.RuleID),
+		})
 	}
-	return n
+	return errs
 }
 
 // filterNewOnly keeps only findings absent from the baseline. baselinePath is

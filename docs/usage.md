@@ -258,7 +258,7 @@ glsec --require-ignore-reason .gitlab-ci.yml
 require_ignore_reason: true
 ```
 
-Any inline `# glsec:ignore` without a `-- reason` is then reported with its file and line, and glsec exits 2. Off by default, so existing suppressions keep working. The `.glsec-ignore` baseline is exempt because its format has no reason column. Note that enabling this disables the result cache: the check runs while findings are collected, so a cache hit would skip it.
+Any inline `# glsec:ignore` without a `-- reason` is then reported with its file and line, and glsec exits 2. Machine-readable reports carry the policy violation as an error, while the finding itself stays suppressed. Off by default, so existing suppressions keep working. The `.glsec-ignore` baseline is exempt because its format has no reason column. Note that enabling this disables the result cache: the check runs while findings are collected, so a cache hit would skip it.
 
 ## Scanning repositories you don't trust
 
