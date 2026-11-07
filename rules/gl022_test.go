@@ -812,3 +812,105 @@ func TestGL022_AptName(t *testing.T) {
 		}
 	}
 }
+
+func TestGL022_ToolInstallTables(t *testing.T) {
+	for _, tc := range []struct {
+		line string
+		want int
+	}{
+		{"pipx install hatch", 1},
+		{"pipx install --python 3.12 twine", 1},
+		{"pipx install hatch==1.13.0", 0},
+		{"pipx install hatch~=1.13", 0},
+		{"pipx install ./dist/tool.whl", 0},
+		{"pipx install .", 0},
+		{"pipx install $TOOL", 0},
+		{"pipx install hatch==$HATCH_VERSION", 0},
+		{"pipx list", 0},
+		{"uv tool install rust-just", 1},
+		{"uv tool install --from git+https://example.com/tool.git tool", 1},
+		{"uv tool install --from git+https://example.com/tool.git@main tool", 1},
+		{"uv tool install --from git+https://example.com/tool.git@v1.2.3 tool", 0},
+		{"uv tool install --from git+https://example.com/tool.git@3f2a9c1d tool", 0},
+		{"uv tool install ruff==0.6.9", 0},
+		{"uv tool install ruff@0.6.9", 0},
+		{"uv tool install . --force", 0},
+		{"uv tool install --force .", 0},
+		{"uv tool install --from=. tool", 0},
+		{"uv tool install /opt/tool", 0},
+		{"dotnet tool install --global dotnet-sonarscanner", 1},
+		{"dotnet tool update --global dotnet-format", 1},
+		{"dotnet tool install -g dotnet-format -v detailed", 1},
+		{"dotnet tool install --global dotnet-sonarscanner --version 9.0.0", 0},
+		{"dotnet tool install --global dotnet-sonarscanner --version=9.0.0", 0},
+		{"dotnet tool install --global dotnet-sonarscanner --version $V", 0},
+		{"dotnet tool install --global $TOOL", 0},
+		{"dotnet tool restore", 0},
+		{"composer global require squizlabs/php_codesniffer", 1},
+		{"composer global require squizlabs/php_codesniffer:^3.10", 0},
+		{"conda install -y mpi4py openmpi pytest", 1},
+		{"conda install -y -c conda-forge numpy", 1},
+		{"conda install -y python=3.11", 0},
+		{"conda install -y numpy==1.26", 0},
+		{"conda install -y -c conda-forge $PKGS", 0},
+		{"conda install --file requirements.txt", 0},
+		{"conda install -y --file=requirements.txt", 0},
+		{"conda create -n test python", 0},
+		{"helm plugin install https://github.com/example/helm-unittest.git", 1},
+		{"helm plugin install https://github.com/example/helm-diff --version main", 1},
+		{"helm plugin install https://github.com/example/helm-diff --version v3.9.0", 0},
+		{"helm plugin install https://github.com/example/helm-diff --version=3.9.0", 0},
+		{"helm plugin install /opt/plugins/diff", 0},
+		{"helm plugin install ./plugins/diff", 0},
+		{"helm plugin install $PLUGIN_URL", 0},
+		{"helm plugin install https://github.com/example/helm-diff --version v${DIFF_VERSION}", 0},
+		{"uv tool install schemathesis --constraints test/requirements.txt", 0},
+		{"uv tool install schemathesis -c test/requirements.txt", 0},
+		{"helm plugin list", 0},
+		{`echo "run pipx install hatch locally"`, 0},
+	} {
+		t.Run(tc.line, func(t *testing.T) {
+			got := 0
+			if checkPMLine(tc.line, "t.yml", 1, 1) != nil {
+				got = 1
+			}
+			if got != tc.want {
+				t.Errorf("got %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestGL022_UpdateTables(t *testing.T) {
+	for _, tc := range []struct {
+		line string
+		want bool
+	}{
+		{"go get -u golang.org/x/lint/golint", true},
+		{"go get -d -u ./...", true},
+		{"go get -u=patch ./...", true},
+		{"go get golang.org/x/lint/golint@v0.1.0", false},
+		{"go get -d ./...", false},
+		{"poetry update", true},
+		{"poetry update requests", true},
+		{"poetry self update", false},
+		{"poetry install", false},
+		{"uv lock --upgrade", true},
+		{"uv lock -U", true},
+		{"uv sync --upgrade", true},
+		{"uv sync --frozen -U", true},
+		{"uv lock --upgrade-package requests", false},
+		{"uv lock", false},
+		{"uv sync --frozen", false},
+	} {
+		t.Run(tc.line, func(t *testing.T) {
+			f := checkPMLine(tc.line, "t.yml", 1, 1)
+			if tc.want != (f != nil) {
+				t.Errorf("got %+v, want finding %v", f, tc.want)
+			}
+			if tc.want && !strings.Contains(f.Message, "update command") {
+				t.Errorf("message = %q", f.Message)
+			}
+		})
+	}
+}

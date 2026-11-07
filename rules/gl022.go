@@ -40,6 +40,14 @@ type pmInstallCheck struct {
 // would report `yarn add "pkg@1.2.3"` as unpinned.
 const adhocFirstArg = `\s+(?:-{1,2}[\w=@./:-]+\s+)*[^-\s"']`
 
+// toolPinned matches a pinned Python tool: pkg==1.2.3, pkg~=1.2, or a version
+// or commit as the ref of a pkg@ or git+https:// source.
+const toolPinned = `[=~]=\d|@v?\d|@[0-9a-f]{7,}`
+
+// toolLocal matches a Python tool installed from disk: ., ./dist/x.whl or
+// /opt/tool, also after --from or --spec.
+const toolLocal = `[\s=]["']?(?:\.{1,2}(?:[/\[\s"']|$)|/)`
+
 // pmUpdateCheck describes explicit update-to-latest commands that are always wrong in CI.
 type pmUpdateCheck struct {
 	manager string
@@ -113,6 +121,44 @@ var (
 			run:  true,
 		},
 		{
+			manager: "pipx",
+			trigger: mustCompilePrefiltered(`\bpipx\s+install` + adhocFirstArg),
+			pinned:  regexp.MustCompile(toolPinned),
+			skip:    regexp.MustCompile(toolLocal),
+			mask:    true,
+		},
+		{
+			manager: "uv tool",
+			trigger: mustCompilePrefiltered(`\buv\s+tool\s+install` + adhocFirstArg),
+			// A constraints file sets the versions.
+			pinned: regexp.MustCompile(toolPinned + `|\s(?:-c|--constraints?)[\s=]`),
+			skip:   regexp.MustCompile(toolLocal),
+			mask:   true,
+		},
+		{
+			// -v is --verbosity here, not a version.
+			manager: "dotnet tool",
+			trigger: mustCompilePrefiltered(`\bdotnet\s+tool\s+(?:install|update)\b`),
+			pinned:  regexp.MustCompile(`--version[\s=]+["']?\d`),
+			mask:    true,
+		},
+		{
+			// Any variable: -c conda-forge $PKGS hides the package from pmVarPkg.
+			manager: "conda",
+			trigger: mustCompilePrefiltered(`\bconda\s+install\b`),
+			pinned:  regexp.MustCompile(`\S[=<>]=?\d`),
+			skip:    regexp.MustCompile(`\s(?:--file|-f|--revision|--clone)[\s=]|\s["']?\$\{?[A-Za-z_]`),
+			mask:    true,
+		},
+		{
+			// --version is a Git ref and can be a branch, so only a version counts.
+			manager: "helm plugin",
+			trigger: mustCompilePrefiltered(`\bhelm\s+plugin\s+install\b`),
+			pinned:  regexp.MustCompile(`--version[\s=]+["']?v?(?:\d|\$)`),
+			skip:    regexp.MustCompile(`\binstall\s+["']?/`),
+			mask:    true,
+		},
+		{
 			manager: "bundler (ad-hoc)",
 			trigger: mustCompilePrefiltered(`\bbundle\s+add` + adhocFirstArg),
 			// Accepts a quoted constraint too: --version '~> 7.1'.
@@ -146,7 +192,7 @@ var (
 		},
 		{
 			manager: "composer require",
-			trigger: mustCompilePrefiltered(`\bcomposer\s+require\b`),
+			trigger: mustCompilePrefiltered(`\bcomposer\s+(?:global\s+)?require\b`),
 			pinned:  regexp.MustCompile(`:\S`),
 			skip:    nil,
 		},
@@ -200,6 +246,9 @@ var (
 		{"gem", mustCompilePrefiltered(`\bgem\s+update\b`)},
 		{"cargo", mustCompilePrefiltered(`\bcargo\s+update\b`)},
 		{"pip (--upgrade)", mustCompilePrefiltered(`\bpip[23]?\s+install\b.*(?:--upgrade\b|-U\b)`)},
+		{"go get -u", mustCompilePrefiltered(`\bgo\s+get\s+(?:-\S+\s+)*?-u(?:=\w+)?(?:\s|$)`)},
+		{"poetry", mustCompilePrefiltered(`\bpoetry\s+update\b`)},
+		{"uv", mustCompilePrefiltered(`\buv\s+(?:lock|sync)\b.*\s(?:--upgrade|-U)(?:\s|$)`)},
 	}
 )
 
