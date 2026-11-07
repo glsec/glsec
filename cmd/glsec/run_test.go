@@ -937,3 +937,16 @@ func TestTemplateFindingsSurviveTheSplit(t *testing.T) {
 		})
 	}
 }
+
+func TestRun_NamedConfigMustExist(t *testing.T) {
+	files := map[string]string{"ok.yml": "build:\n  script: [make]\n"}
+	for _, path := range []string{".glsec.yml", "./.glsec.yml", "other.yml"} {
+		code, _, stderr := runCLI(t, files, "--config", path, "ok.yml")
+		if code != 2 || !strings.Contains(stderr, "no such file") && !strings.Contains(stderr, "cannot find") {
+			t.Errorf("--config %s: exit %d, stderr %q, want exit 2 and a missing file", path, code, stderr)
+		}
+	}
+	if code, _, stderr := runCLI(t, files, "ok.yml"); code != 0 {
+		t.Errorf("no config at all: exit %d, stderr %q", code, stderr)
+	}
+}

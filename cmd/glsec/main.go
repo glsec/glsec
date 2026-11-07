@@ -220,7 +220,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 	cfg := config.Default()
 	if configPath != "" {
 		var err error
-		if cfg, err = config.Load(configPath); err != nil {
+		if flagSet(flags, "config") {
+			cfg, err = config.Load(configPath)
+		} else {
+			cfg, err = config.LoadDefault()
+		}
+		if err != nil {
 			_, _ = fmt.Fprintf(stderr, "error: %v\n", err)
 			return 2
 		}

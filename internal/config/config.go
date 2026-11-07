@@ -126,17 +126,23 @@ func Default() *Config {
 	}
 }
 
-// Load reads and parses a config file. Returns Default() if the file does not
-// exist and path is the default filename.
+// Load reads and parses the config file at path, which must exist.
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path) //nolint:gosec // G304: user-supplied config path
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) && path == DefaultFile {
-			return Default(), nil
-		}
 		return nil, fmt.Errorf("config: %w", err)
 	}
 	return parse(data, path)
+}
+
+// LoadDefault reads DefaultFile from the working directory, or returns
+// Default() if there is none.
+func LoadDefault() (*Config, error) {
+	cfg, err := Load(DefaultFile)
+	if errors.Is(err, os.ErrNotExist) {
+		return Default(), nil
+	}
+	return cfg, err
 }
 
 func parse(data []byte, path string) (*Config, error) {

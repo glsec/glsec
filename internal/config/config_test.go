@@ -72,12 +72,15 @@ func TestLoad_MissingDefaultFile(t *testing.T) {
 	_ = os.Chdir(dir)
 	defer func() { _ = os.Chdir(orig) }()
 
-	cfg, err := Load(DefaultFile)
+	cfg, err := LoadDefault()
 	if err != nil {
 		t.Fatalf("expected no error for missing default config: %v", err)
 	}
 	if cfg == nil {
 		t.Fatal("expected non-nil config")
+	}
+	if _, err := Load(DefaultFile); err == nil {
+		t.Error("a file asked for by name must exist, also when it has the default name")
 	}
 }
 
