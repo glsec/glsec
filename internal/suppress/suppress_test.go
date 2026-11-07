@@ -5,6 +5,7 @@ package suppress
 
 import (
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -280,4 +281,51 @@ func TestFromComment_OptionalPartsEmpty(t *testing.T) {
 func isSuppressed(m Map, line int, ruleID string, now time.Time) bool {
 	_, ok := m.Active(line, ruleID, now)
 	return ok
+}
+
+func TestBuild_InlineExpiry(t *testing.T) {
+	now := mustTime(t, "2026-06-15")
+	for _, tc := range []struct {
+		token  string
+		active bool
+	}{
+		{"", true},
+		{" exp:2026-06-15", true},
+		{" exp:2026-06-14", false},
+		{" exp:tomorrow", false},
+		{" exp:2026-1-01", false},
+		{" exp:", false},
+	} {
+		t.Run(tc.token, func(t *testing.T) {
+			var doc yaml.Node
+			if err := yaml.Unmarshal([]byte("job:\n  image: node:latest # glsec:ignore GL001"+tc.token+" -- reviewed\n"), &doc); err != nil {
+				t.Fatal(err)
+			}
+			m := Build(&doc)
+			entry, active := m.Active(2, "GL001", now)
+			if active != tc.active || m.ExpiredAt(2, "GL001", now) == tc.active {
+				t.Fatalf("active=%v, entries=%+v, want active=%v", active, m.Entries(), tc.active)
+			}
+			if active && entry.Reason != "reviewed" {
+				t.Fatalf("reason lost: %+v", entry)
+			}
+		})
+	}
+}
+
+func TestIgnoreExpiry(t *testing.T) {
+	for _, tc := range []struct {
+		line    string
+		expired bool
+	}{
+		{"ci.yml:2 GL001", false},
+		{"ci.yml:2 GL001 exp:2999-01-01", false},
+		{"ci.yml:2 GL001 exp:2000-01-01", true},
+		{"ci.yml:2 GL001 exp:tomorrow", true},
+		{"ci.yml:2 GL001 exp:", true},
+	} {
+		if got := (Entry{Expiry: IgnoreExpiry(strings.Fields(tc.line))}).Expired(time.Now()); got != tc.expired {
+			t.Errorf("%q: expired = %v, want %v", tc.line, got, tc.expired)
+		}
+	}
 }

@@ -147,6 +147,7 @@ func TestIgnore_ExpiredEntryAcceptsNothing(t *testing.T) {
 	}{
 		{"past date", "ci.yml:2 GL001 exp:2000-01-01\n", true, true},
 		{"malformed date", "ci.yml:2 GL001 exp:someday\n", true, true},
+		{"empty date", "ci.yml:2 GL001 exp:\n", true, true},
 		{"future date", "ci.yml:2 GL001 exp:2999-01-01\n", false, false},
 		{"no date", "ci.yml:2 GL001\n", false, false},
 	} {
