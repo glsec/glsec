@@ -269,7 +269,7 @@ glsec --no-repo-config --no-ignores .gitlab-ci.yml
 glsec --no-repo-config --no-ignores --config /policies/glsec.yml .gitlab-ci.yml  # your own settings
 ```
 
-`--no-repo-config` ignores a `.glsec.yml` in the working directory (glsec says so on stderr); a file passed with `--config` is still read. `--no-ignores` drops all suppressions. Neither is needed when a project scans its own merge requests in its own pipeline, since the author can change the pipeline itself there.
+`--no-repo-config` ignores a `.glsec.yml` in the working directory (glsec says so on stderr); a file passed with `--config` is still read. `--no-ignores` drops all suppressions and does not read `.glsec-ignore`, even if that path cannot be read. Neither is needed when a project scans its own merge requests in its own pipeline, since the author can change the pipeline itself there.
 
 With the GitLab component, set the inputs `no_repo_config: true` and `no_ignores: true` (component v1.0.25 or later). To make glsec mandatory for a group on GitLab Ultimate, run the component from a pipeline execution policy; the [component README](https://gitlab.com/glsec-io/glsec#enforcing-glsec-with-a-pipeline-execution-policy) has a tested example, including the `rules:` the job needs there to run in merge request pipelines.
 
