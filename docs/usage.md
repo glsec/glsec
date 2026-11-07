@@ -228,7 +228,7 @@ deploy:
     - ./deploy.sh  # glsec:ignore GL013 exp:2026-12-01 -- accepted until the migration lands
 ```
 
-Once the date has passed the suppression stops applying, the finding is reported again, and glsec notes on stderr that the suppression expired, so a finding that reappears is traceable to the date rather than looking like a new violation. The expiry date itself is inclusive. A malformed date counts as expired, so a typo surfaces the finding rather than hiding it forever.
+Once the date has passed the suppression stops applying, the finding is reported again, and glsec notes on stderr that the suppression expired, so a finding that reappears is traceable to the date rather than looking like a new violation. The expiry date itself is inclusive. A malformed or empty `exp:` value counts as expired, so a typo surfaces the finding rather than hiding it forever.
 
 The same token works in the `.glsec-ignore` baseline, appended to a line:
 

@@ -26,7 +26,7 @@ const dateLayout = "2006-01-02"
 //	# glsec:ignore GL001 exp:2026-12-01 -- accepted until the migration lands
 //	# glsec:ignore SC2086
 var pattern = regexp.MustCompile(
-	`glsec:ignore\s+((?:GL|SC)\d+)(?:\s+exp:(\d{4}-\d{2}-\d{2}))?(?:\s+--\s+(.+))?`,
+	`glsec:ignore\s+((?:GL|SC)\d+)(?:\s+(exp:\S*))?(?:\s+--\s+(.+))?`,
 )
 
 // IgnoreFile is the default name of the baseline ignore file written by
@@ -75,7 +75,11 @@ func fromComment(comment string, line int) []Suppression {
 	// pattern has three groups, so every match has four entries; an optional
 	// group that didn't match is empty.
 	for _, match := range pattern.FindAllStringSubmatch(comment, -1) {
-		out = append(out, Suppression{RuleID: match[1], Line: line, Expiry: match[2], Reason: strings.TrimSpace(match[3])})
+		expiry := strings.TrimPrefix(match[2], "exp:")
+		if match[2] == "exp:" {
+			expiry = "exp:" // A present but empty expiry must fail date validation.
+		}
+		out = append(out, Suppression{RuleID: match[1], Line: line, Expiry: expiry, Reason: strings.TrimSpace(match[3])})
 	}
 	return out
 }
