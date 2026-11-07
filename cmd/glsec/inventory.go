@@ -64,8 +64,8 @@ func runInventory(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-// writeJobs lists the visible jobs of the document glsec scans, the ones
-// GitLab would create: hidden jobs (".name") are templates and left out.
+// writeJobs lists the visible jobs of doc alone, without its includes: hidden
+// jobs (".name") are templates and left out.
 func writeJobs(stdout, stderr io.Writer, doc *parser.Document) int {
 	type job struct {
 		Name string `json:"name"`

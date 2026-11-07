@@ -131,7 +131,7 @@ Things to know:
 
 ## Pipeline inventory (CycloneDX)
 
-`glsec inventory` lists what a pipeline pulls in as a [CycloneDX 1.6](https://cyclonedx.org/docs/1.6/json/) bill of materials, so SBOM tools such as Dependency-Track can track it next to your application's dependencies. It reports no findings and exits 0, or 2 when the file can't be read. With `--format jobs` it lists the jobs glsec scans instead, as JSON with name and line: the visible jobs of the pipeline, without hidden templates.
+`glsec inventory` lists what a pipeline pulls in as a [CycloneDX 1.6](https://cyclonedx.org/docs/1.6/json/) bill of materials, so SBOM tools such as Dependency-Track can track it next to your application's dependencies. It reports no findings and exits 0, or 2 when the file can't be read. With `--format jobs` it lists the jobs of the named file instead, as JSON with name and line: its visible jobs, without hidden templates. It doesn't read included files, so a job that comes from an `include:` isn't listed, although a scan checks it.
 
 ```sh
 glsec inventory .gitlab-ci.yml > pipeline.cdx.json
