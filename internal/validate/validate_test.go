@@ -82,6 +82,44 @@ baz: qux
 	}
 }
 
+func TestFile_FragmentsAreRecognised(t *testing.T) {
+	for name, src := range map[string]string{
+		"hidden rules":   ".rules:\n  rules:\n    - if: $CI_COMMIT_TAG\n",
+		"anchor only":    ".if-mr: &if-mr\n  if: $CI_MERGE_REQUEST_ID\n",
+		"hidden scripts": ".scripts:\n  setup:\n    - echo hi\n",
+		"hidden scalar":  ".version: &version \"1\"\n",
+		"extends":        "job:\n  extends: .base\n",
+		"merge key":      ".a: &a {stage: test}\njob:\n  <<: *a\n",
+		"needs":          "deploy:\n  needs: [build]\n",
+		"rules":          "job:\n  rules:\n    - when: never\n",
+		"stage":          "job:\n  stage: test\n",
+		"tags":           "job:\n  tags: [docker]\n",
+		"variables":      "job:\n  variables:\n    A: b\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := File("test.yml", parse(t, src)); err != nil {
+				t.Errorf("fragment should be recognised: %v", err)
+			}
+		})
+	}
+}
+
+func TestFile_OtherYAMLFormatsAreRejected(t *testing.T) {
+	for name, src := range map[string]string{
+		"compose v1":     "web:\n  image: nginx\n  ports: [\"80:80\"]\n  environment:\n    A: b\n",
+		"kubernetes":     "apiVersion: v1\nkind: Pod\nmetadata:\n  name: a\nspec:\n  containers: []\n",
+		"actions":        "on: push\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps: []\n",
+		"misspelt job":   "build:\n  scirpt:\n    - make\n",
+		"misspelt stage": "build:\n  stgae: test\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := File("test.yml", parse(t, src)); err == nil {
+				t.Error("expected an error for a file that is not GitLab CI")
+			}
+		})
+	}
+}
+
 func TestFile_KnownKeyIsEnough(t *testing.T) {
 	for _, key := range []string{"stages", "variables", "include", "default", "workflow"} {
 		doc := parse(t, key+": []\n")
