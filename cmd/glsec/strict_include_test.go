@@ -31,6 +31,18 @@ func TestRun_StrictUnreadablePipelineFile(t *testing.T) {
 			".gitlab-ci.yml": "include: bad.yml\n" + strictRootJob,
 			"bad.yml":        "job: [unclosed\n",
 		}, "bad.yml"},
+		{"include that is a list", map[string]string{
+			".gitlab-ci.yml": "include: bad.yml\n" + strictRootJob,
+			"bad.yml":        "- one\n- two\n",
+		}, "bad.yml"},
+		{"include that is a scalar", map[string]string{
+			".gitlab-ci.yml": "include: bad.yml\n" + strictRootJob,
+			"bad.yml":        "just text\n",
+		}, "bad.yml"},
+		{"child that is a list", map[string]string{
+			".gitlab-ci.yml": "job:\n  trigger:\n    include: child.yml\n",
+			"child.yml":      "- one\n",
+		}, "child.yml"},
 		{"missing child", map[string]string{
 			".gitlab-ci.yml": "job:\n  trigger:\n    include: child.yml\n",
 		}, "child.yml"},

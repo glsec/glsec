@@ -953,8 +953,12 @@ func (p *pipelineFiles) read(kind, path, abs string, optional bool) *parser.Docu
 	doc, ok := p.parsed[abs]
 	if !ok {
 		parsed, err := parser.ParseFile(path)
+		if err == nil {
+			err = validate.Mapping(path, parsed)
+		}
 		if err != nil {
 			p.unread(kind, path, err, optional)
+			parsed = nil
 		}
 		p.parsed[abs], doc = parsed, parsed
 	}

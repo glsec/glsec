@@ -32,8 +32,8 @@ func File(path string, doc *parser.Document) (warnings []string, err error) {
 			warnings = append(warnings, fmt.Sprintf("%s:%d: %s: has job keywords, so GitLab runs it as a job named %q and it sets no %s; glsec scans it as that job", path, key.Line, key.Value, key.Value, map[string]string{"default": "defaults", "workflow": "workflow rules"}[key.Value]))
 		}
 	}
-	if mapping.Kind != yaml.MappingNode {
-		return warnings, fmt.Errorf("%s: not a valid GitLab CI file: expected a top-level mapping", path)
+	if err := Mapping(path, doc); err != nil {
+		return warnings, err
 	}
 
 	if !hasGitLabContent(mapping) {
@@ -41,6 +41,15 @@ func File(path string, doc *parser.Document) (warnings []string, err error) {
 	}
 
 	return warnings, nil
+}
+
+// Mapping returns an error if doc has no top-level mapping. Unlike File it
+// holds for included files as well, which may be fragments of a pipeline.
+func Mapping(path string, doc *parser.Document) error {
+	if doc.MappingNode().Kind != yaml.MappingNode {
+		return fmt.Errorf("%s: not a valid GitLab CI file: expected a top-level mapping", path)
+	}
+	return nil
 }
 
 // knownKeys are GitLab CI reserved top-level keys that are not job definitions.
