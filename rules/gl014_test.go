@@ -324,3 +324,67 @@ func TestGL014_PowerShellFileCmdlets(t *testing.T) {
 		})
 	}
 }
+
+func TestGL014_SecretInDotenv(t *testing.T) {
+	const report = "\n  artifacts:\n    reports:\n      dotenv: build.env\n"
+	for _, tc := range []struct {
+		name, line string
+		want       int
+	}{
+		{"append", `echo "DEPLOY_TOKEN=$DEPLOY_TOKEN" >> build.env`, 1},
+		{"overwrite", `echo "API_KEY=${API_KEY}" > build.env`, 1},
+		{"other name", `echo "OUT=$DB_PASSWORD" >> build.env`, 1},
+		{"unquoted", `echo DEPLOY_TOKEN=$DEPLOY_TOKEN >> build.env`, 1},
+		{"printf", `printf "%s\n" "A=1" "DEPLOY_TOKEN=$DEPLOY_TOKEN" >> build.env`, 1},
+		{"tee", `echo "DEPLOY_TOKEN=$DEPLOY_TOKEN" | tee -a build.env`, 1},
+		{"relative", `echo "DEPLOY_TOKEN=$DEPLOY_TOKEN" >> ./build.env`, 1},
+		{"project dir", `echo "DEPLOY_TOKEN=$DEPLOY_TOKEN" >> "$CI_PROJECT_DIR/build.env"`, 1},
+		{"not secret", `echo "VERSION=$CI_COMMIT_TAG" >> build.env`, 0},
+		{"secret id", `echo "KEY=$GPG_KEY_ID" >> build.env`, 0},
+		{"single quotes", `echo 'DEPLOY_TOKEN=$DEPLOY_TOKEN' >> build.env`, 0},
+		{"escaped", `echo "DEPLOY_TOKEN=\$DEPLOY_TOKEN" >> build.env`, 0},
+		{"conditional", `echo "HAS_TOKEN=${DEPLOY_TOKEN:+yes}" >> build.env`, 0},
+		{"substitution", `echo "SIG=$(./sign "$DEPLOY_TOKEN")" >> build.env`, 0},
+		{"other file", `echo "DEPLOY_TOKEN=$DEPLOY_TOKEN" >> other.env`, 0},
+		{"separate command", `echo "DEPLOY_TOKEN=$DEPLOY_TOKEN"; echo "A=1" >> build.env`, 0},
+		{"not a print command", `curl -d "token=$DEPLOY_TOKEN" https://example.com > build.env`, 0},
+		{"comment", `# echo "DEPLOY_TOKEN=$DEPLOY_TOKEN" >> build.env`, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := findings014(t, fmt.Sprintf("build:\n  script:\n    - |\n      %s%s", tc.line, report))
+			if len(f) != tc.want {
+				t.Fatalf("got %d findings, want %d: %v", len(f), tc.want, f)
+			}
+		})
+	}
+}
+
+func TestGL014_SecretInDotenvList(t *testing.T) {
+	f := findings014(t, `
+build:
+  script:
+    - echo start
+    - |
+      echo one
+      echo "DEPLOY_TOKEN=$DEPLOY_TOKEN" >> b.env
+  artifacts:
+    reports:
+      dotenv: [a.env, b.env]
+`)
+	if len(f) != 1 || f[0].Line != 7 || !strings.Contains(f[0].Message, "DEPLOY_TOKEN") || !strings.Contains(f[0].Message, `"b.env"`) {
+		t.Fatalf("got %+v", f)
+	}
+}
+
+func TestGL014_SecretInFileWithoutDotenv(t *testing.T) {
+	f := findings014(t, `
+build:
+  script:
+    - echo "DEPLOY_TOKEN=$DEPLOY_TOKEN" >> build.env
+  artifacts:
+    paths: [dist/]
+`)
+	if len(f) != 0 {
+		t.Fatalf("got %+v", f)
+	}
+}
