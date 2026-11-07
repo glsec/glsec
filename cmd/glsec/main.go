@@ -1347,6 +1347,9 @@ func filterNewOnly(w io.Writer, findings []finding.Finding, baselinePath string)
 	for _, f := range findings {
 		if bl.IsNew(f) {
 			newFindings = append(newFindings, f)
+			if bl.Expired(f) {
+				_, _ = fmt.Fprintf(w, "%s:%d: %s suppression has expired, reporting the finding again\n", output.Sanitize(f.File), f.Line, f.RuleID)
+			}
 		}
 	}
 	if n := len(findings) - len(newFindings); n > 0 {

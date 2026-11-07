@@ -14,9 +14,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/glsec/glsec/internal/finding"
 	"github.com/glsec/glsec/internal/redact"
+	"github.com/glsec/glsec/internal/suppress"
 )
 
 // Baseline is a multiset of accepted findings. Matching by count (not set
@@ -29,6 +31,9 @@ type Baseline struct {
 	// finding message, so they match on rule+file+message. The .glsec-ignore
 	// format has no message, so it can only match on rule+file.
 	useMessage bool
+	// expired holds the .glsec-ignore entries whose exp: date has passed. They
+	// accept nothing, like in a scan without --new-only.
+	expired map[string]bool
 }
 
 type snapshot struct {
@@ -73,7 +78,8 @@ func loadJSON(data []byte) (*Baseline, error) {
 }
 
 func loadIgnore(data []byte) *Baseline {
-	b := &Baseline{counts: make(map[string]int)}
+	b := &Baseline{counts: make(map[string]int), expired: make(map[string]bool)}
+	now := time.Now()
 	scanner := bufio.NewScanner(strings.NewReader(string(data)))
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -91,7 +97,12 @@ func loadIgnore(data []byte) *Baseline {
 		if colon < 0 {
 			continue
 		}
-		b.counts[key(rule, loc[:colon], "")]++
+		k := key(rule, loc[:colon], "")
+		if (suppress.Entry{Expiry: suppress.IgnoreExpiry(fields)}).Expired(now) {
+			b.expired[k] = true
+			continue
+		}
+		b.counts[k]++
 	}
 	return b
 }
@@ -111,6 +122,11 @@ func snapshotKey(rule, file, message string) string {
 		file = abs
 	}
 	return key(rule, file, redact.String(message))
+}
+
+// Expired reports whether an expired .glsec-ignore entry names f's rule and file.
+func (b *Baseline) Expired(f finding.Finding) bool {
+	return b.expired[key(f.RuleID, f.File, "")]
 }
 
 // IsNew reports whether f is absent from the baseline. When f matches a baseline
