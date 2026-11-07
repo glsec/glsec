@@ -109,7 +109,7 @@ func TestFile_OtherYAMLFormatsAreRejected(t *testing.T) {
 		"compose v1":     "web:\n  image: nginx\n  ports: [\"80:80\"]\n  environment:\n    A: b\n",
 		"kubernetes":     "apiVersion: v1\nkind: Pod\nmetadata:\n  name: a\nspec:\n  containers: []\n",
 		"actions":        "on: push\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps: []\n",
-		"misspelt job":   "build:\n  scripts:\n    - make\n",
+		"misspelt job":   "build:\n  scirpt:\n    - make\n", //nolint:misspell // the typo is the test case
 		"misspelt stage": "build:\n  stgae: test\n",
 	} {
 		t.Run(name, func(t *testing.T) {
