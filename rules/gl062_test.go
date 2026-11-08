@@ -245,7 +245,7 @@ func TestGrepPattern(t *testing.T) {
 		"grep -v":         "",
 		"sort":            "",
 	} {
-		if got, _ := grepPattern(cmd); got != want {
+		if got, _, _ := grepPattern(cmd); got != want {
 			t.Errorf("grepPattern(%q) = %q, want %q", cmd, got, want)
 		}
 	}
@@ -381,5 +381,30 @@ func TestGL062_CommentsDoNotHideLaterDumps(t *testing.T) {
 	f = findings062(t, "job:\n  script:\n    - |\n      # printenv would leak everything\n      # set\n")
 	if len(f) != 0 {
 		t.Fatalf("got %v, want no finding for a comment-only value", f)
+	}
+}
+
+// A grep filter after a dump is narrow only when every pattern and every
+// alternative names one harmless variable, and the match isn't inverted
+// (#1277).
+func TestGL062_GrepFilterAlternatives(t *testing.T) {
+	for line, want := range map[string]int{
+		`set | grep -E "^(NODE_VERSION|GO_VERSION|BUILD_ARG)="`: 0,
+		`env | egrep "NODE_VERSION|GO_VERSION"`:                 0,
+		`env | grep "NODE_VERSION\\|GO_VERSION"`:                0,
+		`env | grep -e NODE_VERSION -e GO_VERSION`:              0,
+		`env | grep -E "^(NODE_VERSION|DEPLOY_TOKEN)="`:         1,
+		`env | grep -e THREADS -e TOKEN`:                        1,
+		`env | grep -v THREADS`:                                 1,
+		`env | grep -iv THREADS`:                                1,
+		`env | grep --invert-match THREADS`:                     1,
+		`env | grep "NODE_VERSION|GO_VERSION"`:                  1,
+		`env | grep THREADS`:                                    0,
+	} {
+		t.Run(line, func(t *testing.T) {
+			if f := findings062(t, "job:\n  script:\n    - "+fmt.Sprintf("%q", line)+"\n"); len(f) != want {
+				t.Fatalf("got %v, want %d findings", f, want)
+			}
+		})
 	}
 }
