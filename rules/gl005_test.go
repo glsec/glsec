@@ -591,3 +591,172 @@ build:
 		t.Errorf("expected no finding for excluded credential files, got %v", f)
 	}
 }
+
+// An .npmrc or .yarnrc.yml the job writes with an unexpanded placeholder holds
+// no token: npm and Yarn resolve ${VAR} when they read the file (#1171).
+func TestGL005_PlaceholderRCFile(t *testing.T) {
+	for _, tc := range []struct {
+		name, script, path string
+		flagged            bool
+	}{
+		{"escaped dollar", `echo "${NPM_PROJECT_LEVEL_ENDPOINT}:_authToken=\${CI_JOB_TOKEN}" >> .npmrc`, ".npmrc", false},
+		{"single quoted", `echo '//registry.npmjs.org/:_authToken=${NPM_TOKEN}' > .npmrc`, ".npmrc", false},
+		{"printf single quoted", `printf '%s\n' '//r/:_authToken=${NPM_TOKEN}' > ./.npmrc`, ".npmrc", false},
+		{"project dir prefix", `echo '//r/:_authToken=${NPM_TOKEN}' > "$CI_PROJECT_DIR/.npmrc"`, ".npmrc", false},
+		{"tee", `echo '//r/:_authToken=${NPM_TOKEN}' | tee -a .npmrc`, ".npmrc", false},
+		{"yarnrc", `echo 'npmAuthToken: "${NPM_TOKEN}"' > .yarnrc.yml`, ".yarnrc.yml", false},
+		{"group", `{ echo '@s:registry=https://r/'; echo '//r/:_authToken=${NPM_TOKEN}'; } > .npmrc`, ".npmrc", false},
+		{"quoted heredoc", "cat > .npmrc <<'EOF'\n//r/:_authToken=${NPM_TOKEN}\nEOF", ".npmrc", false},
+		{"double quoted", `echo "//r/:_authToken=${NPM_TOKEN}" > .npmrc`, ".npmrc", true},
+		{"unquoted", `echo //r/:_authToken=$NPM_TOKEN > .npmrc`, ".npmrc", true},
+		{"single quote inside double", `echo "it's ${NPM_TOKEN}" > .npmrc`, ".npmrc", true},
+		{"group with expanded secret", `{ echo '@s:registry=https://r/'; echo "//r/:_authToken=${NPM_TOKEN}"; } >> .npmrc`, ".npmrc", true},
+		{"subshell with expanded secret", `(echo a; echo "//r/:_authToken=$NPM_TOKEN") > .npmrc`, ".npmrc", true},
+		{"unquoted heredoc", "cat > .npmrc <<EOF\n//r/:_authToken=${NPM_TOKEN}\nEOF", ".npmrc", true},
+		{"unquoted heredoc single quotes", "cat > .npmrc <<EOF\n//r/:_authToken='${NPM_TOKEN}'\nEOF", ".npmrc", true},
+		{"command substitution", `echo "//r/:_authToken=$(cat token)" > .npmrc`, ".npmrc", true},
+		{"envsubst", `envsubst < npmrc.tpl > .npmrc`, ".npmrc", true},
+		{"copied", `cp "$NPMRC" .npmrc`, ".npmrc", true},
+		{"npm config set", `npm config set --location project //r/:_authToken "$NPM_TOKEN"`, ".npmrc", true},
+		{"not written", `npm ci`, ".npmrc", true},
+		{"other directory", `cd pkg && echo '//r/:_authToken=${NPM_TOKEN}' > .npmrc`, ".npmrc", true},
+		{"pypirc", `echo 'password = ${PYPI_TOKEN}' > .pypirc`, ".pypirc", true},
+		{"netrc", `echo 'password ${NETRC_PASSWORD}' > .netrc`, ".netrc", true},
+		{"subshell with secret before the last command", `(echo "//r/:_authToken=$NPM_TOKEN"; echo b) > .npmrc`, ".npmrc", true},
+		{"group with secret before the last command", `{ echo "//r/:_authToken=$NPM_TOKEN"; echo b; } > .npmrc`, ".npmrc", true},
+		{"credential key, any name", `echo "//r/:_authToken=$TOKEN" > .npmrc`, ".npmrc", true},
+		{"credential key, braced", `echo "//r/:_auth=${NEXUS_CREDS}" > .npmrc`, ".npmrc", true},
+		{"credential key, password", `echo "//r/:_password=$PASS" >> .npmrc`, ".npmrc", true},
+		{"credential key, copied variable", `T=$NPM_TOKEN; echo "//r/:_authToken=$T" > .npmrc`, ".npmrc", true},
+		{"yarn credential key", `echo "npmAuthToken: $GITLAB_PAT" > .yarnrc.yml`, ".yarnrc.yml", true},
+		{"yarn ident key", `echo "npmAuthIdent: ${CREDS}" > .yarnrc.yml`, ".yarnrc.yml", true},
+		{"endpoint before the key", `echo "${NPM_PROJECT_LEVEL_ENDPOINT}:_authToken=\${TOKEN}" > .npmrc`, ".npmrc", false},
+		{"npm config set after a flag value", `npm --location project config set //r/:_authToken x`, ".npmrc", true},
+		{"yarn npm login", `yarn npm login --scope s`, ".npmrc", true},
+		{"file test and touch", "if [[ ! -f .npmrc ]]; then\n  touch .npmrc\nfi\necho '//r/:_authToken=${NPM_TOKEN}' >> .npmrc", ".npmrc", false},
+		{"test command", `test -f .npmrc || echo '//r/:_authToken=${NPM_TOKEN}' > .npmrc`, ".npmrc", false},
+		{"touch only", `touch .npmrc`, ".npmrc", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := findings005(t, fmt.Sprintf("build:\n  script:\n    - %q\n  artifacts:\n    paths: [%q]\n    expire_in: 1 day\n", tc.script, tc.path))
+			if got := len(f) == 1; got != tc.flagged || len(f) > 1 {
+				t.Errorf("flagged = %v, want %v: %v", got, tc.flagged, f)
+			}
+		})
+	}
+}
+
+// One expanded write is enough, even next to a placeholder write.
+func TestGL005_PlaceholderRCFileMixed(t *testing.T) {
+	f := findings005(t, `
+build:
+  script:
+    - echo "@s:registry=https://r/" > .npmrc
+    - echo '//r/:_authToken=${CI_JOB_TOKEN}' >> .npmrc
+    - echo "//other/:_authToken=${NPM_TOKEN}" >> .npmrc
+  artifacts:
+    paths: [.npmrc]
+    expire_in: 1 day
+`)
+	if len(f) != 1 {
+		t.Errorf("expected one finding, got %v", f)
+	}
+}
+
+// The exception reads the job's own script only: a file written by another
+// job, or an artifacts block under default:, is reported.
+func TestGL005_PlaceholderRCFileOtherJob(t *testing.T) {
+	f := findings005(t, `
+default:
+  artifacts:
+    paths: [.npmrc]
+    expire_in: 1 day
+write:
+  script:
+    - echo '//r/:_authToken=${NPM_TOKEN}' > .npmrc
+upload:
+  script: [ls]
+  artifacts:
+    paths: [.npmrc]
+    expire_in: 1 day
+`)
+	if len(f) != 2 {
+		t.Errorf("expected findings for default: and upload, got %v", f)
+	}
+}
+
+// A template's paths are exempt only when every job that extends it writes
+// the file with a placeholder.
+func TestGL005_PlaceholderRCFileTemplate(t *testing.T) {
+	const tmpl = `
+.publish:
+  artifacts:
+    paths: [.npmrc]
+    expire_in: 1 day
+a:
+  extends: .publish
+  script:
+    - echo '//r/:_authToken=${NPM_TOKEN}' > .npmrc
+`
+	if f := findings005(t, tmpl); len(f) != 0 {
+		t.Errorf("expected no finding, got %v", f)
+	}
+	f := findings005(t, tmpl+`b:
+  extends: .publish
+  script:
+    - echo "//r/:_authToken=${NPM_TOKEN}" > .npmrc
+`)
+	if len(f) != 1 || f[0].Job != ".publish" {
+		t.Errorf("expected one finding on .publish, got %v", f)
+	}
+	// An unused template is reported where it is written.
+	f = findings005(t, `
+.publish:
+  script:
+    - echo '//r/:_authToken=${NPM_TOKEN}' > .npmrc
+  artifacts:
+    paths: [.npmrc]
+    expire_in: 1 day
+`)
+	if len(f) != 1 {
+		t.Errorf("expected one finding on the unused template, got %v", f)
+	}
+}
+
+// The snippet from GitLab's npm documentation: a multi-line group appending
+// placeholder lines (#1171).
+func TestGL005_PlaceholderRCFileDocsSnippet(t *testing.T) {
+	f := findings005(t, `
+create_npmrc:
+  script:
+    - |
+      {
+        echo "@${CI_PROJECT_ROOT_NAMESPACE}:registry=${NPM_PACKAGE_REGISTRY}"
+        echo "${NPM_PROJECT_LEVEL_ENDPOINT}:_authToken=\${CI_JOB_TOKEN}"
+      } >> .npmrc
+  artifacts:
+    paths:
+      - .npmrc
+    expire_in: 1 day
+`)
+	if len(f) != 0 {
+		t.Errorf("expected no finding, got %v", f)
+	}
+}
+
+// A pipe inside "$(…)" splits the command before its redirect. The second
+// write must not go unseen because the first one is a placeholder.
+func TestGL005_PlaceholderRCFileSubstitutionWithPipe(t *testing.T) {
+	f := findings005(t, `
+build:
+  script:
+    - echo '@s:registry=https://r/' > .npmrc
+    - echo "_auth=$(echo -n "$NPM_USER:$NPM_PASS" | base64)" >> .npmrc
+  artifacts:
+    paths: [.npmrc]
+    expire_in: 1 day
+`)
+	if len(f) != 1 {
+		t.Errorf("expected one finding, got %v", f)
+	}
+}

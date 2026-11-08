@@ -4,6 +4,7 @@
 package rules
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 
@@ -189,5 +190,26 @@ my_build:
 	}
 	if f[0].Job != "my_build" {
 		t.Errorf("expected Job=my_build, got %q", f[0].Job)
+	}
+}
+
+// A placeholder-only .npmrc in public artifacts stays a warning, an expanded
+// token is an error (#1171).
+func TestGL073_PlaceholderRCFile(t *testing.T) {
+	for _, tc := range []struct {
+		script string
+		want   finding.Severity
+	}{
+		{`echo "${NPM_PROJECT_LEVEL_ENDPOINT}:_authToken=\${CI_JOB_TOKEN}" >> .npmrc`, finding.Warn},
+		{`echo '//r/:_authToken=${NPM_TOKEN}' > .npmrc`, finding.Warn},
+		{`echo "//r/:_authToken=${NPM_TOKEN}" > .npmrc`, finding.Error},
+		{`npm ci`, finding.Error},
+	} {
+		t.Run(tc.script, func(t *testing.T) {
+			f := findings073rule(t, "publish:\n  script:\n    - "+strconv.Quote(tc.script)+"\n  artifacts:\n    access: all\n    paths: [.npmrc]\n")
+			if len(f) != 1 || f[0].Severity != tc.want {
+				t.Errorf("expected one %s finding, got %v", tc.want, f)
+			}
+		})
 	}
 }
