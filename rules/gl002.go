@@ -102,6 +102,12 @@ func checkScriptLine(node *yaml.Node, file string) []finding.Finding {
 		if notWordSplit(masked, dollarPos, loc[3]) {
 			continue
 		}
+		// CHAT_INPUT holds the ChatOps command's arguments, and splitting it
+		// is what makes them arguments; whoever runs the command already
+		// chooses them. As code it stays reported (#1289).
+		if varName == "CHAT_INPUT" && !unquotedCode(masked[commandStart(masked, dollarPos):dollarPos]) {
+			continue
+		}
 		seen[varName] = true
 		at := strings.Count(masked[:dollarPos], "\n")
 		f := finding.Finding{
@@ -249,6 +255,21 @@ func notWordSplit(masked string, dollarPos, end int) bool {
 		}
 	}
 	return true
+}
+
+var (
+	// evalWordsRe matches eval with any arguments before the one at the end:
+	// eval joins them all into code.
+	evalWordsRe = regexp.MustCompile(`^\s*eval\s+(?:\S+\s+)*$`)
+	// codeFlagRe matches a command whose next argument is code: sh -c,
+	// python -c, node -e, perl -e.
+	codeFlagRe = regexp.MustCompile(`(?:^|\s)(?:(?:ba|z|da|k)?sh\s+(?:-[a-zA-Z]+\s+)*-[a-zA-Z]*c|python[23]?(?:\.\d+)?\s+(?:-[a-zA-Z]+\s+)*-c|node\s+(?:-e|--eval|-p|--print)|(?:perl|ruby)\s+(?:-[a-zA-Z]+\s+)*-[a-zA-Z]*e)\s+$`)
+)
+
+// unquotedCode reports whether an unquoted expansion after before is parsed
+// as code: an argument of eval, or the one right after sh -c and the like.
+func unquotedCode(before string) bool {
+	return evalWordsRe.MatchString(before) || codeFlagRe.MatchString(before)
 }
 
 // commandStart returns where the simple command holding pos starts. The
