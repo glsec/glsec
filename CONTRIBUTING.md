@@ -105,6 +105,8 @@ go test ./cmd/glsec       -run '^$' -fuzz '^FuzzScan$'  -fuzztime 2m
 go test ./cmd/glsec       -run '^$' -fuzz '^FuzzScanGraph$' -fuzztime 2m -fuzzminimizetime 100x
 ```
 
+`FuzzPrefiltered` (`rules`) checks that the literal prefilter never hides a regexp match. It isn't in the `Fuzz` workflow, so it only replays its seeds in `go test`.
+
 `FuzzScanGraph` writes up to four files of 16 KiB each to a temporary directory and calls `scanRoot`, so it covers file validation, includes, child pipelines, pipeline context, rules and every report format, including a fixed template. It uses no network and no ShellCheck.
 
 These layers stay outside fuzzing: flag parsing and target discovery (`run`, `--recursive`), `.glsec.yml` and `.glsec-ignore`, the result cache, the baseline diff of `--new-only`, stdin input, symbolic links, and the ShellCheck integration. Their unit and CLI tests cover them.
@@ -208,7 +210,7 @@ Shared helpers live in `rules/helpers.go` and `rules/shell.go` (and `runsInherit
 |--------|-------------|
 | `NewInheritance(doc)` | Indexes the file once; build it at the start of `Check` |
 | `in.Key(job, "key")` | The value of a key that applies to the job: its own, else from the jobs it extends in this file, else from `default:` |
-| `in.Effective(job, "key")` / `in.Has(job, "key")` | The value with `extends:` deep-merged as GitLab does, for mappings such as `rules:` targets or `id_tokens:`; `Has` checks cheaply whether any template sets the key |
+| `in.Effective(job)` / `in.Has(job, "key")` | The job with its `extends:` templates deep-merged as GitLab does (not `default:`), for mappings such as `rules:` targets or `id_tokens:`; `Has` checks cheaply whether any template sets the key |
 | `in.Chain(job, "key")` | The values of a key along the `extends:` chain, for keys GitLab deep-merges (`artifacts:`, `trigger:`) |
 | `in.ExtendsResolved(job)` | Whether every template the job extends is in this file, so `Key` sees everything it inherits |
 | `runsInheritedJob(in, name, job)` | Not a hidden template and `ExtendsResolved`: the usual guard for job-level rules that read inherited keys |
@@ -538,6 +540,6 @@ Every Monday `ci-durations.yml` runs `cmd/ciduration` over the successful runs o
 GITHUB_TOKEN=$(gh auth token) go run ./cmd/ciduration
 ```
 
-Exit 1 from the command above means a workflow is over the budget. The budget is not a check on pull requests, because shared runners vary by 10 to 30%.
+`go run` turns every failure into exit 1, so exit 1 can also be an API or token error; build the binary (`go build ./cmd/ciduration`) to tell them apart: 1 is over the budget, 2 an error. The budget is not a check on pull requests, because shared runners vary by 10 to 30%.
 
 Read the maximum with care. GitHub's timestamps can be wrong: on 2026-11-01 at 08:00 UTC, jobs running at that moment reported an end 60 minutes late, so a job of a few seconds shows as an hour. The p90 and the budget aren't affected by a single run like that; to check one, compare the job's end with its step times.

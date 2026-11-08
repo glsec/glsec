@@ -62,7 +62,7 @@
       "items": { "type": "string" }
     },
     "shellcheck": {
-      "description": "ShellCheck integration: lint the shell in script:, before_script: and after_script:.",
+      "description": "ShellCheck integration: lint the shell in script:, before_script:, after_script:, hooks:pre_get_sources_script: and run: steps.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
