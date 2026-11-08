@@ -78,7 +78,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	gitlabVersionFlag := flags.String("gitlab-version", "", "target GitLab version, e.g. 16.0 (skips rules not available in that version)")
 	strictFlag := flags.Bool("strict", false, "treat warn findings as errors for the exit code (output severity is unchanged)")
 	noExitCodesFlag := flags.Bool("no-exit-codes", false, "always exit 0 on successful execution, regardless of findings")
-	generateIgnoreFlag := flags.Bool("generate-ignore", false, "write all current findings to .glsec-ignore as a baseline and exit 0")
+	generateIgnoreFlag := flags.Bool("generate-ignore", false, "write all current findings to .glsec-ignore as a baseline and exit 0 (2 on scan errors, writing nothing)")
 	noRepoConfigFlag := flags.Bool("no-repo-config", false, "ignore a .glsec.yml in the working directory; only a file passed with --config is read")
 	noIgnoresFlag := flags.Bool("no-ignores", false, "audit mode: bypass all glsec suppressions (inline # glsec:ignore directives and the .glsec-ignore baseline) for this run; report every finding")
 	newOnlyFlag := flags.Bool("new-only", false, "report (and fail) only on findings absent from the baseline; defaults to the .glsec-ignore baseline unless --baseline is given")

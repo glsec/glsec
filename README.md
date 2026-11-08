@@ -139,7 +139,7 @@ How glsec reads YAML anchors, `!reference`, `include: local` and child pipelines
 
 ## ShellCheck integration
 
-glsec can pass `script:`, `before_script:` and `after_script:` to [ShellCheck](https://www.shellcheck.net/) for deeper shell analysis (`shellcheck: {enabled: true}` in `.glsec.yml`). See [ShellCheck integration](docs/shellcheck.md).
+glsec can pass `script:`, `before_script:`, `after_script:`, `hooks:pre_get_sources_script:` and `run:` steps to [ShellCheck](https://www.shellcheck.net/) for deeper shell analysis (`shellcheck: {enabled: true}` in `.glsec.yml`). See [ShellCheck integration](docs/shellcheck.md).
 
 ## CI integration
 
