@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"path"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -52,6 +53,7 @@ func (r *gl021) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
 	// An item shared by several jobs through an anchor is checked once (#766).
 	seen := map[*yaml.Node]bool{}
+	in := NewInheritance(doc)
 
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
 		scriptNodes := []*yaml.Node{
@@ -80,6 +82,12 @@ func (r *gl021) Check(doc *yaml.Node, file string) []finding.Finding {
 					if ok {
 						message = fmt.Sprintf("script prints secret variable %s — value may appear in job logs", match)
 					} else if credentialFile := printedCredentialFile(line); credentialFile != "" {
+						// A file the job writes with a placeholder holds no
+						// token (#1285).
+						if placeholderRCFiles[strings.ToLower(path.Base(credentialFile))] &&
+							jobWritesPlaceholderOnly(in, job, normalizeWritePath(credentialFile)) {
+							continue
+						}
 						message = fmt.Sprintf("script prints credential file %s — its contents may appear in job logs", credentialFile)
 					} else {
 						continue
@@ -137,7 +145,7 @@ func printedCredentialFile(line string) string {
 			continue
 		}
 		masked := maskShellQuotes(cmd.text)
-		if stdoutRedirectRe.MatchString(masked) || strings.Contains(masked, "&>") {
+		if stdoutRedirectRe.MatchString(masked) || strings.Contains(masked, "&>") || fewBytes(words) {
 			continue
 		}
 		if cmd.piped {
@@ -169,6 +177,33 @@ func printedCredentialFile(line string) string {
 		}
 	}
 	return ""
+}
+
+// fewBytes reports head or tail printing at most 16 bytes, which checks a
+// file without showing a token: head -c 5, tail --bytes=5 (#1285). tail -c +N
+// prints from byte N to the end and counts as a print.
+func fewBytes(words []string) bool {
+	switch commandName(words) {
+	case "head", "tail":
+	default:
+		return false
+	}
+	for i, w := range words[1:] {
+		n := ""
+		switch {
+		case (w == "-c" || w == "--bytes") && i+2 < len(words):
+			n = words[i+2]
+		case strings.HasPrefix(w, "--bytes="):
+			n = strings.TrimPrefix(w, "--bytes=")
+		case strings.HasPrefix(w, "-c") && len(w) > 2:
+			n = w[2:]
+		default:
+			continue
+		}
+		v, err := strconv.Atoi(n)
+		return err == nil && n[0] != '+' && n[0] != '-' && v <= 16
+	}
+	return false
 }
 
 // gl021InSubstitution reports whether a command begins inside $(...).

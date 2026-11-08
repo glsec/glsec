@@ -404,7 +404,10 @@ func mentionsPath(words []string, target string) bool {
 // readsOrTouches are commands that name the file without putting text in it:
 // the test in GitLab's npm snippet, `if [[ ! -f .npmrc ]]; then touch .npmrc;
 // fi`, keeps a committed file, like the >> that follows it (#1171).
-var readsOrTouches = map[string]bool{"[": true, "[[": true, "test": true, "touch": true}
+var readsOrTouches = map[string]bool{
+	"[": true, "[[": true, "test": true, "touch": true,
+	"cat": true, "head": true, "tail": true, "less": true, "more": true, // printing it, which is GL021's
+}
 
 // normalizeWritePath maps the spellings of a project-relative path to one:
 // ./.npmrc, $CI_PROJECT_DIR/.npmrc and .npmrc are the same file.
