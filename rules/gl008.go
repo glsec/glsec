@@ -154,8 +154,8 @@ func (r *gl008) checkAllowFailure(name, job *yaml.Node, file string) []finding.F
 	if af == nil {
 		return nil
 	}
-	// Only flag scalar `true`; allow_failure: {exit_codes: [...]} is intentional.
-	if af.Kind != yaml.ScalarNode || af.Value != "true" {
+	// Only flag a boolean true; allow_failure: {exit_codes: [...]} is intentional.
+	if !parser.IsTrue(af) {
 		return nil
 	}
 	return []finding.Finding{{
