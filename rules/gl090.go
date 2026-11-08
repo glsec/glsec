@@ -75,7 +75,9 @@ var lifecycleEcosystems = [...]lifecycleEcosystem{
 				return npmInstallCmds[subcommand(w)]
 			case "yarn":
 				switch subcommand(w) {
-				case "", "install", "add":
+				case "":
+					return !printsInfo(w)
+				case "install", "add":
 					return true
 				}
 			}
@@ -118,7 +120,9 @@ var lifecycleEcosystems = [...]lifecycleEcosystem{
 			switch commandName(w) {
 			case "bundle", "bundler":
 				switch subcommand(w) {
-				case "", "install":
+				case "":
+					return !printsInfo(w)
+				case "install":
 					return true
 				}
 			}
@@ -425,6 +429,19 @@ func rubyPublishes(w []string) bool {
 
 // subcommand returns the first word after the program that is not an
 // option, or "" when there is none (a bare yarn).
+// printsInfo reports a command that only prints its version or help, such as
+// yarn --version: with no subcommand it would otherwise read as a bare yarn,
+// which installs (#1275).
+func printsInfo(words []string) bool {
+	for _, w := range words[1:] {
+		switch w {
+		case "--version", "-v", "--help", "-h":
+			return true
+		}
+	}
+	return false
+}
+
 func subcommand(words []string) string {
 	for _, w := range words[1:] {
 		if !strings.HasPrefix(w, "-") {

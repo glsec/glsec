@@ -53,6 +53,14 @@ publish:
     - yarn
     - yarn publish --non-interactive
 `, 1},
+		// A version or help flag alone installs nothing (#1275).
+		{"yarn --version + npm publish", `
+publish:
+  script:
+    - yarn --version
+    - yarn -v
+    - npm publish
+`, 0},
 		{"install in before_script, publish in script", `
 publish:
   before_script:
@@ -468,6 +476,13 @@ release:
     - gem build mygem.gemspec
     - gem push mygem-*.gem
 `, 1},
+		{"bundle --version + gem push", `
+release:
+  script:
+    - bundle --version
+    - bundle -h
+    - gem push mygem-*.gem
+`, 0},
 		{"bare bundle + bundle exec rake release", `
 release:
   script:
