@@ -4,6 +4,7 @@
 package rules
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -499,5 +500,43 @@ build:
 `)
 	if len(f) != 0 {
 		t.Errorf("expected no finding for git clone HTTP://, got %d", len(f))
+	}
+}
+
+// A probe that throws the response away fetches nothing to trust (#1279).
+func TestGL016_Probes(t *testing.T) {
+	for line, want := range map[string]int{
+		`timeout 60s sh -c 'until curl -sf http://example.com/health > /dev/null; do sleep 1; done'`: 0,
+		`wget --spider http://example.com/`:                         0,
+		`wget -q -O /dev/null http://example.com/`:                  0,
+		`curl -s -o /dev/null http://example.com/`:                  0,
+		`curl -s -w '%{http_code}' http://example.com/`:             1,
+		`curl -s -o resp.txt -w '%{http_code}' http://example.com/`: 1,
+		`curl -I http://example.com/`:                               0,
+		`curl -fsS http://example.com/health 1>/dev/null`:           0,
+		`curl -s http://example.com/health 2>/dev/null`:             1,
+		`curl -s http://example.com/install.sh > /dev/null | sh`:    1,
+		`curl -s http://example.com/install.sh | sh > /dev/null`:    1,
+		`curl -sO http://example.com/tool.tar.gz > /dev/null`:       1,
+		`curl -o tool.tgz http://example.com/tool.tgz > /dev/null`:  1,
+		`wget http://example.com/tool.tgz > /dev/null`:              1,
+		`curl -s http://example.com/`:                               1,
+	} {
+		t.Run(line, func(t *testing.T) {
+			if f := findings016(t, fmt.Sprintf("job:\n  script:\n    - %q\n", line)); len(f) != want {
+				t.Fatalf("got %v, want %d findings", f, want)
+			}
+		})
+	}
+}
+
+func TestGL016_ProbeOptionClusters(t *testing.T) {
+	for line, want := range map[string]int{
+		`curl -so /dev/null http://example.com/`:      0,
+		`curl -sSo tool.tgz http://example.com/x.tgz`: 1,
+	} {
+		if f := findings016(t, fmt.Sprintf("job:\n  script:\n    - %q\n", line)); len(f) != want {
+			t.Errorf("%s: got %v, want %d findings", line, f, want)
+		}
 	}
 }
