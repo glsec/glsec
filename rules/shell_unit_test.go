@@ -43,6 +43,11 @@ func TestCommandWords_Prefixes(t *testing.T) {
 	}{
 		{"curl -fsSL x", []string{"curl", "-fsSL", "x"}},
 		{"if curl x", []string{"curl", "x"}},
+		// The substitution ends at its ) (#1281).
+		{"$(curl -sSL u) -a x -o AutoDetect", []string{"curl", "-sSL", "u"}},
+		{"V=$(curl -sSL u)", []string{"curl", "-sSL", "u"}},
+		{"V=$(curl -sSL u )", []string{"curl", "-sSL", "u"}},
+		{"V=$(echo $(date) x) y", []string{"echo", "$(date)", "x"}},
 		{"export A=1", nil},
 		{"A=1 B=2 make all", []string{"make", "all"}},
 		{"env make", []string{"make"}},
