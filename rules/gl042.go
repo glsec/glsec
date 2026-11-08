@@ -241,8 +241,18 @@ func checkInsecureRegistry(services *yaml.Node, file, job string) []finding.Find
 			if args == nil || args.Kind != yaml.SequenceNode {
 				continue
 			}
-			for _, arg := range args.Content {
-				if strings.HasPrefix(arg.Value, "--insecure-registry") {
+			for i, arg := range args.Content {
+				if !strings.HasPrefix(arg.Value, "--insecure-registry") {
+					continue
+				}
+				// The runner passes services:command and entrypoint to the
+				// container unexpanded, so a $VAR value reaches dockerd as
+				// literal text and names no registry (#1273).
+				value, ok := strings.CutPrefix(arg.Value, "--insecure-registry=")
+				if !ok && i+1 < len(args.Content) {
+					value = args.Content[i+1].Value
+				}
+				if !strings.Contains(value, "$") {
 					findings = append(findings, finding.Finding{
 						RuleID:   "GL042",
 						Severity: finding.Warn,
