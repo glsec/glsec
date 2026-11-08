@@ -123,8 +123,8 @@ func (r *gl062) Check(doc *yaml.Node, file string) []finding.Finding {
 			}
 			msg := fmt.Sprintf("%s dumps every environment variable to the job log, including CI/CD secrets and tokens that may not be reliably masked — print only the specific variables you need", dump)
 			if cmd.piped && ci+1 < len(cmds) {
-				if filter, pattern, ok := envFilter(cmds[ci+1].text); ok {
-					if narrowEnvFilter(pattern) {
+				if filter, pattern, names, ok := envFilter(cmds[ci+1].text); ok {
+					if narrowEnvFilter(names) {
 						continue // env | grep THREADS: one variable, like printenv THREADS (#996)
 					}
 					name := dump
@@ -167,45 +167,100 @@ var (
 )
 
 // envFilter returns the filter in a pipeline stage after a dump, named for the
-// message, and the pattern it selects variables by.
-func envFilter(cmd string) (filter, pattern string, ok bool) {
-	if p, ok := grepPattern(cmd); ok {
-		return "grep", p, true
+// message, the pattern it selects variables by, and the alternatives a
+// variable name has to match; names is empty for a filter that may print any
+// variable, such as grep -v.
+func envFilter(cmd string) (filter, pattern string, names []string, ok bool) {
+	if p, names, ok := grepPattern(cmd); ok {
+		return "grep", p, names, true
 	}
 	if m := psSelectStringRe.FindStringSubmatch(cmd); m != nil {
-		return "Select-String", m[1], true
+		return "Select-String", m[1], []string{m[1]}, true
 	}
 	if m := psWhereNameRe.FindStringSubmatch(cmd); m != nil {
-		return "Where-Object", m[1] + m[2], true
+		return "Where-Object", m[1] + m[2], []string{m[1] + m[2]}, true
 	}
-	return "", "", false
+	return "", "", nil, false
 }
 
-// grepPattern returns the pattern a grep, egrep or fgrep command filters by.
-func grepPattern(cmd string) (string, bool) {
+// grepPattern returns the patterns a grep, egrep or fgrep command filters by,
+// joined for the message, and their alternatives: every -e, split at | for
+// -E and at \| for a basic regexp (#1277). An inverted match has none, since
+// it prints every variable but the ones named.
+func grepPattern(cmd string) (pattern string, names []string, ok bool) {
 	words := commandWords(cmd)
-	switch commandName(words) {
+	name := commandName(words)
+	switch name {
 	case "grep", "egrep", "fgrep":
 	default:
-		return "", false
+		return "", nil, false
 	}
+	extended, fixed, inverted := name == "egrep", name == "fgrep", false
+	var patterns []string
 	for i := 1; i < len(words); i++ {
 		w := words[i]
 		switch {
 		case w == "-e" && i+1 < len(words):
-			return words[i+1], true
+			i++
+			patterns = append(patterns, words[i])
+		case w == "--extended-regexp":
+			extended = true
+		case w == "--fixed-strings":
+			fixed = true
+		case w == "--invert-match":
+			inverted = true
+		case strings.HasPrefix(w, "--"):
 		case strings.HasPrefix(w, "-"):
-		default:
-			return w, true
+			extended = extended || strings.Contains(w, "E")
+			fixed = fixed || strings.Contains(w, "F")
+			inverted = inverted || strings.Contains(w, "v")
+		case len(patterns) == 0:
+			patterns = append(patterns, w)
 		}
 	}
-	return "", false
+	if len(patterns) == 0 {
+		return "", nil, false
+	}
+	if !inverted {
+		for _, p := range patterns {
+			names = append(names, grepAlternatives(p, extended, fixed)...)
+		}
+	}
+	return strings.Join(patterns, " "), names, true
 }
 
-// narrowEnvFilter reports a grep pattern that selects variables a dump
-// prints harmlessly: a literal name without a secret-like word, not the CI
-// prefix whose variables include the job's tokens.
-func narrowEnvFilter(pattern string) bool {
+// grepAlternatives splits a pattern into the names it matches: ^(A|B)= is A
+// and B.
+func grepAlternatives(p string, extended, fixed bool) []string {
+	sep := `\|`
+	switch {
+	case fixed:
+		return []string{p}
+	case extended:
+		sep = "|"
+		if t := strings.TrimSuffix(strings.TrimPrefix(p, "^"), "="); strings.HasPrefix(t, "(") && strings.HasSuffix(t, ")") {
+			p = t[1 : len(t)-1]
+		}
+	}
+	return strings.Split(p, sep)
+}
+
+// narrowEnvFilter reports a filter that selects variables a dump prints
+// harmlessly: every alternative is a literal name without a secret-like
+// word, not the CI prefix whose variables include the job's tokens.
+func narrowEnvFilter(names []string) bool {
+	if len(names) == 0 {
+		return false
+	}
+	for _, n := range names {
+		if !narrowEnvName(n) {
+			return false
+		}
+	}
+	return true
+}
+
+func narrowEnvName(pattern string) bool {
 	name := strings.TrimSuffix(strings.TrimPrefix(pattern, "^"), "=")
 	if !envFilterNameRe.MatchString(name) || strings.HasPrefix(strings.ToUpper(name), "CI") || strings.HasPrefix(strings.ToUpper(name), "GITLAB") {
 		return false
