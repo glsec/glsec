@@ -24,6 +24,11 @@ var literalWriters = map[string]bool{"echo": true, "printf": true}
 
 var rcVarRefRe = regexp.MustCompile(`^\$\{?([A-Za-z_][A-Za-z0-9_]*)`)
 
+// rcCredentialKeyRe matches the npm and Yarn keys whose value is a credential.
+// Any variable expanded after one is a secret, whatever its name: $TOKEN, or
+// $T set from $NPM_TOKEN earlier.
+var rcCredentialKeyRe = regexp.MustCompile(`(?i)(?:_authToken|_auth|_password)\s*=|npmAuth(?:Token|Ident)\s*:`)
+
 // writesPlaceholderOnly reports whether artifactPath, an npm or Yarn config
 // file listed in the artifacts block, is written by the script of every job
 // that uploads it with literal text expanding no secret-like variable:
@@ -124,6 +129,11 @@ func jobScriptItems(in *Inheritance, job *yaml.Node) (items []string, ok bool) {
 // with a command whose output glsec can't see, changes directory, or may
 // write it through npm or Yarn themselves.
 func placeholderWrites(item, target string) (wrote, ok bool) {
+	// shellCommands splits "$(… | …)" at the pipe, which hides the redirect
+	// after it, so an item naming the file with a substitution is unreadable.
+	if strings.Contains(item, path.Base(target)) && substitutes(item) {
+		return false, false
+	}
 	cmds := shellCommands(item)
 	for i, c := range cmds {
 		words := withoutSudo(commandWords(c.text))
@@ -144,6 +154,11 @@ func placeholderWrites(item, target string) (wrote, ok bool) {
 			}
 			continue
 		}
+		// A group closed inside the command, as in `(echo …; echo b) > f`,
+		// starts in an earlier command that isn't read as part of it.
+		if t := strings.TrimSpace(c.text); !strings.HasPrefix(t, "}") && !strings.HasPrefix(t, ")") && closesGroup(t) {
+			return false, false
+		}
 		content, literal := writtenContent(item, cmds, i, name)
 		if !literal || expandsSecret(content.text, content.heredoc) {
 			return false, false
@@ -153,25 +168,61 @@ func placeholderWrites(item, target string) (wrote, ok bool) {
 	return wrote, true
 }
 
-// rcWritingSubcommand reports `npm config set`, `npm set`, `npm login` and the
-// like, which write a config file themselves, possibly the project's.
+// rcWritingSubcommand reports `npm config set`, `npm set`, `npm login`,
+// `yarn npm login` and the like, which write a config file themselves,
+// possibly the project's. Any word counts, since a flag such as --location
+// takes a value that would otherwise read as the subcommand.
 func rcWritingSubcommand(args []string) bool {
-	for i, a := range args {
-		if strings.HasPrefix(a, "-") {
-			continue
-		}
+	for _, a := range args {
 		switch a {
 		case "set", "login", "adduser", "add-user":
 			return true
-		case "config", "c":
-			for _, b := range args[i+1:] {
-				if !strings.HasPrefix(b, "-") {
-					return b == "set"
-				}
-			}
-			return false
 		}
-		return false
+	}
+	return false
+}
+
+// closesGroup reports whether text, outside quotes, closes a ) or } it didn't
+// open.
+func closesGroup(text string) bool {
+	depth := 0
+	for _, c := range maskShellQuotes(text) {
+		switch c {
+		case '(', '{':
+			depth++
+		case ')', '}':
+			if depth == 0 {
+				return true
+			}
+			depth--
+		}
+	}
+	return false
+}
+
+// substitutes reports a $( or backtick outside single quotes.
+func substitutes(text string) bool {
+	var quote byte
+	for i := 0; i < len(text); i++ {
+		c := text[i]
+		switch {
+		case quote == '\'':
+			if c == '\'' {
+				quote = 0
+			}
+		case c == '\\':
+			i++
+		case c == '"':
+			if quote == '"' {
+				quote = 0
+			} else {
+				quote = c
+			}
+		case c == '\'' && quote == 0:
+			quote = c
+		case c == '`' || c == '$' && strings.HasPrefix(text[i:], "$("):
+			return true
+		}
 	}
 	return false
 }
@@ -370,14 +421,21 @@ func normalizeWritePath(p string) string {
 	}
 }
 
-// expandsSecret reports whether text expands a secret-like variable, or a
-// command substitution whose output glsec can't see. Single-quoted text and
-// \$ are literal. In a here-document body (heredoc) quotes are literal too,
-// so only \$ is.
+// expandsSecret reports whether text expands a secret-like variable, any
+// variable in the value of a credential key, or a command substitution whose
+// output glsec can't see. Single-quoted text and \$ are literal. In a
+// here-document body (heredoc) quotes are literal too, so only \$ is.
 func expandsSecret(text string, heredoc bool) bool {
 	var quote byte
+	// The value of a credential key runs to the end of the line, or outside
+	// quotes to a redirect or command separator: in `echo "_authToken=x" >
+	// "$CI_PROJECT_DIR/.npmrc"` the path is no value.
+	valueStart := 0
 	for i := 0; i < len(text); i++ {
 		c := text[i]
+		if c == '\n' || quote == 0 && !heredoc && strings.IndexByte(";|&<>", c) >= 0 {
+			valueStart = i + 1
+		}
 		switch {
 		case quote == '\'':
 			if c == '\'' {
@@ -399,7 +457,7 @@ func expandsSecret(text string, heredoc bool) bool {
 				return true
 			}
 			if m := rcVarRefRe.FindStringSubmatch(text[i:]); m != nil {
-				if isSecretName(m[1]) || predefinedSecrets[m[1]] {
+				if isSecretName(m[1]) || predefinedSecrets[m[1]] || rcCredentialKeyRe.MatchString(text[valueStart:i]) {
 					return true
 				}
 			}
