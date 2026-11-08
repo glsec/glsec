@@ -390,7 +390,7 @@ func redirectTargets(text string) []string {
 // mentionsPath reports whether a word of the command names target, as in
 // `cp ~/.npmrc .npmrc` or `sed -i … .npmrc`.
 func mentionsPath(words []string, target string) bool {
-	if len(words) == 0 || literalWriters[commandName(words)] {
+	if len(words) == 0 || literalWriters[commandName(words)] || readsOrTouches[commandName(words)] {
 		return false
 	}
 	for _, w := range words[1:] {
@@ -400,6 +400,11 @@ func mentionsPath(words []string, target string) bool {
 	}
 	return false
 }
+
+// readsOrTouches are commands that name the file without putting text in it:
+// the test in GitLab's npm snippet, `if [[ ! -f .npmrc ]]; then touch .npmrc;
+// fi`, keeps a committed file, like the >> that follows it (#1171).
+var readsOrTouches = map[string]bool{"[": true, "[[": true, "test": true, "touch": true}
 
 // normalizeWritePath maps the spellings of a project-relative path to one:
 // ./.npmrc, $CI_PROJECT_DIR/.npmrc and .npmrc are the same file.

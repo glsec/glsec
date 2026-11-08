@@ -633,6 +633,9 @@ func TestGL005_PlaceholderRCFile(t *testing.T) {
 		{"endpoint before the key", `echo "${NPM_PROJECT_LEVEL_ENDPOINT}:_authToken=\${TOKEN}" > .npmrc`, ".npmrc", false},
 		{"npm config set after a flag value", `npm --location project config set //r/:_authToken x`, ".npmrc", true},
 		{"yarn npm login", `yarn npm login --scope s`, ".npmrc", true},
+		{"file test and touch", "if [[ ! -f .npmrc ]]; then\n  touch .npmrc\nfi\necho '//r/:_authToken=${NPM_TOKEN}' >> .npmrc", ".npmrc", false},
+		{"test command", `test -f .npmrc || echo '//r/:_authToken=${NPM_TOKEN}' > .npmrc`, ".npmrc", false},
+		{"touch only", `touch .npmrc`, ".npmrc", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := findings005(t, fmt.Sprintf("build:\n  script:\n    - %q\n  artifacts:\n    paths: [%q]\n    expire_in: 1 day\n", tc.script, tc.path))
