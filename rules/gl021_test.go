@@ -553,3 +553,31 @@ func TestGroupOutputDiverted_Escape(t *testing.T) {
 		t.Error("the group's output goes to .npmrc")
 	}
 }
+
+// A credential file printed without a token in it, or only a few bytes of
+// it, reveals nothing (#1285).
+func TestGL021_HarmlessCredentialFilePrints(t *testing.T) {
+	for name, tc := range map[string]struct {
+		script string
+		want   int
+	}{
+		"placeholder single quoted": {"- echo '//r/:_authToken=${CI_JOB_TOKEN}' > .npmrc\n    - cat .npmrc", 0},
+		"placeholder escaped":       {"- echo \"//r/:_authToken=\\${CI_JOB_TOKEN}\" >> .npmrc\n    - cat .npmrc", 0},
+		"expanded token":            {"- echo \"//r/:_authToken=${NPM_TOKEN}\" > .npmrc\n    - cat .npmrc", 1},
+		"not written":               {"- cat .npmrc", 1},
+		"npm config set":            {"- npm config set //r/:_authToken x\n    - echo '//r/:_authToken=${T}' > .npmrc\n    - cat .npmrc", 1},
+		"pypirc placeholder":        {"- echo 'password = ${PYPI_TOKEN}' > .pypirc\n    - cat .pypirc", 1},
+		"head -c 5":                 {"- head -c 5 .pypirc", 0},
+		"tail -c5":                  {"- tail -c5 .pypirc", 0},
+		"tail --bytes=16":           {"- tail --bytes=16 .pypirc", 0},
+		"tail -c 17":                {"- tail -c 17 .pypirc", 1},
+		"tail -c +5":                {"- tail -c +5 .pypirc", 1},
+		"head -n 5":                 {"- head -n 5 .pypirc", 1},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if f := checkRule(t, GL021, "job:\n  script:\n    "+tc.script+"\n"); len(f) != tc.want {
+				t.Fatalf("got %v, want %d findings", f, tc.want)
+			}
+		})
+	}
+}
