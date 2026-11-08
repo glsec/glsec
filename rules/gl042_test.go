@@ -235,6 +235,11 @@ func TestGL042_InsecureRegistryInServices(t *testing.T) {
 		{"default", "default:\n  services:\n    - name: docker:27-dind\n      command: [\"--insecure-registry=registry.example.com\"]\njob:\n  script: [make]\n", 1},
 		{"other flag", "job:\n  services:\n    - name: docker:27-dind\n      command: [\"--tlsverify\"]\n  script: [make]\n", 0},
 		{"plain service", "job:\n  services:\n    - postgres:16\n  script: [make]\n", 0},
+		{"two elements", "job:\n  services:\n    - name: docker:27-dind\n      command: [\"--insecure-registry\", \"registry.example.com\"]\n  script: [make]\n", 1},
+		// The runner doesn't expand services:command, so dockerd gets the
+		// literal $VAR (#1273).
+		{"variable", "job:\n  services:\n    - name: docker:27-dind\n      command: [\"--insecure-registry=$CONTAINER_REGISTRY_URL\"]\n  script: [make]\n", 0},
+		{"variable, two elements", "job:\n  services:\n    - name: docker:27-dind\n      command: [\"--insecure-registry\", \"${REGISTRY}:5000\"]\n  script: [make]\n", 0},
 		{"shared through an anchor", ".s: &s\n  - name: docker:27-dind\n    command: [\"--insecure-registry=r\"]\na:\n  services: *s\n  script: [make]\nb:\n  services: *s\n  script: [make]\n", 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
