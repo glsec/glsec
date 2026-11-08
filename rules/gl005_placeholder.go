@@ -136,7 +136,7 @@ func placeholderWrites(item, target string) (wrote, ok bool) {
 	}
 	cmds := shellCommands(item)
 	for i, c := range cmds {
-		words := withoutSudo(commandWords(c.text))
+		words := commandWords(c.text)
 		name := commandName(words)
 		switch name {
 		case "cd", "pushd", "popd":
@@ -259,7 +259,7 @@ func writtenContent(item string, cmds []shellCommand, i int, name string) (rcCon
 			if opener {
 				depth--
 			}
-			if j != i && commandName(withoutSudo(commandWords(mt))) != "" {
+			if j != i && commandName(commandWords(mt)) != "" {
 				content, ok := literalCommand(item, mt)
 				if !ok {
 					return rcContent{}, false
@@ -280,7 +280,7 @@ func writtenContent(item string, cmds []shellCommand, i int, name string) (rcCon
 // For an unquoted here-document the whole item stands in for its body, which
 // shellCommands drops.
 func literalCommand(item, text string) (rcContent, bool) {
-	name := commandName(withoutSudo(commandWords(text)))
+	name := commandName(commandWords(text))
 	if literalWriters[name] {
 		return rcContent{text: text}, true
 	}
@@ -305,7 +305,7 @@ func literalCommand(item, text string) (rcContent, bool) {
 // whether it writes a path glsec can't resolve, such as "$NPMRC".
 func writeTargets(text string, words []string, name, target string) (hits, unknown bool) {
 	var paths []string
-	paths = append(paths, redirectTargets(text)...)
+	paths = append(paths, rcRedirectTargets(text)...)
 	if name == "tee" {
 		for _, w := range words[1:] {
 			if !strings.HasPrefix(w, "-") && !isRedirectWord(w) {
@@ -329,10 +329,10 @@ func isRedirectWord(w string) bool {
 	return strings.ContainsAny(w, "<>")
 }
 
-// redirectTargets returns the files a command's output redirections write:
+// rcRedirectTargets returns the files a command's output redirections write:
 // `> f`, `>> f`, `>| f`, `2> f`, `&> f`. Duplications such as 2>&1 are not
 // files.
-func redirectTargets(text string) []string {
+func rcRedirectTargets(text string) []string {
 	var out []string
 	var quote byte
 	for i := 0; i < len(text); i++ {
