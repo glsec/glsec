@@ -5,14 +5,17 @@ package parser
 
 import "gopkg.in/yaml.v3"
 
-// DuplicateKey is a mapping key that appears again later in the same mapping.
-// GitLab loads the file with Ruby's YAML.safe_load, where the later entry
+// DuplicateKey is a mapping key that appears again later in the same mapping,
+// or that a later merge key overrides. GitLab loads the file with Ruby's YAML.safe_load, where the later entry
 // overwrites the earlier one without an error.
 type DuplicateKey struct {
 	// Key is the earlier key, whose value GitLab ignores.
 	Key *yaml.Node
 	// Winner is the last key with the same name, whose value GitLab uses.
 	Winner *yaml.Node
+	// Merge is the << that brought Winner in, when a merged key overrides a
+	// key written before it (#1152). The key stays out of the tree as well.
+	Merge *yaml.Node
 	// Job is the top-level key the duplicate sits under, or the duplicated
 	// top-level key itself; empty for reserved keys such as variables:.
 	Job string
@@ -24,8 +27,8 @@ type DuplicateKey struct {
 // CollapseDuplicateKeys removes every key that appears again later in the
 // same mapping, with its value, so that the tree holds what GitLab runs: the
 // last value, at its own position (#633). It returns the removed keys. Merge
-// keys (<<) are left alone; ExpandAliases lets explicit keys override them
-// whatever their order. It must run before ExpandAliases, so that an anchor is
+// keys (<<) are left alone; ExpandAliases folds them in document order. It
+// must run before ExpandAliases, so that an anchor is
 // collapsed once and every alias of it sees the result.
 // firstAnchor returns the anchor on n or, depth first, on a node inside it
 // (#1005): an alias of a nested anchor still uses that part of the value.

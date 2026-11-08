@@ -4,7 +4,6 @@
 package rules
 
 import (
-	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -19,7 +18,7 @@ var GL050 = &gl050{}
 func (r *gl050) ID() string { return "GL050" }
 
 // sudoSubstRe matches sudo run inside a command substitution: test $(sudo …).
-var sudoSubstRe = regexp.MustCompile("(?:\\$\\(|`)\\s*sudo\\b")
+var sudoSubstRe = mustCompilePrefiltered("(?:\\$\\(|`)\\s*sudo\\b")
 
 func (r *gl050) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
@@ -27,11 +26,13 @@ func (r *gl050) Check(doc *yaml.Node, file string) []finding.Finding {
 		// Only sudo as the command a line runs counts: not the sudo package in
 		// an install list, and not the word in text a heredoc writes.
 		for _, cmd := range shellCommands(line.Value) {
-			words := commandWords(cmd.text)
-			if commandName(words) != "sudo" && !sudoSubstRe.MatchString(maskSingleQuoted(cmd.text)) {
-				continue
+			words := unwrapUntil(shellWords(cmd.text), "sudo")
+			dropped := false
+			for commandName(words) == "sudo" && sudoDropsPrivileges(words[1:]) {
+				words = unwrapUntil(commandWrappers["sudo"].skip(words[1:]), "sudo")
+				dropped = true
 			}
-			if commandName(words) == "sudo" && sudoDropsPrivileges(words[1:]) {
+			if commandName(words) != "sudo" && (dropped || !sudoSubstRe.MatchString(maskSingleQuoted(cmd.text))) {
 				continue
 			}
 			f := finding.Finding{

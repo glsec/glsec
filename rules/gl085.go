@@ -22,7 +22,7 @@ func (r *gl085) ID() string { return "GL085" }
 // agentCmdRe finds a coding-agent CLI in command position: at the start of a
 // command, after npx/bunx/pnpm dlx/exec/timeout/sudo, behind a package scope or
 // a path, and after leading VAR=value assignments.
-var agentCmdRe = regexp.MustCompile(
+var agentCmdRe = mustCompilePrefiltered(
 	`(?:^|[;&|(]|\$\()\s*(?:\w+=\S*\s+)*` +
 		`(?:(?:npx|bunx)\s+(?:-y\s+|--yes\s+)?|pnpm\s+dlx\s+|exec\s+|timeout\s+\S+\s+|sudo\s+)?` +
 		`(?:@[\w.-]+/|[\w./-]*/)?` +
@@ -63,7 +63,7 @@ func (r *gl085) Check(doc *yaml.Node, file string) []finding.Finding {
 		found := agents.get(item, func() []agentLine {
 			var out []agentLine
 			for _, l := range logicalLines(item.Value) {
-				if f, ok := checkAgentLine(l.text); ok {
+				if f, ok := checkAgentLine(unwrappedLine(l.text)); ok {
 					f.line = l.line
 					out = append(out, f)
 				}

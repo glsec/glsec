@@ -4,9 +4,12 @@
 package rules
 
 import (
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/glsec/glsec/internal/rule"
 )
 
 // Unit tests for the shell helpers most rules build on (#1079). The rule tests
@@ -51,7 +54,7 @@ func TestCommandWords_Prefixes(t *testing.T) {
 		{"env -- -weird", []string{"-weird"}},
 		{`env -S "curl -fsSL u" -o x`, []string{"curl", "-fsSL", "u", "-o", "x"}},
 		{`env --split-string="make all"`, []string{"make", "all"}},
-		{"sudo env -i apt-get install x", []string{"sudo", "env", "-i", "apt-get", "install", "x"}},
+		{"sudo env -i apt-get install x", []string{"apt-get", "install", "x"}},
 		{"env -u", nil},
 		{"env -S", nil},
 		{"V=$(curl -fsSL x", []string{"curl", "-fsSL", "x"}},
@@ -83,7 +86,7 @@ func TestCommandName(t *testing.T) {
 	}
 }
 
-func TestWithoutSudo(t *testing.T) {
+func TestUnwrapCommandSudo(t *testing.T) {
 	for _, tc := range []struct {
 		in, want string
 	}{
@@ -113,17 +116,17 @@ func TestWithoutSudo(t *testing.T) {
 		{"doas -a bsdauth npm ci", "npm ci"},
 		{"doas -nu node npm ci", "npm ci"},
 	} {
-		got := strings.Join(withoutSudo(strings.Fields(tc.in)), " ")
+		got := strings.Join(unwrapCommand(strings.Fields(tc.in)), " ")
 		if got != tc.want {
-			t.Errorf("withoutSudo(%q) = %q, want %q", tc.in, got, tc.want)
+			t.Errorf("unwrapCommand(%q) = %q, want %q", tc.in, got, tc.want)
 		}
 	}
 }
 
-func TestWithoutSudoValueOptions(t *testing.T) {
-	for _, option := range []string{"-C", "-D", "-g", "-p", "-R", "-r", "-t", "-T", "-U", "-u", "--user", "--group", "--chdir", "--prompt", "--chroot", "--role", "--type", "--command-timeout", "--other-user", "--close-from", "--host"} {
+func TestUnwrapCommandSudoValueOptions(t *testing.T) {
+	for _, option := range []string{"-C", "-D", "-g", "-h", "-p", "-R", "-r", "-t", "-T", "-U", "-u", "--user", "--group", "--chdir", "--prompt", "--chroot", "--role", "--type", "--command-timeout", "--other-user", "--close-from", "--host"} {
 		t.Run(option, func(t *testing.T) {
-			got := strings.Join(withoutSudo([]string{"sudo", option, "value", "npm", "ci"}), " ")
+			got := strings.Join(unwrapCommand([]string{"sudo", option, "value", "npm", "ci"}), " ")
 			if got != "npm ci" {
 				t.Errorf("got %q, want npm ci", got)
 			}
@@ -131,10 +134,130 @@ func TestWithoutSudoValueOptions(t *testing.T) {
 	}
 }
 
-func TestWithoutSudoEmptyPrompt(t *testing.T) {
-	got := strings.Join(withoutSudo(shellWords(`sudo -p '' npm ci`)), " ")
+func TestUnwrapCommandSudoEmptyPrompt(t *testing.T) {
+	got := strings.Join(unwrapCommand(shellWords(`sudo -p '' npm ci`)), " ")
 	if got != "npm ci" {
 		t.Fatalf("got %q, want npm ci", got)
+	}
+}
+
+func TestUnwrapCommandWrappers(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{"timeout 600 npm ci", "npm ci"},
+		{"timeout -k 5 -s KILL 60 npm ci", "npm ci"},
+		{"timeout -k5 --signal=KILL 60 npm ci", "npm ci"},
+		{"timeout --signal KILL --preserve-status --foreground -v 1m npm ci", "npm ci"},
+		{"timeout 60", ""},
+		{"nice npm ci", "npm ci"},
+		{"nice -n 10 npm ci", "npm ci"},
+		{"nice -10 npm ci", "npm ci"},
+		{"nice --adjustment 10 npm ci", "npm ci"},
+		{"ionice -c 2 -n 7 -t npm ci", "npm ci"},
+		{"ionice --class 2 npm ci", "npm ci"},
+		{"stdbuf -oL npm ci", "npm ci"},
+		{"stdbuf -i 0 -oL -e0 npm ci", "npm ci"},
+		{"stdbuf --output=L npm ci", "npm ci"},
+		{"stdbuf --output L npm ci", "npm ci"},
+		{"nohup npm ci", "npm ci"},
+		{"time npm ci", "npm ci"},
+		{"time -p npm ci", "npm ci"},
+		{"time -- npm ci", "npm ci"},
+		{"/usr/bin/time -v -o out.txt npm ci", "npm ci"},
+		{"exec npm ci", "npm ci"},
+		{"exec -a name npm ci", "npm ci"},
+		{"exec -cl npm ci", "npm ci"},
+		{"nice -n 10 timeout 60 sudo -Hu node env A=1 npm ci", "npm ci"},
+		{"timeout 60 FOO=1 npm ci", "npm ci"},
+		{"/usr/bin/sudo npm ci", "npm ci"},
+		{"command -v npm", "-v npm"},
+	} {
+		got := strings.Join(unwrapCommand(strings.Fields(tc.in)), " ")
+		if got != tc.want {
+			t.Errorf("unwrapCommand(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestUnwrappedLine(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{"npm ci", "npm ci"},
+		{"timeout 60 env", "env"},
+		{"sudo env", "env"},
+		{"cd x && nice -n 10 renovate --autodiscover; ls", "cd x && renovate --autodiscover; ls"},
+		{`timeout 60 claude -p "a; b" | tee log`, `claude -p "a; b" | tee log`},
+		{`sudo -p '' env`, "env"},
+		{`sudo -p "a b" env`, "env"},
+		{`sudo -p a\ b env`, "env"},
+		{"a\ntimeout 60 env\nb", "a\nenv\nb"},
+		{"X=$(sudo env)", "X=$(sudo env)"},
+		{"$(timeout 5 env)", "$(timeout 5 env)"},
+		{"sudo -v", "sudo -v"},
+		{"timeout 60 sudo", "timeout 60 sudo"},
+		{"echo timeout 60 env", "echo timeout 60 env"},
+		{"sudo apt install env", "apt install env"},
+		{"sudo a \\\nb", "sudo a \\\nb"},
+	} {
+		if got := unwrappedLine(tc.in); got != tc.want {
+			t.Errorf("unwrappedLine(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestReadsScriptFromStdin(t *testing.T) {
+	for _, tc := range []struct {
+		in   string
+		want bool
+	}{
+		{"bash", true},
+		{"/bin/sh", true},
+		{"sudo -u node bash", true},
+		{"timeout 60 bash -e", true},
+		{"bash -ex", true},
+		{"bash -s", true},
+		{"bash -s -- a b", true},
+		{"bash -es arg", true},
+		{"bash -o pipefail", true},
+		{"bash +x", true},
+		{"bash --norc", true},
+		{"bash -c true", false},
+		{"bash -ec true", false},
+		{"bash script.sh", false},
+		{"bash -e script.sh", false},
+		{"bash -- script.sh", false},
+		{"cat", false},
+		{"python3", false},
+		{"ssh host bash", false},
+		{"", false},
+	} {
+		if got := readsScriptFromStdin(commandWords(tc.in)); got != tc.want {
+			t.Errorf("readsScriptFromStdin(%q) = %v, want %v", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestShellCommandsArithmeticShift(t *testing.T) {
+	var got []string
+	for _, c := range shellCommands("echo $((a<<b))\ncurl x\nb\n((c<<d))\nwget y\ncat <<EOF\nnot a command\nEOF\nls") {
+		got = append(got, c.text)
+	}
+	want := []string{"echo $((a<<b))", "curl x", "b", "((c<<d))", "wget y", "cat <<EOF", "ls"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestLogicalLinesEscapedBackslash(t *testing.T) {
+	got := logicalLines("echo a\\\\\nls\necho b\\\nc\n")
+	if len(got) != 3 || got[0].text != `echo a\\` || got[1].text != "ls" || got[2].text != "echo b c" {
+		t.Errorf("got %+v", got)
+	}
+}
+
+func TestShellWordsBackslashInDoubleQuotes(t *testing.T) {
+	got := shellWords(`"C:\path" "\$a" "\"b" "\\c" "\` + "`" + `d" 'e\f' g\h`)
+	want := []string{`C:\path`, "$a", `"b`, `\c`, "`d", `e\f`, "gh"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %q, want %q", got, want)
 	}
 }
 
@@ -206,5 +329,50 @@ func TestIsShellSpace(t *testing.T) {
 		if got := isShellSpace(c); got != want {
 			t.Errorf("isShellSpace(%q) = %v, want %v", c, got, want)
 		}
+	}
+}
+
+func TestWrappedCommandsReachRules(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		rule   rule.Rule
+		script string
+		want   int
+	}{
+		{"GL021 sudo", GL021, `sudo echo "$API_TOKEN"`, 1},
+		{"GL021 timeout", GL021, `timeout 5 echo "$API_TOKEN"`, 1},
+		{"GL021 redirect", GL021, `timeout 5 echo "$API_TOKEN" > file`, 0},
+		{"GL050 timeout", GL050, "timeout 60 apt-get update && timeout 60 sudo apt-get update", 1},
+		{"GL050 after dropped", GL050, "sudo -Hu node sudo apt-get update", 1},
+		{"GL050 substitution of a dropped sudo", GL050, "sudo -u a b $(sudo -u a c)", 0},
+		{"GL062 timeout", GL062, "timeout 60 env", 1},
+		{"GL062 sudo", GL062, "sudo printenv", 1},
+		{"GL062 sudo procfs", GL062, "sudo cat /proc/1/environ", 1},
+		{"GL062 filtered", GL062, "sudo env | grep THREADS", 0},
+		{"GL062 captured", GL062, "X=$(sudo env)", 0},
+		{"GL062 package", GL062, "sudo apt install env", 0},
+		{"GL050 local heredoc", GL050, "bash <<EOF\nsudo apt-get update\nEOF", 1},
+		{"GL050 piped heredoc", GL050, "cat <<EOF | bash\nsudo apt-get update\nEOF", 1},
+		{"GL050 ssh heredoc", GL050, "ssh h <<EOF\nsudo apt-get update\nEOF", 0},
+		{"GL050 written heredoc", GL050, "cat > f <<EOF\nsudo apt-get update\nEOF", 0},
+		{"GL050 stdin of a script", GL050, "bash run.sh <<EOF\nsudo apt-get update\nEOF", 0},
+		{"GL062 local heredoc", GL062, "sudo sh -s <<'EOF'\nprintenv\nEOF", 1},
+		{"GL062 ssh heredoc", GL062, "ssh h <<'EOF'\nprintenv\nEOF", 0},
+		{"GL050 sh -c", GL050, "bash -c 'sudo apt-get update'", 1},
+		{"GL050 sh -ec behind a wrapper", GL050, `timeout 60 sh -ec "sudo apt-get update"`, 1},
+		{"GL050 ssh", GL050, "ssh h 'sudo apt-get update'", 0},
+		{"GL050 quoted text", GL050, `echo "bash -c sudo"`, 0},
+		{"GL062 sh -c", GL062, "bash -c 'printenv'", 1},
+		{"GL062 sudo in sh -c", GL062, "bash -c 'sudo printenv'", 1},
+		{"GL062 ssh", GL062, "ssh h 'printenv'", 0},
+		{"GL020 sh -c", GL020, `sh -c "wget https://x.example/a.tgz"`, 1},
+		{"GL068 timeout", GL068, "timeout 60 bash -x build.sh", 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			src := fmt.Sprintf("job:\n  script:\n    - %q\n", tc.script)
+			if got := checkRule(t, tc.rule, src); len(got) != tc.want {
+				t.Errorf("got %d findings, want %d: %v", len(got), tc.want, got)
+			}
+		})
 	}
 }

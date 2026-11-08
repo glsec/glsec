@@ -34,6 +34,8 @@ type Document struct {
 	// in with `include: local` (#810): the pipeline's root document. The file
 	// is a fragment of that pipeline, like a component template.
 	IncludedBy *Document
+	// contextFiles are the other files WithContext took nodes from.
+	contextFiles []contextFile
 	// Includes lists the files this file pulls in with `include: local`, in
 	// the order of its include: list. A file several files include is listed
 	// in each of them; MergeOrder sorts that out.
@@ -106,8 +108,11 @@ func Parse(data []byte, file string) (*Document, error) {
 		doc.DuplicateKeys = append(doc.DuplicateKeys, d)
 	}
 	doc.DuplicateKeys = append(doc.DuplicateKeys, CollapseDuplicateKeys(doc.Root)...)
-	ExpandAliases(doc.Root)
-	ExpandAliases(doc.Spec)
+	doc.DuplicateKeys = append(doc.DuplicateKeys, ExpandAliases(doc.Root)...)
+	for _, d := range ExpandAliases(doc.Spec) {
+		d.Job = ""
+		doc.DuplicateKeys = append(doc.DuplicateKeys, d)
+	}
 	ResolveReferences(doc.Root)
 	markKeywordJobs(doc.Root)
 	NormalizeScripts(doc.Root)

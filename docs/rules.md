@@ -46,15 +46,15 @@ Mutable references that allow silent substitution of images, templates, or packa
 | ID | Severity | Description |
 |----|----------|-------------|
 | [GL001](rules/GL001.md) | `error`/`warn` | Mutable image tag (`latest`, no tag); version-less variants as `warn`; optionally require image digests with `require_image_digest` |
-| [GL003](rules/GL003.md) | `error` | Remote `include:` with mutable or missing `ref` |
+| [GL003](rules/GL003.md) | `error`/`warn` | Remote `include:` with mutable or missing `ref`; optionally require a full commit SHA on project includes with `require_include_sha` |
 | [GL011](rules/GL011.md) | `error` | Download-and-execute pattern in script (`curl \| bash`, `wget \| sh`) |
 | [GL016](rules/GL016.md) | varies  | Insecure transport — HTTP or `git://` (`include:remote`, scripts, variables) |
 | [GL022](rules/GL022.md) | `warn`  | Package manager install or fetch-and-run launcher (`npx -y`, `dlx`, `uvx`) without version pin, or explicit update-to-latest in CI |
-| [GL023](rules/GL023.md) | `warn`  | Lockfile not enforced (`npm install` instead of `npm ci`, `yarn install` without `--frozen-lockfile`, etc.) |
+| [GL023](rules/GL023.md) | `warn`  | Lockfile not enforced (`npm install` instead of `npm ci`, `yarn install` without `--frozen-lockfile`, `uv sync` without `--locked`, `bun install` instead of `bun ci`, etc.) |
 | [GL046](rules/GL046.md) | `error`/`warn` | Cache poisoning across the protected-branch boundary — `cache: key:` from a user-controlled variable, or `cache: unprotect: true` on a job that writes the cache |
 | [GL026](rules/GL026.md) | `warn`  | `git clone`/`checkout` uses a mutable ref (branch or tag) instead of a pinned commit SHA |
 | [GL064](rules/GL064.md) | `warn`  | `include: component:` path is one edit from a popular component under a different namespace (typosquat) |
-| [GL069](rules/GL069.md) | `warn`  | Package signature/auth verification bypassed (`apt --allow-unauthenticated`, `[trusted=yes]`, `apk --allow-untrusted`, `GOSUMDB=off`) |
+| [GL069](rules/GL069.md) | `warn`  | Package signature/auth verification bypassed (`apt --allow-unauthenticated`, `[trusted=yes]`, `apk --allow-untrusted`, `dnf --nogpgcheck`, `gpgcheck=0`, `zypper --no-gpg-checks`, pacman `SigLevel = Never`, `GOSUMDB=off`) |
 | [GL072](rules/GL072.md) | `warn`  | `needs:project` cross-project artifact download with a mutable branch or variable `ref:` — the consumed artifacts can be poisoned |
 | [GL075](rules/GL075.md) | `warn`  | `include:` source (project / component / remote) not on the opt-in `allowed_include_sources` allowlist — provenance check complementing GL003's pinning |
 | [GL079](rules/GL079.md) | `warn`  | `pip install --extra-index-url` adds a public index alongside the default — highest version wins across indexes, enabling dependency confusion |
@@ -72,7 +72,7 @@ User-controlled inputs and unversioned component references that allow malicious
 | [GL007](rules/GL007.md) | `error` | CI variable interpolation in `image:` reference |
 | [GL015](rules/GL015.md) | `warn`  | Docker image tag built from user-controlled variable (`$CI_COMMIT_REF_SLUG` etc.) |
 | [GL025](rules/GL025.md) | `warn`  | `curl`/`wget` uses a user-controlled CI variable — attacker can redirect the request to an arbitrary host |
-| [GL041](rules/GL041.md) | `warn`  | `include: component:` without a pinned semver tag or commit SHA |
+| [GL041](rules/GL041.md) | `warn`  | `include: component:` without a pinned semver tag or commit SHA; optionally require a full commit SHA with `require_include_sha` |
 | [GL044](rules/GL044.md) | `warn`  | MR-triggered job checks out `$CI_MERGE_REQUEST_SOURCE_BRANCH_SHA` — executes attacker-controlled code with `$CI_JOB_TOKEN` access |
 | [GL051](rules/GL051.md) | `error`/`warn` | Unconstrained `spec:inputs` or job `inputs:` entry interpolated into `image:`, `script:` and similar keywords — caller can supply arbitrary values |
 | [GL053](rules/GL053.md) | `info`  | Missing or unrestricted `workflow:rules` — pipelines run for every event, including untrusted fork merge requests |

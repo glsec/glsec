@@ -1,0 +1,158 @@
+name: CI durations
+
+# Weekly: records how long the workflows took and watches the budget (#1239).
+# The records go to data/ci-durations.jsonl on the benchmarks branch, so a trend
+# can be read long after GitHub's run list has moved on. A workflow whose p90 is
+# over the budget opens an issue, or updates the open one. Not a check on pull
+# requests: shared runners vary by 10 to 30%, so it would fail for no reason.
+#
+# Two jobs, so the write token never shares a runner with code from the
+# repository: measure builds and runs cmd/ciduration with a read-only token,
+# record checks its output and writes it.
+
+on:
+  schedule:
+    - cron: "45 8 * * 1" # 08:45 UTC every Monday
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Print the report and write nothing"
+        type: boolean
+        default: false
+
+permissions: {}
+
+concurrency:
+  group: ci-durations
+  cancel-in-progress: false
+
+jobs:
+  measure:
+    name: Measure
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read # read the runs and jobs
+      contents: read
+    outputs:
+      over_budget: ${{ steps.report.outputs.over_budget }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Read the durations
+        id: report
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p "$RUNNER_TEMP/out"
+          # Not go run: it exits 1 for any failure, and exit 1 means over budget.
+          go build -o "$RUNNER_TEMP/ciduration" ./cmd/ciduration
+          rc=0
+          "$RUNNER_TEMP/ciduration" -repo "$REPO" -record "$RUNNER_TEMP/out/record.jsonl" \
+            > "$RUNNER_TEMP/out/report.md" || rc=$?
+          cat "$RUNNER_TEMP/out/report.md"
+          cat "$RUNNER_TEMP/out/report.md" >> "$GITHUB_STEP_SUMMARY"
+
+          case "$rc" in
+            0) echo "over_budget=false" >> "$GITHUB_OUTPUT" ;;
+            1) echo "over_budget=true" >> "$GITHUB_OUTPUT" ;;
+            *) exit "$rc" ;;
+          esac
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ci-durations
+          path: ${{ runner.temp }}/out
+          retention-days: 7
+          if-no-files-found: error
+
+  record:
+    name: Record
+    needs: measure
+    if: ${{ !inputs.dry_run }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write # update data/ci-durations.jsonl on the benchmarks branch
+      issues: write # open or update the issue
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ci-durations
+          path: ${{ runner.temp }}/in
+
+      # The files come from a job that ran repository code; check the record
+      # before anything is written.
+      - name: Check the record
+        run: |
+          set -euo pipefail
+          in="$RUNNER_TEMP/in/record.jsonl"
+          [[ $(wc -l < "$in") -eq 1 ]] || { echo "expected one record" >&2; exit 1; }
+          jq -e '
+            def stats: type == "array" and all(.[];
+              (.name | type == "string")
+              and (.runs | type == "number")
+              and (.median | type == "number")
+              and (.p90 | type == "number")
+              and (.max | type == "number"));
+            .schema == 1
+            and (.date | type == "string" and test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T"))
+            and (.days | type == "number")
+            and (.budget_minutes | type == "number")
+            and (.workflows | stats)
+            and (.jobs | stats)' "$in" > /dev/null || { echo "the record has an unexpected shape" >&2; exit 1; }
+
+      - name: Append to data/ci-durations.jsonl
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          url="repos/$REPO/contents/data/ci-durations.jsonl"
+          # The first run creates the file.
+          if sha=$(gh api "$url?ref=benchmarks" --jq .sha 2>/dev/null); then
+            gh api -H "Accept: application/vnd.github.raw" "$url?ref=benchmarks" > "$RUNNER_TEMP/data.jsonl"
+          else
+            sha=""
+            : > "$RUNNER_TEMP/data.jsonl"
+          fi
+          cat "$RUNNER_TEMP/in/record.jsonl" >> "$RUNNER_TEMP/data.jsonl"
+          base64 -w0 "$RUNNER_TEMP/data.jsonl" > "$RUNNER_TEMP/content.b64"
+          args=(-f branch=benchmarks -f message="Record CI durations" -F content=@"$RUNNER_TEMP/content.b64")
+          if [ -n "$sha" ]; then
+            args+=(-f sha="$sha")
+          fi
+          gh api -X PUT "$url" "${args[@]}" --silent
+
+      - name: Open or update the issue
+        if: needs.measure.outputs.over_budget == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          title="CI duration: a workflow is over its budget"
+          {
+            cat "$RUNNER_TEMP/in/report.md"
+            echo
+            echo "Look at the slowest jobs above and at the history in \`data/ci-durations.jsonl\` on the \`benchmarks\` branch, then speed the workflow up or raise the budget in \`.github/workflows/ci-durations.yml\`."
+            echo
+            echo "Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          } > "$RUNNER_TEMP/body.md"
+          existing=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            # REST, not gh issue edit: that one also queries the retired
+            # Projects (classic) API and fails.
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/$existing" -F "body=@$RUNNER_TEMP/body.md" --silent
+          else
+            gh issue create --title "$title" --label enhancement --body-file "$RUNNER_TEMP/body.md"
+          fi

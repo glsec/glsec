@@ -278,3 +278,113 @@ build:
 		t.Fatalf("expected one dotenv finding, got %v", f)
 	}
 }
+
+// A dump after a case label writes the file like any other command (#1178).
+func TestGL014_CaseArm(t *testing.T) {
+	for arm, want := range map[string]int{
+		"debug) env > vars.txt ;;":     1,
+		"debug) set > vars.txt ;;":     1,
+		"debug) export > vars.txt ;;":  1,
+		"set|debug) set > vars.txt ;;": 1,
+		"set) make > vars.txt ;;":      0,
+		"debug) set -e > vars.txt ;;":  0,
+	} {
+		t.Run(arm, func(t *testing.T) {
+			src := "build:\n  script:\n    - |\n      case \"$1\" in\n        " + arm + "\n      esac\n  artifacts:\n    paths: [vars.txt]\n"
+			if f := findings014(t, src); len(f) != want {
+				t.Fatalf("got %v, want %d findings", f, want)
+			}
+		})
+	}
+}
+
+func TestGL014_PowerShellFileCmdlets(t *testing.T) {
+	for _, tc := range []struct {
+		line string
+		want int
+	}{
+		{`gci env: | Out-File env.txt`, 1},
+		{`gci env: | Out-File -FilePath env.txt`, 1},
+		{`gci env: | Out-File -Append -FilePath env.txt`, 1},
+		{`gci env: | Set-Content env.txt`, 1},
+		{`gci env: | Set-Content -Path env.txt`, 1},
+		{`gci env: | Add-Content env.txt`, 1},
+		{`gci env: | Tee-Object env.txt`, 1},
+		{`gci env: | Tee-Object -FilePath env.txt`, 1},
+		{`gci env: | Format-List | Out-File env.txt`, 1},
+		{`gci env: | Out-File other.txt`, 0},
+		{`gci env: | Tee-Object -Variable env.txt`, 0},
+		{`gci env: | Select-String PATH | Out-File env.txt`, 0},
+	} {
+		t.Run(tc.line, func(t *testing.T) {
+			src := fmt.Sprintf("job:\n  script:\n    - %q\n  artifacts:\n    paths:\n      - env.txt\n", tc.line)
+			if got := checkRule(t, GL014, src); len(got) != tc.want {
+				t.Errorf("got %d findings, want %d: %v", len(got), tc.want, got)
+			}
+		})
+	}
+}
+
+func TestGL014_SecretInDotenv(t *testing.T) {
+	const report = "\n  artifacts:\n    reports:\n      dotenv: build.env\n"
+	for _, tc := range []struct {
+		name, line string
+		want       int
+	}{
+		{"append", `echo "DEPLOY_TOKEN=$DEPLOY_TOKEN" >> build.env`, 1},
+		{"overwrite", `echo "API_KEY=${API_KEY}" > build.env`, 1},
+		{"other name", `echo "OUT=$DB_PASSWORD" >> build.env`, 1},
+		{"unquoted", `echo DEPLOY_TOKEN=$DEPLOY_TOKEN >> build.env`, 1},
+		{"printf", `printf "%s\n" "A=1" "DEPLOY_TOKEN=$DEPLOY_TOKEN" >> build.env`, 1},
+		{"tee", `echo "DEPLOY_TOKEN=$DEPLOY_TOKEN" | tee -a build.env`, 1},
+		{"relative", `echo "DEPLOY_TOKEN=$DEPLOY_TOKEN" >> ./build.env`, 1},
+		{"project dir", `echo "DEPLOY_TOKEN=$DEPLOY_TOKEN" >> "$CI_PROJECT_DIR/build.env"`, 1},
+		{"not secret", `echo "VERSION=$CI_COMMIT_TAG" >> build.env`, 0},
+		{"secret id", `echo "KEY=$GPG_KEY_ID" >> build.env`, 0},
+		{"single quotes", `echo 'DEPLOY_TOKEN=$DEPLOY_TOKEN' >> build.env`, 0},
+		{"escaped", `echo "DEPLOY_TOKEN=\$DEPLOY_TOKEN" >> build.env`, 0},
+		{"conditional", `echo "HAS_TOKEN=${DEPLOY_TOKEN:+yes}" >> build.env`, 0},
+		{"substitution", `echo "SIG=$(./sign "$DEPLOY_TOKEN")" >> build.env`, 0},
+		{"other file", `echo "DEPLOY_TOKEN=$DEPLOY_TOKEN" >> other.env`, 0},
+		{"separate command", `echo "DEPLOY_TOKEN=$DEPLOY_TOKEN"; echo "A=1" >> build.env`, 0},
+		{"not a print command", `curl -d "token=$DEPLOY_TOKEN" https://example.com > build.env`, 0},
+		{"comment", `# echo "DEPLOY_TOKEN=$DEPLOY_TOKEN" >> build.env`, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := findings014(t, fmt.Sprintf("build:\n  script:\n    - |\n      %s%s", tc.line, report))
+			if len(f) != tc.want {
+				t.Fatalf("got %d findings, want %d: %v", len(f), tc.want, f)
+			}
+		})
+	}
+}
+
+func TestGL014_SecretInDotenvList(t *testing.T) {
+	f := findings014(t, `
+build:
+  script:
+    - echo start
+    - |
+      echo one
+      echo "DEPLOY_TOKEN=$DEPLOY_TOKEN" >> b.env
+  artifacts:
+    reports:
+      dotenv: [a.env, b.env]
+`)
+	if len(f) != 1 || f[0].Line != 7 || !strings.Contains(f[0].Message, "DEPLOY_TOKEN") || !strings.Contains(f[0].Message, `"b.env"`) {
+		t.Fatalf("got %+v", f)
+	}
+}
+
+func TestGL014_SecretInFileWithoutDotenv(t *testing.T) {
+	f := findings014(t, `
+build:
+  script:
+    - echo "DEPLOY_TOKEN=$DEPLOY_TOKEN" >> build.env
+  artifacts:
+    paths: [dist/]
+`)
+	if len(f) != 0 {
+		t.Fatalf("got %+v", f)
+	}
+}

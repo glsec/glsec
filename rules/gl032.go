@@ -103,7 +103,7 @@ func sshKeyEchoLines(script string) []keyEcho {
 			i++
 			pipeline = append(pipeline, cmds[i].text)
 		}
-		name := commandName(withoutSudo(commandWords(first.text)))
+		name := commandName(commandWords(first.text))
 		if name != "echo" && name != "printf" {
 			// echo inside a substitution: ssh-add <(echo "$KEY"), $(echo …).
 			if m := substEchoRe.FindStringSubmatch(maskSingleQuoted(first.text)); m != nil {

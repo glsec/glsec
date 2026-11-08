@@ -1,0 +1,5 @@
+.gitlab-ci.yml:0008 GL034 warn one
+.gitlab-ci.yml:0011 GL034 warn two
+ci/one.yml:0001 GL053 info -
+ci/shared.yml:0002 GL001 error .shared
+ci/two.yml:0001 GL053 info -

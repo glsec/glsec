@@ -5,7 +5,6 @@ package rules
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -19,7 +18,7 @@ var GL029 = &gl029{}
 func (r *gl029) ID() string { return "GL029" }
 
 // dockerLoginPasswordRe matches "docker login" with the short -p flag (not --password-stdin).
-var dockerLoginPasswordRe = regexp.MustCompile(`\b(?:docker|podman)\s+login\b[^;&|\n]*\s(?:-p|--password)(?:\s|=)`)
+var dockerLoginPasswordRe = mustCompilePrefiltered(`\b(?:docker|podman)\s+login\b[^;&|\n]*\s(?:-p|--password)(?:\s|=)`)
 
 func (r *gl029) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding

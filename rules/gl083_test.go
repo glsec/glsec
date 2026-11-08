@@ -79,6 +79,7 @@ func TestGL083_LegitimateIdioms(t *testing.T) {
 		{"interactive-looking flag", `docker run -i --rm alpine:3.19.1 sh -c "echo hi"`},
 		{"python without socket", `python3 -c "import subprocess;subprocess.call(['make'])"`},
 		{"connectivity probe", `bash -c 'echo > /dev/tcp/redis/6379' && echo up`},
+		{"-i of a script", `until (echo >/dev/tcp/db/5432) 2>/dev/null; do sleep 2; done && exec /entrypoint.sh odoo -d db1 -i hr`},
 		// The four false-positive classes found scanning 265 real pipelines (#480).
 		{"read-write port probe", `if (exec 3<>/dev/tcp/postgres/5432) 2>/dev/null; then echo up; fi`},
 		{"read-write probe in a subshell", `if bash -c 'exec 3<>/dev/tcp/127.0.0.1/11119' 2>/dev/null; then break; fi`},

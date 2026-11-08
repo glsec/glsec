@@ -66,3 +66,29 @@ func TestDedupeSuppressed(t *testing.T) {
 		t.Errorf("got %+v", out)
 	}
 }
+
+func TestDedupeMoved(t *testing.T) {
+	note := func(o Origin) string { return " (from " + o.File + ")" }
+	o := Origin{File: "tpl.yml", Line: 3}
+	moved := func(job string) Finding {
+		return Finding{RuleID: "GL1", Job: job, File: "a.yml", Line: 9, Message: `job "` + job + `" bad (from tpl.yml)`, Origin: o}
+	}
+	t.Run("jobs using one template", func(t *testing.T) {
+		if got := DedupeMoved([]Finding{moved("x"), moved("y")}, note); len(got) != 1 || got[0].Job != "x" {
+			t.Errorf("got %+v", got)
+		}
+	})
+	t.Run("the template's file reports it", func(t *testing.T) {
+		own := Finding{RuleID: "GL1", Job: ".t", File: "tpl.yml", Line: 3, Message: `job ".t" bad`}
+		if got := DedupeMoved([]Finding{moved("x"), own}, note); len(got) != 1 || got[0].File != "tpl.yml" {
+			t.Errorf("got %+v", got)
+		}
+	})
+	t.Run("another rule", func(t *testing.T) {
+		other := moved("y")
+		other.RuleID = "GL2"
+		if got := DedupeMoved([]Finding{moved("x"), other}, note); len(got) != 2 {
+			t.Errorf("got %+v", got)
+		}
+	})
+}

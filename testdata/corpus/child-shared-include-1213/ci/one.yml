@@ -1,0 +1,6 @@
+include:
+  - local: ci/shared.yml
+one-job:
+  extends: .shared
+  script:
+    - make one

@@ -125,7 +125,7 @@ func childShellDownloadExecute(line string) bool {
 		return false
 	}
 	for _, cmd := range shellCommands(line) {
-		_, inner, _, ok := childShellScript(withoutSudo(commandWords(cmd.text)))
+		_, inner, _, ok := childShellScript(commandWords(cmd.text))
 		if !ok || len(inner) >= len(line) {
 			continue
 		}

@@ -4,6 +4,7 @@
 package rules
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -499,5 +500,50 @@ func TestGL090_OneFindingPerEcosystem(t *testing.T) {
 	f := findings090(t, "publish:\n  script:\n    - npm ci\n    - pip install -r requirements.txt\n    - npm publish\n    - twine upload dist/*\n")
 	if len(f) != 2 || f[0].Line != 3 || f[1].Line != 4 {
 		t.Fatalf("got %+v, want findings on lines 3 and 4", f)
+	}
+}
+
+func TestGL090_InheritVariablesList(t *testing.T) {
+	src := `
+variables:
+  NPM_CONFIG_IGNORE_SCRIPTS: "true"
+  FOO: bar
+publish:
+  inherit:
+    variables: %s
+  script:
+    - npm ci
+    - npm publish
+`
+	for _, tc := range []struct {
+		inherit string
+		want    int
+	}{
+		{"[FOO]", 1},
+		{"false", 1},
+		{"true", 0},
+		{"[FOO, NPM_CONFIG_IGNORE_SCRIPTS]", 0},
+	} {
+		if got := checkRule(t, GL090, fmt.Sprintf(src, tc.inherit)); len(got) != tc.want {
+			t.Errorf("inherit %s: got %d findings, want %d: %v", tc.inherit, len(got), tc.want, got)
+		}
+	}
+}
+
+func TestGL090_InheritDefaultFromTemplate(t *testing.T) {
+	src := `
+default:
+  before_script:
+    - npm ci
+.no-defaults:
+  inherit:
+    default: false
+publish:
+  extends: .no-defaults
+  script:
+    - npm publish
+`
+	if got := checkRule(t, GL090, src); len(got) != 0 {
+		t.Errorf("job doesn't run default:before_script, got %v", got)
 	}
 }

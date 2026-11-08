@@ -15,6 +15,29 @@ import (
 // the file it comes from reports it itself.
 const ContextLine = -1 << 20
 
+// IsContextLine reports whether a line is on configuration from another file.
+func IsContextLine(line int) bool {
+	return line <= ContextLine/2
+}
+
+// contextFile is a file WithContext copied nodes from: a copy of its line n
+// sits on ContextLine + base + n.
+type contextFile struct {
+	file string
+	base int
+}
+
+// ContextOrigin returns the file and line a context line stands for, if known.
+func (d *Document) ContextOrigin(line int) (file string, at int, ok bool) {
+	rel := line - ContextLine
+	for _, f := range slices.Backward(d.contextFiles) {
+		if rel > f.base {
+			return f.file, rel - f.base, true
+		}
+	}
+	return "", 0, false
+}
+
 // WithContext returns doc as GitLab merges it into its pipeline (#810): the
 // global keywords (workflow:, default:, variables:, stages:, …) and hidden jobs
 // of the other files are added, and the jobs doc shares with them merged. So a
@@ -39,6 +62,7 @@ func WithContext(doc *Document, pipeline []*Document) *Document {
 		own[mapping.Content[i].Value] = true
 	}
 	m := contextMerge{copies: map[*yaml.Node]*yaml.Node{}, merged: map[[2]*yaml.Node]*yaml.Node{}}
+	var files []contextFile
 	result := map[string]int{}
 	var keys, values []*yaml.Node
 	for _, o := range pipeline {
@@ -47,6 +71,11 @@ func WithContext(doc *Document, pipeline []*Document) *Document {
 			continue
 		}
 		m.own = o == doc
+		if !m.own {
+			m.base += m.last
+			m.last = 0
+			files = append(files, contextFile{o.File, m.base})
+		}
 		for i := 0; i+1 < len(om.Content); i += 2 {
 			key := om.Content[i]
 			if !m.own && (IsKeywordJob(key) || !contextKey(key.Value) && (!own[key.Value] || reservedKeys[key.Value])) {
@@ -76,6 +105,7 @@ func WithContext(doc *Document, pipeline []*Document) *Document {
 	}
 	out := *doc
 	out.Root = &merged
+	out.contextFiles = files
 	return &out
 }
 
@@ -109,6 +139,8 @@ type contextMerge struct {
 	own     bool
 	foreign bool
 	copies  map[*yaml.Node]*yaml.Node
+	// base and last are the current file's offset and its highest line so far.
+	base, last int
 	// merged remembers pairs: expanded aliases share nodes, and merging them
 	// again wherever they appear would grow exponentially with their nesting.
 	merged map[[2]*yaml.Node]*yaml.Node
@@ -119,7 +151,19 @@ func (m *contextMerge) node(n *yaml.Node) *yaml.Node {
 		return n
 	}
 	m.foreign = true
-	return contextCopy(n, m.copies)
+	return m.copy(n)
+}
+
+// line returns where a node of the current file goes. Past the room below
+// ContextLine/2, which takes half a million lines of pipeline, the origin is
+// given up.
+func (m *contextMerge) line(n *yaml.Node) int {
+	end := n.Line + strings.Count(n.Value, "\n") + 1
+	if n.Line <= 0 || m.base+end >= -ContextLine/2 {
+		return ContextLine
+	}
+	m.last = max(m.last, end)
+	return ContextLine + m.base + n.Line
 }
 
 // over returns the merge of high, from the file being merged, over low, the
@@ -135,7 +179,7 @@ func (m *contextMerge) over(low, high *yaml.Node) *yaml.Node {
 	out := *high
 	if !m.own {
 		m.foreign = true
-		out.Line, out.Column = ContextLine, 0
+		out.Line, out.Column = m.line(high), 0
 	}
 	m.merged[pair] = &out
 	out.Content = append([]*yaml.Node{}, low.Content...)
@@ -158,21 +202,21 @@ func contextKey(name string) bool {
 	return strings.HasPrefix(name, ".") || (reservedKeys[name] && name != "include")
 }
 
-// contextCopy copies n onto ContextLine. Unlike deepCopyNode it leaves the
+// copy copies n onto its context line. Unlike deepCopyNode it leaves the
 // traced source lines behind, since they belong to the other file, and it
 // copies a node shared by expanded aliases once, so the copy stays as small
 // as the original.
-func contextCopy(n *yaml.Node, copies map[*yaml.Node]*yaml.Node) *yaml.Node {
-	if cp, ok := copies[n]; ok {
+func (m *contextMerge) copy(n *yaml.Node) *yaml.Node {
+	if cp, ok := m.copies[n]; ok {
 		return cp
 	}
 	cp := *n
-	cp.Line, cp.Column = ContextLine, 0
-	copies[n] = &cp
+	cp.Line, cp.Column = m.line(n), 0
+	m.copies[n] = &cp
 	if len(n.Content) > 0 {
 		cp.Content = make([]*yaml.Node, len(n.Content))
 		for i, c := range n.Content {
-			cp.Content[i] = contextCopy(c, copies)
+			cp.Content[i] = m.copy(c)
 		}
 	}
 	return &cp

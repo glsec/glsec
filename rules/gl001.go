@@ -6,6 +6,7 @@ package rules
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -27,13 +28,26 @@ func (r *gl001) SetRequireImageDigest(required bool) {
 	r.requireImageDigest = required
 }
 
+// Check handles the single-document form, where spec: sits next to the jobs.
 func (r *gl001) Check(doc *yaml.Node, file string) []finding.Finding {
+	return r.CheckWithSpec(doc, doc, file)
+}
+
+// CheckWithSpec reads input declarations from spec and the images from doc.
+func (r *gl001) CheckWithSpec(spec, doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
 	mapping := parser.Unwrap(doc)
+	inputs := parser.FindKey(parser.Unwrap(spec), "spec")
+	if inputs != nil {
+		inputs = parser.FindKey(inputs, "inputs")
+	}
 
 	globalVars := parser.FindKey(mapping, "variables")
 	workflow := parser.FindKey(mapping, "workflow")
 	resolveGlobal := func(name string) []string {
+		if input, ok := strings.CutPrefix(name, specInputPrefix); ok {
+			return inputValues(inputs, input)
+		}
 		return append(ruleVarValues(workflow, name), varValues(globalVars, name)...)
 	}
 
@@ -45,8 +59,9 @@ func (r *gl001) Check(doc *yaml.Node, file string) []finding.Finding {
 		findings = append(findings, r.checkServicesNode(parser.FindKey(def, "services"), file, resolveGlobal)...)
 	}
 
+	in := NewInheritance(doc)
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
-		resolve := jobVarResolver(name.Value, job, resolveGlobal)
+		resolve := jobVarResolver(in, name.Value, job, resolveGlobal)
 		for _, f := range r.checkImageNode(parser.FindKey(job, "image"), file, resolve) {
 			f.Job = name.Value
 			findings = append(findings, f)
@@ -109,27 +124,79 @@ func (r *gl001) checkServicesNode(node *yaml.Node, file string, resolve varResol
 	return findings
 }
 
-// checkRefResolved checks ref directly, or, when ref is a bare variable,
-// each value the file assigns to that variable.
-func (r *gl001) checkRefResolved(ref string, line, col int, file string, resolve varResolver) []finding.Finding {
-	name := ""
+// imageVarRe matches what GitLab replaces in an image reference: an input of
+// the file or the job, ${NAME} or $NAME. $[[ inputs.x | function ]] changes the
+// value, so it doesn't match and stays unknown.
+var imageVarRe = regexp.MustCompile(`\$\[\[\s*inputs\.([A-Za-z0-9_-]+)\s*\]\]|\$\{\{\s*job\.inputs\.([A-Za-z0-9_-]+)\s*\}\}|\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)`)
+
+// imageVarName returns the name to resolve for a match of imageVarRe.
+func imageVarName(m []string) string {
 	switch {
-	case isVarRef(ref):
-		name = varRefName(ref)
-	case jobInputRefRe.MatchString(ref):
-		name = jobInputPrefix + jobInputRefRe.FindStringSubmatch(ref)[1]
-	default:
+	case m[1] != "":
+		return specInputPrefix + m[1]
+	case m[2] != "":
+		return jobInputPrefix + m[2]
+	case m[3] != "":
+		return m[3]
+	}
+	return m[4]
+}
+
+// maxRefForms limits the combinations of an image reference with several
+// variables.
+const maxRefForms = 64
+
+// expandRef returns ref with each variable the file defines replaced by its
+// values, every combination once. A variable it doesn't define stays in place,
+// and so does a further one past maxRefForms. Nested references are not followed.
+func expandRef(ref string, resolve varResolver) []string {
+	forms := []string{ref}
+	seen := map[string]bool{}
+	for _, m := range imageVarRe.FindAllStringSubmatch(ref, -1) {
+		name := imageVarName(m)
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+		var values []string
+		for _, v := range resolve(name) {
+			if v != "" && !strings.Contains(v, "$") && !slices.Contains(values, v) {
+				values = append(values, v)
+			}
+		}
+		if len(values) == 0 || len(forms) > 1 && len(forms)*len(values) > maxRefForms {
+			continue
+		}
+		var next []string
+		for _, form := range forms {
+			for _, v := range values {
+				next = append(next, imageVarRe.ReplaceAllStringFunc(form, func(s string) string {
+					if imageVarName(imageVarRe.FindStringSubmatch(s)) == name {
+						return v
+					}
+					return s
+				}))
+			}
+		}
+		forms = next
+	}
+	return forms
+}
+
+// checkRefResolved checks ref, or, when it has variables the file defines,
+// each reference they can make.
+func (r *gl001) checkRefResolved(ref string, line, col int, file string, resolve varResolver) []finding.Finding {
+	forms := expandRef(ref, resolve)
+	if len(forms) == 1 && forms[0] == ref {
 		return checkRef(ref, fmt.Sprintf("%q", ref), line, col, file, r.requireImageDigest)
 	}
 	var findings []finding.Finding
 	seen := map[string]bool{}
-	for _, v := range resolve(name) {
-		// Nested references are not followed.
-		if seen[v] || v == "" || strings.Contains(v, "$") {
-			continue
+	for _, v := range forms {
+		if !seen[v] {
+			seen[v] = true
+			findings = append(findings, checkRef(v, fmt.Sprintf("%q (= %q)", ref, v), line, col, file, false)...)
 		}
-		seen[v] = true
-		findings = append(findings, checkRef(v, fmt.Sprintf("%q (= %q)", ref, v), line, col, file, false)...)
 	}
 	return findings
 }
@@ -140,15 +207,18 @@ func (r *gl001) checkRefResolved(ref string, line, col int, file string, resolve
 // workflow:rules). Pipeline-level values are not used for hidden jobs
 // (templates whose users may override them), for jobs that inherit through
 // extends: (not resolved by glsec), or when inherit:variables excludes the name.
-func jobVarResolver(jobName string, job *yaml.Node, resolveGlobal varResolver) varResolver {
+func jobVarResolver(in *Inheritance, jobName string, job *yaml.Node, resolveGlobal varResolver) varResolver {
 	jobVars := parser.FindKey(job, "variables")
 	useGlobal := !strings.HasPrefix(jobName, ".") && parser.FindKey(job, "extends") == nil
 	return func(name string) []string {
 		if input, ok := strings.CutPrefix(name, jobInputPrefix); ok {
-			return jobInputValues(job, input)
+			return inputValues(parser.FindKey(job, "inputs"), input)
+		}
+		if strings.HasPrefix(name, specInputPrefix) {
+			return resolveGlobal(name)
 		}
 		fallback := varValues(jobVars, name)
-		if fallback == nil && useGlobal && inheritsGlobalVar(job, name) {
+		if fallback == nil && useGlobal && in.Inherits(job, "variables", name) {
 			fallback = resolveGlobal(name)
 		}
 		// A matching rule overrides the other values, so each value a rule
@@ -165,20 +235,19 @@ func jobVarResolver(jobName string, job *yaml.Node, resolveGlobal varResolver) v
 	}
 }
 
-// jobInputRefRe matches an image given entirely by a job input, as in
-// image: ${{ job.inputs.image }}.
-var jobInputRefRe = regexp.MustCompile(`^\$\{\{\s*job\.inputs\.([A-Za-z0-9_-]+)\s*\}\}$`)
+// Prefixes of the input names passed to a varResolver.
+const (
+	jobInputPrefix  = "job.inputs."
+	specInputPrefix = "inputs."
+)
 
-// jobInputPrefix marks a job-input name passed to a varResolver.
-const jobInputPrefix = "job.inputs."
-
-// jobInputValues returns the values a job input can take without an override
-// being rejected: its options:, or else its default.
-func jobInputValues(job *yaml.Node, name string) []string {
-	def := parser.FindKey(job, "inputs")
-	if def != nil {
-		def = parser.FindKey(def, name)
+// inputValues returns the values an input of an inputs: mapping can take
+// without an override being rejected: its options:, or else its default.
+func inputValues(inputs *yaml.Node, name string) []string {
+	if inputs == nil {
+		return nil
 	}
+	def := parser.FindKey(inputs, name)
 	if def == nil || def.Kind != yaml.MappingNode {
 		return nil
 	}
@@ -253,34 +322,6 @@ func matrixValues(job *yaml.Node, name string) (values []string, complete bool) 
 		}
 	}
 	return values, complete
-}
-
-// inheritsGlobalVar reports whether inherit:variables lets the job see the
-// top-level variable name.
-func inheritsGlobalVar(job *yaml.Node, name string) bool {
-	inherit := parser.FindKey(job, "inherit")
-	if inherit == nil || inherit.Kind != yaml.MappingNode {
-		return true
-	}
-	v := parser.FindKey(inherit, "variables")
-	switch {
-	case v == nil:
-		return true
-	case v.Kind == yaml.ScalarNode:
-		return v.Value != "false"
-	case v.Kind == yaml.SequenceNode:
-		for _, item := range v.Content {
-			if item.Value == name {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-// varRefName returns the variable name of a bare reference ($X or ${X}).
-func varRefName(ref string) string {
-	return strings.TrimSuffix(strings.TrimPrefix(strings.TrimPrefix(ref, "$"), "{"), "}")
 }
 
 // imageRef extracts the image reference and source location from a node.

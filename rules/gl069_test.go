@@ -4,6 +4,7 @@
 package rules
 
 import (
+	"strconv"
 	"testing"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -40,6 +41,65 @@ func TestGL069_Flagged(t *testing.T) {
 		if f[0].RuleID != "GL069" || f[0].Severity != finding.Warn {
 			t.Errorf("unexpected finding for %q: %+v", line, f[0])
 		}
+	}
+}
+
+func TestGL069_MoreManagers(t *testing.T) {
+	for _, tc := range []struct {
+		script  string
+		flagged bool
+	}{
+		{"dnf update -y --nogpgcheck", true},
+		{"dnf install -y --nogpgcheck $DEPENDENCIES", true},
+		{"yum install --nogpgcheck pkg", true},
+		{"microdnf install --nogpgcheck pkg", true},
+		{"tdnf install --nogpgcheck pkg", true},
+		{"dnf5 install --nogpgcheck pkg", true},
+		{"sudo dnf -y --nogpgcheck upgrade", true},
+		{"dnf builddep -y --nogpgcheck msitools", true},
+		{"dnf install -y \\\n  gcc \\\n  --nogpgcheck", true},
+		{"dnf install -y --nogpgcheck ./a.rpm gcc", true},
+		{"dnf install -y --nogpgcheck https://example.com/x.rpm", true},
+		{"dnf install --setopt=gpgcheck=0 pkg", true},
+		{"zypper --no-gpg-checks install pkg", true},
+		{"echo 'gpgcheck=0' >> /etc/yum.repos.d/x.repo", true},
+		{`echo -e "[r]\nbaseurl=$U\ngpgcheck=0" > /etc/yum.repos.d/r.repo`, true},
+		{"sed -i 's/gpgcheck=1/gpgcheck = 0/' /etc/yum.repos.d/x.repo", true},
+		{"apt-get --allow-insecure-repositories update", true},
+		{"apt-get -o Acquire::AllowInsecureRepositories=true update", true},
+		{`echo 'Acquire::AllowInsecureRepositories "true";' > /etc/apt/apt.conf.d/99x`, true},
+		{"sed -i 's/^SigLevel.*/SigLevel = Never/' /etc/pacman.conf", true},
+		{`echo "RemoteFileSigLevel = Never" >> /etc/pacman.conf`, true},
+
+		{"dnf --nogpgcheck localinstall ./build/x.rpm", false},
+		{"dnf --nogpgcheck localinstall -y build/RPMS/x86_64/*.rpm", false},
+		{"dnf -y --setopt=install_weak_deps=True --nogpgcheck install ./*.rpm", false},
+		{"yum install --nogpgcheck build/x.rpm", false},
+		{"zypper --no-gpg-checks --no-remote install ./x.rpm", false},
+		{"zypper --no-gpg-checks in ./x.rpm", false},
+		{"dnf install -y pkg", false},
+		{"dnf install -y pkg && other --nogpgcheck", false},
+		{"gpgcheck=1", false},
+		{"echo 'repo_gpgcheck=0' >> /etc/dnf/dnf.conf", false},
+		{"echo 'localpkg_gpgcheck=0' >> /etc/dnf/dnf.conf", false},
+		{"sed -i 's/^SigLevel.*/SigLevel = Required DatabaseOptional/' /etc/pacman.conf", false},
+		{"echo 'Acquire::AllowInsecureRepositories \"false\";'", false},
+		{"make\n# SigLevel = Never\n  # dnf update --nogpgcheck\ntrue", false},
+	} {
+		t.Run(tc.script, func(t *testing.T) {
+			f := findings069(t, "build:\n  script:\n    - "+strconv.Quote(tc.script)+"\n")
+			if tc.flagged != (len(f) == 1) {
+				t.Fatalf("flagged = %v, got %v", tc.flagged, f)
+			}
+		})
+	}
+}
+
+// The finding sits on the command's line in a block.
+func TestGL069_LineInABlock(t *testing.T) {
+	f := findings069(t, "build:\n  script:\n    - |\n      make\n      dnf install -y --nogpgcheck pkg\n")
+	if len(f) != 1 || f[0].Line != 5 {
+		t.Fatalf("got %v, want one finding on line 5", f)
 	}
 }
 

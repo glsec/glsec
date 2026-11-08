@@ -26,8 +26,14 @@ const dateLayout = "2006-01-02"
 //	# glsec:ignore GL001 exp:2026-12-01 -- accepted until the migration lands
 //	# glsec:ignore SC2086
 var pattern = regexp.MustCompile(
-	`glsec:ignore\s+((?:GL|SC)\d+)(?:\s+exp:(\d{4}-\d{2}-\d{2}))?(?:\s+--\s+(.+))?`,
+	`glsec:ignore\s+((?:GL|SC)\d+)(?:\s+(` + expiryPrefix + `\S*))?(?:\s+--\s+(.+))?`,
 )
+
+// expiryPrefix matches the start of a token meant as an expiry date. Only exp:
+// is valid, but a misspelt one must not read as a suppression without expiry.
+const expiryPrefix = `(?i:exp|expire|expires|expiry|expiration)[:=]`
+
+var expiryPrefixRe = regexp.MustCompile(`^` + expiryPrefix)
 
 // IgnoreFile is the default name of the baseline ignore file written by
 // --generate-ignore and read automatically on each run.
@@ -75,7 +81,7 @@ func fromComment(comment string, line int) []Suppression {
 	// pattern has three groups, so every match has four entries; an optional
 	// group that didn't match is empty.
 	for _, match := range pattern.FindAllStringSubmatch(comment, -1) {
-		out = append(out, Suppression{RuleID: match[1], Line: line, Expiry: match[2], Reason: strings.TrimSpace(match[3])})
+		out = append(out, Suppression{RuleID: match[1], Line: line, Expiry: parseExpiry(match[2]), Reason: strings.TrimSpace(match[3])})
 	}
 	return out
 }
@@ -158,6 +164,28 @@ func (m Map) Merge(other Map) {
 	}
 }
 
+// parseExpiry returns the date of an exp: token. A token without a date or with
+// another spelling stays as it is, so it fails date validation instead of
+// reading as no expiry.
+func parseExpiry(token string) string {
+	if token == "exp:" {
+		return token
+	}
+	return strings.TrimPrefix(token, "exp:")
+}
+
+// IgnoreExpiry returns the exp: date of a .glsec-ignore line split into fields,
+// or "" when it has none.
+func IgnoreExpiry(fields []string) string {
+	expiry := ""
+	for _, extra := range fields[min(2, len(fields)):] {
+		if expiryPrefixRe.MatchString(extra) {
+			expiry = parseExpiry(extra)
+		}
+	}
+	return expiry
+}
+
 // LoadIgnoreFile reads a .glsec-ignore file and returns suppressions for the
 // given target file. Entries for other files are silently skipped.
 // A missing file is not an error: it returns an empty map and a nil error, so
@@ -190,12 +218,7 @@ func LoadIgnoreFile(ignorePath, targetFile string) (Map, error) {
 			continue
 		}
 		loc, ruleID := fields[0], fields[1]
-		expiry := ""
-		for _, extra := range fields[2:] {
-			if rest, ok := strings.CutPrefix(extra, "exp:"); ok {
-				expiry = rest
-			}
-		}
+		expiry := IgnoreExpiry(fields)
 		lastColon := strings.LastIndex(loc, ":")
 		if lastColon < 0 {
 			continue

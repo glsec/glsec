@@ -19,7 +19,7 @@ files ─▶ resolve targets ─▶ parse ─▶ validate ─▶ follow includes
 7. **Baseline** (`internal/baseline`). With `--new-only`, findings already in a baseline file are dropped.
 8. **Output** (`internal/output`). Findings are written as text, table, JSON, SARIF, GitLab Code Quality, JUnit, a GitLab SAST report or through a Go template to stdout, with the scan errors in the format's own field. Secret values in messages and source lines are masked first (`internal/redact`) unless `--no-redact` is given. The exit code is 0, 1 for error findings (or warn findings with `--strict`), or 2 for usage, scan and policy errors.
 
-Results can be cached per input (`internal/cache`, under `$XDG_CACHE_HOME/glsec`), keyed on the glsec version, the date, the GitLab version, every input file, the configuration, `.glsec-ignore`, the excluded paths and the selected rules. The cache is off in CI (`CI=true`) unless `--cache` is given, and for stdin, `--no-ignores`, `--new-only`, `--generate-ignore` and `require_ignore_reason`.
+Results can be cached per input (`internal/cache`, under `$XDG_CACHE_HOME/glsec`), keyed on the glsec version, the date, the GitLab version, every input file, the configuration, `.glsec-ignore`, the excluded paths, the selected rules and, when ShellCheck is enabled, the ShellCheck binary. The cache is off in CI (`CI=true`) unless `--cache` is given, and for stdin, `--no-ignores`, `--new-only`, `--generate-ignore` and `require_ignore_reason`.
 
 ### Interfaces
 
@@ -72,7 +72,7 @@ The claim: glsec can scan pipeline files written by an attacker, inside the atta
 |---|---|
 | Economy of mechanism | One static binary, one direct Go dependency (`gopkg.in/yaml.v3`), no plugins, no embedded interpreter. The whole scan is the pipeline in [A scan](#a-scan) |
 | Fail-safe defaults | Input that isn't a valid GitLab CI file, and a ShellCheck that fails, make the scan exit 2 and are named in the reports instead of passing silently. `include: local` and child pipeline paths that leave the repository are skipped, and a pipeline file that is a symbolic link out of its directory stops the scan. Remote includes are never fetched. A `.glsec.yml` found in the scanned directory cannot set the ShellCheck binary |
-| Complete mediation | Every file, including included files and child pipelines, goes through the same parser, alias budget and validation before any rule sees it |
+| Complete mediation | Every file, including included files and child pipelines, goes through the same parser and alias budget and must be a mapping before any rule sees it; a file named on the command line must also look like GitLab CI, since an included one can be a fragment |
 | Least privilege | No network access, no shell, no writes except the result cache (directory `0700`, files `0600`, written by atomic rename; not used when it lies inside the scanned repository or others can write to it), ShellCheck's temporary file and files the user asks for. The container image runs as a non-root user. Release workflows get only the token permissions each job needs |
 | Least common mechanism | ShellCheck, when enabled, runs as a separate process with its arguments as a list; the script goes to a temporary file, never onto a command line |
 | Open design | Source, rules, threat model and build are public; releases are reproducible, so anyone can check that a binary comes from the tagged source |

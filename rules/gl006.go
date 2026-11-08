@@ -165,8 +165,36 @@ func (r *gl006) Check(doc *yaml.Node, file string) []finding.Finding {
 			findings = append(findings, f)
 		}
 	})
+	eachServiceVariables(doc, func(vars *yaml.Node, job string) {
+		for _, f := range checkVariablesNode(vars, file) {
+			f.Job = job
+			findings = append(findings, f)
+		}
+	})
 
 	return findings
+}
+
+// eachServiceVariables calls fn for the variables: of each services: entry at
+// the top level, in default: and in every job (empty job for the first two).
+func eachServiceVariables(doc *yaml.Node, fn func(vars *yaml.Node, job string)) {
+	scan := func(container *yaml.Node, job string) {
+		services := parser.FindKey(container, "services")
+		if services == nil || services.Kind != yaml.SequenceNode {
+			return
+		}
+		for _, service := range services.Content {
+			if service.Kind == yaml.MappingNode {
+				fn(parser.FindKey(service, "variables"), job)
+			}
+		}
+	}
+	mapping := parser.Unwrap(doc)
+	scan(mapping, "")
+	if def := parser.FindKey(mapping, "default"); def != nil {
+		scan(def, "")
+	}
+	parser.EachJob(doc, func(name, job *yaml.Node) { scan(job, name.Value) })
 }
 
 func checkVariablesNode(node *yaml.Node, file string) []finding.Finding {

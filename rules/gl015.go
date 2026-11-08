@@ -54,7 +54,7 @@ func (r *gl015) Check(doc *yaml.Node, file string) []finding.Finding {
 		}
 		for _, cmd := range shellCommands(item.Value) {
 			varName := ""
-			for _, t := range writtenImageRefs(withoutSudo(commandWords(cmd.text))) {
+			for _, t := range writtenImageRefs(commandWords(cmd.text)) {
 				// The name from the group: ${NAME//x/y} or ${NAME:-d} has no } right after it (#977).
 				if m := userControlledTagRe.FindStringSubmatch(t); m != nil {
 					varName = m[1]

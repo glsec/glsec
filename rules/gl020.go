@@ -90,7 +90,7 @@ func comparedFiles(script string) []string {
 	}
 	var files []string
 	for _, cmd := range shellCommands(script) {
-		words := withoutSudo(commandWords(cmd.text))
+		words := commandWords(cmd.text)
 		switch commandName(words) {
 		case "diff", "cmp":
 			words = words[1:]
@@ -116,12 +116,12 @@ func comparedFiles(script string) []string {
 func firstSavedDownload(script string) int {
 	cmds := shellCommands(script)
 	for i, cmd := range cmds {
-		words := withoutSudo(commandWords(cmd.text))
+		words := commandWords(cmd.text)
 		saved := savesDownload(words)
 		if !saved && isDownload(words) {
 			// To stdout, but into a file or an archive extractor.
 			saved = redirectToFileRe.MatchString(cmd.text) ||
-				cmd.piped && i+1 < len(cmds) && extractors[commandName(withoutSudo(commandWords(cmds[i+1].text)))]
+				cmd.piped && i+1 < len(cmds) && extractors[commandName(commandWords(cmds[i+1].text))]
 		}
 		if saved && !fromOwnProject(words) {
 			return cmd.line
@@ -197,8 +197,9 @@ func sendsData(words []string) bool {
 }
 
 // wrappers run the command given after their own options and numbers:
-// timeout 60 curl …, retry 3 10 wget ….
-var wrappers = map[string]bool{"timeout": true, "retry": true, "nice": true, "stdbuf": true, "xargs": true}
+// retry 3 10 wget …. Unlike commandWrappers they aren't standard programs with
+// options of their own to parse.
+var wrappers = map[string]bool{"retry": true, "xargs": true}
 
 func withoutWrapper(words []string) []string {
 	for wrappers[commandName(words)] {
@@ -206,6 +207,7 @@ func withoutWrapper(words []string) []string {
 		for len(words) > 0 && (strings.HasPrefix(words[0], "-") || strings.Trim(words[0], "0123456789.smh") == "") {
 			words = words[1:]
 		}
+		words = unwrapCommand(words)
 	}
 	return words
 }

@@ -73,14 +73,14 @@ build:
 
 	cfg := config.Default()
 	_, _, unjustified, _ := collectFindings(doc, "test.yml", cfg, gitlabver.Version{}, false, false)
-	if unjustified != 0 {
-		t.Errorf("policy off: expected 0 violations, got %d", unjustified)
+	if len(unjustified) != 0 {
+		t.Errorf("policy off: expected 0 violations, got %d", len(unjustified))
 	}
 
 	cfg.RequireIgnoreReason = true
 	_, _, unjustified, _ = collectFindings(doc, "test.yml", cfg, gitlabver.Version{}, false, false)
-	if unjustified != 1 {
-		t.Errorf("policy on: expected 1 violation for the reasonless suppression, got %d", unjustified)
+	if len(unjustified) != 1 {
+		t.Errorf("policy on: expected 1 violation for the reasonless suppression, got %d", len(unjustified))
 	}
 
 	// A suppression carrying a reason satisfies the policy.
@@ -93,7 +93,7 @@ build:
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	if _, _, n, _ := collectFindings(withReason, "test.yml", cfg, gitlabver.Version{}, false, false); n != 0 {
-		t.Errorf("a suppression with a reason must not be a violation, got %d", n)
+	if _, _, n, _ := collectFindings(withReason, "test.yml", cfg, gitlabver.Version{}, false, false); len(n) != 0 {
+		t.Errorf("a suppression with a reason must not be a violation, got %d", len(n))
 	}
 }

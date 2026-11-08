@@ -1,0 +1,11 @@
+# #1213: a file several child pipelines include belongs to each of them, and a
+# finding in it is reported once.
+workflow:
+  rules:
+    - if: $CI_COMMIT_TAG
+one:
+  trigger:
+    include: ci/one.yml
+two:
+  trigger:
+    include: ci/two.yml

@@ -22,6 +22,7 @@ jobs:
   check:
     name: Compare GitLab's CI keywords with the reviewed snapshot
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: read
       issues: write # open or update the issue

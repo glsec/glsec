@@ -616,6 +616,8 @@ func TestGL002_HeredocBodies(t *testing.T) {
 		{"piped to bash", "cat <<EOF | bash\necho $CI_COMMIT_TITLE\nEOF", 1},
 		{"<< inside quotes", "echo \"a << b\"\necho $CI_COMMIT_TAG", 1},
 		{"here-string", "cat <<< $CI_COMMIT_TAG", 1},
+		{"delimiter with a hyphen", "cat <<END-OF-TEXT\n$CI_COMMIT_TAG\nEND-OF-TEXT\necho $CI_COMMIT_TITLE", 1},
+		{"arithmetic shift", "echo $((a<<b))\necho $CI_COMMIT_TITLE\nb", 1},
 		{"unterminated", "cat <<EOF\n$CI_COMMIT_TAG", 0},
 	} {
 		doc, err := parser.Parse([]byte("job:\n  script:\n    - |\n      "+strings.ReplaceAll(tc.script, "\n", "\n      ")+"\n"), "test.yml")

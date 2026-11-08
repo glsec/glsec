@@ -29,9 +29,9 @@ func (r *gl016) SetTrustedHosts(hosts []string) {
 
 var (
 	gitURLRe       = regexp.MustCompile(`\bgit://[^\s'"]+`)
-	curlWgetHTTPRe = regexp.MustCompile(`\b(?:curl|wget)\b[^|]*\b(?i:http)://`)
+	curlWgetHTTPRe = mustCompilePrefiltered(`\b(?:curl|wget)\b[^|]*\b(?i:http)://`)
 	// git fetches remote content just like curl/wget, so the same HTTP check applies.
-	gitFetchHTTPRe = regexp.MustCompile(`\bgit\b[^|]*\b(?:clone|fetch|pull|remote\s+add|submodule\s+add)\b[^|]*\bhttp://`)
+	gitFetchHTTPRe = mustCompilePrefiltered(`\bgit\b[^|]*\b(?:clone|fetch|pull|remote\s+add|submodule\s+add)\b[^|]*\bhttp://`)
 	privateRanges  []*net.IPNet
 	internalTLDs   = []string{".local", ".internal", ".corp", ".lan"}
 )
@@ -48,7 +48,12 @@ func (r *gl016) Check(doc *yaml.Node, file string) []finding.Finding {
 	mapping := parser.Unwrap(doc)
 
 	// include: remote: http://...
-	findings = append(findings, r.checkIncludes(parser.FindKey(mapping, "include"), file)...)
+	eachIncludeItem(doc, func(item *yaml.Node, job string) {
+		if f := r.checkInclude(item, file); f != nil {
+			f.Job = job
+			findings = append(findings, *f)
+		}
+	})
 
 	// variables: values, wherever GitLab can apply them
 	eachVariablesBlock(doc, func(vars *yaml.Node, job string, _ *yaml.Node) {
@@ -114,38 +119,34 @@ func (r *gl016) Check(doc *yaml.Node, file string) []finding.Finding {
 	return findings
 }
 
-func (r *gl016) checkIncludes(node *yaml.Node, file string) []finding.Finding {
-	var findings []finding.Finding
-	for _, item := range parser.IncludeItems(node) {
-		remote := parser.FindKey(item, "remote")
-		if remote == nil || remote.Kind != yaml.ScalarNode {
-			continue
-		}
-		var scheme string
-		switch {
-		case strings.HasPrefix(remote.Value, "http://"):
-			scheme = "HTTP"
-		case strings.HasPrefix(remote.Value, "git://"):
-			scheme = "the plaintext git:// transport"
-		default:
-			continue
-		}
-		host := hostOf(remote.Value)
-		if r.skip(host) {
-			continue
-		}
-		sev := finding.Error
-		msg := "include: remote: uses " + scheme + " — a MITM attacker can inject arbitrary pipeline configuration"
-		if isPrivateOrInternal(host) {
-			sev = finding.Info
-			msg = "include: remote: uses " + scheme + " to a private/internal host — consider HTTPS even on internal networks"
-		}
-		findings = append(findings, finding.Finding{
-			RuleID: "GL016", Severity: sev, Message: msg,
-			File: file, Line: remote.Line, Col: remote.Column,
-		})
+func (r *gl016) checkInclude(item *yaml.Node, file string) *finding.Finding {
+	remote := parser.FindKey(item, "remote")
+	if remote == nil || remote.Kind != yaml.ScalarNode {
+		return nil
 	}
-	return findings
+	var scheme string
+	switch {
+	case strings.HasPrefix(remote.Value, "http://"):
+		scheme = "HTTP"
+	case strings.HasPrefix(remote.Value, "git://"):
+		scheme = "the plaintext git:// transport"
+	default:
+		return nil
+	}
+	host := hostOf(remote.Value)
+	if r.skip(host) {
+		return nil
+	}
+	sev := finding.Error
+	msg := "include: remote: uses " + scheme + " — a MITM attacker can inject arbitrary pipeline configuration"
+	if isPrivateOrInternal(host) {
+		sev = finding.Info
+		msg = "include: remote: uses " + scheme + " to a private/internal host — consider HTTPS even on internal networks"
+	}
+	return &finding.Finding{
+		RuleID: "GL016", Severity: sev, Message: msg,
+		File: file, Line: remote.Line, Col: remote.Column,
+	}
 }
 
 func (r *gl016) checkVariablesHTTP(node *yaml.Node, file string) []finding.Finding {

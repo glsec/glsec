@@ -6,6 +6,7 @@ package validate
 import (
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/glsec/glsec/internal/parser"
@@ -31,8 +32,8 @@ func File(path string, doc *parser.Document) (warnings []string, err error) {
 			warnings = append(warnings, fmt.Sprintf("%s:%d: %s: has job keywords, so GitLab runs it as a job named %q and it sets no %s; glsec scans it as that job", path, key.Line, key.Value, key.Value, map[string]string{"default": "defaults", "workflow": "workflow rules"}[key.Value]))
 		}
 	}
-	if mapping.Kind != yaml.MappingNode {
-		return warnings, fmt.Errorf("%s: not a valid GitLab CI file: expected a top-level mapping", path)
+	if err := Mapping(path, doc); err != nil {
+		return warnings, err
 	}
 
 	if !hasGitLabContent(mapping) {
@@ -40,6 +41,15 @@ func File(path string, doc *parser.Document) (warnings []string, err error) {
 	}
 
 	return warnings, nil
+}
+
+// Mapping returns an error if doc has no top-level mapping. Unlike File it
+// holds for included files as well, which may be fragments of a pipeline.
+func Mapping(path string, doc *parser.Document) error {
+	if doc.MappingNode().Kind != yaml.MappingNode {
+		return fmt.Errorf("%s: not a valid GitLab CI file: expected a top-level mapping", path)
+	}
+	return nil
 }
 
 // knownKeys are GitLab CI reserved top-level keys that are not job definitions.
@@ -56,20 +66,26 @@ var knownKeys = map[string]bool{
 	"after_script":  true,
 }
 
+// jobKeys are the job keywords that mark a mapping as a GitLab CI job. A job
+// in an included file may get its script through extends: or only override part
+// of a job from another file. Keywords other YAML formats use as well, such as
+// image: and environment: in a Compose service, are left out.
+var jobKeys = []string{"script", "run", "trigger", "extends", "needs", "rules", "stage", "tags", "variables"}
+
 // hasGitLabContent returns true if the mapping contains at least one known
-// top-level GitLab CI key or at least one job-like entry (mapping with a
-// "script", "run" or "trigger" key). run: is the CI/CD Steps alternative to
-// script: and is mutually exclusive with it, so a pipeline built entirely from
-// steps has no script: key anywhere. A trigger job has neither: a parent
-// pipeline may consist of nothing but triggers for its children.
+// top-level GitLab CI key, a hidden key or a job-like entry. run: is the CI/CD
+// Steps alternative to script: and is mutually exclusive with it, so a pipeline
+// built entirely from steps has no script: key anywhere. A trigger job has
+// neither: a parent pipeline may consist of nothing but triggers for its
+// children. A file of hidden keys is a template or anchor file for an include.
 func hasGitLabContent(mapping *yaml.Node) bool {
 	for i := 0; i+1 < len(mapping.Content); i += 2 {
 		key := mapping.Content[i].Value
 		val := mapping.Content[i+1]
-		if knownKeys[key] {
+		if knownKeys[key] || strings.HasPrefix(key, ".") {
 			return true
 		}
-		if val.Kind == yaml.MappingNode && (hasKey(val, "script") || hasKey(val, "run") || hasKey(val, "trigger")) {
+		if val.Kind == yaml.MappingNode && slices.ContainsFunc(jobKeys, func(k string) bool { return hasKey(val, k) }) {
 			return true
 		}
 	}

@@ -97,6 +97,31 @@ func (in *Inheritance) IncludedOverride(job *yaml.Node) bool {
 	return true
 }
 
+// eachIncludeItem calls fn for every include entry of doc: the top-level
+// include: (job is empty) and each job's trigger:include, which takes the same
+// entries and loads the child pipeline's configuration (#1162). A template's
+// entry is visited once, in the template, for every job that extends it.
+func eachIncludeItem(doc *yaml.Node, fn func(item *yaml.Node, job string)) {
+	for _, item := range parser.IncludeItems(parser.FindKey(parser.Unwrap(doc), "include")) {
+		fn(item, "")
+	}
+	seen := map[*yaml.Node]bool{}
+	parser.EachJob(doc, func(name, job *yaml.Node) {
+		trigger := parser.FindKey(job, "trigger")
+		if trigger == nil {
+			return
+		}
+		include := parser.FindKey(trigger, "include")
+		if include == nil || seen[include] {
+			return
+		}
+		seen[include] = true
+		for _, item := range parser.IncludeItems(include) {
+			fn(item, name.Value)
+		}
+	})
+}
+
 // Key returns the value of key that applies to job: its own, else from the
 // jobs it extends in the same file (later entries of an extends: list override
 // earlier ones), else from default:, else from the top-level
@@ -105,7 +130,7 @@ func (in *Inheritance) Key(job *yaml.Node, key string) *yaml.Node {
 	if v := in.extendedKey(job, key, 0, map[*yaml.Node]bool{}); v != nil {
 		return v
 	}
-	if inheritsDefault(job, key) {
+	if in.Inherits(job, "default", key) {
 		if def := parser.FindKey(in.mapping, "default"); def != nil {
 			if v := parser.FindKey(def, key); v != nil {
 				return v
@@ -293,22 +318,34 @@ func (in *Inheritance) extendsResolved(job *yaml.Node, depth int, seen map[*yaml
 	return true
 }
 
-// inheritsDefault reports whether the job takes key from default:.
-// inherit: default: false opts out of all keys, a list opts in to the keys it names.
-func inheritsDefault(job *yaml.Node, key string) bool {
-	inherit := parser.FindKey(job, "inherit")
-	if inherit == nil {
-		return true
+// Inherits reports whether the job takes key from what kind names: "default"
+// for the default: keyword and the top-level scripts, "variables" for the
+// pipeline-level variables.
+func (in *Inheritance) Inherits(job *yaml.Node, kind, key string) bool {
+	return inheritAllows(in.inheritValue(job, kind), key)
+}
+
+// inheritValue returns the job's inherit:<kind>, nil when it has none. GitLab
+// deep-merges extends: before it reads the keyword, so a template's inherit:
+// applies, and the job overrides it key by key.
+func (in *Inheritance) inheritValue(job *yaml.Node, kind string) *yaml.Node {
+	if !in.Has(job, "inherit") {
+		return nil
 	}
-	d := parser.FindKey(inherit, "default")
+	return parser.FindKey(parser.FindKey(in.Effective(job), "inherit"), kind)
+}
+
+// inheritAllows reports whether an inherit:<kind> value lets key through:
+// false lets nothing through, a list only what it names.
+func inheritAllows(value *yaml.Node, key string) bool {
 	switch {
-	case d == nil:
+	case value == nil:
 		return true
-	case d.Kind == yaml.ScalarNode:
-		return d.Value != "false"
-	case d.Kind == yaml.SequenceNode:
-		for _, k := range d.Content {
-			if k.Value == key {
+	case value.Kind == yaml.ScalarNode:
+		return !parser.IsFalse(value)
+	case value.Kind == yaml.SequenceNode:
+		for _, item := range value.Content {
+			if item.Value == key {
 				return true
 			}
 		}
@@ -335,7 +372,8 @@ func isScriptList(n *yaml.Node) bool {
 }
 
 // CollectJobScriptLines returns all scalar script lines from a job's
-// before_script, script, after_script, and hooks:pre_get_sources_script sections.
+// before_script, script, after_script, and hooks:pre_get_sources_script
+// sections, and the shell scripts in its image: and services: (#1160).
 func CollectJobScriptLines(job *yaml.Node) []*yaml.Node {
 	var lines []*yaml.Node
 	appendScalars := func(node *yaml.Node) {
@@ -353,12 +391,13 @@ func CollectJobScriptLines(job *yaml.Node) []*yaml.Node {
 	}
 	appendScalars(hookScriptNode(job))
 	lines = append(lines, parser.RunStepScripts(job)...)
-	return lines
+	return append(lines, containerScripts(job)...)
 }
 
 // EachScriptBlock calls fn for every script sequence of the file: the
 // top-level and default: before_script/after_script, each job's script,
-// before_script, after_script and hooks, and run: step scripts. A sequence
+// before_script, after_script and hooks, run: step scripts, and as a block of
+// its own, each shell script in image: and services: (#1160). A sequence
 // shared by several jobs through a YAML anchor is visited once, for the first
 // job that uses it: a rule's result for it doesn't depend on the job, and the
 // findings of the other jobs would only be merged by finding.Dedupe (#766).
@@ -398,16 +437,34 @@ func EachScriptBlockPerJob(doc *yaml.Node, file string, fn func(node *yaml.Node,
 			fn(node, file, job)
 		}
 	}
+	// One block per script, so that a script shared through an anchor is the
+	// same block for every job.
+	var blocks map[*yaml.Node]*yaml.Node
+	visitContainer := func(container *yaml.Node, job string) {
+		for _, script := range containerScripts(container) {
+			block := blocks[script]
+			if block == nil {
+				if blocks == nil {
+					blocks = map[*yaml.Node]*yaml.Node{}
+				}
+				block = &yaml.Node{Kind: yaml.SequenceNode, Line: script.Line, Column: script.Column, Content: []*yaml.Node{script}}
+				blocks[script] = block
+			}
+			fn(block, file, job)
+		}
+	}
 
 	for _, key := range []string{"before_script", "after_script"} {
 		visit(parser.FindKey(mapping, key), "")
 	}
+	visitContainer(mapping, "")
 
 	if def := parser.FindKey(mapping, "default"); def != nil {
 		for _, key := range []string{"before_script", "after_script"} {
 			visit(parser.FindKey(def, key), "")
 		}
 		visit(hookScriptNode(def), "")
+		visitContainer(def, "")
 	}
 
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
@@ -418,6 +475,7 @@ func EachScriptBlockPerJob(doc *yaml.Node, file string, fn func(node *yaml.Node,
 		for _, block := range parser.RunStepBlocks(job) {
 			fn(block, file, name.Value)
 		}
+		visitContainer(job, name.Value)
 	})
 }
 

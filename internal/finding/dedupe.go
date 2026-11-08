@@ -51,6 +51,39 @@ func DedupeSuppressed(suppressed []Suppressed) []Suppressed {
 	return out
 }
 
+// DedupeMoved merges findings moved to a job (see Finding.Origin) that report
+// the same configuration: with each other, so a template many jobs use counts
+// once as it does in its own file, and with what that file reports itself.
+// note is the suffix the move added to a message.
+func DedupeMoved(findings []Finding, note func(Origin) string) []Finding {
+	type place struct {
+		rule, file, message string
+		line                int
+	}
+	seen := map[place]bool{}
+	for _, f := range findings {
+		if f.Origin == (Origin{}) {
+			k := keyOf(f)
+			seen[place{k.rule, k.file, k.message, k.line}] = true
+		}
+	}
+	out := make([]Finding, 0, len(findings))
+	for _, f := range findings {
+		if f.Origin != (Origin{}) {
+			orig := f
+			orig.Message = strings.TrimSuffix(f.Message, note(f.Origin))
+			k := keyOf(orig)
+			p := place{k.rule, f.Origin.File, k.message, f.Origin.Line}
+			if seen[p] {
+				continue
+			}
+			seen[p] = true
+		}
+		out = append(out, f)
+	}
+	return out
+}
+
 type dedupeKey struct {
 	rule, file, message string
 	line, col           int

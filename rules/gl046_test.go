@@ -71,13 +71,17 @@ func TestGL046_ChatAndReleaseCacheKeys(t *testing.T) {
 	}
 }
 
+// The job runs only on protected refs, so only the key can make GL046 report it.
 func TestGL046_FilesOnlyKeyNoFinding(t *testing.T) {
 	f := findings046(t, `
 build:
+  rules:
+    - if: $CI_COMMIT_REF_PROTECTED == "true"
   cache:
     key:
       files:
         - package-lock.json
+    unprotect: true
     paths: [node_modules/]
   script: [npm ci]
 `)
@@ -86,11 +90,15 @@ build:
 	}
 }
 
+// The job runs only on protected refs, so only the key can make GL046 report it.
 func TestGL046_StaticKeyNoFinding(t *testing.T) {
 	f := findings046(t, `
 build:
+  rules:
+    - if: $CI_COMMIT_REF_PROTECTED == "true"
   cache:
     key: "node-modules-v1"
+    unprotect: true
     paths: [node_modules/]
   script: [npm ci]
 `)

@@ -35,6 +35,74 @@ debug:
 	}
 }
 
+func TestGL021_CredentialFilesInLog(t *testing.T) {
+	for _, tc := range []struct {
+		line string
+		want int
+	}{
+		{`cat .npmrc`, 1}, {`head -n 5 .pypirc`, 1},
+		{`tail ~/.netrc`, 1}, {`less /kaniko/.docker/config.json`, 1},
+		{`more .dockercfg`, 1}, {`cat .yarnrc.yml`, 1}, {`cat _netrc`, 1},
+		{`cat ./app/config.json`, 0}, {`echo cat .npmrc`, 0},
+		{`cat .npmrc > copy.txt`, 0}, {`cat .npmrc | tee output.txt`, 1},
+		{`cat .npmrc 2>/dev/null`, 1}, {`# cat .npmrc`, 0},
+		{`cat '.npmrc'`, 1}, {`cat .npmrc > 'copy file'`, 0},
+		{`cat .npmrc 1>&2`, 1}, {`sudo cat /tmp/.netrc`, 1},
+		{`{ cat .npmrc; } > copy.txt`, 0},
+		{`cat .npmrc | sed 's/a/b/'`, 0},
+		{`cat /kaniko/.docker/config.json | sed 's/"password":".*"/"password":"***"/'`, 0},
+		{`cat .npmrc | grep -q registry`, 0},
+		{`cat .npmrc | sed 's/a/b/' > out`, 0},
+		{`cat .npmrc | tee output.txt > /dev/null`, 0},
+		{`cat .npmrc | tee output.txt | cat`, 1},
+		{`AUTH=$(cat ~/.docker/config.json | base64 -w0)`, 0},
+		{`export AUTH=$(cat ~/.docker/config.json | base64)`, 0},
+		{`X=$(cat .npmrc)`, 0}, {`X=$(cat .npmrc | tee output.txt)`, 0},
+		{`X=$(cat .npmrc )`, 0}, {`X=$(echo test; cat .npmrc | tee out)`, 0},
+		{`X=$(cat .npmrc); cat .npmrc`, 1},
+		{`echo '$('; cat .npmrc`, 1}, {`echo "$(true)"; cat .npmrc`, 1},
+		{`echo \$(; cat .npmrc`, 1}, {`X=$(echo (a); cat .npmrc )`, 0},
+		{`cat .npmrc $(echo other)`, 1},
+		{`cat .npmrc &> out.log`, 0},
+		{`if [ -f .npmrc ]; then cat .npmrc; fi`, 1},
+		{`cat other.txt`, 0},
+	} {
+		t.Run(tc.line, func(t *testing.T) {
+			f := findings021(t, "job:\n  script:\n    - "+strconv.Quote(tc.line)+"\n")
+			if len(f) != tc.want {
+				t.Fatalf("got %d findings, want %d: %v", len(f), tc.want, f)
+			}
+		})
+	}
+}
+
+func TestGL021InSubstitution(t *testing.T) {
+	for prefix, want := range map[string]bool{
+		``:                 false,
+		`X=$(`:             true,
+		`X="$(`:            true,
+		`X=$(a) `:          false,
+		`X="$(a)" `:        false,
+		`X="$(a) `:         false,
+		`X=$(a "b" `:       true,
+		`X=$(a (b `:        true,
+		`X=$(a (b) `:       true,
+		`X=$(a (b)) `:      false,
+		`X=\$(`:            false,
+		`echo '$(' `:       false,
+		`echo '$(`:         false,
+		`echo "'$(" `:      true,
+		`echo "\"$(a) `:    false,
+		`echo '"' $(`:      true,
+		`echo "(" `:        false,
+		`echo ")" $(a ")"`: true,
+	} {
+		if got := gl021InSubstitution(prefix); got != want {
+			t.Errorf("gl021InSubstitution(%s) = %v, want %v", prefix, got, want)
+		}
+	}
+}
+
 func TestGL021_EchoPassword(t *testing.T) {
 	f := findings021(t, `
 debug:

@@ -26,30 +26,42 @@ func (r *gl014) ID() string { return "GL014" }
 // Used by GL014 (#1161).
 const psEnvFormat = `(?:\s*\|\s*(?i:format-table|format-list|out-string)(?:\s+-(?i:[a-z]+))?)*`
 
+// psFileTarget matches the PowerShell cmdlets that write the pipeline's output
+// to a file, with or without a path parameter (#1172).
+const psFileTarget = `\|\s*(?i:out-file|set-content|add-content|tee-object)(?:\s+-(?i:filepath|literalpath|path|append|force))*\s+([^\s-]\S*)`
+
 // envDumpRe matches a command that writes the whole environment to a file:
 // env (also env -0/--null), printenv, export/export -p, set, declare/typeset
 // bare or with only -p/-x, cat /proc/self/environ and the PowerShell env:
 // enumeration (optionally through a formatting cmdlet),
-// redirected with > or >> or piped into tee. The command has to
+// redirected with > or >>, piped into tee or into a PowerShell cmdlet that
+// writes a file (see psFileTarget). The command has to
 // start a command, so "cat .env > f", "printenv VAR > f" (a single
 // variable), "set -e > f", "export FOO=bar > f" and "declare -a arr > f"
-// don't match. Group 1 or 2 is the target file.
+// don't match. Group 1, 2 or 3 is the target file.
 // (?m) lets a command start on any line of a block scalar (#1161).
-var envDumpRe = regexp.MustCompile(
+var envDumpRe = mustCompilePrefiltered(
 	`(?m)(?:(?:^|[\s;&|(])(?:env(?:\s+(?:-0|--null))?|printenv|export\s+-p|` +
 		`cat\s+/proc/(?:self|\$\$|[0-9]+)/environ)` +
 		`|(?:^|[;&|(])\s*(?:set|export|(?:declare|typeset)(?:\s+-[px]+)?|` + psEnvDump + psEnvFormat + `))\s*` +
-		`(?:>>?\s*(\S+)|\|\s*tee\s+(?:(?:-a|--append)\s+)?(\S+))`)
+		`(?:>>?\s*(\S+)|\|\s*tee\s+(?:(?:-a|--append)\s+)?(\S+)|` + psFileTarget + `)`)
 
 // Preserve pre-#1161 matches in quoted shell payloads and after comments
 // containing quotes. Masking is only a guard for the newly added forms.
-var legacyEnvDumpRe = regexp.MustCompile(
+var legacyEnvDumpRe = mustCompilePrefiltered(
 	`(?:^|[\s;&|(])(?:env|printenv|export\s+-p|cat\s+/proc/(?:self|\$\$|[0-9]+)/environ)\s*` +
 		`(?:>>?\s*(\S+)|\|\s*tee\s+(?:(?:-a|--append)\s+)?(\S+))`)
 
 // projectDirPrefixRe matches a target written relative to the project
 // directory through its variable.
 var projectDirPrefixRe = regexp.MustCompile(`^\$\{?CI_PROJECT_DIR\}?/`)
+
+// dotenvValueRe matches NAME=$VALUE and NAME=${VALUE}. A longer expansion such
+// as ${VALUE:+yes} doesn't write the value and doesn't match.
+var dotenvValueRe = regexp.MustCompile(`(?:^|[\s"'])[A-Za-z_][A-Za-z0-9_]*=["']?\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))`)
+
+// redirectTargetRe matches an output redirection of a command.
+var redirectTargetRe = regexp.MustCompile(`(?:^|\s)>>?\s*(\S+)`)
 
 func (r *gl014) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
@@ -71,28 +83,41 @@ func (r *gl014) Check(doc *yaml.Node, file string) []finding.Finding {
 		}
 		dotenv := dotenvArtifactNode(artifacts)
 		eachJobScriptLine(job, func(item *yaml.Node) bool {
+			script := blankCaseLabels(item.Value)
+			if secret, target, line := dotenvSecret(script, dotenv); secret != "" {
+				findings = append(findings, finding.Finding{
+					RuleID:   "GL014",
+					Severity: finding.Warn,
+					Job:      name.Value,
+					Message:  fmt.Sprintf("job %q writes secret variable %s to the dotenv report %q — pipeline users can read the file, and later jobs receive the value as a plain variable", name.Value, secret, target),
+					File:     file,
+					Line:     parser.ScalarContentLine(item, line),
+					Col:      item.Column,
+				})
+				return false // one finding per job is enough
+			}
 			// Mask new forms, so a separator inside an echo string such
 			// as `echo "hello; set > f"` is not read as a command boundary. The
 			// target is taken from the original line so a quoted file name still
 			// resolves (#1161).
-			masked := maskShellQuotes(item.Value)
+			masked := maskShellQuotes(script)
 			legacyStarts := map[int]bool{}
-			for _, loc := range legacyEnvDumpRe.FindAllStringIndex(item.Value, -1) {
+			for _, loc := range legacyEnvDumpRe.FindAllStringIndex(script, -1) {
 				legacyStarts[loc[0]] = true
 			}
 			maskedStarts := map[int]bool{}
 			for _, loc := range envDumpRe.FindAllStringSubmatchIndex(masked, -1) {
 				maskedStarts[loc[0]] = true
 			}
-			for _, m := range envDumpRe.FindAllStringSubmatchIndex(item.Value, -1) {
+			for _, m := range envDumpRe.FindAllStringSubmatchIndex(script, -1) {
 				if !legacyStarts[m[0]] && !maskedStarts[m[0]] {
 					continue
 				}
 				target := ""
-				if m[2] >= 0 {
-					target = item.Value[m[2]:m[3]]
-				} else {
-					target = item.Value[m[4]:m[5]]
+				for g := 2; g+1 < len(m); g += 2 {
+					if m[g] >= 0 {
+						target = script[m[g]:m[g+1]]
+					}
 				}
 				var msg string
 				switch {
@@ -153,6 +178,71 @@ func dotenvArtifactNode(artifacts *yaml.Node) *yaml.Node {
 	return parser.FindKey(reports, "dotenv")
 }
 
+// dotenvSecret returns the first secret variable an echo or printf in script
+// writes as NAME=$SECRET into a file of the dotenv report, with that file and
+// the index of the script line. The output of a substitution such as
+// NAME=$(curl -H "$TOKEN" url) isn't the secret and doesn't count.
+func dotenvSecret(script string, dotenv *yaml.Node) (secret, target string, line int) {
+	if dotenv == nil || !strings.Contains(script, "=") {
+		return "", "", 0
+	}
+	cmds := shellCommands(script)
+	for i, cmd := range cmds {
+		words := commandWords(cmd.text)
+		if len(words) == 0 || (words[0] != "echo" && words[0] != "printf") {
+			continue
+		}
+		targets := redirectTargets(cmd.text)
+		if cmd.piped && i+1 < len(cmds) {
+			if next := commandWords(cmds[i+1].text); len(next) > 1 && next[0] == "tee" {
+				targets = append(targets, next[len(next)-1])
+			}
+		}
+		target := firstDotenvFile(targets, dotenv)
+		if target == "" {
+			continue
+		}
+		for _, m := range dotenvValueRe.FindAllStringSubmatch(maskSingleQuoted(cmd.text), -1) {
+			if name := m[1] + m[2]; isSecretName(name) {
+				return name, target, cmd.line
+			}
+		}
+	}
+	return "", "", 0
+}
+
+func redirectTargets(text string) []string {
+	var targets []string
+	for _, m := range redirectTargetRe.FindAllStringSubmatch(text, -1) {
+		targets = append(targets, m[1])
+	}
+	return targets
+}
+
+// firstDotenvFile returns the first of targets that dotenv, a scalar or a list
+// of paths, names.
+func firstDotenvFile(targets []string, dotenv *yaml.Node) string {
+	entries := []*yaml.Node{dotenv}
+	if dotenv.Kind == yaml.SequenceNode {
+		entries = dotenv.Content
+	}
+	for _, target := range targets {
+		for _, entry := range entries {
+			if entry.Kind == yaml.ScalarNode && artifactPath(entry.Value) == artifactPath(target) {
+				return artifactPath(target)
+			}
+		}
+	}
+	return ""
+}
+
+// artifactPath returns a file named in a script or in artifacts: relative to
+// the project directory.
+func artifactPath(p string) string {
+	p = projectDirPrefixRe.ReplaceAllString(strings.Trim(p, `"'`), "")
+	return strings.TrimPrefix(p, "./")
+}
+
 // artifactCovers reports whether an artifacts block uploads target, a file
 // written by the job: untracked: true takes every file the job created, and
 // paths: entries are globs relative to the project directory where ** spans
@@ -160,13 +250,12 @@ func dotenvArtifactNode(artifacts *yaml.Node) *yaml.Node {
 // remove matching files again. A target outside the project directory or
 // given by a variable is never matched against paths:.
 func artifactCovers(artifacts *yaml.Node, target string) bool {
-	target = projectDirPrefixRe.ReplaceAllString(strings.Trim(target, `"'`), "")
-	target = strings.TrimPrefix(target, "./")
+	target = artifactPath(target)
 	known := target != "" && !strings.HasPrefix(target, "/") && !strings.Contains(target, "$") && !strings.Contains(target, "..")
 	if known && artifactGlobsMatch(parser.FindKey(artifacts, "exclude"), target) {
 		return false
 	}
-	if u := parser.FindKey(artifacts, "untracked"); u != nil && u.Value == "true" {
+	if u := parser.FindKey(artifacts, "untracked"); parser.IsTrue(u) {
 		return true
 	}
 	return known && artifactGlobsMatch(parser.FindKey(artifacts, "paths"), target)

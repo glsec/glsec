@@ -54,18 +54,33 @@ func TestRequireImageDigest(t *testing.T) {
 	}
 }
 
+func TestRequireIncludeSHA(t *testing.T) {
+	if Default().RequireIncludeSHA {
+		t.Fatal("include policy must be opt-in")
+	}
+	if !parseStr(t, "require_include_sha: true").RequireIncludeSHA {
+		t.Error("require_include_sha: true not read")
+	}
+	if _, err := parse([]byte("require_include_sha: not-a-bool"), "test.yml"); err == nil {
+		t.Error("accepted invalid boolean")
+	}
+}
+
 func TestLoad_MissingDefaultFile(t *testing.T) {
 	dir := t.TempDir()
 	orig, _ := os.Getwd()
 	_ = os.Chdir(dir)
 	defer func() { _ = os.Chdir(orig) }()
 
-	cfg, err := Load(DefaultFile)
+	cfg, err := LoadDefault()
 	if err != nil {
 		t.Fatalf("expected no error for missing default config: %v", err)
 	}
 	if cfg == nil {
 		t.Fatal("expected non-nil config")
+	}
+	if _, err := Load(DefaultFile); err == nil {
+		t.Error("a file asked for by name must exist, also when it has the default name")
 	}
 }
 
@@ -414,6 +429,25 @@ func TestApplySeverity_Unchanged(t *testing.T) {
 			}
 			if got := cfg.ApplySeverity(f); got != f {
 				t.Errorf("ApplySeverity changed finding: got %+v, want %+v", got, f)
+			}
+		})
+	}
+}
+
+func TestParse_ShellCheckKeys(t *testing.T) {
+	for _, tc := range []struct {
+		name, src, wantErr string
+	}{
+		{"known keys", "shellcheck:\n  enabled: true\n  path: /bin/shellcheck\n", ""},
+		{"misspelt", "strict: false\nshellcheck:\n  enabeld: true\n", `.glsec.yml:3: unknown config key "shellcheck.enabeld"`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := parse([]byte(tc.src), DefaultFile)
+			if tc.wantErr == "" && err != nil {
+				t.Fatal(err)
+			}
+			if tc.wantErr != "" && (err == nil || err.Error() != tc.wantErr) {
+				t.Fatalf("err = %v, want %s", err, tc.wantErr)
 			}
 		})
 	}

@@ -30,7 +30,7 @@ var deployStageKeywords = []string{"deploy", "release", "publish", "ship"}
 // because they occur in build contexts (cargo build --release, upload
 // coverage); only command-qualified forms and the plain verbs deploy/publish
 // count.
-var deployScriptRe = regexp.MustCompile(
+var deployScriptRe = mustCompilePrefiltered(
 	`(?:docker|podman|buildah|crane|skopeo|nerdctl|ko)\s+push\b` +
 		`|helm\s+(?:push|upgrade|install)\b` +
 		`|twine\s+upload\b|cargo\s+publish\b|(?:npm|yarn|pnpm)\s+publish\b|gem\s+push\b|dotnet\s+nuget\s+push\b|(?:uv|flit|poetry|maturin)\s+(?:publish|upload)\b` +

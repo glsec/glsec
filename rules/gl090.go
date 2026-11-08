@@ -36,9 +36,9 @@ type lifecycleEcosystem struct {
 	// offArg reports an install argument that switches it off for that
 	// install.
 	offArg func(words []string) bool
-	// offVars reports a variables: block reaching the job that switches it
+	// offVars reports variables reaching the job that switch it
 	// off.
-	offVars func(vars []*yaml.Node) bool
+	offVars func(vars jobVariables) bool
 	// risk and fix complete the message.
 	risk, fix string
 }
@@ -126,7 +126,7 @@ var lifecycleEcosystems = [...]lifecycleEcosystem{
 		},
 		publishes: rubyPublishes,
 		offArg:    func([]string) bool { return false },
-		offVars:   func([]*yaml.Node) bool { return false },
+		offVars:   func(jobVariables) bool { return false },
 		risk:      "installs gems, building their native extensions",
 		fix:       "a gem's extconf.rb runs with the publish token; build the gem in one job and run gem push from a job that installs nothing",
 	},
@@ -157,7 +157,7 @@ var (
 func (r *gl090) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
 	in := NewInheritance(doc)
-	pipelineVars := pipelineVariableBlocks(doc)
+	pipelineVars := pipelineVariablesOf(doc)
 	type pos struct {
 		item *yaml.Node
 		line int
@@ -190,7 +190,7 @@ func (r *gl090) Check(doc *yaml.Node, file string) []finding.Finding {
 		var off [len(lifecycleEcosystems)]bool
 		for _, item := range items {
 			for _, cmd := range shellCommands(item.Value) {
-				words := withoutSudo(commandWords(cmd.text))
+				words := commandWords(cmd.text)
 				for i, eco := range lifecycleEcosystems {
 					offHere := eco.offRe != nil && eco.offRe.MatchString(cmd.text)
 					switch {
@@ -211,13 +211,14 @@ func (r *gl090) Check(doc *yaml.Node, file string) []finding.Finding {
 				}
 			}
 		}
-		var vars []*yaml.Node
+		var vars jobVariables
+		varsDone := false
 		for i, eco := range lifecycleEcosystems {
 			if install[i] == nil || publish[i] == nil {
 				continue
 			}
-			if vars == nil {
-				vars = jobVariableBlocks(in, job, pipelineVars)
+			if !varsDone {
+				vars, varsDone = variablesOf(in, job, pipelineVars), true
 			}
 			if eco.offVars(vars) {
 				continue
@@ -389,28 +390,18 @@ func pythonBinaryOnlyArg(w []string) bool {
 	return false
 }
 
-// pythonBuildDisabledByVariables reports a variables: block reaching the job
-// that stops builds from source for pip, uv or Poetry.
-func pythonBuildDisabledByVariables(vars []*yaml.Node) bool {
-	for _, b := range vars {
-		for _, v := range varValues(b, "PIP_ONLY_BINARY") {
-			if v == ":all:" {
-				return true
-			}
-		}
-		for _, v := range varValues(b, "UV_NO_BUILD") {
+// pythonBuildDisabledByVariables reports variables that stop builds from
+// source for pip, uv or Poetry on every path through the job.
+func pythonBuildDisabledByVariables(vars jobVariables) bool {
+	return vars.always("PIP_ONLY_BINARY", func(v string) bool { return v == ":all:" }) ||
+		vars.always("UV_NO_BUILD", func(v string) bool {
 			switch strings.ToLower(v) {
 			case "1", "true", "yes", "on":
 				return true
 			}
-		}
-		for _, v := range varValues(b, "POETRY_INSTALLER_ONLY_BINARY") {
-			if v == ":all:" || strings.EqualFold(v, "true") {
-				return true
-			}
-		}
-	}
-	return false
+			return false
+		}) ||
+		vars.always("POETRY_INSTALLER_ONLY_BINARY", func(v string) bool { return v == ":all:" || isTrueValue(v) })
 }
 
 // rubyPublishes reports gem push and rake release, the Bundler gem task
@@ -443,20 +434,10 @@ func subcommand(words []string) string {
 	return ""
 }
 
-// scriptsDisabledByVariables reports a variables: block reaching the job that
-// switches dependency lifecycle scripts off for npm or Yarn 2+.
-func scriptsDisabledByVariables(vars []*yaml.Node) bool {
-	for _, name := range []string{"NPM_CONFIG_IGNORE_SCRIPTS", "npm_config_ignore_scripts"} {
-		if varIsTrue(vars, name) {
-			return true
-		}
-	}
-	for _, b := range vars {
-		for _, v := range varValues(b, "YARN_ENABLE_SCRIPTS") {
-			if strings.EqualFold(v, "false") || v == "0" {
-				return true
-			}
-		}
-	}
-	return false
+// scriptsDisabledByVariables reports variables that switch dependency
+// lifecycle scripts off for npm or Yarn 2+ on every path through the job.
+func scriptsDisabledByVariables(vars jobVariables) bool {
+	return vars.always("NPM_CONFIG_IGNORE_SCRIPTS", isTrueValue) ||
+		vars.always("npm_config_ignore_scripts", isTrueValue) ||
+		vars.always("YARN_ENABLE_SCRIPTS", func(v string) bool { return strings.EqualFold(v, "false") || v == "0" })
 }

@@ -126,7 +126,7 @@ func TestKey_MissingAndUnreadableFiles(t *testing.T) {
 	ci := filepath.Join(dir, "ci.yml")
 	key := func(t *testing.T) (string, error) {
 		t.Helper()
-		return Key("v", "2026-10-15", "", []string{ci}, filepath.Join(dir, ".glsec.yml"), filepath.Join(dir, ".glsec-ignore"), nil, nil, nil)
+		return Key("v", "2026-10-15", "", []string{ci}, filepath.Join(dir, ".glsec.yml"), filepath.Join(dir, ".glsec-ignore"), nil, nil, nil, "")
 	}
 
 	missing, err := key(t)
@@ -159,7 +159,7 @@ func TestKey_DiffersOnConfigAndExcludes(t *testing.T) {
 	cfg := filepath.Join(dir, ".glsec.yml")
 	base := func(excl []string) string {
 		t.Helper()
-		k, err := Key("v", "d", "", nil, cfg, "", excl, nil, nil)
+		k, err := Key("v", "d", "", nil, cfg, "", excl, nil, nil, "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -186,7 +186,7 @@ func TestKey_UnreadablePipelineFileFails(t *testing.T) {
 	// A scanned file that exists but can't be read must not produce a key,
 	// otherwise a cache entry could stand in for content nobody hashed.
 	dir := t.TempDir()
-	if _, err := Key("v", "d", "", []string{dir}, "", "", nil, nil, nil); err == nil {
+	if _, err := Key("v", "d", "", []string{dir}, "", "", nil, nil, nil, ""); err == nil {
 		t.Error("a pipeline path that is a directory must make Key fail")
 	}
 }
@@ -200,7 +200,7 @@ func TestKey_PathThroughAFileFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Resolving file/ci.yml fails with ENOTDIR, which is not "missing".
-	if _, err := Key("v", "d", "", []string{filepath.Join(file, "ci.yml")}, "", "", nil, nil, nil); err == nil {
+	if _, err := Key("v", "d", "", []string{filepath.Join(file, "ci.yml")}, "", "", nil, nil, nil, ""); err == nil {
 		t.Error("a path that can't be resolved must make Key fail")
 	}
 }

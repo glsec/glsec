@@ -76,6 +76,10 @@ type Config struct {
 	// RequireImageDigest makes GL001 warn on literal version tags without a
 	// SHA256 digest. Off by default; version tags remain accepted otherwise.
 	RequireImageDigest bool `yaml:"require_image_digest"`
+	// RequireIncludeSHA makes GL003 and GL041 warn on a project include or
+	// component pinned to anything but a full commit SHA, such as a version
+	// tag. Off by default; version tags remain accepted otherwise.
+	RequireIncludeSHA bool `yaml:"require_include_sha"`
 	// AllowedIncludeSources is an opt-in allowlist of include sources (project
 	// namespaces, component hosts/paths, or remote hosts). When non-empty, GL075
 	// flags any include:project / include:component / include:remote whose source
@@ -122,17 +126,23 @@ func Default() *Config {
 	}
 }
 
-// Load reads and parses a config file. Returns Default() if the file does not
-// exist and path is the default filename.
+// Load reads and parses the config file at path, which must exist.
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path) //nolint:gosec // G304: user-supplied config path
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) && path == DefaultFile {
-			return Default(), nil
-		}
 		return nil, fmt.Errorf("config: %w", err)
 	}
 	return parse(data, path)
+}
+
+// LoadDefault reads DefaultFile from the working directory, or returns
+// Default() if there is none.
+func LoadDefault() (*Config, error) {
+	cfg, err := Load(DefaultFile)
+	if errors.Is(err, os.ErrNotExist) {
+		return Default(), nil
+	}
+	return cfg, err
 }
 
 func parse(data []byte, path string) (*Config, error) {
@@ -171,17 +181,22 @@ func parse(data []byte, path string) (*Config, error) {
 	return &cfg, nil
 }
 
-// allowedTopLevelKeys are the YAML keys of Config's fields, taken from the
-// struct tags so a new field can't be left out (recursive_patterns was, #832).
-var allowedTopLevelKeys = func() map[string]bool {
+// yamlKeys returns the YAML keys of T's fields, taken from the struct tags so a
+// new field can't be left out (recursive_patterns was, #832).
+func yamlKeys[T any]() map[string]bool {
 	keys := map[string]bool{}
-	for _, f := range reflect.VisibleFields(reflect.TypeFor[Config]()) {
+	for _, f := range reflect.VisibleFields(reflect.TypeFor[T]()) {
 		if name, _, _ := strings.Cut(f.Tag.Get("yaml"), ","); name != "" && name != "-" {
 			keys[name] = true
 		}
 	}
 	return keys
-}()
+}
+
+var (
+	allowedTopLevelKeys   = yamlKeys[Config]()
+	allowedShellCheckKeys = yamlKeys[ShellCheckConfig]()
+)
 
 // Keys returns the top-level keys a config file may have.
 func Keys() []string {
@@ -198,6 +213,15 @@ func checkUnknownKeys(mapping *yaml.Node, path string) error {
 		key := mapping.Content[i].Value
 		if !allowedTopLevelKeys[key] {
 			return fmt.Errorf("%s:%d: unknown config key %q", path, mapping.Content[i].Line, key)
+		}
+		if key != "shellcheck" {
+			continue
+		}
+		section := mapping.Content[i+1]
+		for j := 0; section.Kind == yaml.MappingNode && j+1 < len(section.Content); j += 2 {
+			if name := section.Content[j].Value; !allowedShellCheckKeys[name] {
+				return fmt.Errorf("%s:%d: unknown config key %q", path, section.Content[j].Line, key+"."+name)
+			}
 		}
 	}
 	return nil

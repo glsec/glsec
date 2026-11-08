@@ -52,6 +52,10 @@
       "description": "Also report images pinned to a version tag without a sha256 digest (GL001). Off by default.",
       "type": "boolean"
     },
+    "require_include_sha": {
+      "description": "Also report project includes (GL003) and components (GL041) pinned to anything but a full commit SHA, such as a version tag. Off by default.",
+      "type": "boolean"
+    },
     "allowed_include_sources": {
       "description": "Sources include:project, include:component and include:remote may use (project namespaces, component hosts or paths, remote hosts). When set, GL075 reports any other source. Empty disables the check.",
       "type": "array",

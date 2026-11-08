@@ -306,3 +306,19 @@ d:
 		})
 	}
 }
+
+// GitLab reads YAML 1.1, so a plain yes or on is true and no or off is false;
+// a quoted "yes" is a string, which GitLab rejects for interruptible (#1158).
+func TestGL049_YAML11Booleans(t *testing.T) {
+	for value, want := range map[string]int{
+		"yes": 1, "On": 1, "true": 1,
+		"no": 0, "off": 0, `"yes"`: 0,
+	} {
+		t.Run(value, func(t *testing.T) {
+			f := findings049(t, "deploy-production:\n  stage: deploy\n  interruptible: "+value+"\n  script:\n    - kubectl apply -f k8s/\n")
+			if len(f) != want {
+				t.Fatalf("interruptible: %s: got %d findings, want %d", value, len(f), want)
+			}
+		})
+	}
+}

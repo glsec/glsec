@@ -4,8 +4,6 @@
 package rules
 
 import (
-	"regexp"
-
 	"github.com/glsec/glsec/internal/finding"
 	"gopkg.in/yaml.v3"
 )
@@ -16,7 +14,7 @@ var GL030 = &gl030{}
 
 func (r *gl030) ID() string { return "GL030" }
 
-var sshKeyscanRe = regexp.MustCompile(`\bssh-keyscan\b`)
+var sshKeyscanRe = mustCompilePrefiltered(`\bssh-keyscan\b`)
 
 func (r *gl030) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding

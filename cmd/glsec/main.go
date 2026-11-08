@@ -26,6 +26,7 @@ import (
 	"github.com/glsec/glsec/internal/color"
 	"github.com/glsec/glsec/internal/config"
 	"github.com/glsec/glsec/internal/finding"
+	"github.com/glsec/glsec/internal/gctune"
 	"github.com/glsec/glsec/internal/output"
 	"github.com/glsec/glsec/internal/parser"
 	"github.com/glsec/glsec/internal/redact"
@@ -34,6 +35,7 @@ import (
 	"github.com/glsec/glsec/internal/validate"
 	gitlabver "github.com/glsec/glsec/internal/version"
 	"github.com/glsec/glsec/rules"
+	"gopkg.in/yaml.v3"
 )
 
 // Set via ldflags at build time by GoReleaser.
@@ -53,6 +55,7 @@ var stdin io.Reader = os.Stdin
 // run is the whole CLI: it parses args, scans, writes the report to stdout and
 // returns the process exit code instead of exiting, so tests can drive it.
 func run(args []string, stdout, stderr io.Writer) int {
+	gctune.Release()
 	if len(args) >= 1 && args[0] == "list" {
 		return runList(args[1:], stdout, stderr)
 	}
@@ -217,7 +220,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 	cfg := config.Default()
 	if configPath != "" {
 		var err error
-		if cfg, err = config.Load(configPath); err != nil {
+		if flagSet(flags, "config") {
+			cfg, err = config.Load(configPath)
+		} else {
+			cfg, err = config.LoadDefault()
+		}
+		if err != nil {
 			_, _ = fmt.Fprintf(stderr, "error: %v\n", err)
 			return 2
 		}
@@ -284,6 +292,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 	rules.GL016.SetTrustedHosts(cfg.TrustedHosts)
 	rules.GL001.SetRequireImageDigest(cfg.RequireImageDigest)
+	rules.GL003.SetRequireIncludeSHA(cfg.RequireIncludeSHA)
+	rules.GL041.SetRequireIncludeSHA(cfg.RequireIncludeSHA)
 	rules.GL065.SetAllowedRegistries(cfg.AllowedRegistries)
 	rules.GL075.SetAllowedIncludeSources(cfg.AllowedIncludeSources)
 
@@ -378,6 +388,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 	// The reports carry the errors too, so a failed scan doesn't look like a
 	// clean one (#809).
 	var scanErrors []output.ScanError
+	scanOpts.reportError = func(e output.ScanError) {
+		_, _ = fmt.Fprintf(stderr, "error: %s\n", e.Message)
+		scanErrors = append(scanErrors, e)
+	}
 	scanned := 0
 	for _, file := range targets {
 		if matchesExclude(file, cfg.ExcludePaths) {
@@ -391,8 +405,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		}
 		findings, suppressed, jobCount, unjustified, scanErr := scanRoot(file, scanOpts)
 		if scanErr != nil {
-			_, _ = fmt.Fprintf(stderr, "error: %s\n", scanErr.Message)
-			scanErrors = append(scanErrors, *scanErr)
+			scanOpts.reportError(*scanErr)
 			continue
 		}
 		allFindings = append(allFindings, findings...)
@@ -414,6 +427,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 
 	if *generateIgnoreFlag {
+		if len(scanErrors) > 0 {
+			return 2
+		}
 		ruleDidRun := func(id string) bool { return ruleRan(cfg, gitlabVersion, id) }
 		written, kept, err := writeIgnoreFile(suppress.IgnoreFile, allFindings, scanOpts.scannedFiles, ruleDidRun)
 		if err != nil {
@@ -444,11 +460,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	if len(scanErrors) > 0 {
-		return 2
-	}
 	if totalUnjustified > 0 {
 		_, _ = fmt.Fprintf(stderr, "%d suppression(s) without a reason; require_ignore_reason is enabled\n", totalUnjustified)
+		return 2
+	}
+	if len(scanErrors) > 0 {
 		return 2
 	}
 	return exitCode(allFindings, cfg)
@@ -478,6 +494,8 @@ type scanOptions struct {
 	// With readStdin, the root pipeline is stdin, read into stdin (#833).
 	stdin     []byte
 	readStdin bool
+	// reportError records a file that breaks the scan without ending it.
+	reportError func(output.ScanError)
 }
 
 // scanRoot parses one root pipeline file (and its child pipelines), runs the
@@ -514,19 +532,36 @@ func scanRoot(file string, opt scanOptions) (findings []finding.Finding, suppres
 		return fail(file, valErr)
 	}
 
-	seen := map[string]*parser.Document{}
-	if abs, absErr := filepath.Abs(file); absErr == nil {
-		seen[abs] = doc
-	}
 	// GitLab resolves trigger:include paths from the repository root, taken
 	// here as the directory of the pipeline being scanned.
 	allDocs := []*parser.Document{doc}
 	if file != parser.StdinName {
-		allDocs = collectDocuments(opt.stderr, doc, filepath.Dir(file), opt.cfg.ExcludePaths, seen)
+		rootDir := filepath.Dir(file)
+		files := newPipelineFiles(opt.stderr, rootDir, opt.cfg.ExcludePaths, file, doc)
+		// Outside the repository root a path is looked up in the wrong
+		// place, so a file that isn't found says nothing about the pipeline.
+		strictRead := opt.cfg.Strict && isRepositoryRoot(rootDir)
+		files.unread = func(kind, path string, err error, optional bool) {
+			msg := fmt.Sprintf("%s %s: %s", kind, output.Sanitize(filepath.ToSlash(path)), output.Sanitize(err.Error()))
+			if strictRead && !optional {
+				opt.reportError(output.ScanError{File: path, Message: msg})
+				return
+			}
+			_, _ = fmt.Fprintf(opt.stderr, "warning: %s\n", msg)
+		}
+		allDocs = files.collect(doc, false)
 	} else if len(parser.LocalIncludePaths(doc.Root)) > 0 || len(parser.ChildPipelinePaths(doc.Root)) > 0 {
 		_, _ = fmt.Fprintf(opt.stderr, "note: %s: local includes and child pipelines are not read; name the file with --stdin-filename to resolve them\n", file)
 	}
+	// A file several pipelines include is in allDocs once per pipeline.
+	unique := map[string]*parser.Document{}
+	var filePaths []string
 	for _, d := range allDocs {
+		if unique[d.File] != nil {
+			continue
+		}
+		unique[d.File] = d
+		filePaths = append(filePaths, d.File)
 		if opt.scannedFiles != nil {
 			opt.scannedFiles[d.File] = true
 		}
@@ -540,8 +575,7 @@ func scanRoot(file string, opt scanOptions) (findings []finding.Finding, suppres
 		}
 	}
 
-	jobCount = parser.CountJobs(doc.Root)
-	for _, d := range allDocs[1:] {
+	for _, d := range unique {
 		jobCount += parser.CountJobs(d.Root)
 	}
 
@@ -551,28 +585,49 @@ func scanRoot(file string, opt scanOptions) (findings []finding.Finding, suppres
 
 	var cacheKey string
 	if useCache {
-		filePaths := make([]string, len(allDocs))
-		for i, d := range allDocs {
-			filePaths[i] = d.File
+		var scBin string
+		scReady := true
+		if opt.cfg.ShellCheck.Enabled {
+			if bin, berr := shellcheck.ResolveBinary(opt.cfg.ShellCheck.Path); berr == nil {
+				scBin = bin
+			} else {
+				scReady = false
+			}
 		}
-		if key, kerr := cache.Key(resolvedVersion(), time.Now().Format("2006-01-02"), opt.versionStr, filePaths, opt.configPath, suppress.IgnoreFile, opt.cfg.ExcludePaths, opt.only, opt.skip); kerr == nil {
-			cacheKey = key
-			if entry, hit := cache.Load(cacheKey); hit {
-				return entry.Findings, entry.Suppressed, entry.JobCount, 0, nil
+		if scReady {
+			if key, kerr := cache.Key(resolvedVersion(), time.Now().Format("2006-01-02"), opt.versionStr, filePaths, opt.configPath, suppress.IgnoreFile, opt.cfg.ExcludePaths, opt.only, opt.skip, scBin); kerr == nil {
+				cacheKey = key
+				if entry, hit := cache.Load(cacheKey); hit {
+					return entry.Findings, entry.Suppressed, entry.JobCount, 0, nil
+				}
 			}
 		}
 	}
 
 	skipSuppress := opt.generateIgnore || opt.noIgnores
+	// Checks that don't depend on the pipeline run once per file.
+	again := *opt.cfg
+	again.RequireIgnoreReason = false
+	again.ShellCheck.Enabled = false
+	checked := map[string]bool{}
 	for _, d := range withPipelineContext(allDocs) {
-		f, s, u, err := collectFindings(d, d.File, opt.cfg, opt.gitlabVersion, skipSuppress, opt.newOnly)
+		cfg := opt.cfg
+		if checked[d.File] {
+			cfg = &again
+		}
+		checked[d.File] = true
+		f, s, u, err := collectFindings(d, d.File, cfg, opt.gitlabVersion, skipSuppress, opt.newOnly)
 		if err != nil {
 			return fail(d.File, err)
 		}
 		findings = append(findings, f...)
 		suppressed = append(suppressed, s...)
-		unjustified += u
+		for _, policyErr := range u {
+			opt.reportError(policyErr)
+		}
+		unjustified += len(u)
 	}
+	findings, suppressed = finding.DedupeMoved(finding.Dedupe(findings), originNote), finding.DedupeSuppressed(suppressed)
 
 	if useCache && cacheKey != "" {
 		cache.Store(cacheKey, &cache.Entry{Findings: findings, Suppressed: suppressed, JobCount: jobCount})
@@ -864,64 +919,140 @@ func matchesExclude(file string, patterns []string) bool {
 	return false
 }
 
-// collectDocuments recursively collects all pipeline documents (main + children)
+// pipelineFiles reads the files of a pipeline and its child pipelines. A file
+// belongs to every pipeline that includes it, with a Document of its own there
+// sharing the parsed tree, so each pipeline gets its context (#1166).
+type pipelineFiles struct {
+	w            io.Writer
+	rootDir      string
+	excludePaths []string
+	// parsed caches each file by absolute path; nil if it could not be read.
+	parsed map[string]*parser.Document
+	// members holds the files of each pipeline by absolute path. It stops
+	// include cycles; a value is nil while the file is being read.
+	members map[*parser.Document]map[string]*parser.Document
+	// children holds the pipelines started so far by absolute path, which
+	// stops cycles of child pipelines.
+	children map[string]bool
+	// skipped holds the paths already reported as outside rootDir.
+	skipped map[string]bool
+	// unread reports a file that could not be read. optional says the
+	// pipeline can be valid without it (#1167).
+	unread func(kind, path string, err error, optional bool)
+}
+
+func newPipelineFiles(w io.Writer, rootDir string, excludePaths []string, file string, root *parser.Document) *pipelineFiles {
+	p := &pipelineFiles{
+		w: w, rootDir: rootDir, excludePaths: excludePaths,
+		parsed:   map[string]*parser.Document{},
+		members:  map[*parser.Document]map[string]*parser.Document{},
+		children: map[string]bool{},
+		skipped:  map[string]bool{},
+	}
+	if abs, err := filepath.Abs(file); err == nil {
+		p.children[abs] = true
+		p.members[root] = map[string]*parser.Document{abs: root}
+	} else {
+		p.members[root] = map[string]*parser.Document{}
+	}
+	return p
+}
+
+// read returns a Document for path, which is abs, parsing the file the first
+// time. A file that can't be read is reported once.
+func (p *pipelineFiles) read(kind, path, abs string, optional bool) *parser.Document {
+	doc, ok := p.parsed[abs]
+	if !ok {
+		parsed, err := parser.ParseFile(path)
+		if err == nil {
+			err = validate.Mapping(path, parsed)
+		}
+		if err != nil {
+			p.unread(kind, path, err, optional)
+			parsed = nil
+		}
+		p.parsed[abs], doc = parsed, parsed
+	}
+	if doc == nil {
+		return nil
+	}
+	own := *doc
+	return &own
+}
+
+// collect recursively collects all pipeline documents (main + children)
 // without running any rules. The first element is always the root document.
 // Child paths are relative to rootDir at every level, as in GitLab; a missing
-// or unparsable child, or one outside rootDir, is reported to w and skipped.
-func collectDocuments(w io.Writer, doc *parser.Document, rootDir string, excludePaths []string, seen map[string]*parser.Document) []*parser.Document {
+// or unparsable child is passed to unread and skipped, and one outside rootDir
+// is reported to w and skipped. optional marks doc as included through rules:,
+// which then holds for the files it names too.
+func (p *pipelineFiles) collect(doc *parser.Document, optional bool) []*parser.Document {
 	all := []*parser.Document{doc}
 	pipeline := doc
 	if doc.IncludedBy != nil {
 		pipeline = doc.IncludedBy
 	}
-	follow := func(kind, path string, included bool) {
-		childPath := filepath.Join(rootDir, strings.TrimPrefix(path, "/"))
-		if matchesExclude(childPath, excludePaths) {
+	follow := func(kind, path string, included, optional bool) {
+		childPath := filepath.Join(p.rootDir, strings.TrimPrefix(path, "/"))
+		if matchesExclude(childPath, p.excludePaths) {
 			return
 		}
 		abs, err := filepath.Abs(childPath)
 		if err != nil {
 			return
 		}
-		if known, ok := seen[abs]; ok {
-			// Included again: GitLab merges it again, so its place can change.
-			if included && known != nil && known.IncludedBy == pipeline {
-				doc.Includes = append(doc.Includes, known)
+		if included {
+			if known, ok := p.members[pipeline][abs]; ok {
+				// Included again: GitLab merges it again, so its place can change.
+				if known != nil && known.IncludedBy == pipeline {
+					doc.Includes = append(doc.Includes, known)
+				}
+				return
+			}
+			p.members[pipeline][abs] = nil
+		} else {
+			if p.children[abs] {
+				return
+			}
+			p.children[abs] = true
+		}
+		// GitLab rejects local includes outside the project; reading them would
+		// let a pipeline file print lines of other files on the runner.
+		if !withinRoot(p.rootDir, childPath) {
+			if !p.skipped[abs] {
+				p.skipped[abs] = true
+				_, _ = fmt.Fprintf(p.w, "warning: %s %s: outside the repository, skipped\n", kind, output.Sanitize(filepath.ToSlash(childPath)))
 			}
 			return
 		}
-		seen[abs] = nil
-		// GitLab rejects local includes outside the project; reading them would
-		// let a pipeline file print lines of other files on the runner.
-		if !withinRoot(rootDir, childPath) {
-			_, _ = fmt.Fprintf(w, "warning: %s %s: outside the repository, skipped\n", kind, output.Sanitize(filepath.ToSlash(childPath)))
+		// A path with a variable is only a guess at the real file.
+		childDoc := p.read(kind, childPath, abs, optional || strings.Contains(path, "$"))
+		if childDoc == nil {
 			return
 		}
-		childDoc, err := parser.ParseFile(childPath)
-		if err != nil {
-			_, _ = fmt.Fprintf(w, "warning: %s %s: %s\n", kind, output.Sanitize(filepath.ToSlash(childPath)), output.Sanitize(err.Error()))
-			return
-		}
-		seen[abs] = childDoc
 		if included {
+			p.members[pipeline][abs] = childDoc
 			childDoc.IncludedBy = pipeline
 			doc.Includes = append(doc.Includes, childDoc)
+		} else {
+			p.members[childDoc] = map[string]*parser.Document{abs: childDoc}
 		}
-		all = append(all, collectDocuments(w, childDoc, rootDir, excludePaths, seen)...)
+		all = append(all, p.collect(childDoc, optional)...)
 	}
 	for _, child := range parser.ChildPipelinePaths(doc.Root) {
-		follow("child pipeline", child, false)
+		follow("child pipeline", child, false, optional)
 	}
 	// Files pulled in with include: local are part of this pipeline (#810).
-	for _, include := range parser.LocalIncludePaths(doc.Root) {
-		pattern := strings.TrimPrefix(include, "/")
+	for _, include := range parser.LocalIncludes(doc.Root) {
+		pattern := strings.TrimPrefix(include.Path, "/")
+		conditional := optional || include.Conditional
 		re := parser.IncludeGlob(pattern)
 		if re == nil {
-			follow("include", pattern, true)
+			follow("include", pattern, true, conditional)
 			continue
 		}
-		for _, path := range globIncludes(w, rootDir, pattern, re) {
-			follow("include", path, true)
+		for _, path := range globIncludes(p.w, p.rootDir, pattern, re) {
+			follow("include", path, true, conditional)
 		}
 	}
 	return all
@@ -991,6 +1122,24 @@ func globIncludes(w io.Writer, rootDir, pattern string, re *regexp.Regexp) []str
 	return paths
 }
 
+// isRepositoryRoot reports whether dir is the top of a Git repository, or in
+// none. It looks for .git like git rev-parse --show-toplevel, without needing
+// git in the image or a repository owned by the user running glsec.
+func isRepositoryRoot(dir string) bool {
+	start, err := resolvePath(dir)
+	if err != nil {
+		return false
+	}
+	for d := start; ; d = filepath.Dir(d) {
+		if _, err := os.Lstat(filepath.Join(d, ".git")); err == nil { //nolint:gosec // G703: only asks whether .git exists next to the scanned file or above it
+			return d == start
+		}
+		if d == filepath.Dir(d) {
+			return true
+		}
+	}
+}
+
 // withinRoot reports whether path, after resolving symbolic links, lies inside
 // rootDir. For a path that doesn't exist, its nearest existing parent is resolved.
 func withinRoot(rootDir, path string) bool {
@@ -1032,18 +1181,18 @@ func resolvePath(p string) (string, error) {
 // An unreadable .glsec-ignore comes back as an error: the caller stops the run
 // with exit 2, like an unreadable config file, instead of silently scanning
 // without the suppressions.
-func collectFindings(doc *parser.Document, path string, cfg *config.Config, gitlabVersion gitlabver.Version, skipSuppress, skipIgnoreFile bool) ([]finding.Finding, []finding.Suppressed, int, error) {
+func collectFindings(doc *parser.Document, path string, cfg *config.Config, gitlabVersion gitlabver.Version, skipSuppress, skipIgnoreFile bool) ([]finding.Finding, []finding.Suppressed, []output.ScanError, error) {
 	sm := suppress.Build(doc.Root)
 	// Checked against the inline map only: the .glsec-ignore baseline has no
 	// reason column, so requiring one there would be unsatisfiable.
-	unjustified := 0
+	var unjustified []output.ScanError
 	if cfg.RequireIgnoreReason && !skipSuppress {
-		unjustified = reportUnjustified(sm, path)
+		unjustified = suppressionPolicyErrors(sm, path)
 	}
-	if !skipIgnoreFile {
+	if !skipIgnoreFile && !skipSuppress {
 		ignore, err := suppress.LoadIgnoreFile(suppress.IgnoreFile, path)
 		if err != nil {
-			return nil, nil, 0, fmt.Errorf("%s: %w", suppress.IgnoreFile, err)
+			return nil, nil, nil, fmt.Errorf("%s: %w", suppress.IgnoreFile, err)
 		}
 		sm.Merge(ignore)
 	}
@@ -1054,23 +1203,34 @@ func collectFindings(doc *parser.Document, path string, cfg *config.Config, gitl
 	// that suddenly reappears is traceable to the date rather than looking like
 	// a new violation.
 	var suppressed []finding.Suppressed
-	keep := func(f finding.Finding) bool {
-		// On configuration another file of the pipeline contributes (#810):
-		// that file reports it.
-		if f.Line <= parser.ContextLine/2 {
-			return false
+	jobs := ownJobs(doc)
+	keep := func(f finding.Finding) (finding.Finding, bool) {
+		// On configuration another file of the pipeline contributes (#810).
+		// A job in this file that uses it reports it, and a suppression next
+		// to the configuration still counts. Otherwise that file reports it.
+		if parser.IsContextLine(f.Line) {
+			at := f.Line
+			job, ok := jobs[f.Job]
+			if !ok {
+				return f, false
+			}
+			f = movedToJob(doc, f, job)
+			if e, ok := sm.Active(at, f.RuleID, now); ok && !skipSuppress {
+				suppressed = append(suppressed, finding.Suppressed{Finding: f, Source: e.Source, Reason: e.Reason, Expires: e.Expiry})
+				return f, false
+			}
 		}
 		if skipSuppress {
-			return true
+			return f, true
 		}
 		if e, ok := sm.Active(f.Line, f.RuleID, now); ok {
 			suppressed = append(suppressed, finding.Suppressed{Finding: f, Source: e.Source, Reason: e.Reason, Expires: e.Expiry})
-			return false
+			return f, false
 		}
 		if sm.ExpiredAt(f.Line, f.RuleID, now) {
 			fmt.Fprintf(os.Stderr, "%s:%d: %s suppression has expired, reporting the finding again\n", output.Sanitize(path), f.Line, f.RuleID)
 		}
-		return true
+		return f, true
 	}
 
 	var findings []finding.Finding
@@ -1092,17 +1252,16 @@ func collectFindings(doc *parser.Document, path string, cfg *config.Config, gitl
 			if !cfg.AboveMinSeverity(f) {
 				continue
 			}
-			if !keep(f) {
-				continue
+			if f, ok := keep(f); ok {
+				findings = append(findings, f)
 			}
-			findings = append(findings, f)
 		}
 	}
 
 	if cfg.ShellCheck.Enabled {
 		scFindings, err := shellcheck.Run(doc.Root, path, cfg.ShellCheck.Path)
 		if err != nil {
-			return nil, nil, 0, fmt.Errorf("%s: %w", path, err)
+			return nil, nil, nil, fmt.Errorf("%s: %w", path, err)
 		}
 		for _, f := range scFindings {
 			if !cfg.RuleEnabled(f.RuleID) {
@@ -1112,19 +1271,47 @@ func collectFindings(doc *parser.Document, path string, cfg *config.Config, gitl
 			if !cfg.AboveMinSeverity(f) {
 				continue
 			}
-			if !keep(f) {
-				continue
+			if f, ok := keep(f); ok {
+				findings = append(findings, f)
 			}
-			findings = append(findings, f)
 		}
 	}
 
 	return finding.Dedupe(findings), finding.DedupeSuppressed(suppressed), unjustified, nil
 }
 
-// reportUnjustified prints every inline suppression that carries no reason and
-// returns how many there were.
-func reportUnjustified(sm suppress.Map, path string) int {
+// ownJobs returns the keys of the document's top-level entries in the file
+// itself, by name.
+func ownJobs(doc *parser.Document) map[string]*yaml.Node {
+	jobs := map[string]*yaml.Node{}
+	mapping := doc.MappingNode()
+	for i := 0; i+1 < len(mapping.Content); i += 2 {
+		if key := mapping.Content[i]; !parser.IsContextLine(key.Line) {
+			jobs[key.Value] = key
+		}
+	}
+	return jobs
+}
+
+// movedToJob points a finding on another file's configuration at the job that
+// uses it, and says where that configuration is (#1154).
+func movedToJob(doc *parser.Document, f finding.Finding, job *yaml.Node) finding.Finding {
+	if file, line, ok := doc.ContextOrigin(f.Line); ok {
+		f.Origin = finding.Origin{File: file, Line: line}
+		f.Message += originNote(f.Origin)
+	}
+	f.Line, f.Col = job.Line, job.Column
+	return f
+}
+
+// originNote is what movedToJob adds to a message. The path reads the same on
+// every platform.
+func originNote(o finding.Origin) string {
+	return fmt.Sprintf(" (from %s:%d)", filepath.ToSlash(o.File), o.Line)
+}
+
+// suppressionPolicyErrors identifies inline suppressions without a reason.
+func suppressionPolicyErrors(sm suppress.Map, path string) []output.ScanError {
 	entries := sm.Entries()
 	sort.Slice(entries, func(i, j int) bool {
 		if entries[i].Line != entries[j].Line {
@@ -1132,15 +1319,17 @@ func reportUnjustified(sm suppress.Map, path string) int {
 		}
 		return entries[i].RuleID < entries[j].RuleID
 	})
-	n := 0
+	var errs []output.ScanError
 	for _, e := range entries {
-		if e.Reason != "" || e.Line <= parser.ContextLine/2 {
+		if e.Reason != "" || parser.IsContextLine(e.Line) {
 			continue
 		}
-		n++
-		fmt.Fprintf(os.Stderr, "%s:%d: %s is suppressed without a reason; add \"-- why\" to the glsec:ignore comment\n", output.Sanitize(path), e.Line, e.RuleID)
+		errs = append(errs, output.ScanError{
+			File:    path,
+			Message: fmt.Sprintf("%s:%d: %s is suppressed without a reason; add \"-- why\" to the glsec:ignore comment", output.Sanitize(path), e.Line, e.RuleID),
+		})
 	}
-	return n
+	return errs
 }
 
 // filterNewOnly keeps only findings absent from the baseline. baselinePath is
@@ -1165,6 +1354,9 @@ func filterNewOnly(w io.Writer, findings []finding.Finding, baselinePath string)
 	for _, f := range findings {
 		if bl.IsNew(f) {
 			newFindings = append(newFindings, f)
+			if bl.Expired(f) {
+				_, _ = fmt.Fprintf(w, "%s:%d: %s suppression has expired, reporting the finding again\n", output.Sanitize(f.File), f.Line, f.RuleID)
+			}
 		}
 	}
 	if n := len(findings) - len(newFindings); n > 0 {

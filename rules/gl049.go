@@ -29,10 +29,7 @@ func (r *gl049) Check(doc *yaml.Node, file string) []finding.Finding {
 			return
 		}
 		interruptible := in.Key(job, "interruptible")
-		if interruptible == nil || interruptible.Kind != yaml.ScalarNode {
-			return
-		}
-		if strings.ToLower(interruptible.Value) != "true" {
+		if !parser.IsTrue(interruptible) {
 			return
 		}
 		// A job disabled by rules: all when: never never runs, so a mid-run

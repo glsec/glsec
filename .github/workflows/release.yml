@@ -14,6 +14,7 @@ jobs:
   gate:
     name: Require green CI and a signed tag
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       actions: read
       contents: read # read .github/allowed_signers from the default branch
@@ -75,6 +76,7 @@ jobs:
     needs: release
     if: ${{ !contains(github.ref_name, '-') }}
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       actions: write # start benchmark-history.yml
     steps:

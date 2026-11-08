@@ -5,6 +5,7 @@ package rules
 
 import (
 	"fmt"
+	"path"
 	"regexp"
 	"strings"
 
@@ -20,10 +21,6 @@ var GL021 = &gl021{}
 func (r *gl021) ID() string { return "GL021" }
 
 var (
-	// assignRe matches a leading shell env assignment (VAR=value) that precedes
-	// a command without being one.
-	assignRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*=`)
-
 	// gl021VarRefRe also accepts PowerShell's $env:NAME and ${env:NAME}.
 	// The env: drive is case insensitive; the capture is the variable name.
 	gl021VarRefRe = regexp.MustCompile(`\$\{?(?i:env:)?([A-Za-z_][A-Za-z0-9_]*)\}?`)
@@ -40,7 +37,7 @@ var (
 
 	// safeCheckRe matches patterns that reference the variable without printing its value:
 	// length checks (-n "$VAR", test -n "$VAR"), default expansions (${VAR:-}, ${VAR:+}).
-	safeCheckRe = regexp.MustCompile(`\[\s*(?:-n|-z)\s+|\btest\s+-[nz]\b|:\-|:\+`)
+	safeCheckRe = mustCompilePrefiltered(`\[\s*(?:-n|-z)\s+|\btest\s+-[nz]\b|:\-|:\+`)
 
 	// singleQuotedRe matches single-quoted spans, whose contents the shell does
 	// not expand (so a secret reference inside them is literal text).
@@ -79,14 +76,19 @@ func (r *gl021) Check(doc *yaml.Node, file string) []finding.Finding {
 				for _, l := range logicalLines(item.Value) {
 					i, line := l.line, l.text
 					match, ok := printedSecret(line)
-					if !ok {
+					message := ""
+					if ok {
+						message = fmt.Sprintf("script prints secret variable %s — value may appear in job logs", match)
+					} else if credentialFile := printedCredentialFile(line); credentialFile != "" {
+						message = fmt.Sprintf("script prints credential file %s — its contents may appear in job logs", credentialFile)
+					} else {
 						continue
 					}
 					findings = append(findings, finding.Finding{
 						RuleID:   "GL021",
 						Severity: finding.Warn,
 						Job:      name.Value,
-						Message:  fmt.Sprintf("script prints secret variable %s — value may appear in job logs", match),
+						Message:  message,
 						File:     file,
 						Line:     parser.ScalarContentLine(item, i),
 						Col:      item.Column,
@@ -97,6 +99,111 @@ func (r *gl021) Check(doc *yaml.Node, file string) []finding.Finding {
 	})
 
 	return findings
+}
+
+// The .docker entry is a directory; only its config.json is a credential file.
+var gl021CredentialNames = []string{".npmrc", ".yarnrc.yml", ".pypirc", ".netrc", "_netrc", ".dockercfg", ".docker"}
+
+// printedCredentialFile detects common credential files printed to stdout.
+// Piped output is not logged unless the next command is tee.
+func printedCredentialFile(line string) string {
+	// Most script lines do not mention a credential file. Avoid shell parsing
+	// and its allocations unless one of the supported names may be present.
+	foundName := false
+	for _, name := range gl021CredentialNames {
+		if strings.Contains(line, name) {
+			foundName = true
+			break
+		}
+	}
+	if !foundName {
+		return ""
+	}
+	cmds := shellCommands(line)
+	scanAt := 0
+	for i, cmd := range cmds {
+		at := -1
+		if offset := strings.Index(line[scanAt:], cmd.text); offset >= 0 {
+			at = scanAt + offset
+			scanAt = at + len(cmd.text)
+		}
+		words := commandWords(cmd.text)
+		if len(words) < 2 {
+			continue
+		}
+		switch commandName(words) {
+		case "cat", "head", "tail", "less", "more":
+		default:
+			continue
+		}
+		masked := maskShellQuotes(cmd.text)
+		if stdoutRedirectRe.MatchString(masked) || strings.Contains(masked, "&>") {
+			continue
+		}
+		if cmd.piped {
+			if i+1 >= len(cmds) || commandName(commandWords(cmds[i+1].text)) != "tee" {
+				continue
+			}
+			next := maskShellQuotes(cmds[i+1].text)
+			if stdoutRedirectRe.MatchString(next) || strings.Contains(next, "&>") {
+				continue
+			}
+		}
+		if at >= 0 && groupOutputDiverted(line, at+len(cmd.text)-1) {
+			continue
+		}
+		for _, arg := range words[1:] {
+			if offset := strings.Index(cmd.text, arg); at >= 0 && offset >= 0 && gl021InSubstitution(line[:at+offset]) {
+				continue
+			}
+			name := path.Clean(strings.ReplaceAll(arg, `\`, "/"))
+			for _, credential := range gl021CredentialNames {
+				if credential == ".docker" {
+					if strings.HasSuffix("/"+strings.TrimPrefix(name, "/"), "/.docker/config.json") {
+						return arg
+					}
+				} else if path.Base(name) == credential {
+					return arg
+				}
+			}
+		}
+	}
+	return ""
+}
+
+// gl021InSubstitution reports whether a command begins inside $(...).
+func gl021InSubstitution(prefix string) bool {
+	var quote byte
+	var stack []byte
+	for i := 0; i < len(prefix); i++ {
+		c := prefix[i]
+		switch {
+		case c == '\\' && quote != '\'':
+			i++
+		case c == '\'' && quote != '"':
+			if quote == '\'' {
+				quote = 0
+			} else {
+				quote = '\''
+			}
+		case c == '"' && quote != '\'':
+			if quote == '"' {
+				quote = 0
+			} else {
+				quote = '"'
+			}
+		case c == '$' && quote != '\'' && i+1 < len(prefix) && prefix[i+1] == '(':
+			stack = append(stack, quote)
+			quote = 0
+			i++
+		case c == '(' && quote == 0 && len(stack) > 0:
+			stack = append(stack, 0)
+		case c == ')' && quote == 0 && len(stack) > 0:
+			quote = stack[len(stack)-1]
+			stack = stack[:len(stack)-1]
+		}
+	}
+	return len(stack) > 0
 }
 
 // printedSecret reports whether a script line actually prints a secret variable
@@ -238,14 +345,6 @@ func isPredefinedVar(name string) bool {
 	return (strings.HasPrefix(name, "CI_") || strings.HasPrefix(name, "GITLAB_")) && !secretNameRe.MatchString(name)
 }
 
-// gl021PrefixTokens are leading tokens that introduce a command without being
-// one (group/subshell openers and shell keywords). Env assignments are matched
-// separately by assignRe.
-var gl021PrefixTokens = map[string]bool{
-	"{": true, "(": true, "!": true,
-	"then": true, "do": true, "else": true, "elif": true,
-}
-
 // segmentPrintCommand returns the print command at the start of a segment,
 // canonicalizing PowerShell command names. It skips leading env assignments and
 // group/keyword openers, then checks the first real token — so an `echo` that
@@ -255,19 +354,18 @@ func segmentPrintCommand(segHead string) string {
 	// Quoted placeholders preserve redirect targets, but command recognition
 	// keeps the earlier behavior of treating single-quoted spans as blanks.
 	segHead = strings.ReplaceAll(segHead, "''", " ")
-	for _, tok := range strings.Fields(segHead) {
-		if assignRe.MatchString(tok) || gl021PrefixTokens[tok] {
-			continue
-		}
-		if tok == "echo" || tok == "printf" || tok == "print" {
-			return tok
-		}
-		command := strings.ToLower(tok)
-		switch command {
-		case "write-host", "write-output", "write-information", "write":
-			return command
-		}
+	words := unwrapCommand(strings.Fields(segHead))
+	if len(words) == 0 {
 		return ""
+	}
+	tok := words[0]
+	if tok == "echo" || tok == "printf" || tok == "print" {
+		return tok
+	}
+	command := strings.ToLower(tok)
+	switch command {
+	case "write-host", "write-output", "write-information", "write":
+		return command
 	}
 	return ""
 }

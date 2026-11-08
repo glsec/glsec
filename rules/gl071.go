@@ -197,7 +197,7 @@ func isProdDeployJob(job *yaml.Node) bool {
 
 func allowFailureFalse(job *yaml.Node) bool {
 	af := parser.FindKey(job, "allow_failure")
-	return af != nil && af.Kind == yaml.ScalarNode && af.Value == "false"
+	return parser.IsFalse(af)
 }
 
 func isHiddenJob(name string) bool {

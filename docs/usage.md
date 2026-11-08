@@ -114,7 +114,7 @@ JSON, SARIF, Code Quality, JUnit and GitLab SAST reports write file paths inside
 
 A file named `-` reads the pipeline from stdin, with the same size limit as a file. `--stdin-filename` gives it a path: the one reports name, `exclude_paths` and `.glsec-ignore` entries match, and component-template detection uses; `include: local` files and child pipelines are read relative to it, from disk, so in a git hook they come from the working tree, not the index. Without `--stdin-filename` the input is named `<stdin>`, treated as a root pipeline, and its local includes are not read (glsec says so on stderr). `.glsec.yml` is looked up as usual. Stdin input never uses the result cache, and `-` can't be combined with other files or `--recursive`.
 
-`--generate-ignore` rewrites only the entries the run could have reported: those for a file it scanned and a rule that ran. Entries for other pipeline files, and for rules left out with `--only`, `--skip` or `.glsec.yml`, stay as they are, and so do comments and an entry's `exp:` date when the finding is still there. `glsec --generate-ignore --only GL001 .gitlab-ci.yml` refreshes the GL001 entries and keeps the rest.
+`--generate-ignore` rewrites only the entries the run could have reported: those for a file it scanned and a rule that ran. Entries for other pipeline files, and for rules left out with `--only`, `--skip` or `.glsec.yml`, stay as they are, and so do comments and an entry's `exp:` date when the finding is still there. `glsec --generate-ignore --only GL001 .gitlab-ci.yml` refreshes the GL001 entries and keeps the rest. If the scan reports an error, glsec exits 2 and leaves the baseline unchanged; it does not create one when none exists.
 
 Flags that contradict each other aren't resolved silently. `--generate-ignore` writes a new baseline and can't be combined with `--new-only` or `--baseline`, which diff against one; `--no-ignores` reports every finding and can't be combined with them either, since they leave out the baselined ones. Both stop glsec with exit 2. Where a flag only has no effect, glsec warns and runs as it would without it: `--format` with `--generate-ignore`, which prints no report; `--strict` with `--no-exit-codes`, also when they come from `.glsec.yml`; and files or other flags with `--clear-cache`, which only empties the cache.
 
@@ -150,7 +150,7 @@ Two examples to start from: [`docs/templates/csv.tmpl`](templates/csv.tmpl) (one
 |------|---------|
 | 0 | No `error`-severity findings (warn-only findings exit 0 by default) |
 | 1 | One or more `error` findings; or a `warn` finding when `--strict` is set (`info` findings never fail the run) |
-| 2 | Usage error (including an unknown rule ID in `--only`, or `--only` and `--skip` that leave no rule), file could not be parsed, a suppression policy violation, or with `--strict`, every file excluded |
+| 2 | Usage error (including an unknown rule ID in `--only`, or `--only` and `--skip` that leave no rule), file could not be parsed, a suppression policy violation, or with `--strict`, every file excluded or a [local file of the pipeline that could not be read](#reusable-configuration) |
 
 On exit 2 after the scan started, the machine-readable reports still list the findings of the files that were scanned and say which file failed and why, so a failed scan doesn't read as a clean one: an `errors` array in `json`, a `blocker` issue with check name `glsec-error` in `codeclimate`, an unsuccessful invocation with the error as a notification in `sarif`, a test case with an `<error>` in `junit`, `scan.status: failure` with a `fatal` message in `gitlab-sast`, and `.Errors` in a template. A usage or config error stops glsec before it writes a report.
 
@@ -166,6 +166,9 @@ no-exit-codes: true # never exit 1 (overrides strict, with a warning)
 allowed_registries: []       # empty permits any registry
 require_image_digest: false  # true also warns on version tags without a digest
 
+# Optional include policy (GL003 and GL041):
+require_include_sha: false   # true also warns on version tags, for project includes and components
+
 exclude_paths:
   - legacy/.gitlab-ci.yml
   - infra/old-pipelines/**
@@ -180,7 +183,7 @@ If the exclusions cover every file glsec was asked to scan, it says so on stderr
 
 ## Configuration file
 
-glsec reads `.glsec.yml` from the working directory, or the file passed with `--config`. [`docs/glsec.example.yml`](glsec.example.yml) shows every key with an example value. An unknown key, severity or value type stops glsec with exit 2; an unknown rule ID under `rules:` only gets a warning, so a file written for a newer glsec still works with an older one.
+glsec reads `.glsec.yml` from the working directory, or the file passed with `--config`, which must exist. [`docs/glsec.example.yml`](glsec.example.yml) shows every key with an example value. An unknown key, severity or value type stops glsec with exit 2; an unknown rule ID under `rules:` only gets a warning, so a file written for a newer glsec still works with an older one.
 
 [`schema/glsec.schema.json`](../schema/glsec.schema.json) is a JSON schema of the file, for completion and validation in editors. It is listed in the [SchemaStore](https://www.schemastore.org) catalog, so editors that use it (VS Code's YAML extension, JetBrains IDEs, Neovim with the YAML language server and SchemaStore) apply it to `.glsec.yml` on their own. For a config file with another name, or an editor without the catalog, name the schema in a comment on the first line:
 
@@ -225,7 +228,7 @@ deploy:
     - ./deploy.sh  # glsec:ignore GL013 exp:2026-12-01 -- accepted until the migration lands
 ```
 
-Once the date has passed the suppression stops applying, the finding is reported again, and glsec notes on stderr that the suppression expired, so a finding that reappears is traceable to the date rather than looking like a new violation. The expiry date itself is inclusive. A malformed date counts as expired, so a typo surfaces the finding rather than hiding it forever.
+Once the date has passed the suppression stops applying, the finding is reported again, and glsec notes on stderr that the suppression expired, so a finding that reappears is traceable to the date rather than looking like a new violation. The expiry date itself is inclusive. A malformed or empty `exp:` value counts as expired, and so does another spelling such as `EXP:` or `expires:`, so a typo surfaces the finding rather than hiding it forever.
 
 The same token works in the `.glsec-ignore` baseline, appended to a line:
 
@@ -233,7 +236,7 @@ The same token works in the `.glsec-ignore` baseline, appended to a line:
 .gitlab-ci.yml:14 GL013 exp:2026-12-01
 ```
 
-Entries without the token never expire, so existing ignore files keep working unchanged.
+Entries without the token never expire, so existing ignore files keep working unchanged. An expired entry also stops counting as part of the baseline, so `--new-only` reports the finding again.
 
 Suppressed findings stay visible, so a merge request that adds a suppression doesn't look like one that fixes the problem. They never fail the run:
 
@@ -255,7 +258,7 @@ glsec --require-ignore-reason .gitlab-ci.yml
 require_ignore_reason: true
 ```
 
-Any inline `# glsec:ignore` without a `-- reason` is then reported with its file and line, and glsec exits 2. Off by default, so existing suppressions keep working. The `.glsec-ignore` baseline is exempt because its format has no reason column. Note that enabling this disables the result cache: the check runs while findings are collected, so a cache hit would skip it.
+Any inline `# glsec:ignore` without a `-- reason` is then reported with its file and line, and glsec exits 2. Machine-readable reports carry the policy violation as an error, while the finding itself stays suppressed. Off by default, so existing suppressions keep working. The `.glsec-ignore` baseline is exempt because its format has no reason column. Note that enabling this disables the result cache: the check runs while findings are collected, so a cache hit would skip it.
 
 ## Scanning repositories you don't trust
 
@@ -266,13 +269,13 @@ glsec --no-repo-config --no-ignores .gitlab-ci.yml
 glsec --no-repo-config --no-ignores --config /policies/glsec.yml .gitlab-ci.yml  # your own settings
 ```
 
-`--no-repo-config` ignores a `.glsec.yml` in the working directory (glsec says so on stderr); a file passed with `--config` is still read. `--no-ignores` drops all suppressions. Neither is needed when a project scans its own merge requests in its own pipeline, since the author can change the pipeline itself there.
+`--no-repo-config` ignores a `.glsec.yml` in the working directory (glsec says so on stderr); a file passed with `--config` is still read. `--no-ignores` drops all suppressions and does not read `.glsec-ignore`, even if that path cannot be read. Neither is needed when a project scans its own merge requests in its own pipeline, since the author can change the pipeline itself there.
 
 With the GitLab component, set the inputs `no_repo_config: true` and `no_ignores: true` (component v1.0.25 or later). To make glsec mandatory for a group on GitLab Ultimate, run the component from a pipeline execution policy; the [component README](https://gitlab.com/glsec-io/glsec#enforcing-glsec-with-a-pipeline-execution-policy) has a tested example, including the `rules:` the job needs there to run in merge request pipelines.
 
 ## Result cache
 
-glsec caches results in `$XDG_CACHE_HOME/glsec` (`~/.cache/glsec` by default), keyed on the glsec version, the date, the scanned files, the config and the suppressions, so an unchanged pipeline is not scanned twice on the same day. Entries from earlier days can't be hit again and are removed when glsec stores a new one. `--no-cache` skips it for one run; `--clear-cache` empties it.
+glsec caches results in `$XDG_CACHE_HOME/glsec` (`~/.cache/glsec` by default), keyed on the glsec version, the date, the scanned files, the config, the suppressions and, when ShellCheck is enabled, the ShellCheck binary, so an unchanged pipeline is not scanned twice on the same day. Entries from earlier days can't be hit again and are removed when glsec stores a new one. `--no-cache` skips it for one run; `--clear-cache` empties it.
 
 In CI (`CI=true`) glsec doesn't use the cache: a job starts in a fresh container, so the cache would only help if the project kept it between pipelines with `cache:`, which takes longer than the scan and shares a file that decides what glsec reports. `--cache` turns it on for such a run anyway; `--no-cache` wins over it.
 
@@ -292,10 +295,24 @@ The script-analysis rules (e.g. GL002, GL024, GL025, GL047, GL048, GL050) assume
 
 Rules that check variable values read every `variables:` block GitLab can apply: top-level, `default:`, per job, and the `variables:` of each `workflow:rules` and job `rules:` entry. A value moved into a rule is committed in the file all the same, so it is reported where it is set. glsec doesn't evaluate the `if:` conditions; [GL082](rules/GL082.md) alone skips rules that only match scheduled pipelines.
 
+## Scripts
+
+glsec's script rules read `before_script:`, `script:`, `after_script:`, `hooks:pre_get_sources_script:` and `run:` steps. They also read a shell script in an `entrypoint:` of `image:` or `services:`, or a `command:` of `services:`, when the array calls a POSIX shell with `-c`: `["/bin/sh", "-c", "…"]`, `["bash", "-ec", "…"]` or `["/usr/bin/env", "bash", "-c", "…"]`. Such a script runs in a container that gets the job's CI/CD variables. Other arrays, such as `["postgres", "-c", "max_connections=200"]`, are not scripts.
+
 ## Reusable configuration
 
 glsec resolves YAML anchors, aliases and merge keys (`&anchor` / `*alias` / `<<: *anchor`) and GitLab [`!reference` tags](https://docs.gitlab.com/ci/yaml/yaml_optimization/#reference-tags) that point within the same file. Content pulled in either way is analysed as if it were inlined into the job that uses it, so issues hidden in shared `.template` blocks are caught. A finding in an anchor that several jobs share is reported once, at the anchor. References that resolve into `include:`d files are not yet expanded.
 
-Local files are scanned along with the pipeline that uses them: the files a top-level `include:` pulls in with `local:` (or the string shorthand), and local child pipelines, every `trigger: include:` entry that names a local file (a path, `local:`, as a list or a single entry). Both are followed recursively, with paths taken from the repository root as GitLab does. The root is the directory of the pipeline file you scan. `include: local` paths may use GitLab's wildcards (`ci/*.yml`, `ci/**.yml`); a path built from a variable or an input can't be resolved without the pipeline and is skipped, and an entry's `rules:` don't matter, since the file may be included. Remote, `artifact:`, `project:`, `template:` and `component:` includes are not fetched, and a missing file only produces a warning. A path that leads outside the root, through `..` or a symbolic link, is skipped with a warning; GitLab rejects such includes too.
+Local files are scanned along with the pipeline that uses them: the files a top-level `include:` pulls in with `local:` (or the string shorthand), and local child pipelines, every `trigger: include:` entry that names a local file (a path, `local:`, as a list or a single entry). Both are followed recursively, with paths taken from the repository root as GitLab does. The root is the directory of the pipeline file you scan. `include: local` paths may use GitLab's wildcards (`ci/*.yml`, `ci/**.yml`); a path built from a variable or an input can't be resolved without the pipeline and is skipped, and an entry's `rules:` don't matter, since the file may be included. Remote, `artifact:`, `project:`, `template:` and `component:` includes are not fetched. A path that leads outside the root, through `..` or a symbolic link, is skipped with a warning; GitLab rejects such includes too.
 
-GitLab merges included files into one configuration, and glsec checks each file the same way, with the others' global keywords (`workflow:`, `default:`, `variables:`, `stages:`, …) and hidden jobs around it, and a job several files define merged: a job in `ci/deploy.yml` is guarded by the `workflow:rules` of `.gitlab-ci.yml`, `workflow:` in an included file counts for the root, and an `image:` the main file overrides isn't reported in the included file. Mappings merge at any depth and lists are replaced; a file wins over what it includes, a later include over an earlier one, the main file over all of them. Findings stay in the file that has the configuration, and a check that needs a whole pipeline, such as a missing `workflow:` (GL053), is made once, on the root. A file named on the command line that an earlier pipeline already included isn't scanned a second time.
+A local include or child pipeline file that is missing, doesn't parse, has no top-level mapping or is too large only produces a warning. With `--strict` it is an error instead: glsec exits 2 and lists the file with the [other scan errors](#exit-codes), because part of the pipeline went unchecked. The findings of the other files are still reported. It stays a warning under `--strict` in these cases:
+
+- The entry has `rules:`, or sits in a file included through such an entry, so GitLab accepts the pipeline without the file. glsec doesn't evaluate `rules:`.
+- The path contains a variable or an input.
+- The scanned file isn't at the repository root, for example `glsec ci/deploy.yml`. Paths are then looked up from the wrong directory. The root is where glsec finds `.git`, in the file's directory or above it; with no `.git` at all, the file's directory counts as the root.
+
+A file several child pipelines include belongs to each of them, and a finding in it is reported once.
+
+GitLab merges included files into one configuration, and glsec checks each file the same way, with the others' global keywords (`workflow:`, `default:`, `variables:`, `stages:`, …) and hidden jobs around it, and a job several files define merged: a job in `ci/deploy.yml` is guarded by the `workflow:rules` of `.gitlab-ci.yml`, `workflow:` in an included file counts for the root, and an `image:` the main file overrides isn't reported in the included file. Mappings merge at any depth and lists are replaced; a file wins over what it includes, a later include over an earlier one, the main file over all of them. Findings stay in the file that has the configuration. The exception is a finding that needs the job: when a job uses a template from another file, it's reported at the job, naming the template's place, as in `(from ci/tpl.yml:3)`, once however many jobs use the template. A `glsec:ignore` next to the template still counts. A check that needs a whole pipeline, such as a missing `workflow:` (GL053), is made once, on the root. A file named on the command line that an earlier pipeline already included isn't scanned a second time.
+
+An included file can also be scanned on its own, for example with `--recursive --name '*.gitlab-ci.yml'`. A file counts as GitLab CI when it has a reserved top-level key, a hidden key (`.name`), or a job with `script`, `run`, `trigger`, `extends`, `needs`, `rules`, `stage`, `tags` or `variables`. Anything else stops the scan with exit 2. Whole-pipeline checks such as GL053 still run for a fragment that no scanned pipeline includes.

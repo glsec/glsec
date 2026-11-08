@@ -24,7 +24,8 @@ Whether glsec reports the right findings, and only those.
 | Unit tests of the shared helpers: the shell parsing (`rules/shell.go`) and the inheritance, block-walking and position helpers (`rules/helpers.go`), each tested on its own (`*_unit_test.go`) | a bug in a building block that many rules use, shown at the helper instead of as many failing rule tests | every pull request |
 | [Consistency tests](CONTRIBUTING.md#step-4--satisfy-the-consistency-tests) | a rule without fixture, docs page, OWASP or CWE mapping; doc examples that don't trigger, or safe examples that do | every pull request |
 | [Fixtures](CONTRIBUTING.md#fixture-validation), checked against the GitLab CI schema and GitLab's CI Lint API | test pipelines and doc examples GitLab would reject | every pull request (the CI Lint part after merge for forks) |
-| [Regression corpus](CONTRIBUTING.md#regression-corpus) with snapshot files | a fixed false positive or missed finding coming back | every pull request |
+| Real ShellCheck (`internal/shellcheck/real_test.go`), a pinned version in CI | a change in ShellCheck's output or exit codes that the fake binary of the other tests can't show | every pull request, Linux job; skipped locally without `shellcheck` in `PATH`, unless `GLSEC_REQUIRE_SHELLCHECK=1` is set |
+| [Regression corpus](CONTRIBUTING.md#regression-corpus) with snapshot files, single files and whole pipelines | a fixed false positive or missed finding coming back; a finding reported in the wrong file or nowhere | every pull request |
 | [Metamorphic test](CONTRIBUTING.md#metamorphic-test) | rules that match on how the YAML is written instead of what it means (quoting, flow style, CRLF, job order, anchors, `extends:`) | every pull request |
 
 ### Reports and configuration
@@ -51,7 +52,7 @@ Whether the output stays readable for the tools that consume it, and existing fi
 
 | Layer | Protects against | Runs |
 |---|---|---|
-| [Coverage](CONTRIBUTING.md#coverage): statement and branch coverage with thresholds | code no test exercises | every pull request |
+| [Coverage](CONTRIBUTING.md#coverage): statement and branch coverage with floors, and coverage of the lines a pull request changes | code no test exercises, also when the total stays high | every pull request |
 | Static analysis of the code: [golangci-lint](CONTRIBUTING.md#linting) with gosec, CodeQL | bugs and insecure patterns in glsec's own code | every pull request, CodeQL also weekly |
 | Unreachable code: [deadcode](https://pkg.go.dev/golang.org/x/tools/cmd/deadcode) from `main`, against the allowlist [`.github/deadcode-allow.txt`](.github/deadcode-allow.txt) (golangci-lint's `unused` covers unexported code) | exported functions nothing calls any more, such as a wrapper only tests use after a refactor, so the tests check a path production doesn't take; allowlist entries that went stale | every pull request |
 
@@ -96,7 +97,7 @@ Manual checks a maintainer runs before tagging, see [RELEASING.md](RELEASING.md)
 
 ### Scheduled watches
 
-Scheduled jobs also watch what glsec depends on from outside: the example projects' version pins, the CI/CD Catalog list GL064 compares against, new releases of the security frameworks glsec maps to, and the keywords in GitLab's CI schema, so a new keyword doesn't go unnoticed by the rules. They open an issue when something drifts. A weekly job also asks cve.org and GitHub whether the ids in `docs/advisories.yml` are still valid, and opens an issue when one was rejected or withdrawn.
+Scheduled jobs also watch what glsec depends on from outside: the example projects' version pins, the CI/CD Catalog list GL064 compares against, new releases of the security frameworks glsec maps to, and the keywords in GitLab's CI schema, so a new keyword doesn't go unnoticed by the rules. They open an issue when something drifts. A weekly job also asks cve.org and GitHub whether the ids in `docs/advisories.yml` are still valid, and opens an issue when one was rejected or withdrawn. Another records how long the GitHub Actions workflows take and opens an issue when one goes over its [budget](CONTRIBUTING.md#performance).
 
 ## Adding a rule
 

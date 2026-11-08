@@ -109,7 +109,7 @@ func gl080MROnlyProduction(in *Inheritance, name string, own, job *yaml.Node) bo
 				if testRegistryRe.MatchString(cmd.text) {
 					continue
 				}
-				words := withoutSudo(commandWords(cmd.text))
+				words := commandWords(cmd.text)
 				for _, eco := range lifecycleEcosystems {
 					if eco.publishes(words) && !publishesToTestRegistry(vars) {
 						return true

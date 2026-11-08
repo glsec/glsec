@@ -13,6 +13,7 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -36,6 +37,7 @@ jobs:
   test-floor:
     name: Test (go.mod floor)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -58,6 +60,7 @@ jobs:
   test:
     name: Test
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -77,10 +80,15 @@ jobs:
           go-version-file: go.mod
           cache: true
       - run: go mod verify
+      # A real ShellCheck, pinned by version and checksum, for the tests in
+      # internal/shellcheck that skip without one elsewhere (#1227).
+      - if: matrix.os == 'ubuntu-latest'
+        uses: $/.github/actions/install-shellcheck
       # The race detector isn't supported on windows/arm64, so that leg runs
       # the tests without it; coverage is read from the Linux leg anyway.
       - env:
           OS: ${{ matrix.os }}
+          GLSEC_REQUIRE_SHELLCHECK: ${{ matrix.os == 'ubuntu-latest' && '1' || '' }}
         run: |
           if [ "$OS" = windows-11-arm ]; then
             go test ./...
@@ -97,7 +105,7 @@ jobs:
       - name: Coverage summary
         if: matrix.os == 'ubuntu-latest'
         env:
-          COVERAGE_FLOOR: "92.0"
+          COVERAGE_FLOOR: "96.5"
         run: |
           awk '
             NR > 1 {
@@ -130,6 +138,15 @@ jobs:
             exit 1
           fi
           echo "test coverage ${total}% (floor ${COVERAGE_FLOOR}%)"
+      # A pull request's changed lines must be covered too, so new code can't
+      # hide behind the total (#1229). HEAD is the merge commit, and its first
+      # parent is the target branch.
+      - name: Patch coverage
+        if: matrix.os == 'ubuntu-latest' && github.event_name == 'pull_request'
+        run: |
+          git fetch --depth=2 origin "$GITHUB_SHA"
+          git diff --unified=0 HEAD^1 HEAD -- '*.go' ':!*_test.go' > "$RUNNER_TEMP/change.diff"
+          go run ./cmd/patchcoverage -diff "$RUNNER_TEMP/change.diff" | tee -a "$GITHUB_STEP_SUMMARY"
       # Upload coverage from one OS only — a shared artifact name collides across
       # matrix legs, and Linux coverage is representative.
       - if: matrix.os == 'ubuntu-latest'
@@ -146,6 +163,7 @@ jobs:
     needs: test
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       id-token: write # OIDC upload, no stored Codecov token
@@ -166,6 +184,7 @@ jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -177,6 +196,15 @@ jobs:
       - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
           version: latest
+      # The workflows' syntax and expressions, and the shell in their run:
+      # blocks and in the repository's scripts (#1228).
+      - uses: $/.github/actions/install-shellcheck
+      - run: go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+      - name: Workflows
+        run: actionlint
+      - name: Shell scripts
+        if: ${{ !cancelled() }}
+        run: shellcheck .github/scripts/*.sh bin/glsec
       # golangci-lint's unused only sees unexported code. deadcode follows the
       # calls from main and reports exported functions nothing reaches, such as
       # a wrapper only tests still call after a refactor (#1076). It must be
@@ -205,6 +233,7 @@ jobs:
   branch-coverage:
     name: Branch coverage
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -216,7 +245,7 @@ jobs:
       - run: go install github.com/rillig/gobco@v1.3.4
       - name: Branch coverage
         env:
-          BRANCH_FLOOR: "85.0"
+          BRANCH_FLOOR: "92.5"
         run: |
           for dir in $(go list -f '{{.Dir}}' ./...); do
             pkg=${dir#"$PWD"}; pkg=${pkg#/}; [ -n "$pkg" ] || pkg=.
@@ -243,6 +272,7 @@ jobs:
   license-headers:
     name: License headers
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -268,6 +298,7 @@ jobs:
   security:
     name: Security (govulncheck)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -294,6 +325,7 @@ jobs:
   osv-scanner:
     name: Security (OSV-Scanner)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -311,6 +343,7 @@ jobs:
     name: Security (dependency review)
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
@@ -323,6 +356,7 @@ jobs:
   zizmor:
     name: Security (zizmor)
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -336,6 +370,7 @@ jobs:
   cfgaudit:
     name: Security (cfgaudit)
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -352,7 +387,7 @@ jobs:
             - ".github/**/*.md"
           YAML
       - name: Scan agent instructions, settings, the plugin package and docs
-        uses: cfgaudit/cfgaudit@d490362f1889e84c2704ae304a0e6bb1863697fa # v1.18.1
+        uses: cfgaudit/cfgaudit@bf8e9c02ee9d99e88c65b5a3241545e63c216312 # v1.19.0
         with:
           plugins: .
           config: ${{ runner.temp }}/cfgaudit.yml
@@ -361,6 +396,7 @@ jobs:
   pinact:
     name: Security (pinact)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -387,6 +423,7 @@ jobs:
   trivy:
     name: Security (Trivy image)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -408,6 +445,7 @@ jobs:
   hadolint:
     name: Security (hadolint)
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -418,6 +456,7 @@ jobs:
   dockle:
     name: Security (dockle)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -433,6 +472,7 @@ jobs:
   validate-fixtures:
     name: Validate GitLab CI fixtures
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -519,6 +559,7 @@ jobs:
     name: Lint fixtures and rule doc examples with GitLab
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -553,6 +594,7 @@ jobs:
   version-pins:
     name: Check version pins agree
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -579,6 +621,7 @@ jobs:
               grep -oE 'GLSEC_VERSION=[0-9]+\.[0-9]+\.[0-9]+' \
                 mega-linter-plugin-glsec/glsec.megalinter-descriptor.yml |
                 grep -oE '[0-9]+\.[0-9]+\.[0-9]+'
+              # shellcheck disable=SC2016 # literal backticks in a pattern
               grep -hoE \
                 -e 'glsec_[0-9]+\.[0-9]+\.[0-9]+_' \
                 -e 'ghcr\.io/glsec/glsec:[0-9]+\.[0-9]+\.[0-9]+' \

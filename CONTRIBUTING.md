@@ -74,7 +74,18 @@ The golden file stores portable key fields rather than the baseline matcher's pr
 
 ### Coverage
 
-CI fails when statement coverage (`go test -cover`) drops below 92 % or branch coverage below 85 %. Branch coverage is measured with [gobco](https://github.com/rillig/gobco), one package at a time:
+CI fails when statement coverage (`go test -cover`) drops below 96.5 % or branch coverage below 92.5 %, or when a pull request covers less than 80 % of the lines it changes. Up to three uncovered lines always pass, so one error path doesn't fail a small change. There are no exclusions. To check a change locally:
+
+```sh
+go test ./... -coverprofile=coverage.out
+git diff --unified=0 main -- '*.go' ':!*_test.go' > change.diff
+go run ./cmd/patchcoverage -diff change.diff
+```
+
+The floors are about half a point below the stable values, so they catch a real drop. Raise them on purpose, never lower one to make a change pass.
+
+Codecov runs on `main` only and reports `codecov/patch` after the merge. `codecov.yml` gives it the same 80 % as the pull request gate; keep the two in step.
+Branch coverage is measured with [gobco](https://github.com/rillig/gobco), one package at a time:
 
 ```sh
 go install github.com/rillig/gobco@v1.3.4
@@ -110,6 +121,16 @@ golangci-lint run   # or: make lint
 ```
 
 Enabled linters: `errcheck`, `govet`, `staticcheck`, `revive`, `gosec`, `misspell`, plus the `gofmt` formatter. The full config is in `.golangci.yml`.
+
+CI also checks the workflows with [actionlint](https://github.com/rhysd/actionlint), including the shell in their `run:` blocks, and the repository's scripts with [ShellCheck](https://www.shellcheck.net/). To run them locally, with `shellcheck` in `PATH`:
+
+```sh
+go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+actionlint
+shellcheck .github/scripts/*.sh bin/glsec
+```
+
+The scripts are POSIX `sh` or `bash`, as their first line says. Switch off a diagnostic only where it applies, with a `# shellcheck disable=SCxxxx` comment that gives the reason.
 
 ## How to add a rule
 
@@ -481,9 +502,15 @@ go test ./cmd/glsec -run TestCorpus -update
 
 and review the snapshot diff before committing it. Cases for issues that are still open record today's behaviour and say so in their comment; the snapshot changes with the fix.
 
+A directory in `testdata/corpus/` holds a whole pipeline: its `.gitlab-ci.yml` and the files that pulls in, with `<directory>.golden` next to it. Use one for anything that depends on more than one file: `include:`, templates from another file, child pipelines. Its snapshot adds the file and, for a finding moved to a job, the place it comes from (`.gitlab-ci.yml:0009 GL090 warn publish (from ci/tpl.yml:3)`). These scans run with `--strict`, so a file that can't be read fails the test unless GitLab may run without it.
+
+A finding from the [precision review](RELEASING.md) that a fix changes goes into the corpus the same way: cut the pipeline down to what triggers it, replace project names, hosts and values with made-up ones, and name the issue in a comment. Don't copy a third-party file as it is.
+
 ## Metamorphic test
 
 `TestMetamorphic` rewrites every pipeline in `testdata/fixtures` and `testdata/corpus` into forms that mean the same to GitLab (CRLF, flow style, other quoting, `script:` as a string or a list, jobs reversed, anchors expanded, keys moved into a template the job `extends:` or merges with `<<:`) and fails when the findings change; lines may move. A difference is either a rule that matches on spelling instead of meaning, or a rewrite that isn't equivalent for that rule. The second kind, and rule gaps that have an issue, go into `knownDifferences` as `transform/rule` with the reason. The test also fails on an entry that no longer matches, so remove it when you fix the rule.
+
+`TestMetamorphicWrappers` runs every single script line of the fixtures under `timeout 600`, `nice -n 10`, `sudo` and `sudo -Hu node` and fails when a rule loses a finding. Read the command with `commandWords`, which goes through wrappers, or use `unwrappedLine` when a rule finds the command position with a regular expression.
 
 ```sh
 go test ./cmd/glsec -run TestMetamorphic
@@ -500,3 +527,17 @@ benchstat old.txt new.txt
 ```
 
 `BenchmarkParse`, `BenchmarkRules` and `BenchmarkRun` use a pipeline of 2,000 jobs with `extends:` and `!reference` chains, anchors, long script blocks and a very long line.
+
+The collector stays relaxed until `run` starts, because the regexps compiled during package initialisation live until the process exits (`internal/gctune`). Measure startup with `GODEBUG=inittrace=1 glsec --version`, which prints the time and allocations of each package.
+
+The pipelines have limits of their own. Every job sets `timeout-minutes`, three to four times its usual duration, and a test fails when one is missing. A job that calls a reusable workflow can't set one; the jobs inside it do.
+
+Every Monday `ci-durations.yml` runs `cmd/ciduration` over the successful runs of the last 7 days, from pull requests and pushes to `main`. It appends median, p90 and maximum per workflow and for the jobs of `CI` to `data/ci-durations.jsonl` on the `benchmarks` branch. A workflow with at least 5 runs and a p90 above 10 minutes opens or updates an issue. To see the current numbers:
+
+```sh
+GITHUB_TOKEN=$(gh auth token) go run ./cmd/ciduration
+```
+
+Exit 1 from the command above means a workflow is over the budget. The budget is not a check on pull requests, because shared runners vary by 10 to 30%.
+
+Read the maximum with care. GitHub's timestamps can be wrong: on 2026-11-01 at 08:00 UTC, jobs running at that moment reported an end 60 minutes late, so a job of a few seconds shows as an hour. The p90 and the budget aren't affected by a single run like that; to check one, compare the job's end with its step times.

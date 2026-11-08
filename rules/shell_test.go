@@ -24,6 +24,19 @@ func TestShellCommands(t *testing.T) {
 		{"echo ${#ARR} $# x#y", []shellCommand{{text: "echo ${#ARR} $# x#y", line: 0}}},
 		{"cat <<EOF > f\nsudo x | y\nEOF\nz", []shellCommand{{text: "cat <<EOF > f", line: 0}, {text: "z", line: 3}}},
 		{"cat <<-'END'\n\tsudo x\n\tEND\nz", []shellCommand{{text: "cat <<-'END'", line: 0}, {text: "z", line: 3}}},
+		{"bash <<EOF\nsudo x | y\nEOF\nz", []shellCommand{{text: "bash <<EOF", line: 0}, {text: "sudo x", line: 1}, {text: "y", line: 1}, {text: "z", line: 3}}},
+		{"cat <<EOF | sh\n\nsudo x\nEOF\nz", []shellCommand{{text: "cat <<EOF", line: 0}, {text: "sh", line: 0}, {text: "sudo x", line: 2}, {text: "z", line: 4}}},
+		{"sh -s <<END-OF-SCRIPT\nsudo x\nEND-OF-SCRIPT\nz", []shellCommand{{text: "sh -s <<END-OF-SCRIPT", line: 0}, {text: "sudo x", line: 1}, {text: "z", line: 3}}},
+		{"ssh h <<EOF\nsudo x\nEOF\nz", []shellCommand{{text: "ssh h <<EOF", line: 0}, {text: "z", line: 3}}},
+		{"ssh h bash <<EOF\nsudo x\nEOF", []shellCommand{{text: "ssh h bash <<EOF", line: 0}}},
+		{"bash <<EOF\nsudo x", []shellCommand{{text: "bash <<EOF", line: 0}, {text: "sudo x", line: 1}}},
+		{"bash <<A 3<<B\nsudo x\nA\ny\nB", []shellCommand{{text: "bash <<A 3<<B", line: 0}}},
+		{"bash -c 'a | b' | c", []shellCommand{{text: "bash -c 'a | b'", line: 0}, {text: "c", line: 0}, {text: "a", line: 0}, {text: "b", line: 0}}},
+		{"x\ntimeout 5 sh -ec \"a\nb\"", []shellCommand{{text: "x", line: 0}, {text: "timeout 5 sh -ec \"a\nb\"", line: 1}, {text: "a", line: 1}, {text: "b", line: 2}}},
+		{"bash -c 'sh -c a'", []shellCommand{{text: "bash -c 'sh -c a'", line: 0}, {text: "sh -c a", line: 0}, {text: "a", line: 0}}},
+		{"ssh h 'sh -c a'", []shellCommand{{text: "ssh h 'sh -c a'", line: 0}}},
+		{"bash run.sh -c a", []shellCommand{{text: "bash run.sh -c a", line: 0}}},
+		{"python -c a; sh -c", []shellCommand{{text: "python -c a", line: 0}, {text: "sh -c", line: 0}}},
 		{"cat <<< \"$x\" | y", []shellCommand{{text: `cat <<< "$x"`, line: 0}, {text: "y", line: 0}}},
 		{"echo \"line1\nline2\" && b", []shellCommand{{text: "echo \"line1\nline2\"", line: 0}, {text: "b", line: 1}}},
 	} {
@@ -56,7 +69,7 @@ func TestCommandWords(t *testing.T) {
 		{`curl -o "a b" url`, []string{"curl", "-o", "a b", "url"}},
 		{`FOO=1 BAR="x y" curl url`, []string{"curl", "url"}},
 		{`X=$(curl -sS url`, []string{"curl", "-sS", "url"}},
-		{`if sudo -n true`, []string{"sudo", "-n", "true"}},
+		{`if sudo -n true`, []string{"true"}},
 		{`env A=1 wget url`, []string{"wget", "url"}},
 		{`( cd dir`, []string{"cd", "dir"}},
 		{`A=1`, nil},
@@ -65,8 +78,8 @@ func TestCommandWords(t *testing.T) {
 			t.Errorf("commandWords(%q) = %q, want %q", tc.text, got, tc.want)
 		}
 	}
-	if got := withoutSudo([]string{"sudo", "-u", "nobody", "-E", "make"}); !reflect.DeepEqual(got, []string{"make"}) {
-		t.Errorf("withoutSudo = %q", got)
+	if got := unwrapCommand([]string{"sudo", "-u", "nobody", "-E", "make"}); !reflect.DeepEqual(got, []string{"make"}) {
+		t.Errorf("unwrapCommand = %q", got)
 	}
 }
 
