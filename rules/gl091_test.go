@@ -78,3 +78,26 @@ skip-bot:
 		t.Errorf("severity: got %s", f[0].Severity)
 	}
 }
+
+// In a push pipeline GITLAB_USER_NAME is the pusher, who wrote the YAML: such
+// a gate grants nothing. Commit-derived identities stay reported (#1287).
+func TestGL091_PushOnlyGate(t *testing.T) {
+	for cond, want := range map[string]int{
+		`$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "main" && $GITLAB_USER_NAME == "Jane Doe"`:  0,
+		`$GITLAB_USER_NAME == "Jane Doe" && "push" == $CI_PIPELINE_SOURCE`:                                 0,
+		`$CI_PIPELINE_SOURCE == 'push' && $GITLAB_USER_NAME =~ /bot/`:                                      0,
+		`$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_AUTHOR =~ /Renovate/`:                                 1,
+		`$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_USER_LOGIN == "jane"`:                                 1,
+		`$CI_PIPELINE_SOURCE == "merge_request_event" && $GITLAB_USER_NAME == "chore-mr"`:                  1,
+		`$CI_PIPELINE_SOURCE == "push" || $GITLAB_USER_NAME == "Jane Doe"`:                                 1,
+		`($CI_PIPELINE_SOURCE == "push" || $CI_PIPELINE_SOURCE == "web") && $GITLAB_USER_NAME == "Jane"`:   1,
+		`$CI_PIPELINE_SOURCE == "schedule" || ($CI_PIPELINE_SOURCE == "push" && $GITLAB_USER_NAME == "J")`: 1,
+	} {
+		t.Run(cond, func(t *testing.T) {
+			f := findings091(t, "job:\n  script: [make]\n  rules:\n    - if: '"+strings.ReplaceAll(cond, "'", "''")+"'\n")
+			if len(f) != want {
+				t.Fatalf("got %v, want %d findings", f, want)
+			}
+		})
+	}
+}

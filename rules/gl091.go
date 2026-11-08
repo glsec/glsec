@@ -104,22 +104,79 @@ func identityGates(rules *yaml.Node, file, job string) []finding.Finding {
 
 // spoofedVar returns the first spoofable identity variable the expression
 // matches positively against a value, or "". A comparison with null or an
-// empty string only tests whether the variable is set.
+// empty string only tests whether the variable is set. Each || alternative is
+// read on its own.
 func spoofedVar(expr string) string {
 	if !strings.Contains(expr, "CI_COMMIT_AUTHOR") && !strings.Contains(expr, "GITLAB_USER_NAME") && !strings.Contains(expr, "CI_COMMIT_USER_LOGIN") {
 		return ""
 	}
-	for _, m := range identityGateRe.FindAllStringSubmatch(expr, -1) {
-		if !emptyOperand(m[2]) {
-			return m[1]
+	for _, alt := range topLevelSplit(expr, "||") {
+		// In a push pipeline GITLAB_USER_NAME is the pusher, who wrote the
+		// YAML that runs: the gate filters, it grants nothing (#1287).
+		pushOnly := pushSourceRe.MatchString(depthZero(alt))
+		skipped := func(v string) bool { return pushOnly && v == "GITLAB_USER_NAME" }
+		for _, m := range identityGateRe.FindAllStringSubmatch(alt, -1) {
+			if !emptyOperand(m[2]) && !skipped(m[1]) {
+				return m[1]
+			}
 		}
-	}
-	for _, m := range identityGateRevRe.FindAllStringSubmatch(expr, -1) {
-		if !emptyOperand(m[1]) {
-			return m[2]
+		for _, m := range identityGateRevRe.FindAllStringSubmatch(alt, -1) {
+			if !emptyOperand(m[1]) && !skipped(m[2]) {
+				return m[2]
+			}
 		}
 	}
 	return ""
+}
+
+// pushSourceRe matches a comparison pinning the pipeline source to a push.
+var pushSourceRe = regexp.MustCompile(`\$\{?CI_PIPELINE_SOURCE\}?\s*==\s*["']push["']|["']push["']\s*==\s*\$\{?CI_PIPELINE_SOURCE\b`)
+
+// topLevelSplit splits expr at sep outside parentheses and quotes.
+func topLevelSplit(expr, sep string) []string {
+	var parts []string
+	depth, start := 0, 0
+	var quote byte
+	for i := 0; i < len(expr); i++ {
+		c := expr[i]
+		switch {
+		case quote != 0:
+			if c == quote {
+				quote = 0
+			}
+		case c == '"' || c == '\'':
+			quote = c
+		case c == '(':
+			depth++
+		case c == ')':
+			depth--
+		case depth == 0 && strings.HasPrefix(expr[i:], sep):
+			parts = append(parts, expr[start:i])
+			start = i + len(sep)
+			i += len(sep) - 1
+		}
+	}
+	return append(parts, expr[start:])
+}
+
+// depthZero blanks what expr has inside parentheses, so a match in it is part
+// of the && conjunction itself.
+func depthZero(expr string) string {
+	b := []byte(expr)
+	depth := 0
+	for i, c := range b {
+		switch c {
+		case '(':
+			depth++
+		case ')':
+			depth--
+		default:
+			if depth > 0 {
+				b[i] = ' '
+			}
+		}
+	}
+	return string(b)
 }
 
 func emptyOperand(s string) bool {
