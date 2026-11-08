@@ -303,7 +303,8 @@ func isShellSpace(c byte) bool { return c == ' ' || c == '\t' }
 // blankCaseLabels replaces each case label in a script with spaces, keeping
 // offsets and lines, so the command after it starts a command: `debug) env ;;`
 // reads as `       env ;;` (#1178). A label is a ) with no ( open before it,
-// outside quotes and comments.
+// outside quotes and comments. Its alternatives belong to it, so the whole of
+// `set|get)` is blanked, not only `get)` (#1176).
 func blankCaseLabels(script string) string {
 	if !strings.Contains(script, ")") {
 		return script
@@ -317,7 +318,7 @@ func blankCaseLabels(script string) string {
 			for i+1 < len(masked) && masked[i+1] != '\n' {
 				i++
 			}
-		case c == '\n' || c == ';' || c == '&' || c == '|':
+		case c == '\n' || c == ';' || c == '&':
 			start = i + 1
 		case c == '(':
 			depth++

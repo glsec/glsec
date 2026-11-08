@@ -288,7 +288,7 @@ func TestBlankCaseLabels(t *testing.T) {
 	for _, tc := range []struct{ in, want string }{
 		{"debug) env", "       env"},
 		{"a) env ;; b) set", "   env ;;    set"},
-		{"get|debug) env", "get|       env"},
+		{"get|debug) env", "           env"},
 		{`case "$1" in debug) env ;; esac`, "                    env ;; esac"},
 		{"( set )", "( set )"},
 		{"(\n  make\n) > log", "(\n  make\n) > log"},
