@@ -4,6 +4,7 @@
 package rules
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"testing"
@@ -347,6 +348,18 @@ func TestGL020_OwnProject_NoFinding(t *testing.T) {
 	} {
 		if f := findings020(t, "job:\n  script:\n    - '"+line+"'\n"); len(f) != 1 {
 			t.Errorf("%s: got %d findings, want 1", line, len(f))
+		}
+	}
+}
+
+// Words after a $( … ) belong to the outer command, not to curl (#1281).
+func TestGL020_SubstitutionArguments(t *testing.T) {
+	for line, want := range map[string]int{
+		`bash -c "$(curl -sSL https://example.com/install.sh) -a x -o AutoDetect"`: 0,
+		`V=$(curl -sSL -o tool.tgz https://example.com/tool.tgz)`:                  1,
+	} {
+		if f := checkRule(t, GL020, fmt.Sprintf("job:\n  script:\n    - %q\n", line)); len(f) != want {
+			t.Errorf("%s: got %v, want %d findings", line, f, want)
 		}
 	}
 }

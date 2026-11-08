@@ -375,13 +375,13 @@ func unwrapUntil(words []string, stop string) []string {
 		case shellKeywords[w]:
 			words = words[1:]
 		case strings.HasPrefix(w, "$("):
-			words[0] = w[2:]
+			words = closeSubstitution(append([]string{w[2:]}, words[1:]...))
 		case strings.HasPrefix(w, "("):
 			words[0] = w[1:]
 		case assignmentRe.MatchString(w):
 			value := w[strings.IndexByte(w, '=')+1:]
 			if strings.HasPrefix(value, "$(") {
-				words[0] = value[2:]
+				words = closeSubstitution(append([]string{value[2:]}, words[1:]...))
 				continue
 			}
 			words = words[1:]
@@ -394,6 +394,32 @@ func unwrapUntil(words []string, stop string) []string {
 		}
 	}
 	return nil
+}
+
+// closeSubstitution cuts the words of a $( … ) at the ) that closes it, so the
+// words after it don't read as the inner command's arguments: in
+// `$(curl -sSL URL) -o x`, -o x belongs to the outer command (#1281).
+func closeSubstitution(words []string) []string {
+	depth := 0
+	for i, w := range words {
+		for j := 0; j < len(w); j++ {
+			switch w[j] {
+			case '(':
+				depth++
+			case ')':
+				if depth > 0 {
+					depth--
+					continue
+				}
+				out := append([]string{}, words[:i]...)
+				if w[:j] != "" {
+					out = append(out, w[:j])
+				}
+				return out
+			}
+		}
+	}
+	return words
 }
 
 // commandWrapper describes a program that runs the command it is given.
