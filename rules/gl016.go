@@ -248,7 +248,7 @@ func (r *gl016) scriptLineFinding(item *yaml.Node, file string) *finding.Finding
 				break
 			}
 		}
-		if url == "" {
+		if url == "" || !cmd.piped && discardsResponse(cmd.text) {
 			continue
 		}
 		host := hostOf(url)
@@ -271,6 +271,62 @@ func (r *gl016) scriptLineFinding(item *yaml.Node, file string) *finding.Finding
 		return f
 	}
 	return nil
+}
+
+// devNullStdoutRe matches stdout redirected to /dev/null: > /dev/null,
+// 1>/dev/null, &> /dev/null.
+var devNullStdoutRe = regexp.MustCompile(`(?:^|[^0-9>])(?:1|&)?>>?\s*/dev/null(?:\s|$|;)`)
+
+// discardsResponse reports a curl or wget that checks a URL without keeping
+// what it fetches, as a readiness probe does: wget --spider, -o /dev/null,
+// HEAD requests, stdout sent to /dev/null (#1279). A status-code probe that
+// keeps the body in a file or a variable may still read it.
+func discardsResponse(text string) bool {
+	words := withoutWrapper(commandWords(text))
+	args := words
+	if len(args) > 0 {
+		args = args[1:]
+	}
+	switch commandName(words) {
+	case "curl":
+		for i, a := range args {
+			switch {
+			case a == "-I" || a == "--head":
+				return true
+			case (a == "-o" || a == "--output") && i+1 < len(args):
+				return args[i+1] == "/dev/null"
+			case a == "--output=/dev/null":
+				return true
+			case a == "-O" || a == "--remote-name":
+				return false
+			case strings.HasPrefix(a, "-") && !strings.HasPrefix(a, "--"):
+				// A cluster of short options such as -sSO or -so /dev/null.
+				if strings.ContainsRune(a, 'O') {
+					return false
+				}
+				if j := strings.IndexByte(a, 'o'); j > 0 {
+					out := a[j+1:]
+					if out == "" && i+1 < len(args) {
+						out = args[i+1]
+					}
+					return out == "/dev/null"
+				}
+			}
+		}
+		return devNullStdoutRe.MatchString(maskShellQuotes(text))
+	case "wget":
+		for i, a := range args {
+			switch {
+			case a == "--spider":
+				return true
+			case (a == "-O" || a == "--output-document") && i+1 < len(args):
+				return args[i+1] == "/dev/null"
+			case a == "--output-document=/dev/null":
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // skip returns true if the host should never be flagged (loopback or trusted).
