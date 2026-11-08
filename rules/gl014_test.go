@@ -388,3 +388,23 @@ build:
 		t.Fatalf("got %+v", f)
 	}
 }
+
+// Comments carry no command and must not hide the ones around them; a value
+// that holds only comments reports nothing (#1176).
+func TestGL014_CommentsDoNotHideDumps(t *testing.T) {
+	for name, tc := range map[string]struct {
+		body string
+		want int
+	}{
+		"apostrophe in a comment":     {"      make\n      # don't remove\n      set > vars.txt\n", 1},
+		"block starts with a comment": {"      # print debug info\n      env > vars.txt\n", 1},
+		"only comments":               {"      # set > vars.txt\n", 0},
+	} {
+		t.Run(name, func(t *testing.T) {
+			src := "build:\n  script:\n    - |\n" + tc.body + "  artifacts:\n    paths: [vars.txt]\n"
+			if f := findings014(t, src); len(f) != tc.want {
+				t.Fatalf("got %v, want %d findings", f, tc.want)
+			}
+		})
+	}
+}

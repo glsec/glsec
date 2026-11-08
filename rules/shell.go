@@ -265,12 +265,46 @@ func readsScriptFromStdin(words []string) bool {
 	return true
 }
 
+// blankShellComments replaces every shell comment in s with spaces, keeping
+// the length and the newlines so regex offsets still point into the original
+// text. A # starts a comment where a word can start, outside quotes; a quote
+// inside a comment therefore cannot open a quoted region that hides the rest
+// of a block from quote masking.
+func blankShellComments(s string) string {
+	b := []byte(s)
+	var quote byte
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case quote != 0:
+			if c == '\\' && quote == '"' && i+1 < len(s) {
+				i++
+			} else if c == quote {
+				quote = 0
+			}
+		case c == '\\' && i+1 < len(s):
+			i++
+		case c == '\'' || c == '"':
+			quote = c
+		case c == '#' && (i == 0 || strings.IndexByte(" \t\n;|&()", s[i-1]) >= 0):
+			for ; i < len(s) && s[i] != '\n'; i++ {
+				b[i] = ' '
+			}
+			if i < len(s) {
+				i-- // the newline is not part of the comment
+			}
+		}
+	}
+	return string(b)
+}
+
 func isShellSpace(c byte) bool { return c == ' ' || c == '\t' }
 
 // blankCaseLabels replaces each case label in a script with spaces, keeping
 // offsets and lines, so the command after it starts a command: `debug) env ;;`
 // reads as `       env ;;` (#1178). A label is a ) with no ( open before it,
-// outside quotes and comments.
+// outside quotes and comments. Its alternatives belong to it, so the whole of
+// `set|get)` is blanked, not only `get)` (#1176).
 func blankCaseLabels(script string) string {
 	if !strings.Contains(script, ")") {
 		return script
@@ -284,7 +318,7 @@ func blankCaseLabels(script string) string {
 			for i+1 < len(masked) && masked[i+1] != '\n' {
 				i++
 			}
-		case c == '\n' || c == ';' || c == '&' || c == '|':
+		case c == '\n' || c == ';' || c == '&':
 			start = i + 1
 		case c == '(':
 			depth++

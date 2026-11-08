@@ -83,7 +83,9 @@ func (r *gl014) Check(doc *yaml.Node, file string) []finding.Finding {
 		}
 		dotenv := dotenvArtifactNode(artifacts)
 		eachJobScriptLine(job, func(item *yaml.Node) bool {
-			script := blankCaseLabels(item.Value)
+			// Comments go first: an apostrophe in one would open a quote that
+			// hides the rest of the block (#1176).
+			script := blankCaseLabels(blankShellComments(item.Value))
 			if secret, target, line := dotenvSecret(script, dotenv); secret != "" {
 				findings = append(findings, finding.Finding{
 					RuleID:   "GL014",

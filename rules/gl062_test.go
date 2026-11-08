@@ -288,7 +288,7 @@ func TestBlankCaseLabels(t *testing.T) {
 	for _, tc := range []struct{ in, want string }{
 		{"debug) env", "       env"},
 		{"a) env ;; b) set", "   env ;;    set"},
-		{"get|debug) env", "get|       env"},
+		{"get|debug) env", "           env"},
 		{`case "$1" in debug) env ;; esac`, "                    env ;; esac"},
 		{"( set )", "( set )"},
 		{"(\n  make\n) > log", "(\n  make\n) > log"},
@@ -341,5 +341,45 @@ func TestGL062_FilterNamedInMessage(t *testing.T) {
 	got := checkRule(t, GL062, "job:\n  script:\n    - 'gci env: | Select-String TOKEN'\n")
 	if len(got) != 1 || !strings.Contains(got[0].Message, `filtered with Select-String "TOKEN"`) {
 		t.Errorf("got %v", got)
+	}
+}
+
+// The alternatives of a case label end at ), so they are not dumps. A
+// pipeline still is (#1176).
+func TestGL062_CaseLabelAlternativesNotFlagged(t *testing.T) {
+	for name, body := range map[string]string{
+		"set|get":         "      case \"$1\" in\n        set|get) do_it ;;\n      esac\n",
+		"export | import": "      export | import)\n        do_it\n        ;;\n",
+		"env|prod":        "      env|prod) do_it ;;\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			if f := findings062(t, "job:\n  script:\n    - |\n"+body); len(f) != 0 {
+				t.Fatalf("got %v, want no finding for a case label", f)
+			}
+		})
+	}
+	for _, line := range []string{"set | sort", "( set | sort )"} {
+		f := findings062(t, "job:\n  script:\n    - "+fmt.Sprintf("%q", line)+"\n")
+		if len(f) != 1 {
+			t.Errorf("%s: got %v, want one finding", line, f)
+		}
+	}
+}
+
+// An apostrophe in a comment no longer masks the rest of the block, and a
+// block that starts with a comment still reports the command after it; a
+// value that holds only comments reports nothing (#1176).
+func TestGL062_CommentsDoNotHideLaterDumps(t *testing.T) {
+	f := findings062(t, "job:\n  script:\n    - |\n      make\n      # don't remove\n      set\n")
+	if len(f) != 1 || f[0].Line != 6 {
+		t.Fatalf("got %v, want one finding on line 6", f)
+	}
+	f = findings062(t, "job:\n  script:\n    - |\n      # print debug info\n      env\n")
+	if len(f) != 1 {
+		t.Fatalf("got %v, want one finding after a leading comment", f)
+	}
+	f = findings062(t, "job:\n  script:\n    - |\n      # printenv would leak everything\n      # set\n")
+	if len(f) != 0 {
+		t.Fatalf("got %v, want no finding for a comment-only value", f)
 	}
 }
