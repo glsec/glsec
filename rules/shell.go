@@ -23,6 +23,8 @@ type shellCommand struct {
 	piped bool
 	// orElse and andThen are set when || or && follows the command.
 	orElse, andThen bool
+	// parent is the command whose sh -c script this one comes from, or "".
+	parent string
 }
 
 // heredocRe matches a here-document operator and its delimiter, quoted or not.
@@ -173,6 +175,9 @@ func shellCommands(script string) []shellCommand {
 			if inner, ok := shellCText(cmd.text); ok {
 				for _, c := range shellCommands(inner) {
 					c.line += cmd.line
+					if c.parent == "" {
+						c.parent = cmd.text
+					}
 					cmds = append(cmds, c)
 				}
 			}

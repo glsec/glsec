@@ -5,6 +5,7 @@ package rules
 
 import (
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -107,7 +108,7 @@ func sshKeyEchoLines(script string) []keyEcho {
 		if name != "echo" && name != "printf" {
 			// echo inside a substitution: ssh-add <(echo "$KEY"), $(echo …).
 			if m := substEchoRe.FindStringSubmatch(maskSingleQuoted(first.text)); m != nil {
-				if private, credential, _ := printedKeyVars(m[1]); private || credential {
+				if private, credential, _ := printedKeyVars(m[1]); (private || credential) && tracedFromParent(first) {
 					echoes = append(echoes, keyEcho{first.line, !private && credential})
 				}
 			}
@@ -131,14 +132,31 @@ func sshKeyEchoLines(script string) []keyEcho {
 		// '\n' >> ~/.ssh/id_ed25519 writes no key material.
 		expands := strings.Contains(maskSingleQuoted(first.text), "$")
 		keyFileWrite := keyFile && !public && expands
-		if (private || credential) && written || keyFileWrite {
+		if ((private || credential) && written || keyFileWrite) && tracedFromParent(first) {
 			// A key-file write and a key-material variable are key material; a
 			// passphrase/password with no key material gets credential wording.
 			material := private || keyFileWrite
 			echoes = append(echoes, keyEcho{first.line, !material && credential})
 		}
 	}
-	return echoes
+	// A double-quoted sh -c script is seen twice, in the parent and as its
+	// own commands; one finding per line is enough.
+	return slices.Compact(echoes)
+}
+
+var xtraceOnRe = regexp.MustCompile(`\bset\s+(?:-[a-zA-Z]*x|-o\s+xtrace)`)
+
+// tracedFromParent reports whether debug tracing can show a command's key. A
+// command from a sh -c script runs in a child shell that doesn't inherit the
+// runner's set -o xtrace, so only what the parent expands reaches the trace:
+// in bash -c 'echo "$KEY"' the single quotes keep $KEY literal (#1283),
+// unless the script turns tracing on itself.
+func tracedFromParent(cmd shellCommand) bool {
+	if cmd.parent == "" {
+		return true
+	}
+	private, credential, _ := printedKeyVars(maskSingleQuoted(cmd.parent))
+	return private || credential || xtraceOnRe.MatchString(cmd.parent)
 }
 
 // printedKeyVars classifies the key-named variables a print command outputs:

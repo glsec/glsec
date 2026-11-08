@@ -4,6 +4,7 @@
 package rules
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"testing"
@@ -214,5 +215,25 @@ func TestGL032_WrittenKeysOnly(t *testing.T) {
 		if got := len(GL032.Check(doc.Root, "test.yml")); got != tc.want {
 			t.Errorf("%s: got %d findings, want %d", tc.line, got, tc.want)
 		}
+	}
+}
+
+// A child sh -c doesn't inherit the runner's xtrace: only a key the parent
+// expands reaches the trace (#1283).
+func TestGL032_ShellCQuoting(t *testing.T) {
+	for line, want := range map[string]int{
+		`bash -c 'ssh-add <(echo "$SSH_PRIVATE_KEY")'`:                0,
+		`sh -c 'echo "$SSH_PRIVATE_KEY" | ssh-add -'`:                 0,
+		`bash -c "ssh-add <(echo \"$SSH_PRIVATE_KEY\")"`:              1,
+		`sh -c "echo \"$SSH_PRIVATE_KEY\" | ssh-add -"`:               1,
+		`bash -c 'set -x; echo "$SSH_PRIVATE_KEY" | ssh-add -'`:       1,
+		`bash -c 'set -o xtrace; ssh-add <(echo "$SSH_PRIVATE_KEY")'`: 1,
+		`echo "$SSH_PRIVATE_KEY" | ssh-add -`:                         1,
+	} {
+		t.Run(line, func(t *testing.T) {
+			if f := checkRule(t, GL032, fmt.Sprintf("job:\n  script:\n    - %q\n", line)); len(f) != want {
+				t.Fatalf("got %v, want %d findings", f, want)
+			}
+		})
 	}
 }
