@@ -482,7 +482,13 @@ func TestGL002_ChatAndReleaseInput(t *testing.T) {
 	}{
 		{"chat eval", `eval "./deploy.sh $CHAT_INPUT"`, "", 1},
 		{"release shell", `sh -c "notify --title $CI_RELEASE_NAME"`, "", 1},
-		{"chat unquoted", `./deploy.sh $CHAT_INPUT`, "ChatOps", 1},
+		// Splitting CHAT_INPUT is how ChatOps passes arguments (#1289).
+		{"chat unquoted", `./deploy.sh $CHAT_INPUT`, "", 0},
+		{"chat unquoted with others", `bin/ci command $CI_JOB_NAME $CHAT_INPUT`, "", 0},
+		{"chat sh -c", `sh -c "./deploy.sh $CHAT_INPUT"`, "", 1},
+		{"chat bash -c unquoted", `bash -c $CHAT_INPUT`, "", 1},
+		{"chat eval unquoted", `eval ./deploy.sh $CHAT_INPUT`, "", 1},
+		{"chat after sh -c script", `sh -c 'deploy "$@"' sh $CHAT_INPUT`, "", 0},
 		{"release unquoted", `./notify.sh ${CI_RELEASE_NAME}`, "release", 1},
 		{"chat quoted", `./deploy.sh "$CHAT_INPUT"`, "", 0},
 		{"release quoted", `./notify.sh "$CI_RELEASE_NAME"`, "", 0},
