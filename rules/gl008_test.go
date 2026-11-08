@@ -376,3 +376,15 @@ func TestGL008_ExtendingJobEdgeCases(t *testing.T) {
 		}
 	}
 }
+
+// GitLab reads YAML 1.1, so allow_failure: yes is true (#1158).
+func TestGL008_AllowFailureYAML11Booleans(t *testing.T) {
+	for value, want := range map[string]int{"yes": 1, "ON": 1, "no": 0, "off": 0} {
+		t.Run(value, func(t *testing.T) {
+			f := findings008(t, "dast:\n  allow_failure: "+value+"\n  variables:\n    DAST_WEBSITE: \"https://example.com\"\n")
+			if len(f) != want {
+				t.Fatalf("allow_failure: %s: got %d findings, want %d", value, len(f), want)
+			}
+		})
+	}
+}
