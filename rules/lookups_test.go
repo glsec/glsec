@@ -4,6 +4,7 @@
 package rules
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -71,5 +72,28 @@ func TestGL006_NonScalarVariableValue(t *testing.T) {
 	f := findings006(t, "variables:\n  LIST:\n    - "+"gl"+"pat-"+strings.Repeat("aB3x", 5)+"\n  EMPTY:\n    description: no value\nbuild:\n  script: [echo ok]\n")
 	if len(f) != 0 {
 		t.Errorf("got %v, want no finding", f)
+	}
+}
+
+// The prefiltered token patterns redact exactly what the plain expressions
+// do (#1333); FuzzPrefiltered checks the same for arbitrary input.
+func TestTokenPatternsSameAsRegexp(t *testing.T) {
+	token := "gl" + "pat-" + strings.Repeat("aB3x", 5)
+	nuget := "oy2" + "a" + strings.Repeat("b", 40) + "c"
+	texts := []string{
+		"push failed for token " + token + " (expired)",
+		"key " + nuget + " rejected",
+		"key " + strings.ToUpper(nuget) + " rejected",
+		"nothing secret here",
+		"",
+	}
+	star := func(m string) string { return strings.Repeat("*", len(m)) }
+	for _, p := range TokenPatterns() {
+		plain := regexp.MustCompile(p.String())
+		for _, s := range texts {
+			if got, want := p.ReplaceAllStringFunc(s, star), plain.ReplaceAllStringFunc(s, star); got != want {
+				t.Errorf("%s on %q: got %q, want %q", p, s, got, want)
+			}
+		}
 	}
 }

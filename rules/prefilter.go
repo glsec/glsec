@@ -175,6 +175,13 @@ func (p prefiltered) FindAllStringSubmatch(s string, n int) [][]string {
 	return p.get().FindAllStringSubmatch(s, n)
 }
 
+func (p prefiltered) ReplaceAllStringFunc(src string, repl func(string) string) string {
+	if !p.possible(src) {
+		return src
+	}
+	return p.get().ReplaceAllStringFunc(src, repl)
+}
+
 func (p prefiltered) ReplaceAllString(src, repl string) string {
 	if !p.possible(src) {
 		return src
