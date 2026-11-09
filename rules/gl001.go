@@ -405,7 +405,7 @@ func checkRef(ref, label string, line, col int, file string, requireDigest bool)
 			File:     file, Line: line, Col: col,
 		}}
 	}
-	if isVersionlessTag(tag) {
+	if IsVersionlessImageTag(tag) {
 		return []finding.Finding{{
 			RuleID:   "GL001",
 			Severity: finding.Warn,
@@ -416,11 +416,11 @@ func checkRef(ref, label string, line, col int, file string, requireDigest bool)
 	return nil
 }
 
-// isVersionlessTag reports whether tag carries no version at all: a variant
+// IsVersionlessImageTag reports whether tag carries no version at all: a variant
 // (dind, alpine, slim) or a release codename (bookworm, jammy) that upstream
 // rebuilds in place, like latest. A tag containing a variable is left alone,
-// since its value is unknown statically.
-func isVersionlessTag(tag string) bool {
+// since its value is unknown statically. GL001 and the inventory share this check.
+func IsVersionlessImageTag(tag string) bool {
 	return !strings.ContainsAny(tag, "0123456789$")
 }
 

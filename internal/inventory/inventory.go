@@ -35,7 +35,7 @@ const (
 	PinDigest     Pinning = "digest"     // image@sha256:…, or a remote include with integrity:
 	PinSHA        Pinning = "sha"        // a full commit SHA
 	PinVersion    Pinning = "version"    // an exact version or tag that doesn't move by convention
-	PinMutable    Pinning = "mutable"    // latest, a branch name, ~latest, or a partial version
+	PinMutable    Pinning = "mutable"    // latest, version-less variants, branch names or partial versions
 	PinNone       Pinning = "none"       // no tag or ref at all
 	PinUnresolved Pinning = "unresolved" // contains a CI variable
 	PinGitLab     Pinning = "gitlab"     // a template: include, versioned with GitLab itself
@@ -175,7 +175,7 @@ func splitImage(ref string) (name, version string, pin Pinning) {
 		return name, version, PinDigest
 	case version == "":
 		return name, "", PinNone
-	case rules.IsMutableImageTag(version), partialTagRe.MatchString(version):
+	case rules.IsMutableImageTag(version), rules.IsVersionlessImageTag(version), partialTagRe.MatchString(version):
 		return name, version, PinMutable
 	default:
 		return name, version, PinVersion
