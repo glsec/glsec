@@ -4,7 +4,6 @@
 package rules
 
 import (
-	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -33,7 +32,7 @@ var releasePushRe = mustCompilePrefiltered(
 // per-merge-request preview (an `mr-` tag or a merge-request variable) or a
 // moving branch-slug tag. A consumer release is tied to a tag/version, so
 // nobody downstream verifies a signature on these (#1100).
-var ephemeralTagRe = regexp.MustCompile(
+var ephemeralTagRe = mustCompilePrefiltered(
 	`(?i)mr-\$?\{?CI_MERGE_REQUEST|[:=]\s*mr-|\bCI_MERGE_REQUEST_IID\b|\bCI_MERGE_REQUEST_REF_PATH\b` +
 		`|:\$\{?CI_COMMIT_REF_SLUG\}?|:\$\{?CI_COMMIT_REF_NAME\}?` +
 		`|--tag[= ]\$?\{?CI_COMMIT_REF_SLUG\}?`,

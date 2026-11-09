@@ -6,7 +6,6 @@ package rules
 import (
 	"maps"
 	"path"
-	"regexp"
 	"slices"
 	"strings"
 )
@@ -28,7 +27,7 @@ type shellCommand struct {
 }
 
 // heredocRe matches a here-document operator and its delimiter, quoted or not.
-var heredocRe = regexp.MustCompile(`^<<-?\s*(?:'([^']+)'|"([^"]+)"|\\?([A-Za-z_][A-Za-z0-9_.-]*))`)
+var heredocRe = mustCompilePrefiltered(`^<<-?\s*(?:'([^']+)'|"([^"]+)"|\\?([A-Za-z_][A-Za-z0-9_.-]*))`)
 
 // inArithmetic reports whether text ends inside (( … )) or $(( … )), where <<
 // is a shift and not a here-document.
@@ -348,7 +347,7 @@ var shellKeywords = map[string]bool{
 	"export": true, "local": true, "readonly": true, "declare": true,
 }
 
-var assignmentRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*=`)
+var assignmentRe = mustCompilePrefiltered(`^[A-Za-z_][A-Za-z0-9_]*=`)
 
 // commandEnv is what a simple command does with variables (#1325).
 type commandEnv struct {

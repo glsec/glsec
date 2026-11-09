@@ -5,7 +5,6 @@ package rules
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -21,7 +20,7 @@ func (r *gl084) ID() string { return "GL084" }
 
 // includeVarRe matches a CI variable reference anywhere in an include value,
 // in both the $VAR and ${VAR} spellings.
-var includeVarRe = regexp.MustCompile(`\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?`)
+var includeVarRe = mustCompilePrefiltered(`\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?`)
 
 // refNameVar is the one user-controlled variable GitLab resolves in an include
 // section. Its value is the branch or tag name, chosen by whoever pushes.

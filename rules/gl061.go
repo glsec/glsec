@@ -4,8 +4,6 @@
 package rules
 
 import (
-	"regexp"
-
 	"github.com/glsec/glsec/internal/finding"
 	"gopkg.in/yaml.v3"
 )
@@ -17,7 +15,7 @@ var GL061 = &gl061{}
 func (r *gl061) ID() string { return "GL061" }
 
 // pidHostRe matches --pid host / --pid=host.
-var pidHostRe = regexp.MustCompile(`--pid[=\s]+host(?:\s|$)`)
+var pidHostRe = mustCompilePrefiltered(`--pid[=\s]+host(?:\s|$)`)
 
 func (r *gl061) Check(doc *yaml.Node, file string) []finding.Finding {
 	return dockerRunFlagFindings(doc, file, "GL061", pidHostRe,

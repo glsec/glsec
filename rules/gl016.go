@@ -6,7 +6,6 @@ package rules
 import (
 	"net"
 	"net/url"
-	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -28,7 +27,7 @@ func (r *gl016) SetTrustedHosts(hosts []string) {
 }
 
 var (
-	gitURLRe       = regexp.MustCompile(`\bgit://[^\s'"]+`)
+	gitURLRe       = mustCompilePrefiltered(`\bgit://[^\s'"]+`)
 	curlWgetHTTPRe = mustCompilePrefiltered(`\b(?:curl|wget)\b[^|]*\b(?i:http)://`)
 	// git fetches remote content just like curl/wget, so the same HTTP check applies.
 	gitFetchHTTPRe = mustCompilePrefiltered(`\bgit\b[^|]*\b(?:clone|fetch|pull|remote\s+add|submodule\s+add)\b[^|]*\bhttp://`)
@@ -275,7 +274,7 @@ func (r *gl016) scriptLineFinding(item *yaml.Node, file string) *finding.Finding
 
 // devNullStdoutRe matches stdout redirected to /dev/null: > /dev/null,
 // 1>/dev/null, &> /dev/null.
-var devNullStdoutRe = regexp.MustCompile(`(?:^|[^0-9>])(?:1|&)?>>?\s*/dev/null(?:\s|$|;)`)
+var devNullStdoutRe = mustCompilePrefiltered(`(?:^|[^0-9>])(?:1|&)?>>?\s*/dev/null(?:\s|$|;)`)
 
 // discardsResponse reports a curl or wget that checks a URL without keeping
 // what it fetches, as a readiness probe does: wget --spider, -o /dev/null,

@@ -5,7 +5,6 @@ package rules
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -22,10 +21,10 @@ func (r *gl023) ID() string { return "GL023" }
 // lockfileCheck describes a non-lockfile-strict install command.
 type lockfileCheck struct {
 	manager    string
-	trigger    *regexp.Regexp // matches the non-strict command
-	strictFlag *regexp.Regexp // if present in the same line, command is already strict
-	skip       *regexp.Regexp // skip the line entirely (e.g., package argument present)
-	hint       string         // safe alternative to show in the message
+	trigger    prefiltered // matches the non-strict command
+	strictFlag prefiltered // if present in the same line, command is already strict
+	skip       prefiltered // skip the line entirely (e.g., package argument present)
+	hint       string      // safe alternative to show in the message
 	// byCommand checks each shell command on its own instead of the whole
 	// script item, so a comment or another command's flag doesn't count.
 	byCommand bool
@@ -34,7 +33,7 @@ type lockfileCheck struct {
 	frozenVars  []string
 	frozenValue func(string) bool
 	// frozenBy matches a script line that does the same for later commands.
-	frozenBy *regexp.Regexp
+	frozenBy prefiltered
 }
 
 var lockfileChecks = []lockfileCheck{
@@ -43,52 +42,49 @@ var lockfileChecks = []lockfileCheck{
 		manager: "npm",
 		// Matches npm install followed by only flags (words starting with -), then end/separator.
 		// If a non-flag argument (package name) follows, the regex won't match.
-		trigger:    regexp.MustCompile(`\bnpm\s+install(?:\s+--?[\w=@./:-]+)*\s*(?:$|[|&;])`),
-		strictFlag: nil, // npm ci is a different command entirely
-		skip:       regexp.MustCompile(`-g\b|--global\b`),
-		hint:       "npm ci",
+		trigger: mustCompilePrefiltered(`\bnpm\s+install(?:\s+--?[\w=@./:-]+)*\s*(?:$|[|&;])`),
+		skip:    mustCompilePrefiltered(`-g\b|--global\b`),
+		hint:    "npm ci",
 	},
 	{
 		manager:    "yarn",
-		trigger:    regexp.MustCompile(`\byarn\s+install\b`),
-		strictFlag: regexp.MustCompile(`--frozen-lockfile\b|--immutable\b`),
-		skip:       nil,
+		trigger:    mustCompilePrefiltered(`\byarn\s+install\b`),
+		strictFlag: mustCompilePrefiltered(`--frozen-lockfile\b|--immutable\b`),
 		hint:       "yarn install --frozen-lockfile",
 	},
 	// pnpm is not listed: it turns on --frozen-lockfile by itself when CI is
 	// set, and GitLab sets CI=true in every job.
 	{
 		manager:     "bundler",
-		trigger:     regexp.MustCompile(`\bbundle\s+install\b`),
-		strictFlag:  regexp.MustCompile(`--frozen\b|--deployment\b`),
-		skip:        nil,
+		trigger:     mustCompilePrefiltered(`\bbundle\s+install\b`),
+		strictFlag:  mustCompilePrefiltered(`--frozen\b|--deployment\b`),
 		hint:        "bundle install --frozen",
 		frozenVars:  []string{"BUNDLE_FROZEN", "BUNDLE_DEPLOYMENT"},
 		frozenValue: func(v string) bool { return v == "true" || v == "1" },
 		// bundle config set --global frozen 'true'.
-		frozenBy: regexp.MustCompile(`\bbundle\s+config\s+(?:set\s+)?(?:--(?:global|local)\s+)?(?:frozen|deployment)\s+["']?(?:true|1)\b`),
+		frozenBy: mustCompilePrefiltered(`\bbundle\s+config\s+(?:set\s+)?(?:--(?:global|local)\s+)?(?:frozen|deployment)\s+["']?(?:true|1)\b`),
 	},
 	{
 		// uv re-locks before syncing unless --locked or --frozen is given.
 		// --check and --dry-run change nothing.
 		manager:     "uv",
-		trigger:     regexp.MustCompile(`\buv\s+sync(?:\s|$|["';)])`),
-		strictFlag:  regexp.MustCompile(`--locked\b|--frozen\b`),
-		skip:        regexp.MustCompile(`\s--(?:check|dry-run)\b`),
+		trigger:     mustCompilePrefiltered(`\buv\s+sync(?:\s|$|["';)])`),
+		strictFlag:  mustCompilePrefiltered(`--locked\b|--frozen\b`),
+		skip:        mustCompilePrefiltered(`\s--(?:check|dry-run)\b`),
 		hint:        "uv sync --locked",
 		byCommand:   true,
 		frozenVars:  []string{"UV_LOCKED", "UV_FROZEN"},
 		frozenValue: uvBoolTrue,
 		// uv's docs call uv lock --check the equivalent of --locked.
-		frozenBy: regexp.MustCompile(`\buv\s+lock\b[^\n;&|]*\s--(?:check|locked)\b|\bUV_(?:LOCKED|FROZEN)\s*=\s*["']?(?i:y|yes|t|true|on|1)\b`),
+		frozenBy: mustCompilePrefiltered(`\buv\s+lock\b[^\n;&|]*\s--(?:check|locked)\b|\bUV_(?:LOCKED|FROZEN)\s*=\s*["']?(?i:y|yes|t|true|on|1)\b`),
 	},
 	{
 		// A package argument doesn't match: adding a package is GL022's. Bun
 		// doesn't freeze the lockfile in CI by itself; --production implies it.
 		manager:    "Bun",
-		trigger:    regexp.MustCompile(`(?m)\bbun\s+(?:install|i)(?:\s+--?[\w=@./:-]+)*\s*(?:$|[|&;#"')])`),
-		strictFlag: regexp.MustCompile(`--frozen-lockfile\b|--production\b`),
-		skip:       regexp.MustCompile(`\s(?:-g|--global)\b`),
+		trigger:    mustCompilePrefiltered(`(?m)\bbun\s+(?:install|i)(?:\s+--?[\w=@./:-]+)*\s*(?:$|[|&;#"')])`),
+		strictFlag: mustCompilePrefiltered(`--frozen-lockfile\b|--production\b`),
+		skip:       mustCompilePrefiltered(`\s(?:-g|--global)\b`),
 		hint:       "bun ci",
 		byCommand:  true,
 	},
@@ -173,7 +169,7 @@ func frozenManagers(vars *yaml.Node) uint {
 func frozenByLine(line string) uint {
 	var frozen uint
 	for i, lc := range lockfileChecks {
-		if lc.frozenBy != nil && lc.frozenBy.MatchString(line) {
+		if lc.frozenBy.isSet() && lc.frozenBy.MatchString(line) {
 			frozen |= 1 << i
 		}
 	}
@@ -225,6 +221,6 @@ func lockfileHits(l *yaml.Node, file string) []lockfileHit {
 // lockfile.
 func (lc *lockfileCheck) unlocked(text string) bool {
 	return lc.trigger.MatchString(text) &&
-		(lc.skip == nil || !lc.skip.MatchString(text)) &&
-		(lc.strictFlag == nil || !lc.strictFlag.MatchString(text))
+		(!lc.skip.isSet() || !lc.skip.MatchString(text)) &&
+		(!lc.strictFlag.isSet() || !lc.strictFlag.MatchString(text))
 }

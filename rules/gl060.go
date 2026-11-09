@@ -5,7 +5,6 @@ package rules
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -19,10 +18,10 @@ var GL060 = &gl060{}
 func (r *gl060) ID() string { return "GL060" }
 
 // volumeFlagRe captures the volume spec passed to -v / --volume.
-var volumeFlagRe = regexp.MustCompile(`(?:^|\s)(?:--volume|-v)[=\s]+(\S+)`)
+var volumeFlagRe = mustCompilePrefiltered(`(?:^|\s)(?:--volume|-v)[=\s]+(\S+)`)
 
 // mountFlagRe captures the mount spec passed to --mount (space or equals form).
-var mountFlagRe = regexp.MustCompile(`(?:^|\s)--mount[=\s]+(\S+)`)
+var mountFlagRe = mustCompilePrefiltered(`(?:^|\s)--mount[=\s]+(\S+)`)
 
 // containerRunRe matches run and create commands of the container engines
 // whose bind mounts this rule covers. It is local to GL060 so the wider

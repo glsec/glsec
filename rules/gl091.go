@@ -5,7 +5,6 @@ package rules
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -37,9 +36,9 @@ var (
 	// identityGateRe matches a positive comparison of a spoofable identity
 	// variable: $VAR == "x", $VAR =~ /x/. Group 1 is the variable, group 2
 	// the compared value.
-	identityGateRe = regexp.MustCompile(`\$\{?(` + spoofableIdentityAlt + `)\}?\s*(?:==|=~)\s*("[^"]*"|'[^']*'|/(?:\\.|[^/])*/|\$\{?\w+\}?|\w+)`)
+	identityGateRe = mustCompilePrefiltered(`\$\{?(` + spoofableIdentityAlt + `)\}?\s*(?:==|=~)\s*("[^"]*"|'[^']*'|/(?:\\.|[^/])*/|\$\{?\w+\}?|\w+)`)
 	// identityGateRevRe matches the operands the other way round: "x" == $VAR.
-	identityGateRevRe = regexp.MustCompile(`("[^"]*"|'[^']*')\s*==\s*\$\{?(` + spoofableIdentityAlt + `)\}?\b`)
+	identityGateRevRe = mustCompilePrefiltered(`("[^"]*"|'[^']*')\s*==\s*\$\{?(` + spoofableIdentityAlt + `)\}?\b`)
 )
 
 // Check reports a rules:if that decides whether a job, pipeline or include
@@ -130,7 +129,7 @@ func spoofedVar(expr string) string {
 }
 
 // pushSourceRe matches a comparison pinning the pipeline source to a push.
-var pushSourceRe = regexp.MustCompile(`\$\{?CI_PIPELINE_SOURCE\}?\s*==\s*["']push["']|["']push["']\s*==\s*\$\{?CI_PIPELINE_SOURCE\b`)
+var pushSourceRe = mustCompilePrefiltered(`\$\{?CI_PIPELINE_SOURCE\}?\s*==\s*["']push["']|["']push["']\s*==\s*\$\{?CI_PIPELINE_SOURCE\b`)
 
 // topLevelSplit splits expr at sep outside parentheses and quotes.
 func topLevelSplit(expr, sep string) []string {

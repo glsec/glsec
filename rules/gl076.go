@@ -5,7 +5,6 @@ package rules
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -20,7 +19,7 @@ func (r *gl076) ID() string { return "GL076" }
 
 // unconfinedRe captures a --security-opt flag that disables the seccomp or
 // AppArmor profile (space or = separated between flag and value).
-var unconfinedRe = regexp.MustCompile(`--security-opt[=\s]+(seccomp|apparmor)=unconfined`)
+var unconfinedRe = mustCompilePrefiltered(`--security-opt[=\s]+(seccomp|apparmor)=unconfined`)
 
 func (r *gl076) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding

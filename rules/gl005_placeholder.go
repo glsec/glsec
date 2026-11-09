@@ -5,7 +5,6 @@ package rules
 
 import (
 	"path"
-	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/parser"
@@ -22,12 +21,12 @@ var placeholderRCFiles = map[string]bool{".npmrc": true, ".yarnrc.yml": true}
 // arguments, so the script shows what they write.
 var literalWriters = map[string]bool{"echo": true, "printf": true}
 
-var rcVarRefRe = regexp.MustCompile(`^\$\{?([A-Za-z_][A-Za-z0-9_]*)`)
+var rcVarRefRe = mustCompilePrefiltered(`^\$\{?([A-Za-z_][A-Za-z0-9_]*)`)
 
 // rcCredentialKeyRe matches the npm and Yarn keys whose value is a credential.
 // Any variable expanded after one is a secret, whatever its name: $TOKEN, or
 // $T set from $NPM_TOKEN earlier.
-var rcCredentialKeyRe = regexp.MustCompile(`(?i)(?:_authToken|_auth|_password)\s*=|npmAuth(?:Token|Ident)\s*:`)
+var rcCredentialKeyRe = mustCompilePrefiltered(`(?i)(?:_authToken|_auth|_password)\s*=|npmAuth(?:Token|Ident)\s*:`)
 
 // writesPlaceholderOnly reports whether artifactPath, an npm or Yarn config
 // file listed in the artifacts block, is written by the script of every job

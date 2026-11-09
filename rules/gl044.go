@@ -4,7 +4,6 @@
 package rules
 
 import (
-	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -26,7 +25,7 @@ func (r *gl044) ID() string { return "GL044" }
 // insensitive, so the env: prefix and the variable name match in any case. A
 // lowercase POSIX reference ($ci_merge_request_source_branch_sha) is a
 // different variable and does not match.
-var mrSourceSHARe = regexp.MustCompile(`\$\{?CI_MERGE_REQUEST_SOURCE_BRANCH_SHA\}?|\$(?i:\{?env:CI_MERGE_REQUEST_SOURCE_BRANCH_SHA\}?)`)
+var mrSourceSHARe = mustCompilePrefiltered(`\$\{?CI_MERGE_REQUEST_SOURCE_BRANCH_SHA\}?|\$(?i:\{?env:CI_MERGE_REQUEST_SOURCE_BRANCH_SHA\}?)`)
 
 func (r *gl044) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding

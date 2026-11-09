@@ -5,7 +5,6 @@ package rules
 
 import (
 	"fmt"
-	"regexp"
 
 	"github.com/glsec/glsec/internal/finding"
 	"github.com/glsec/glsec/internal/parser"
@@ -19,7 +18,7 @@ var GL072 = &gl072{}
 func (r *gl072) ID() string { return "GL072" }
 
 // refVarRe matches a CI/CD variable reference ($VAR or ${VAR}) inside a ref.
-var refVarRe = regexp.MustCompile(`\$\{?[A-Za-z_]`)
+var refVarRe = mustCompilePrefiltered(`\$\{?[A-Za-z_]`)
 
 func (r *gl072) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding

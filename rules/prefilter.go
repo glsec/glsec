@@ -129,6 +129,9 @@ func (p prefiltered) possible(s string) bool {
 	return false
 }
 
+// isSet reports whether p holds an expression; the zero value is unset.
+func (p prefiltered) isSet() bool { return p.lazyRegexp != nil }
+
 func (p prefiltered) MatchString(s string) bool {
 	return p.possible(s) && p.get().MatchString(s)
 }
@@ -173,6 +176,13 @@ func (p prefiltered) FindAllStringSubmatch(s string, n int) [][]string {
 		return nil
 	}
 	return p.get().FindAllStringSubmatch(s, n)
+}
+
+func (p prefiltered) FindStringSubmatch(s string) []string {
+	if !p.possible(s) {
+		return nil
+	}
+	return p.get().FindStringSubmatch(s)
 }
 
 func (p prefiltered) ReplaceAllStringFunc(src string, repl func(string) string) string {
