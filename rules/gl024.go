@@ -19,11 +19,6 @@ var GL024 = &gl024{}
 
 func (r *gl024) ID() string { return "GL024" }
 
-var (
-	// pipefailRe matches a line that enables pipefail.
-	pipefailRe = regexp.MustCompile(`\bpipefail\b`)
-)
-
 // gl024Line is the result for one script line: how many pipelines a new
 // shell runs without pipefail, where the first starts, and the command that
 // starts that shell.
@@ -93,7 +88,7 @@ func gl024Scan(script string) gl024Line {
 			continue
 		}
 		via, inner, errexit, ok := childShellScript(commandWords(cmd.text))
-		if !ok || pipefailRe.MatchString(inner) || !needsPipefail(inner, errexit || errexitRe.MatchString(inner)) {
+		if !ok || !needsPipefail(inner, errexit || errexitRe.MatchString(inner)) {
 			continue
 		}
 		if res.count == 0 {
@@ -116,6 +111,7 @@ var errexitRe = regexp.MustCompile(`\bset\s+(?:-[a-zA-Z]*e[a-zA-Z]*\b|-o\s+errex
 // those inside a command substitution, whose status is lost.
 func needsPipefail(script string, errexit bool) bool {
 	cmds := shellCommands(maskCasePatterns(script))
+	pipefailEnabled := false
 	for i := 0; i < len(cmds); {
 		j := i
 		for j < len(cmds)-1 && cmds[j].piped {
@@ -124,8 +120,13 @@ func needsPipefail(script string, errexit bool) bool {
 		pipeline := cmds[i : j+1]
 		i = j + 1
 		last := pipeline[len(pipeline)-1]
+		if len(pipeline) == 1 {
+			if enabled, changed := pipefailSetting(last.text); changed {
+				pipefailEnabled = enabled
+			}
+		}
 		switch {
-		case len(pipeline) < 2, last.orElse, isCondition(pipeline[0].text), isQuietGrep(last.text),
+		case len(pipeline) < 2, pipefailEnabled, last.orElse, isCondition(pipeline[0].text), isQuietGrep(last.text),
 			opensSubstitution(pipeline[0].text),
 			!errexit && i < len(cmds) && !last.andThen:
 			continue
@@ -137,6 +138,27 @@ func needsPipefail(script string, errexit bool) bool {
 		}
 	}
 	return false
+}
+
+// pipefailSetting reports a real `set -o pipefail` / `set +o pipefail`
+// command. Mentions in echo output, comments or quoted data are not settings.
+func pipefailSetting(text string) (enabled, changed bool) {
+	words := commandWords(text)
+	if commandName(words) != "set" {
+		return false, false
+	}
+	for i := 1; i+1 < len(words); i++ {
+		if words[i+1] != "pipefail" {
+			continue
+		}
+		switch words[i] {
+		case "-o":
+			return true, true
+		case "+o":
+			return false, true
+		}
+	}
+	return false, false
 }
 
 // opensSubstitution reports whether text leaves a $( or backtick open: the

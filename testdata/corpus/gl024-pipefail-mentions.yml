@@ -1,0 +1,7 @@
+# #1302: mentioning pipefail in output or disabling it is not protection
+# for a subsequent pipeline in a newly invoked shell.
+job:
+  script:
+    - bash -c 'echo pipefail; false | cat'
+    - bash -c 'set +o pipefail; false | cat'
+    - bash -c 'set -o pipefail; false | cat'
