@@ -113,7 +113,7 @@ func (r *gl011) Check(doc *yaml.Node, file string) []finding.Finding {
 			findings = append(findings, f)
 		}
 	})
-	return findings
+	return append(findings, embeddedPayloadFindings(doc, file)...)
 }
 
 // childShellDownloadExecute reports a download-execute in the script a new
