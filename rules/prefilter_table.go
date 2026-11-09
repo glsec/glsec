@@ -396,7 +396,6 @@ var prefilterTable = map[string]prefilterLits{
 	"\\bsafety\\s+(?:check|scan)\\b":                              {anyOf: []string{"safety"}},
 	"\\bscp\\b":                                                   {anyOf: []string{"scp"}},
 	"\\bsed\\b.+s/[^/]+/[^/:]*:[^$][^@]*@/":                       {anyOf: []string{"sed"}},
-	"\\bset\\s+(?:-[a-zA-Z]*e[a-zA-Z]*\\b|-o\\s+errexit\\b)":      {anyOf: []string{"set"}},
 	"\\bset\\s+(?:-[a-zA-Z]*x|-o\\s+xtrace)":                      {anyOf: []string{"set"}},
 	"\\bsnyk\\b":                                                  {anyOf: []string{"snyk"}},
 	"\\bsocat\\b":                                                 {anyOf: []string{"socat"}},
