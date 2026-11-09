@@ -60,8 +60,16 @@ func TestGL024_PipefailMentionsAreNotProtection(t *testing.T) {
 		{`bash -c '# set -o pipefail
 false | cat'`, 1},
 		{`bash -c 'set -o pipefail; false | cat'`, 0},
+		{`bash -c 'set -eo pipefail; false | cat'`, 0},
+		{`bash -c 'set -euo pipefail; a | b'`, 0},
+		{`ssh host 'set -euo pipefail; false | cat'`, 0},
+		{`bash -c 'shopt -so pipefail; false | cat'`, 0},
+		{`bash -c 'shopt -s -o pipefail; false | cat'`, 0},
+		{`bash -c 'set -eo pipefail; set +eo pipefail; false | cat'`, 1},
+		{`bash -c 'shopt -so pipefail; shopt -uo pipefail; false | cat'`, 1},
 		{`bash -c 'set +o pipefail; set -o pipefail; false | cat'`, 0},
-		{`bash -o pipefail -c 'set +o pipefail; false | cat'`, 0}, // the launch option preserves the existing exception
+		// Known gap: childShellScript ignores later disabling of a launcher-level -o pipefail.
+		{`bash -o pipefail -c 'set +o pipefail; false | cat'`, 0},
 		{`bash -c 'echo pipefail; false | cat || true'`, 0},
 	} {
 		t.Run(tc.script, func(t *testing.T) {

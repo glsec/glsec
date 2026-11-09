@@ -140,22 +140,44 @@ func needsPipefail(script string, errexit bool) bool {
 	return false
 }
 
-// pipefailSetting reports a real `set -o pipefail` / `set +o pipefail`
-// command. Mentions in echo output, comments or quoted data are not settings.
+// pipefailSetting reports an effective `set -o pipefail`, bundled `set -euo
+// pipefail`, or `shopt -so pipefail` setting (and their disabling forms).
+// Mentions in echo output, comments or quoted data are not settings.
 func pipefailSetting(text string) (enabled, changed bool) {
 	words := commandWords(text)
-	if commandName(words) != "set" {
-		return false, false
-	}
-	for i := 1; i+1 < len(words); i++ {
-		if words[i+1] != "pipefail" {
-			continue
+	switch commandName(words) {
+	case "set":
+		for i := 1; i+1 < len(words); i++ {
+			option := words[i]
+			if words[i+1] == "pipefail" && len(option) >= 2 &&
+				(option[0] == '-' || option[0] == '+') && strings.HasSuffix(option, "o") {
+				return option[0] == '-', true
+			}
 		}
-		switch words[i] {
-		case "-o":
-			return true, true
-		case "+o":
-			return false, true
+	case "shopt":
+		// Bash's shopt -so/-uo sets or unsets a `set -o` option.
+		for i := 1; i < len(words); i++ {
+			if words[i] != "pipefail" {
+				continue
+			}
+			var hasO bool
+			var action byte
+			for _, option := range words[1:i] {
+				if !strings.HasPrefix(option, "-") {
+					continue
+				}
+				for j := 1; j < len(option); j++ {
+					switch option[j] {
+					case 'o':
+						hasO = true
+					case 's', 'u':
+						action = option[j]
+					}
+				}
+			}
+			if hasO && action != 0 {
+				return action == 's', true
+			}
 		}
 	}
 	return false, false
