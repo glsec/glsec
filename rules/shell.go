@@ -350,6 +350,60 @@ var shellKeywords = map[string]bool{
 
 var assignmentRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*=`)
 
+// commandEnv is what a simple command does with variables (#1325).
+type commandEnv struct {
+	// local are the NAME=value words before the program, also after env:
+	// they apply to that one command only (`X=1 npm ci`).
+	local []string
+	// persistent are assignments that stay for the following commands of the
+	// same shell: `export X=1`, or a command made of assignments only.
+	persistent []string
+}
+
+// declareKeywords are the builtins whose assignments stay in the shell.
+var declareKeywords = map[string]bool{"export": true, "declare": true, "typeset": true, "readonly": true, "local": true}
+
+// commandEnvironment returns the assignments of a simple command, split by
+// how long they apply. A command with a program after its assignments only
+// has local ones; without a program they are persistent.
+func commandEnvironment(text string) commandEnv {
+	words := shellWords(text)
+	var assigns []string
+	i := 0
+	for ; i < len(words); i++ {
+		w := words[i]
+		switch {
+		case declareKeywords[w], w == "env", strings.HasPrefix(w, "-") && i > 0:
+			continue
+		case assignmentRe.MatchString(w):
+			assigns = append(assigns, w)
+			continue
+		}
+		break
+	}
+	if i < len(words) {
+		return commandEnv{local: assigns}
+	}
+	return commandEnv{persistent: assigns}
+}
+
+// printsOnly reports a command that only prints its arguments: echo or printf
+// without an output redirection to a file. What it prints is text, not a
+// command or a setting.
+func printsOnly(cmd shellCommand, words []string) bool {
+	switch commandName(words) {
+	case "echo", "printf", "print":
+	default:
+		return false
+	}
+	for _, target := range rcRedirectTargets(cmd.text) {
+		if target != "/dev/null" && !strings.HasPrefix(target, "/dev/std") {
+			return false
+		}
+	}
+	return true
+}
+
 // commandWords returns the words of the program a simple command runs, with
 // quotes removed; see unwrapCommand.
 func commandWords(text string) []string {

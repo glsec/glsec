@@ -252,3 +252,33 @@ func TestGL089_InlineEnvironmentOverrides(t *testing.T) {
 		})
 	}
 }
+
+// Renovate is found command by command: on a later line of a block, right
+// before a ;, or continued over two lines, and the finding is on the line
+// where the command starts. An inline setting stays with its own command
+// (#1325).
+func TestGL089_CommandLevel(t *testing.T) {
+	const head = "variables:\n  RENOVATE_AUTODISCOVER: \"true\"\njob:\n  script:\n"
+	for name, tc := range map[string]struct {
+		script string
+		line   int
+	}{
+		"later block line":   {"    - |\n      echo start\n      renovate --autodiscover\n", 7},
+		"before semicolon":   {"    - renovate --autodiscover; echo done\n", 5},
+		"bare before ;":      {"    - echo start; renovate; echo done\n", 5},
+		"continued":          {"    - |\n      echo start\n      renovate \\\n        --autodiscover\n", 7},
+		"after and":          {"    - echo start && renovate\n", 5},
+		"inline then second": {"    - RENOVATE_AUTODISCOVER=false renovate && renovate\n", 5},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := findings089(t, head+tc.script)
+			if len(f) != 1 || f[0].Line != tc.line {
+				t.Fatalf("got %v, want one finding on line %d\n%s", f, tc.line, head+tc.script)
+			}
+		})
+	}
+	// The disabled invocation alone reports nothing.
+	if f := findings089(t, head+"    - RENOVATE_AUTODISCOVER=false renovate; echo done\n"); len(f) != 0 {
+		t.Errorf("inline disable: got %v, want none", f)
+	}
+}
