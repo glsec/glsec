@@ -153,7 +153,7 @@ Includes of `trigger:` jobs count too. Every component carries these properties:
   - `digest`: an image digest, or `integrity:` on a remote include
   - `sha`: a full commit SHA
   - `version`: an exact version, or a tag that isn't a known moving one
-  - `mutable`: for example `latest`, `17`, `main`, `~latest` or `@1.2`
+  - `mutable`: for example `latest`, `17`, `main`, `~latest` or `@1.2`; also version-less image tags such as `bookworm` and `alpine`
   - `none`: no tag or ref
   - `unresolved`: the reference contains a CI variable or input
   - `gitlab`: a template, which moves with your GitLab version

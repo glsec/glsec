@@ -83,6 +83,36 @@ job:
 	}
 }
 
+func TestCollect_VersionlessImageAndServiceTags(t *testing.T) {
+	tags := []struct {
+		ref     string
+		pinning Pinning
+	}{
+		{"debian:bookworm", PinMutable},
+		{"ubuntu:jammy", PinMutable},
+		{"debian:bookworm-slim", PinMutable},
+		{"debian:stable-slim", PinMutable},
+		{"node:alpine", PinMutable},
+		{"python:slim", PinMutable},
+		{"gcr.io/kaniko-project/executor:debug", PinMutable},
+		{"debian:12.7", PinMutable}, // partial release: retains existing classification
+		{"node:20.19.4", PinVersion},
+	}
+	for _, tc := range tags {
+		t.Run(tc.ref, func(t *testing.T) {
+			_, version, _ := splitImageParts(tc.ref)
+			got := collect(t, "job:\n  image: "+tc.ref+"\n  services: ["+tc.ref+"]\n  script: [echo]\n")
+			for _, kind := range []Kind{KindImage, KindService} {
+				key := string(kind) + " " + tc.ref + " " + version
+				item, ok := got[key]
+				if !ok || item.Pinning != tc.pinning {
+					t.Errorf("%q: got %+v (present %t), want %q", key, item, ok, tc.pinning)
+				}
+			}
+		})
+	}
+}
+
 func TestCollect_Inheritance(t *testing.T) {
 	got := collect(t, `
 image: busybox:1.37.0
