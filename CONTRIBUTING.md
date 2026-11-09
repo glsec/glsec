@@ -226,6 +226,8 @@ Shared helpers live in `rules/helpers.go` and `rules/shell.go` (and `runsInherit
 | `CollectJobScriptLines(job)` | All scalar script lines of a single job |
 | `shellCommands(item)` | Splits a script item into simple commands, respecting quotes, escapes, comments and here-documents |
 | `commandWords(text)` / `commandName(words)` | The words of a command without keywords, assignments, `env` and quotes, and the base name of the program it runs |
+| `commandEnvironment(text)` | A command's assignments by scope: `local` ones before a program apply to that command only, `persistent` ones (`export X=1`, or a command of assignments only) to the commands after it in the same shell |
+| `printsOnly(cmd, words)` | `echo`/`printf` without an output redirection to a file: what it prints is text, not a command or a setting |
 | `logicalLines(item)` | The lines of an item, joining backslash continuations, with the index of the line each starts on |
 | `parser.ScalarContentLine(item, i)` | The source line of the item's `i`-th line, so a finding inside a `\|` block points at the line that triggers it |
 
@@ -513,6 +515,8 @@ A finding from the [precision review](RELEASING.md) that a fix changes goes into
 `TestMetamorphic` rewrites every pipeline in `testdata/fixtures` and `testdata/corpus` into forms that mean the same to GitLab (CRLF, flow style, other quoting, `script:` as a string or a list, jobs reversed, anchors expanded, keys moved into a template the job `extends:` or merges with `<<:`) and fails when the findings change; lines may move. A difference is either a rule that matches on spelling instead of meaning, or a rewrite that isn't equivalent for that rule. The second kind, and rule gaps that have an issue, go into `knownDifferences` as `transform/rule` with the reason. The test also fails on an entry that no longer matches, so remove it when you fix the rule.
 
 `TestMetamorphicWrappers` runs every single script line of the fixtures under `timeout 600`, `nice -n 10`, `sudo` and `sudo -Hu node` and fails when a rule loses a finding. Read the command with `commandWords`, which goes through wrappers, or use `unwrappedLine` when a rule finds the command position with a regular expression.
+
+`TestSemanticLayouts` writes the same commands into a job as separate list items, joined with `;`, one per line in a block, and with a command continued over two lines, and checks that the shell rules report the same findings on the line where the command starts. A rule that matches whole lines instead of commands fails it. Add a case when a rule starts reading commands.
 
 ```sh
 go test ./cmd/glsec -run TestMetamorphic

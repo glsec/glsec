@@ -67,25 +67,32 @@ func (r *gl089) Check(doc *yaml.Node, file string) []finding.Finding {
 				continue
 			}
 			for _, item := range block.Content {
-				if item.Kind != yaml.ScalarNode || !runsRenovate.get(item, func() bool { return renovateCmdRe.MatchString(unwrappedLine(item.Value)) }) {
+				if item.Kind != yaml.ScalarNode || !runsRenovate.get(item, func() bool { return strings.Contains(item.Value, "renovate") }) {
 					continue
 				}
 				if !varsDone {
 					vars, varsDone = variablesOf(in, job, pipelineVars), true
 				}
-				for _, line := range strings.Split(unwrappedLine(strings.ReplaceAll(item.Value, "\\\n", " ")), "\n") {
-					if !unlimitedAutodiscover(line, vars) {
+				// Command by command, so an invocation on a later line of a
+				// block, or right before a ;, is found, its inline variables
+				// stay with it, and the finding points at its line (#1325).
+				for _, cmd := range shellCommands(item.Value) {
+					text := unwrappedLine(strings.ReplaceAll(cmd.text, "\\\n", " "))
+					if !unlimitedAutodiscover(text, vars) {
 						continue
 					}
-					findings = append(findings, finding.Finding{
+					f := finding.Finding{
 						RuleID:   "GL089",
 						Severity: finding.Warn,
 						Job:      name.Value,
 						Message:  fmt.Sprintf("job %q runs Renovate with autodiscovery and no filter — the bot works on every project its token can reach; set RENOVATE_AUTODISCOVER_FILTER (or autodiscoverNamespaces/autodiscoverTopics), unless a config file in the repository already does", name.Value),
 						File:     file,
-						Line:     item.Line,
-						Col:      item.Column,
-					})
+						Line:     parser.ScalarContentLine(item, cmd.line),
+					}
+					if cmd.line == 0 {
+						f.Col = item.Column
+					}
+					findings = append(findings, f)
 					return
 				}
 			}
