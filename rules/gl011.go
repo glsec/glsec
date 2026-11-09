@@ -165,7 +165,9 @@ func isDownloadExecute(line string) bool {
 		return true
 	}
 	// PowerShell commands usually arrive quoted (pwsh -c "…"), so match the raw line.
-	if psPipeExecRe.MatchString(line) || psArgExecRe.MatchString(line) {
+	// Both need iex or Invoke-Expression; psPipeExecRe's own prefilter has the
+	// download words instead, which are on most curl and wget lines (#1336).
+	if psArgExecRe.possible(line) && (psPipeExecRe.MatchString(line) || psArgExecRe.MatchString(line)) {
 		return true
 	}
 	return downloadThenExecRe.MatchString(stripped)
