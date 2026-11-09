@@ -247,6 +247,10 @@ func printedSecret(line string) (string, bool) {
 	// Single-quoted spans are literal. Keep an empty quoted placeholder so a
 	// filename such as 6> 'private log.txt' still has a redirection target.
 	s := singleQuotedRe.ReplaceAllString(line, "''")
+	// Command separators inside quoted arguments (such as the parentheses in
+	// "${TOKEN:+ (set)}") are literal characters, not segment boundaries.
+	// maskShellQuotes preserves offsets while hiding those separators.
+	separators := maskShellQuotes(s)
 
 	for _, loc := range gl021VarRefRe.FindAllStringSubmatchIndex(s, -1) {
 		name := s[loc[2]:loc[3]]
@@ -273,11 +277,11 @@ func printedSecret(line string) (string, bool) {
 		// Find the command segment the secret belongs to (split on shell
 		// command separators).
 		left := start - 1
-		for left >= 0 && !isShellSep(s[left]) {
+		for left >= 0 && !isShellSep(separators[left]) {
 			left--
 		}
 		right := end
-		for right < len(s) && !isShellSep(s[right]) {
+		for right < len(s) && !isShellSep(separators[right]) {
 			right++
 		}
 

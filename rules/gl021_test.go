@@ -167,6 +167,8 @@ func TestGL021_PresenceAndDefaultExpansionRegressions(t *testing.T) {
 		{"presence of another variable then print", `[ -n "$API_KEY" ] && echo "$DEPLOY_TOKEN"`, true},
 		{"default expansion prints a set secret", `echo "${CI_JOB_TOKEN:-missing}"`, true},
 		{"safe confirmation and another printed secret", `echo "${CI_JOB_TOKEN:+ (set)}" "$DEPLOY_TOKEN"`, true},
+		{"quoted pipe before another printed secret", `echo "ready | set" "$DEPLOY_TOKEN"`, true},
+		{"quoted semicolon before another printed secret", `echo "ready; set" "$DEPLOY_TOKEN"`, true},
 		{"presence then safe confirmation", `test -n "$CI_JOB_TOKEN" && echo "token is set"`, false},
 		{"safe conditional expansion", `echo "${CI_JOB_TOKEN:+ (set)}"`, false},
 		{"literal reference", `echo '$CI_JOB_TOKEN'`, false},
