@@ -5,7 +5,6 @@ package rules
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -27,7 +26,7 @@ var secretNameSuffixes = []string{
 
 // varRefRe matches a value that is exactly one variable reference, $VAR or
 // ${VAR}; group 1 is the name.
-var varRefRe = regexp.MustCompile(`^\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?$`)
+var varRefRe = mustCompilePrefiltered(`^\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?$`)
 
 func (r *gl018) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding

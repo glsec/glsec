@@ -5,7 +5,6 @@ package rules
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -23,7 +22,7 @@ func (r *gl046) ID() string { return "GL046" }
 // which is a normalised form of CI_COMMIT_REF_NAME and carries the same cache-poisoning risk.
 var cacheKeyVars = append(append([]string{}, userControlledVars...), "CI_COMMIT_REF_SLUG")
 
-var cacheKeyVarRe = regexp.MustCompile(
+var cacheKeyVarRe = mustCompilePrefiltered(
 	`\$\{?(` + strings.Join(cacheKeyVars, "|") + `)\b`,
 )
 
@@ -178,7 +177,7 @@ func checkCacheMapping(node *yaml.Node, file, job string) []finding.Finding {
 
 // protectedRefCondRe matches a rules:if clause that holds only on the default
 // branch or on protected refs.
-var protectedRefCondRe = regexp.MustCompile(
+var protectedRefCondRe = mustCompilePrefiltered(
 	`\$\{?CI_COMMIT_BRANCH\}?\s*==\s*\$\{?CI_DEFAULT_BRANCH\b` +
 		`|\$\{?CI_DEFAULT_BRANCH\}?\s*==\s*\$\{?CI_COMMIT_BRANCH\b` +
 		`|\$\{?CI_COMMIT_REF_NAME\}?\s*==\s*\$\{?CI_DEFAULT_BRANCH\b` +

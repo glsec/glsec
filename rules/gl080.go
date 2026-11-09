@@ -5,7 +5,6 @@ package rules
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -82,7 +81,7 @@ func (r *gl080) Check(doc *yaml.Node, file string) []finding.Finding {
 
 // testRegistryRe matches a publish to a test index or to the project's own
 // GitLab package registry, which an MR build may be meant for.
-var testRegistryRe = regexp.MustCompile(`(?i)test\.pypi\.org|testpypi|CI_API_V4_URL|CI_SERVER_URL|CI_JOB_TOKEN|--dry-run`)
+var testRegistryRe = mustCompilePrefiltered(`(?i)test\.pypi\.org|testpypi|CI_API_V4_URL|CI_SERVER_URL|CI_JOB_TOKEN|--dry-run`)
 
 // gl080MROnlyProduction reports a job without environment: that runs only in
 // merge request pipelines and deploys to production by its name or publishes

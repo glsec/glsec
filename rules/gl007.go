@@ -5,7 +5,6 @@ package rules
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -20,7 +19,7 @@ var GL007 = &gl007{}
 func (r *gl007) ID() string { return "GL007" }
 
 // entireVarRe matches an image ref that is entirely a single variable reference.
-var entireVarRe = regexp.MustCompile(`^\$\{?[A-Za-z_][A-Za-z0-9_]*\}?$`)
+var entireVarRe = mustCompilePrefiltered(`^\$\{?[A-Za-z_][A-Za-z0-9_]*\}?$`)
 
 // userControlledImageVars are GitLab predefined variables whose values are set
 // by external actors (commit authors, MR creators) and can contain arbitrary strings.

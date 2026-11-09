@@ -5,7 +5,6 @@ package rules
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -25,7 +24,7 @@ var silencedRe = mustCompilePrefiltered(`\|\|\s*(?:(?:true|exit\s+0)\b|:(?:[\s;)
 
 // failingExitRe matches what makes `|| echo …` fail after all: && exit 1,
 // ; exit 2.
-var failingExitRe = regexp.MustCompile(`^\s*(?:&&|;)\s*exit\s+[1-9]`)
+var failingExitRe = mustCompilePrefiltered(`^\s*(?:&&|;)\s*exit\s+[1-9]`)
 
 // silencerAt returns the silencer of a script item and where it starts.
 func silencerAt(item string) (string, int) {

@@ -5,7 +5,6 @@ package rules
 
 import (
 	"encoding/json"
-	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -21,7 +20,7 @@ func (r *gl066) ID() string { return "GL066" }
 
 // dockerAuthKeyRe matches the JSON "auths"/"auth" key of an inline Docker
 // registry credential document.
-var dockerAuthKeyRe = regexp.MustCompile(`"auths?"\s*:`)
+var dockerAuthKeyRe = mustCompilePrefiltered(`"auths?"\s*:`)
 
 func (r *gl066) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding

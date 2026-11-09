@@ -5,7 +5,6 @@ package rules
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -29,11 +28,11 @@ var renovateCmdRe = mustCompilePrefiltered(
 		`(?:[\w./-]*/)?renovate(?:\s|$)`)
 
 var (
-	autodiscoverOnRe  = regexp.MustCompile(`(?:^|\s)--autodiscover(?:=true)?(?:\s|$)`)
-	autodiscoverOffRe = regexp.MustCompile(`(?:^|\s)--autodiscover=false(?:\s|$)`)
+	autodiscoverOnRe  = mustCompilePrefiltered(`(?:^|\s)--autodiscover(?:=true)?(?:\s|$)`)
+	autodiscoverOffRe = mustCompilePrefiltered(`(?:^|\s)--autodiscover=false(?:\s|$)`)
 	// autodiscoverLimitRe matches the flags that limit which repositories
 	// autodiscovery takes: by path, GitLab namespace, topic or Bitbucket project.
-	autodiscoverLimitRe = regexp.MustCompile(`(?:^|\s)--autodiscover-(?:filter|namespaces|topics|projects)\b`)
+	autodiscoverLimitRe = mustCompilePrefiltered(`(?:^|\s)--autodiscover-(?:filter|namespaces|topics|projects)\b`)
 )
 
 // autodiscoverLimitVars are the environment forms of autodiscoverLimitRe.

@@ -4,8 +4,6 @@
 package rules
 
 import (
-	"regexp"
-
 	"github.com/glsec/glsec/internal/finding"
 	"gopkg.in/yaml.v3"
 )
@@ -17,7 +15,7 @@ var GL035 = &gl035{}
 func (r *gl035) ID() string { return "GL035" }
 
 // gitCredURLRe matches a git command followed by a URL with embedded userinfo credentials.
-var gitCredURLRe = regexp.MustCompile(
+var gitCredURLRe = mustCompilePrefiltered(
 	`\bgit\s+(?:clone|push|fetch|pull|remote\s+\S+)\b.*https?://[^\s@]+:[^\s@]+@`,
 )
 

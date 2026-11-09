@@ -5,7 +5,6 @@ package rules
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -19,12 +18,12 @@ var GL059 = &gl059{}
 func (r *gl059) ID() string { return "GL059" }
 
 var (
-	dockerBuildRe = regexp.MustCompile(`\bdocker\s+(?:buildx\s+)?build\b`)
-	buildArgRe    = regexp.MustCompile(`--build-arg[=\s]+([A-Za-z_][A-Za-z0-9_]*)`)
+	dockerBuildRe = mustCompilePrefiltered(`\bdocker\s+(?:buildx\s+)?build\b`)
+	buildArgRe    = mustCompilePrefiltered(`--build-arg[=\s]+([A-Za-z_][A-Za-z0-9_]*)`)
 	// secretArgNameRe matches a secret keyword as an underscore- or
 	// boundary-delimited token, so NPM_TOKEN / API_KEY / DB_PASSWORD match but
 	// BYPASS_CACHE / VERSION / MONKEY do not.
-	secretArgNameRe = regexp.MustCompile(`(^|_)(TOKEN|SECRET|PASSWORD|PASS|KEY|CREDENTIAL|AUTH)(_|$)`)
+	secretArgNameRe = mustCompilePrefiltered(`(^|_)(TOKEN|SECRET|PASSWORD|PASS|KEY|CREDENTIAL|AUTH)(_|$)`)
 )
 
 func (r *gl059) Check(doc *yaml.Node, file string) []finding.Finding {

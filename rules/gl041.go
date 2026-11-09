@@ -5,7 +5,6 @@ package rules
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -31,13 +30,13 @@ var (
 
 	// componentSemverRe matches a semver tag, optionally prefixed with "v".
 	// Requires at least two dot-separated numeric segments (e.g. 1.0, v1.2.3).
-	componentSemverRe = regexp.MustCompile(`^v?\d+\.\d+\.\d+`)
+	componentSemverRe = mustCompilePrefiltered(`^v?\d+\.\d+\.\d+`)
 	// componentPartialRe is a partial version, which GitLab resolves to the
 	// latest matching release (#986).
-	componentPartialRe = regexp.MustCompile(`^v?\d+(?:\.\d+)?$`)
+	componentPartialRe = mustCompilePrefiltered(`^v?\d+(?:\.\d+)?$`)
 	// componentCommitSHARe is the pipeline's own commit, the documented way
 	// to test a component in its own project: fixed for the pipeline.
-	componentCommitSHARe = regexp.MustCompile(`^\$\{?CI_COMMIT_SHA\}?$`)
+	componentCommitSHARe = mustCompilePrefiltered(`^\$\{?CI_COMMIT_SHA\}?$`)
 )
 
 func (r *gl041) Check(doc *yaml.Node, file string) []finding.Finding {

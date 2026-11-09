@@ -5,7 +5,6 @@ package rules
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -30,27 +29,27 @@ var agentCmdRe = mustCompilePrefiltered(
 
 // agentBypassFlags lists, per agent, the flags that let it run tools such as
 // the shell without asking.
-var agentBypassFlags = map[string]*regexp.Regexp{
-	"claude":  regexp.MustCompile(`--dangerously-skip-permissions\b|--permission-mode[=\s]+["']?bypassPermissions\b`),
-	"codex":   regexp.MustCompile(`--dangerously-bypass-approvals-and-sandbox\b|--yolo\b|(?:--sandbox|-s)[=\s]+["']?danger-full-access\b`),
-	"gemini":  regexp.MustCompile(`--yolo\b|(?:^|\s)-y(?:\s|$)|--approval-mode[=\s]+["']?yolo\b`),
-	"copilot": regexp.MustCompile(`--allow-all-tools\b|--allow-all(?:\s|=|$)|--yolo\b`),
+var agentBypassFlags = map[string]prefiltered{
+	"claude":  mustCompilePrefiltered(`--dangerously-skip-permissions\b|--permission-mode[=\s]+["']?bypassPermissions\b`),
+	"codex":   mustCompilePrefiltered(`--dangerously-bypass-approvals-and-sandbox\b|--yolo\b|(?:--sandbox|-s)[=\s]+["']?danger-full-access\b`),
+	"gemini":  mustCompilePrefiltered(`--yolo\b|(?:^|\s)-y(?:\s|$)|--approval-mode[=\s]+["']?yolo\b`),
+	"copilot": mustCompilePrefiltered(`--allow-all-tools\b|--allow-all(?:\s|=|$)|--yolo\b`),
 }
 
 // agentPromptFlagRe marks an invocation that passes a prompt. The tainted-
 // prompt check requires it, so an unrelated tool with the same name (the AWS
 // Copilot CLI, for one) is not mistaken for an agent.
-var agentPromptFlagRe = regexp.MustCompile(`(?:^|\s)(?:-p|--print|--prompt|--prompt-interactive|-i|exec)(?:[\s=]|$)`)
+var agentPromptFlagRe = mustCompilePrefiltered(`(?:^|\s)(?:-p|--print|--prompt|--prompt-interactive|-i|exec)(?:[\s=]|$)`)
 
 // allowedToolsRe finds Claude Code's tool allowlist flag; its value is checked
 // for unrestricted Bash.
-var allowedToolsRe = regexp.MustCompile(`--allowed-?[Tt]ools[=\s]+`)
+var allowedToolsRe = mustCompilePrefiltered(`--allowed-?[Tt]ools[=\s]+`)
 
-var bashToolRe = regexp.MustCompile(`\bBash(\([^)]*\))?`)
+var bashToolRe = mustCompilePrefiltered(`\bBash(\([^)]*\))?`)
 
 // agentPromptVarRe matches the GL002 user-controlled variables, which include
 // the comment that triggered a GitLab Duo flow (AI_FLOW_INPUT, AI_FLOW_CONTEXT).
-var agentPromptVarRe = regexp.MustCompile(`\$\{?(` + strings.Join(userControlledVars, "|") + `)\b`)
+var agentPromptVarRe = mustCompilePrefiltered(`\$\{?(` + strings.Join(userControlledVars, "|") + `)\b`)
 
 func (r *gl085) Check(doc *yaml.Node, file string) []finding.Finding {
 	mapping := parser.Unwrap(doc)

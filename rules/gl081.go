@@ -5,7 +5,6 @@ package rules
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -203,11 +202,11 @@ func ifAdmitsMR(expr string) bool {
 var (
 	// $CI_COMMIT_BRANCH / $CI_COMMIT_REF_NAME equal to the default branch or a
 	// named branch, in either operand order.
-	protDefaultBranchPat = regexp.MustCompile(`^\$CI_COMMIT_(BRANCH|REF_NAME)\s*==\s*\$CI_DEFAULT_BRANCH$|^\$CI_DEFAULT_BRANCH\s*==\s*\$CI_COMMIT_(BRANCH|REF_NAME)$`)
-	protNamedBranchPat   = regexp.MustCompile(`^\$CI_COMMIT_(BRANCH|REF_NAME)\s*==\s*['"][^'"]+['"]$`)
+	protDefaultBranchPat = mustCompilePrefiltered(`^\$CI_COMMIT_(BRANCH|REF_NAME)\s*==\s*\$CI_DEFAULT_BRANCH$|^\$CI_DEFAULT_BRANCH\s*==\s*\$CI_COMMIT_(BRANCH|REF_NAME)$`)
+	protNamedBranchPat   = mustCompilePrefiltered(`^\$CI_COMMIT_(BRANCH|REF_NAME)\s*==\s*['"][^'"]+['"]$`)
 	// A tag pipeline: the variable alone, a regex match on it, or != null.
-	protTagPat       = regexp.MustCompile(`^\$CI_COMMIT_TAG(\s*=~\s*/.*/[a-z]*|\s*!=\s*null)?$`)
-	protProtectedPat = regexp.MustCompile(`^\$CI_COMMIT_REF_PROTECTED\s*==\s*['"]true['"]$`)
+	protTagPat       = mustCompilePrefiltered(`^\$CI_COMMIT_TAG(\s*=~\s*/.*/[a-z]*|\s*!=\s*null)?$`)
+	protProtectedPat = mustCompilePrefiltered(`^\$CI_COMMIT_REF_PROTECTED\s*==\s*['"]true['"]$`)
 )
 
 // ifRestrictsToProtected reports whether a rules:if expression confines the job
