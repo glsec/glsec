@@ -97,24 +97,62 @@ func (r *gl089) Check(doc *yaml.Node, file string) []finding.Finding {
 // unlimitedAutodiscover reports whether line runs Renovate with autodiscovery
 // switched on, by flag or variable, and neither a flag nor a variable limits
 // it. A flag on the command line wins over the variable, as in Renovate.
+// Prefix assignments affect only their own invocation, not later commands.
 func unlimitedAutodiscover(line string, vars jobVariables) bool {
-	m := renovateCmdRe.FindStringIndex(line)
-	if m == nil {
-		return false
-	}
-	args := line[m[1]:]
-	if end := strings.IndexAny(args, "|;&"); end >= 0 {
-		args = args[:end]
-	}
-	on := autodiscoverOnRe.MatchString(args) ||
-		!autodiscoverOffRe.MatchString(args) && vars.sometimes("RENOVATE_AUTODISCOVER", isTrueValue)
-	if !on || autodiscoverLimitRe.MatchString(args) {
-		return false
-	}
-	for _, name := range autodiscoverLimitVars {
-		if vars.always(name, isSetValue) {
-			return false
+	for _, m := range renovateCmdRe.FindAllStringIndex(line, -1) {
+		local := renovateInlineVars(line[m[0]:m[1]])
+		args := line[m[1]:]
+		if end := strings.IndexAny(args, "|;&"); end >= 0 {
+			args = args[:end]
+		}
+		enabled := vars.sometimes("RENOVATE_AUTODISCOVER", isTrueValue)
+		if value, ok := local["RENOVATE_AUTODISCOVER"]; ok {
+			enabled = isTrueValue(value)
+		}
+		on := autodiscoverOnRe.MatchString(args) ||
+			!autodiscoverOffRe.MatchString(args) && enabled
+		if !on || autodiscoverLimitRe.MatchString(args) {
+			continue
+		}
+		limited := false
+		for _, name := range autodiscoverLimitVars {
+			if value, ok := local[name]; ok {
+				limited = isSetValue(value)
+			} else {
+				limited = vars.always(name, isSetValue)
+			}
+			if limited {
+				break
+			}
+		}
+		if !limited {
+			return true
 		}
 	}
-	return true
+	return false
+}
+
+// renovateInlineVars reads shell assignments immediately before a Renovate
+// invocation. The regex has already isolated the command prefix, including
+// supported wrappers (npx, bunx, pnpm dlx and exec). Empty values override
+// inherited values too: Renovate ignores an empty autodiscover filter.
+func renovateInlineVars(prefix string) map[string]string {
+	local := make(map[string]string)
+	for _, word := range shellWords(strings.TrimLeft(prefix, " \t;&|($")) {
+		if !assignmentRe.MatchString(word) {
+			break
+		}
+		name, value, _ := strings.Cut(word, "=")
+		if name == "RENOVATE_AUTODISCOVER" {
+			local[name] = value
+			continue
+		}
+		for _, limit := range autodiscoverLimitVars {
+			if name == limit {
+				local[name] = value
+				break
+			}
+		}
+	}
+	return local
 }
