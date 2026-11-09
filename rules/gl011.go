@@ -99,11 +99,15 @@ func (r *gl011) Check(doc *yaml.Node, file string) []finding.Finding {
 			if !isDownloadExecute(l.text) && !childShellDownloadExecute(l.text) {
 				continue
 			}
+			message := fmt.Sprintf("script line downloads and executes remote code without integrity verification: %q", truncate(l.text, 80))
+			if executesOpaquePayloadWithoutDownload(l.text) {
+				message = fmt.Sprintf("script line decodes and executes an opaque payload in a shell — the executable code is difficult to review: %q", truncate(l.text, 80))
+			}
 			f := finding.Finding{
 				RuleID:   "GL011",
 				Severity: finding.Error,
 				Job:      job,
-				Message:  fmt.Sprintf("script line downloads and executes remote code without integrity verification: %q", truncate(l.text, 80)),
+				Message:  message,
 				File:     file,
 				Line:     parser.ScalarContentLine(item, l.line),
 			}
@@ -114,6 +118,18 @@ func (r *gl011) Check(doc *yaml.Node, file string) []finding.Finding {
 		}
 	})
 	return findings
+}
+
+// executesOpaquePayloadWithoutDownload distinguishes encoded data fed to an
+// interpreter from a download piped into one (#1306). A variable or file may
+// supply the encoded payload; its provenance is not necessarily remote.
+func executesOpaquePayloadWithoutDownload(line string) bool {
+	stripped := interpreterDashCRe.ReplaceAllString(quotedRe.ReplaceAllString(line, ""), "| data")
+	if downloadToolRe.MatchString(stripped) || downloadSubstRe.MatchString(line) {
+		return false
+	}
+	return base64ExecRe.MatchString(stripped) || hexExecRe.MatchString(stripped) ||
+		hexEscapeRe.MatchString(line) && escapePrinterRe.MatchString(stripped) && pipeToShellRe.MatchString(stripped)
 }
 
 // childShellDownloadExecute reports a download-execute in the script a new
