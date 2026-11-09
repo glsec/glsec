@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"slices"
 	"testing"
+	"unicode"
 )
 
 func TestRequiredLiterals(t *testing.T) {
@@ -21,7 +22,10 @@ func TestRequiredLiterals(t *testing.T) {
 		`\s-r\s`:                            {"-r"}, // \s has too many characters to spell out
 		`/dev/(?:tcp|udp)/`:                 {"/dev/tcp/", "/dev/udp/"},
 		`\bsha(?:256|512)?sum\b|\bcosign\b`: {"shasum", "sha256sum", "sha512sum", "cosign"},
-		`(?i)curl`:                          nil, // strings.Contains can't fold case
+		`(?i)curl`:                          {"curl"},           // checked against the lowered input (#1330)
+		`(?i)CURL\s+-sSL`:                   {"curl"},           // literals of folded expressions are lower case
+		`(?i)oy2[aq]x`:                      {"oy2ax", "oy2qx"}, // the folded class joins oy2 instead of replacing it
+		`(?i:abc)DEF`:                       {"abcdef"},         // a mixed expression is lowered as a whole
 		`x{0,3}`:                            nil,
 		`.*`:                                nil,
 		`(?:foo|.+)`:                        nil, // one branch has no literal
@@ -124,4 +128,43 @@ func FuzzPrefiltered(f *testing.F) {
 			}
 		}
 	})
+}
+
+// A case-insensitive pattern keeps its literal and finds the match whatever
+// the case of the input (#1330).
+func TestPrefilterFoldCase(t *testing.T) {
+	p := mustCompilePrefiltered(`(?i)(?:^|\s)(oy2[a-p][a-z2-7]{3})(?:$|\s)`)
+	if !p.fold || !reflect.DeepEqual(p.anyOf, []string{"oy2"}) {
+		t.Fatalf("got fold=%v anyOf=%q, want fold and [oy2]", p.fold, p.anyOf)
+	}
+	for in, want := range map[string]bool{
+		"key oy2abcd here":          true,
+		"key OY2ABCD here":          true,
+		"key Oy2aBcD here":          true,
+		"apt-get install -y curl":   false,
+		"a quick brown fox ate a q": false,
+	} {
+		if got := p.MatchString(in); got != want {
+			t.Errorf("%q: got %v, want %v", in, got, want)
+		}
+		if p.MatchString(in) != p.Regexp.MatchString(in) {
+			t.Errorf("%q: prefilter disagrees with the regexp", in)
+		}
+	}
+}
+
+// No prefiltered expression of the rules falls back to one-letter literals
+// because of case folding: where a case-insensitive expression has a longer
+// literal, the filter uses it (#1330).
+func TestPrefilterNoFoldedSingleLetters(t *testing.T) {
+	for _, p := range allPrefiltered {
+		if !p.fold {
+			continue
+		}
+		for _, lit := range p.anyOf {
+			if len(lit) == 1 && unicode.IsLetter(rune(lit[0])) {
+				t.Errorf("%s: one-letter literal %q", p.String(), lit)
+			}
+		}
+	}
 }

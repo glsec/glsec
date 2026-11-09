@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"regexp/syntax"
 	"strings"
+	"unicode"
 )
 
 // prefiltered is a regexp that first checks, with strings.Contains, for the
@@ -19,6 +20,9 @@ type prefiltered struct {
 	// anyOf lists literals of which every match contains at least one; nil
 	// when the expression has no such literal.
 	anyOf []string
+	// fold is set when the expression matches some letters in either case:
+	// anyOf is then lower case and checked against the lowered input (#1330).
+	fold bool
 }
 
 // allPrefiltered collects every prefiltered regexp, so a test can check each
@@ -31,7 +35,12 @@ func mustCompilePrefiltered(expr string) prefiltered {
 	if err != nil {
 		panic(err) // unreachable: regexp.MustCompile accepted it
 	}
-	p := prefiltered{re, minimal(requiredLiterals(parsed.Simplify()))}
+	simple := parsed.Simplify()
+	fold := hasFoldCase(simple)
+	if fold {
+		lowerCase(simple)
+	}
+	p := prefiltered{re, minimal(requiredLiterals(simple)), fold}
 	allPrefiltered = append(allPrefiltered, p)
 	return p
 }
@@ -61,6 +70,9 @@ func minimal(lits []string) []string {
 func (p prefiltered) possible(s string) bool {
 	if p.anyOf == nil {
 		return true
+	}
+	if p.fold {
+		s = strings.ToLower(s)
 	}
 	for _, lit := range p.anyOf {
 		if strings.Contains(s, lit) {
@@ -114,6 +126,53 @@ func (p prefiltered) ReplaceAllString(src, repl string) string {
 		return src
 	}
 	return p.Regexp.ReplaceAllString(src, repl)
+}
+
+// hasFoldCase reports whether any part of re matches letters in either case.
+func hasFoldCase(re *syntax.Regexp) bool {
+	if re.Flags&syntax.FoldCase != 0 {
+		return true
+	}
+	for _, sub := range re.Sub {
+		if hasFoldCase(sub) {
+			return true
+		}
+	}
+	return false
+}
+
+// lowerCase rewrites re in place to match the lowered text of whatever it
+// matched before: literals become lower case and case-sensitive, and each
+// character class keeps the lower case of its characters. Literals taken from
+// it then hold for the lowered input, so a case-insensitive "oy2" stays a
+// three-letter filter instead of falling back to the single letters of a
+// folded class such as [aqAQ].
+func lowerCase(re *syntax.Regexp) {
+	switch re.Op {
+	case syntax.OpLiteral:
+		for i, r := range re.Rune {
+			re.Rune[i] = unicode.ToLower(r)
+		}
+		re.Flags &^= syntax.FoldCase
+	case syntax.OpCharClass:
+		seen := map[rune]bool{}
+		var runes []rune
+		for i := 0; i+1 < len(re.Rune); i += 2 {
+			if re.Rune[i+1]-re.Rune[i] > maxClass {
+				return // too wide to expand anyway; leave it
+			}
+			for r := re.Rune[i]; r <= re.Rune[i+1]; r++ {
+				if l := unicode.ToLower(r); !seen[l] {
+					seen[l] = true
+					runes = append(runes, l, l)
+				}
+			}
+		}
+		re.Rune = runes
+	}
+	for _, sub := range re.Sub {
+		lowerCase(sub)
+	}
 }
 
 // requiredLiterals returns literals of which every match of re contains at
