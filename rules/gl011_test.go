@@ -513,8 +513,8 @@ func TestPowerShellExecGate(t *testing.T) {
 		if !psArgExecRe.possible(line) {
 			t.Errorf("%q: gate skips a PowerShell download-execute line", line)
 		}
-		if !isDownloadExecute(line) {
-			t.Errorf("%q: not reported", line)
+		if isDownloadExecute(line) != gl011RemoteDownload {
+			t.Errorf("%q: not reported as a remote download", line)
 		}
 	}
 	for _, line := range []string{
