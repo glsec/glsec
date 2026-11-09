@@ -27,7 +27,8 @@ type secretPattern struct {
 var secretPatterns = []secretPattern{
 	{"GitLab PAT", regexp.MustCompile(`^glpat-[A-Za-z0-9_-]{20,}$`)},
 	{"GitLab CI job token", regexp.MustCompile(`^glcbt-[A-Za-z0-9_-]{20,}$`)},
-	{"GitLab runner registration token", regexp.MustCompile(`^glrt-[A-Za-z0-9_-]{20,}$`)},
+	{"GitLab runner authentication token", regexp.MustCompile(`^glrtr?-[A-Za-z0-9_-]{20,}$`)},
+	{"GitLab workspace token", regexp.MustCompile(`^glwt-[A-Za-z0-9_-]{20,}$`)},
 	{"GitLab deploy token", regexp.MustCompile(`^gldt-[A-Za-z0-9_-]{20,}$`)},
 	{"GitLab pipeline trigger token", regexp.MustCompile(`^glptt-[0-9a-f]{40}$`)},
 	{"GitLab feed token", regexp.MustCompile(`^glft-[0-9a-zA-Z_-]{20}$`)},
@@ -72,8 +73,8 @@ var secretPatterns = []secretPattern{
 	{"OpenAI realtime client secret", regexp.MustCompile(`^ek_[0-9a-f]{32,}$`)},
 	{"PyPI upload token", regexp.MustCompile(`^pypi-AgEIcHlwaS5vcmc[A-Za-z0-9_-]{20,}$`)},
 	{"npm access token", regexp.MustCompile(`^npm_[A-Za-z0-9]{36}$`)},
-	// sk_ secret and rk_ restricted keys.
-	{"Stripe secret key", regexp.MustCompile(`^[rs]k_(?:test|live|prod)_[A-Za-z0-9]{24,}$`)},
+	// sk_ secret, rk_ restricted, and sk_org_ organization keys.
+	{"Stripe secret key", regexp.MustCompile(`^(?:[rs]k_(?:test|live|prod)|sk_org)_[A-Za-z0-9]{24,}$`)},
 	{"HuggingFace token", regexp.MustCompile(`^hf_[A-Za-z0-9]{34,40}$`)},
 	{"HuggingFace organization token", regexp.MustCompile(`^api_org_[A-Za-z]{34}$`)},
 	{"GCP service account key", regexp.MustCompile(`"type":\s*"service_account"`)},

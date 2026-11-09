@@ -321,6 +321,10 @@ func anchoredFormatCases() map[string]struct {
 		"dynatrace":     {"dt0c01." + strings.Repeat("A", 24) + "." + strings.Repeat("B", 64), "Dynatrace token"},
 		"duffel":        {"duffel_" + "test_" + a(43), "Duffel API token"},
 		"frameio":       {"fio-u-" + a(64), "Frame.io token"},
+		"runner auth":   {"glrt-" + a(24), "GitLab runner authentication token"},
+		"runner reg":    {"glrtr-" + a(24), "GitLab runner authentication token"},
+		"workspace":     {"glwt-" + a(24), "GitLab workspace token"},
+		"stripe org":    {"sk_" + "org_" + a(32), "Stripe secret key"},
 		"terraform":     {a(14) + ".atlasv1." + strings.Repeat("b", 70), "Terraform Cloud token"},
 		"linear":        {"lin_" + "api_" + a(40), "Linear API key"},
 		"nrjs":          {"NRJS-" + a(19), "New Relic browser key"},
@@ -366,6 +370,20 @@ build:
 				t.Errorf("expected %q in message, got %q", tc.label, f[0].Message)
 			}
 		})
+	}
+}
+
+func TestGL006_NewTokenNearMisses(t *testing.T) {
+	for _, value := range []string{
+		"glrtr-" + strings.Repeat("a", 19),       // runner auth token too short
+		"glwt-" + strings.Repeat("a", 19),        // workspace token too short
+		"glwx-" + strings.Repeat("a", 24),        // unrecognized GitLab prefix
+		"sk_" + "org_" + strings.Repeat("a", 23), // organization key too short
+	} {
+		f := findings006(t, fmt.Sprintf("variables:\n  TOKEN: %q\nbuild:\n  script: [echo ok]\n", value))
+		if len(f) != 0 {
+			t.Errorf("unexpected finding for %q: %+v", value, f)
+		}
 	}
 }
 
