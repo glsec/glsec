@@ -40,6 +40,9 @@ func TestGL088_TokenInCommand(t *testing.T) {
 		"single quotes":  {"npm config set //registry.npmjs.org/:_authToken '" + npmToken + "'", "npm access token"},
 		"end of line":    {"echo " + gitlabToken, "GitLab PAT"},
 		"aws key in env": {"AWS_ACCESS_KEY_ID=AKIA" + strings.Repeat("Q", 16) + " aws s3 ls", "AWS access key"},
+		"glrtr":          {"gitlab-runner register --token glrtr-" + strings.Repeat("A", 24), "GitLab runner authentication token"},
+		"glwt":           {"curl -H 'WORKSPACE-TOKEN: glwt-" + strings.Repeat("B", 24) + "' https://gitlab.example.com", "GitLab workspace token"},
+		"sk_org":         {"export STRIPE_KEY=sk_" + "org_" + strings.Repeat("C", 32), "Stripe secret key"},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
