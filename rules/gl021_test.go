@@ -174,6 +174,11 @@ func TestGL021_PresenceAndDefaultExpansionRegressions(t *testing.T) {
 		{"literal reference", `echo '$CI_JOB_TOKEN'`, false},
 		{"redirected value", `test -n "$CI_JOB_TOKEN" && echo "$CI_JOB_TOKEN" > token.txt`, false},
 		{"non-printing argument", `test -n "$CI_JOB_TOKEN" && curl -H "JOB-TOKEN: $CI_JOB_TOKEN" https://example.org`, false},
+		{"bash child-shell print", `bash -c "true; echo $DEPLOY_TOKEN"`, true},
+		{"ssh remote child-shell print", `ssh host "cd /app && echo $DEPLOY_TOKEN"`, true},
+		{"sh child-shell printf", `sh -c "echo hi; printf '%s' $DEPLOY_TOKEN"`, true},
+		{"child-shell redirect", `bash -c "true; echo $DEPLOY_TOKEN" > secret.txt`, false},
+		{"child-shell non-logging pipe", `ssh host "echo $DEPLOY_TOKEN" | docker login --password-stdin`, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := findings021(t, "job:\n  script:\n    - "+strconv.Quote(tc.script)+"\n")

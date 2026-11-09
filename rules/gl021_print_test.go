@@ -28,6 +28,9 @@ func TestPrintedSecret(t *testing.T) {
 		{`echo "${CI_JOB_TOKEN:-missing}"`, true},
 		{`echo "${CI_JOB_TOKEN:+set}" "$DEPLOY_TOKEN"`, true},
 		{`echo "${CI_JOB_TOKEN:+$DEPLOY_TOKEN}"`, true},
+		{`bash -c "true; echo $DEPLOY_TOKEN"`, true},
+		{`ssh host "cd /app && echo $DEPLOY_TOKEN"`, true},
+		{`sh -c "echo hi; printf '%s' $DEPLOY_TOKEN"`, true},
 
 		// Not printed.
 		{`$DEPLOY_TOKEN`, false},
@@ -45,6 +48,8 @@ func TestPrintedSecret(t *testing.T) {
 		{`echo ${DEPLOY_TOKEN:+set}`, false},
 		{`echo "${CI_JOB_TOKEN:+ (set)}"`, false},
 		{`echo "${CI_JOB_TOKEN:+ (set)}" > check.log`, false},
+		{`bash -c "echo $DEPLOY_TOKEN" > token.txt`, false},
+		{`ssh host "echo $DEPLOY_TOKEN" | docker login --password-stdin`, false},
 		{`echo $USERNAME`, false},
 		{`echo $DEPLOY_TOKENIZER_URL`, false},
 		{`echo $GPG_KEY_ID`, false},
