@@ -325,6 +325,11 @@ func anchoredFormatCases() map[string]struct {
 		"runner reg":    {"glrtr-" + a(24), "GitLab runner authentication token"},
 		"workspace":     {"glwt-" + a(24), "GitLab workspace token"},
 		"stripe org":    {"sk_" + "org_" + a(32), "Stripe secret key"},
+		"s3 sigv4":      {presignedS3V4, "pre-signed storage URL"},
+		"s3 sigv2":      {presignedS3V2, "pre-signed storage URL"},
+		"azure sas":     {presignedAzureSAS, "pre-signed storage URL"},
+		"gcs v4":        {presignedGCSV4, "pre-signed storage URL"},
+		"gcs v2":        {presignedGCSV2, "pre-signed storage URL"},
 		"terraform":     {a(14) + ".atlasv1." + strings.Repeat("b", 70), "Terraform Cloud token"},
 		"linear":        {"lin_" + "api_" + a(40), "Linear API key"},
 		"nrjs":          {"NRJS-" + a(19), "New Relic browser key"},
@@ -719,5 +724,40 @@ func TestGL006_ServiceVariables(t *testing.T) {
 				t.Errorf("got %+v, want line %d, job %q", got[0], tc.line, tc.job)
 			}
 		})
+	}
+}
+
+// Synthetic pre-signed storage URLs (#1315), assembled from pieces so no
+// complete credential-shaped string appears in the source.
+var (
+	presignedS3V4 = "https://bucket.s3.eu-central-1.amazonaws.com/f.tgz?X-Amz-Algorithm=AWS4-HMAC-SHA256" +
+		"&X-Amz-Credential=AKIA" + strings.Repeat("Q", 16) + "%2F20261107%2Feu-central-1%2Fs3%2Faws4_request" +
+		"&X-Amz-Date=20261107T000000Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=" + strings.Repeat("0f", 32)
+	presignedS3V2     = "https://bucket.s3.amazonaws.com/f.tgz?AWSAccessKey" + "Id=AKIA" + strings.Repeat("Q", 16) + "&Signature=" + strings.Repeat("Ab", 12) + "%3D&Expires=2107891463"
+	presignedAzureSAS = "https://acct.blob.core.windows.net/c/f.tgz?sv=2022-11-02&se=2030-01-01T00%3A00%3A00Z&sr=b&sp=r&sig=" + strings.Repeat("Xy", 16) + "%3D"
+	presignedGCSV4    = "https://storage.googleapis.com/b/f.tgz?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Date=20261107T000000Z&X-Goog-Expires=604800&X-Goog-SignedHeaders=host&X-Goog-Signature=" + strings.Repeat("ab", 128)
+	presignedGCSV2    = "https://storage.googleapis.com/b/f.tgz?GoogleAccessId=sa%40p.iam.gserviceaccount.com&Expires=2107891463&Signature=" + strings.Repeat("Cd", 12) + "%3D"
+)
+
+// A pre-signed URL is reported once, as such, and not again for the AWS key
+// id inside it; a signature taken from a variable, or a parameter that only
+// looks similar, is not a pre-signed URL (#1315).
+func TestGL006_PresignedURLs(t *testing.T) {
+	for _, v := range []string{presignedS3V4, presignedS3V2} {
+		f := findings006(t, fmt.Sprintf("variables:\n  PAYLOAD_URL: %q\nbuild:\n  script: [echo ok]\n", v))
+		if len(f) != 1 || !strings.Contains(f[0].Message, "pre-signed storage URL") {
+			t.Errorf("%s: got %v, want one pre-signed URL finding", v[:40], f)
+		}
+	}
+	for _, v := range []string{
+		"https://bucket.s3.amazonaws.com/f?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Signature=$SIG",
+		"https://acct.blob.core.windows.net/c/f?sv=2022-11-02&sig=${SAS_SIG}",
+		"https://api.example.com/v1/items?signature=abc&page=2",
+		"https://example.com/download?sig=short",
+		"https://bucket.s3.amazonaws.com/f.tgz",
+	} {
+		if f := findings006(t, fmt.Sprintf("variables:\n  URL: %q\nbuild:\n  script: [echo ok]\n", v)); len(f) != 0 {
+			t.Errorf("%s: got %v, want no finding", v, f)
+		}
 	}
 }
