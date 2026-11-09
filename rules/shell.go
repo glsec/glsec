@@ -8,6 +8,7 @@ import (
 	"path"
 	"slices"
 	"strings"
+	"sync"
 )
 
 // shellCommand is one simple command of a script item: the text between
@@ -43,7 +44,39 @@ func inArithmetic(text string) bool {
 // (#1216): on another machine, as with ssh, it stays data. So is the script of
 // a local sh -c, after all other commands so that a pipeline stays in order
 // (#1218).
+//
+// The result depends only on script, so it is shared across rules and jobs
+// (#1325): callers must not change it. It is cut to its length, so an append
+// copies instead of writing into the shared array.
 func shellCommands(script string) []shellCommand {
+	commandCache.Lock()
+	cmds, ok := commandCache.m[script]
+	commandCache.Unlock()
+	if ok {
+		return cmds
+	}
+	cmds = parseShellCommands(script)
+	cmds = cmds[:len(cmds):len(cmds)]
+	commandCache.Lock()
+	if len(commandCache.m) >= commandCacheMax {
+		clear(commandCache.m)
+	}
+	commandCache.m[script] = cmds
+	commandCache.Unlock()
+	return cmds
+}
+
+// commandCache holds shellCommands results by script text. Each script item
+// is read by a dozen rules or more; parsing it once was about 13 % of rule
+// time. It is emptied when full, which bounds a long scan of many files.
+var commandCache = struct {
+	sync.Mutex
+	m map[string][]shellCommand
+}{m: map[string][]shellCommand{}}
+
+const commandCacheMax = 1 << 14
+
+func parseShellCommands(script string) []shellCommand {
 	var cmds []shellCommand
 	var cur strings.Builder
 	line, start := 0, -1
@@ -231,7 +264,8 @@ func heredocCommands(body, delim string, first int) []shellCommand {
 	if i := strings.LastIndexByte(body, '\n'); strings.TrimSpace(body[i+1:]) == delim {
 		body = body[:i+1]
 	}
-	cmds := shellCommands(body)
+	// A fresh parse: the line shift below must not reach the shared result.
+	cmds := parseShellCommands(body)
 	for i := range cmds {
 		cmds[i].line += first
 	}
