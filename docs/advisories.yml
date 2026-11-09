@@ -99,9 +99,11 @@
   note: "An include on a branch is reported, an include on a tag is not, and moving a tag was the attack."
 
 - id: CVE-2026-123852
+  aliases: [GHSA-mv6f-g9w3-f7mc]
   kind: analogue
-  product: GitHub Actions
-  summary: "An untrusted actor identity bypassed a review gate and let an agent run with approvals disabled."
+  product: JetBrains Junie GitHub Action
+  fixed: "1.8.0"
+  summary: "Fork updates could run code with the workflow's credentials in the agent action."
   coverage: full
   rules:
     - {rule: GL085, severity: error}
@@ -110,7 +112,7 @@
 - id: CVE-2026-83493
   aliases: [GHSA-6w7q-9vx7-v552]
   kind: analogue
-  product: GitHub Actions
+  product: distributed-workloads
   summary: "A privileged review workflow checked out and ran untrusted pull request code while retaining credentials."
   coverage: partial
   rules:
