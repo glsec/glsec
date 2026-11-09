@@ -1,0 +1,12 @@
+# #1303: shell-local Renovate environment assignments override YAML settings
+# for this invocation; an empty filter does not restrict discovery.
+variables:
+  RENOVATE_AUTODISCOVER_FILTER: my-group/*
+inline_enables:
+  script:
+    - RENOVATE_AUTODISCOVER=true RENOVATE_AUTODISCOVER_FILTER= renovate
+inline_disables:
+  variables:
+    RENOVATE_AUTODISCOVER: "true"
+  script:
+    - RENOVATE_AUTODISCOVER=false renovate

@@ -5,7 +5,6 @@ package rules
 
 import (
 	"fmt"
-	"regexp"
 	"slices"
 	"strings"
 
@@ -32,7 +31,11 @@ type lifecycleEcosystem struct {
 	// offRe matches a setting that switches dependency code off: in front of
 	// an install for that install, as its own command for later installs.
 	// nil when the ecosystem has none.
-	offRe *regexp.Regexp
+	offRe prefiltered
+	// onRe matches a setting that switches it back on, such as
+	// ignore-scripts false or unset of the variable (#1301). nil when the
+	// ecosystem has none.
+	onRe prefiltered
 	// offArg reports an install argument that switches it off for that
 	// install.
 	offArg func(words []string) bool
@@ -83,33 +86,19 @@ var lifecycleEcosystems = [...]lifecycleEcosystem{
 			}
 			return false
 		},
-		publishes: func(w []string) bool {
-			switch commandName(w) {
-			case "npm", "pnpm":
-				return subcommand(w) == "publish"
-			case "yarn":
-				if subcommand(w) == "publish" {
-					return true
-				}
-				// yarn npm publish, yarn workspaces foreach … npm publish
-				for i := 1; i+1 < len(w); i++ {
-					if w[i] == "npm" && w[i+1] == "publish" {
-						return true
-					}
-				}
-			}
-			return false
-		},
-		offRe:   scriptsOffRe,
-		offArg:  func(w []string) bool { return scriptsOffArgRe.MatchString(strings.Join(w, " ")) },
-		offVars: scriptsDisabledByVariables,
-		risk:    "installs dependencies with lifecycle scripts enabled",
-		fix:     `any dependency's install script runs with the publish token; add --ignore-scripts or set NPM_CONFIG_IGNORE_SCRIPTS: "true", or build in one job and publish the artifact from a job that installs nothing (suppress if .npmrc sets ignore-scripts=true)`,
+		publishes: npmPublishes,
+		offRe:     scriptsOffRe,
+		onRe:      scriptsOnRe,
+		offArg:    func(w []string) bool { return scriptsOffArgRe.MatchString(strings.Join(w, " ")) },
+		offVars:   scriptsDisabledByVariables,
+		risk:      "installs dependencies with lifecycle scripts enabled",
+		fix:       `any dependency's install script runs with the publish token; add --ignore-scripts or set NPM_CONFIG_IGNORE_SCRIPTS: "true", or build in one job and publish the artifact from a job that installs nothing (suppress if .npmrc sets ignore-scripts=true)`,
 	},
 	{
 		installs:  pythonInstallsDeps,
 		publishes: pythonPublishes,
 		offRe:     pythonBuildOffRe,
+		onRe:      pythonBuildOnRe,
 		offArg:    pythonBinaryOnlyArg,
 		offVars:   pythonBuildDisabledByVariables,
 		risk:      "installs the project's dependencies, building any without a wheel from source",
@@ -141,17 +130,21 @@ var (
 	// scripts off for later installs: npm config set ignore-scripts true, an
 	// .npmrc line written by echo, the npm and Yarn 2+ environment variables,
 	// and yarn config set enableScripts false.
-	scriptsOffRe = regexp.MustCompile(`(?i)ignore[-_]scripts(?:\s*=\s*|\s+)["']?true\b|yarn_enable_scripts=["']?(?:false|0)\b|enableScripts(?:\s*:\s*|\s+)["']?false\b`)
+	scriptsOffRe = mustCompilePrefiltered(`(?i)ignore[-_]scripts(?:\s*=\s*|\s+)["']?true\b|yarn_enable_scripts=["']?(?:false|0)\b|enableScripts(?:\s*:\s*|\s+)["']?false\b`)
 	// scriptsOffArgRe matches an install argument that switches them off for
 	// that install: --ignore-scripts, and Yarn 2+'s --mode=skip-build.
-	scriptsOffArgRe = regexp.MustCompile(`(?:^|\s)(?:--ignore-scripts(?:=true)?|--mode[= ]skip-build)(?:\s|$)`)
+	scriptsOffArgRe = mustCompilePrefiltered(`(?:^|\s)(?:--ignore-scripts(?:=true)?|--mode[= ]skip-build)(?:\s|$)`)
 	// pythonBuildOffRe matches a setting that stops builds from source:
 	// PIP_ONLY_BINARY=:all:, UV_NO_BUILD=1, POETRY_INSTALLER_ONLY_BINARY
 	// (Poetry 2), pip config set and poetry config, and an only-binary line
 	// written to pip.conf.
-	pythonBuildOffRe = regexp.MustCompile(`\bPIP_ONLY_BINARY=["']?:all:|\bUV_NO_BUILD=["']?(?:1|[Tt]rue|yes|on)\b|\bPOETRY_INSTALLER_ONLY_BINARY=["']?(?::all:|[Tt]rue)|\bconfig\s+set\s+(?:global|install)\.only-binary\s+["']?:all:|\bconfig\s+installer\.only-binary\s+["']?(?::all:|[Tt]rue)|only-binary\s*=\s*:all:`)
-	pipNameRe        = regexp.MustCompile(`^pip[0-9.]*$`)
-	pythonNameRe     = regexp.MustCompile(`^(?:python[0-9.]*|py)$`)
+	pythonBuildOffRe = mustCompilePrefiltered(`\bPIP_ONLY_BINARY=["']?:all:|\bUV_NO_BUILD=["']?(?:1|[Tt]rue|yes|on)\b|\bPOETRY_INSTALLER_ONLY_BINARY=["']?(?::all:|[Tt]rue)|\bconfig\s+set\s+(?:global|install)\.only-binary\s+["']?:all:|\bconfig\s+installer\.only-binary\s+["']?(?::all:|[Tt]rue)|only-binary\s*=\s*:all:`)
+	// scriptsOnRe and pythonBuildOnRe match the settings that undo those:
+	// the value set back, a config delete, or unset of the variable.
+	scriptsOnRe     = mustCompilePrefiltered(`(?i)ignore[-_]scripts(?:\s*=\s*|\s+)["']?false\b|\bconfig\s+(?:delete|rm|unset)\s+ignore[-_]scripts\b|\bunset\b.*\b(?:npm_config_ignore_scripts|yarn_enable_scripts)\b|yarn_enable_scripts=["']?(?:true|1)\b|enableScripts(?:\s*:\s*|\s+)["']?true\b`)
+	pythonBuildOnRe = mustCompilePrefiltered(`\bunset\b.*\b(?:PIP_ONLY_BINARY|UV_NO_BUILD|POETRY_INSTALLER_ONLY_BINARY)\b|\bPIP_ONLY_BINARY=["']?:none:|\bUV_NO_BUILD=["']?(?:0|(?i:false)|no|off)\b|\bPOETRY_INSTALLER_ONLY_BINARY=["']?(?::none:|(?i:false))|\bconfig\s+unset\s+(?:global|install)\.only-binary\b`)
+	pipNameRe       = mustCompilePrefiltered(`^pip[0-9.]*$`)
+	pythonNameRe    = mustCompilePrefiltered(`^(?:python[0-9.]*|py)$`)
 )
 
 // Check reports a job that publishes a package and also installs
@@ -191,26 +184,42 @@ func (r *gl090) Check(doc *yaml.Node, file string) []finding.Finding {
 			return
 		}
 		var install, publish [len(lifecycleEcosystems)]*pos
+		// off is the effective setting of the job's shell; a sh -c child has
+		// its own, keyed by the command that starts it, which ends with it.
 		var off [len(lifecycleEcosystems)]bool
+		var childOff [len(lifecycleEcosystems)]map[string]bool
 		for _, item := range items {
 			for _, cmd := range shellCommands(item.Value) {
 				words := commandWords(cmd.text)
+				env := commandEnvironment(cmd.text)
 				for i, eco := range lifecycleEcosystems {
-					offHere := eco.offRe != nil && eco.offRe.MatchString(cmd.text)
 					switch {
 					case eco.installs(words):
-						if install[i] == nil && !off[i] && !offHere && !eco.offArg(words) {
+						offNow := off[i] || childOff[i][cmd.parent]
+						if eco.onRe.isSet() && eco.onRe.MatchString(strings.Join(env.local, " ")) {
+							offNow = false
+						}
+						offHere := eco.offRe.isSet() && eco.offRe.MatchString(cmd.text)
+						if install[i] == nil && !offNow && !offHere && !eco.offArg(words) {
 							install[i] = &pos{item, cmd.line, cmd.text}
 						}
 					case eco.publishes(words):
 						if publish[i] == nil {
 							publish[i] = &pos{item, cmd.line, cmd.text}
 						}
-					case offHere:
-						// An assignment in front of an install applies to
-						// that install only; export or a config command to
-						// the rest.
-						off[i] = true
+					default:
+						set, value := eco.setting(cmd, words, env)
+						if !set {
+							continue
+						}
+						if cmd.parent == "" {
+							off[i] = value
+							continue
+						}
+						if childOff[i] == nil {
+							childOff[i] = map[string]bool{}
+						}
+						childOff[i][cmd.parent] = value
 					}
 				}
 			}
@@ -242,6 +251,59 @@ func (r *gl090) Check(doc *yaml.Node, file string) []finding.Finding {
 		}
 	})
 	return findings
+}
+
+// npmPublishes reports a command that publishes to the npm registry: npm,
+// pnpm or Yarn publish, also through Yarn 2+ and workspaces (GL090, GL092).
+func npmPublishes(w []string) bool {
+	switch commandName(w) {
+	case "npm", "pnpm":
+		return subcommand(w) == "publish"
+	case "yarn":
+		if subcommand(w) == "publish" {
+			return true
+		}
+		// yarn npm publish, yarn workspaces foreach … npm publish
+		for i := 1; i+1 < len(w); i++ {
+			if w[i] == "npm" && w[i+1] == "publish" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// setting reports whether a command that neither installs nor publishes
+// changes the setting for later commands, and to what (#1301). An assignment
+// in front of a program applies to that program only; text that echo or
+// printf only prints is not a setting, while the same text written to a file
+// such as .npmrc is.
+func (eco lifecycleEcosystem) setting(cmd shellCommand, words []string, env commandEnv) (set, off bool) {
+	if !eco.offRe.isSet() {
+		return false, false
+	}
+	var text string
+	switch {
+	case len(words) == 0:
+		text = strings.Join(env.persistent, " ")
+	case printsOnly(cmd, words):
+		return false, false
+	case mayRunShellC(cmd.text):
+		// sh -c "…": its commands come separately, in their own scope.
+		if _, ok := shellCText(cmd.text); ok {
+			return false, false
+		}
+		text = strings.Join(words, " ")
+	default:
+		text = strings.Join(words, " ")
+	}
+	switch {
+	case eco.offRe.MatchString(text):
+		return true, true
+	case eco.onRe.isSet() && eco.onRe.MatchString(text):
+		return true, false
+	}
+	return false, false
 }
 
 // mentionsPackageTool reports whether a script item can hold an install, a

@@ -5,7 +5,6 @@ package rules
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -152,12 +151,12 @@ func envTier(env *yaml.Node) (tier string, explicit bool) {
 // tierGuesses are GitLab's guesses, in its order: a name matches the first.
 var tierGuesses = []struct {
 	tier string
-	re   *regexp.Regexp
+	re   prefiltered
 }{
-	{"development", regexp.MustCompile(`(?i)(dev|review|trunk)`)},
-	{"testing", regexp.MustCompile(`(?i)(test|tst|int|ac(ce|)pt|qa|qc|control|quality)`)},
-	{"staging", regexp.MustCompile(`(?i)(st(a|)g|mod(e|)l|pre|demo|non)`)},
-	{"production", regexp.MustCompile(`(?i)(pr(o|)d|live)`)},
+	{"development", mustCompilePrefiltered(`(?i)(dev|review|trunk)`)},
+	{"testing", mustCompilePrefiltered(`(?i)(test|tst|int|ac(ce|)pt|qa|qc|control|quality)`)},
+	{"staging", mustCompilePrefiltered(`(?i)(st(a|)g|mod(e|)l|pre|demo|non)`)},
+	{"production", mustCompilePrefiltered(`(?i)(pr(o|)d|live)`)},
 }
 
 // checkOnlyKeywords mark a job or stage that tests or checks rather than

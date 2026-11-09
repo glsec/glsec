@@ -381,3 +381,38 @@ func TestWrappedCommandsReachRules(t *testing.T) {
 		})
 	}
 }
+
+func TestCommandEnvironment(t *testing.T) {
+	for text, want := range map[string]commandEnv{
+		"X=1 npm ci":              {local: []string{"X=1"}},
+		"env X=1 Y=2 npm ci":      {local: []string{"X=1", "Y=2"}},
+		"export X=1":              {persistent: []string{"X=1"}},
+		"export X=1 Y=2":          {persistent: []string{"X=1", "Y=2"}},
+		"X=1":                     {persistent: []string{"X=1"}},
+		"declare -x X=1":          {persistent: []string{"X=1"}},
+		`X="a b" npm ci`:          {local: []string{"X=a b"}},
+		"npm ci":                  {},
+		"npm config set ignore x": {},
+	} {
+		if got := commandEnvironment(text); !reflect.DeepEqual(got, want) {
+			t.Errorf("%q: got %+v, want %+v", text, got, want)
+		}
+	}
+}
+
+func TestPrintsOnly(t *testing.T) {
+	for text, want := range map[string]bool{
+		`echo "npm config set ignore-scripts true"`: true,
+		`printf '%s\n' text`:                        true,
+		`echo text > /dev/null`:                     true,
+		`echo text >&2`:                             true,
+		`echo "ignore-scripts=true" >> .npmrc`:      false,
+		`printf 'x' > out.txt`:                      false,
+		`npm ci`:                                    false,
+	} {
+		cmd := shellCommand{text: text}
+		if got := printsOnly(cmd, commandWords(text)); got != want {
+			t.Errorf("%q: got %v, want %v", text, got, want)
+		}
+	}
+}

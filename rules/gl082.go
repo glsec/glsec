@@ -5,7 +5,6 @@ package rules
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -54,7 +53,7 @@ func (r *gl082) Check(doc *yaml.Node, file string) []finding.Finding {
 }
 
 // scheduleOnlyRe matches a rules:if that requires a scheduled pipeline.
-var scheduleOnlyRe = regexp.MustCompile(`\$CI_PIPELINE_SOURCE\s*==\s*["']schedule["']`)
+var scheduleOnlyRe = mustCompilePrefiltered(`\$CI_PIPELINE_SOURCE\s*==\s*["']schedule["']`)
 
 // onlySchedules reports whether a rule applies to scheduled pipelines only.
 // Turning a scan off for nightly builds is a common, deliberate choice, unlike

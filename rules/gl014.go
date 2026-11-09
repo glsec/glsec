@@ -54,14 +54,14 @@ var legacyEnvDumpRe = mustCompilePrefiltered(
 
 // projectDirPrefixRe matches a target written relative to the project
 // directory through its variable.
-var projectDirPrefixRe = regexp.MustCompile(`^\$\{?CI_PROJECT_DIR\}?/`)
+var projectDirPrefixRe = mustCompilePrefiltered(`^\$\{?CI_PROJECT_DIR\}?/`)
 
 // dotenvValueRe matches NAME=$VALUE and NAME=${VALUE}. A longer expansion such
 // as ${VALUE:+yes} doesn't write the value and doesn't match.
-var dotenvValueRe = regexp.MustCompile(`(?:^|[\s"'])[A-Za-z_][A-Za-z0-9_]*=["']?\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))`)
+var dotenvValueRe = mustCompilePrefiltered(`(?:^|[\s"'])[A-Za-z_][A-Za-z0-9_]*=["']?\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))`)
 
 // redirectTargetRe matches an output redirection of a command.
-var redirectTargetRe = regexp.MustCompile(`(?:^|\s)>>?\s*(\S+)`)
+var redirectTargetRe = mustCompilePrefiltered(`(?:^|\s)>>?\s*(\S+)`)
 
 func (r *gl014) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding

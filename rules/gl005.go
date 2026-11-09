@@ -5,6 +5,7 @@ package rules
 
 import (
 	"fmt"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -62,7 +63,7 @@ func (r *gl005) Check(doc *yaml.Node, file string) []finding.Finding {
 
 	if def := parser.FindKey(mapping, "default"); def != nil {
 		if artifactsNode := parser.FindKey(def, "artifacts"); artifactsNode != nil {
-			findings = append(findings, checkArtifactPaths(doc, nil, artifactsNode, file)...)
+			findings = append(findings, checkArtifactPaths(doc, nil, artifactsNode, file, nil)...)
 			if _, e := parser.FindKeyNode(artifactsNode, "expire_in"); e == nil {
 				findings = append(findings, missingExpireIn(artifactsNode, file))
 			}
@@ -72,7 +73,7 @@ func (r *gl005) Check(doc *yaml.Node, file string) []finding.Finding {
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
 		// Paths are checked where they are written, templates included.
 		if own := parser.FindKey(job, "artifacts"); own != nil {
-			for _, f := range checkArtifactPaths(doc, in, own, file) {
+			for _, f := range checkArtifactPaths(doc, in, own, file, unredactedScanReports(in, job)) {
 				f.Job = name.Value
 				findings = append(findings, f)
 			}
@@ -99,8 +100,9 @@ func (r *gl005) Check(doc *yaml.Node, file string) []finding.Finding {
 	return findings
 }
 
-// in is nil for the artifacts block under default:.
-func checkArtifactPaths(doc *yaml.Node, in *Inheritance, node *yaml.Node, file string) []finding.Finding {
+// in is nil for the artifacts block under default:. reports are the files the
+// job's script writes as unredacted secret scanner reports.
+func checkArtifactPaths(doc *yaml.Node, in *Inheritance, node *yaml.Node, file string, reports []string) []finding.Finding {
 	var findings []finding.Finding
 
 	for _, section := range []string{"paths", "exclude"} {
@@ -116,11 +118,77 @@ func checkArtifactPaths(doc *yaml.Node, in *Inheritance, node *yaml.Node, file s
 				continue
 			}
 			// Excluding a sensitive file is the fix, not the problem.
-			findings = append(findings, checkArtifactPath(item, file, section == "paths")...)
+			found := checkArtifactPath(item, file, section == "paths")
+			if section == "paths" && len(found) == 0 {
+				if report := uploadedReport(item.Value, reports); report != "" {
+					found = append(found, finding.Finding{
+						RuleID:   "GL005",
+						Severity: finding.Error,
+						Message:  fmt.Sprintf("artifact path %q uploads the gitleaks report %q, which holds every secret the scan found in plain text — add --redact to the gitleaks command, or don't keep the report as an artifact", item.Value, report),
+						File:     file,
+						Line:     item.Line,
+						Col:      item.Column,
+					})
+				}
+			}
+			findings = append(findings, found...)
 		}
 	}
 
 	return findings
+}
+
+// unredactedScanReports returns the files the job's script writes as a
+// gitleaks report without --redact: the report then holds each secret the
+// scan found in plain text (#1296). --redact=0 redacts nothing.
+func unredactedScanReports(in *Inheritance, job *yaml.Node) []string {
+	var reports []string
+	for _, line := range CollectJobScriptLines(in.Effective(job)) {
+		if !strings.Contains(line.Value, "gitleaks") {
+			continue
+		}
+		for _, cmd := range shellCommands(line.Value) {
+			words := commandWords(cmd.text)
+			if commandName(words) != "gitleaks" {
+				continue
+			}
+			report, redacted := "", false
+			for i := 1; i < len(words); i++ {
+				w := words[i]
+				switch {
+				case w == "--redact":
+					redacted = true
+				case strings.HasPrefix(w, "--redact="):
+					redacted = strings.TrimPrefix(w, "--redact=") != "0"
+				case (w == "--report-path" || w == "-r") && i+1 < len(words):
+					i++
+					report = words[i]
+				case strings.HasPrefix(w, "--report-path="):
+					report = strings.TrimPrefix(w, "--report-path=")
+				}
+			}
+			if report != "" && report != "-" && !strings.HasPrefix(report, "/dev/") && !redacted {
+				reports = append(reports, artifactPath(report))
+			}
+		}
+	}
+	return reports
+}
+
+// uploadedReport returns the report an artifacts:paths entry uploads: the
+// file itself, a directory that holds it, or a glob that matches it.
+func uploadedReport(entry string, reports []string) string {
+	entry = artifactPath(entry)
+	for _, report := range reports {
+		dir := strings.TrimSuffix(entry, "/")
+		if entry == report || strings.HasPrefix(report, dir+"/") {
+			return report
+		}
+		if ok, _ := path.Match(entry, report); ok {
+			return report
+		}
+	}
+	return ""
 }
 
 func missingExpireIn(node *yaml.Node, file string) finding.Finding {

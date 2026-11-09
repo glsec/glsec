@@ -4,7 +4,6 @@
 package rules
 
 import (
-	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -37,7 +36,7 @@ func IsDeployLikeJob(jobName string, job *yaml.Node) bool {
 
 // windowsTagRe matches runner tags that select a Windows runner, such as
 // windows, saas-windows-medium-amd64 or shared-windows.
-var windowsTagRe = regexp.MustCompile(`(?i)\bwindows\b`)
+var windowsTagRe = mustCompilePrefiltered(`(?i)\bwindows\b`)
 
 // RunsOnWindows reports whether the job's runner tags select a Windows runner,
 // where scripts run in PowerShell rather than a POSIX shell.
@@ -566,13 +565,13 @@ func scriptLinePos(item *yaml.Node, i int) (line, col int) {
 }
 
 // fullSHARe matches a word that is exactly a full 40-character commit SHA.
-var fullSHARe = regexp.MustCompile(`^[0-9a-f]{40}$`)
+var fullSHARe = mustCompilePrefiltered(`^[0-9a-f]{40}$`)
 
 // dockerRunFlagFindings reports a warning on every script line whose docker
 // run command passes the option flag matches, at the option: GL058, GL061 and
 // GL077 differ only in the option and the message (#1078). Comment lines are
 // skipped.
-func dockerRunFlagFindings(doc *yaml.Node, file, ruleID string, flag *regexp.Regexp, message string) []finding.Finding {
+func dockerRunFlagFindings(doc *yaml.Node, file, ruleID string, flag prefiltered, message string) []finding.Finding {
 	var findings []finding.Finding
 	EachScriptLine(doc, file, func(line *yaml.Node, file, job string) {
 		v := line.Value

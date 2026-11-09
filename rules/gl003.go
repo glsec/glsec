@@ -6,7 +6,6 @@ package rules
 import (
 	"fmt"
 	"net/url"
-	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -29,11 +28,11 @@ func (r *gl003) SetRequireIncludeSHA(required bool) {
 }
 
 // shaPattern matches a full or short commit SHA (8–40 hex chars).
-var shaPattern = regexp.MustCompile(`^[0-9a-f]{8,40}$`)
+var shaPattern = mustCompilePrefiltered(`^[0-9a-f]{8,40}$`)
 
 // integrityPattern matches an include:integrity value: a base64-encoded SHA256
 // digest with its algorithm prefix.
-var integrityPattern = regexp.MustCompile(`^sha256-[A-Za-z0-9+/]{43}=$`)
+var integrityPattern = mustCompilePrefiltered(`^sha256-[A-Za-z0-9+/]{43}=$`)
 
 // mutableRefs are branch names that are clearly mutable version pointers.
 var mutableRefs = map[string]bool{

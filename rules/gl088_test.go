@@ -191,3 +191,20 @@ func TestGL088_PresignedURL(t *testing.T) {
 		t.Errorf("signature from a variable: got %v, want no finding", f)
 	}
 }
+
+// BenchmarkScriptSecrets runs GL088's patterns over ordinary script lines,
+// the common case where nothing matches (#1330).
+func BenchmarkScriptSecrets(b *testing.B) {
+	lines := []string{
+		"apt-get update && apt-get install -y curl ca-certificates",
+		`docker build -t "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHA" --build-arg VERSION=$VERSION .`,
+		"python -m pip install -r requirements.txt && pytest -q --maxfail=1 tests/",
+		`curl -fsSL "https://example.com/api/v4/projects/$CI_PROJECT_ID/releases" -H "JOB-TOKEN: $CI_JOB_TOKEN"`,
+		"npm ci && npm run build && npm test -- --coverage",
+	}
+	for b.Loop() {
+		for _, l := range lines {
+			scriptSecrets(l)
+		}
+	}
+}

@@ -760,3 +760,90 @@ build:
 		t.Errorf("expected one finding, got %v", f)
 	}
 }
+
+// A gitleaks report written without --redact holds every secret the scan found;
+// uploading it as an artifact is reported, at the artifacts entry (#1296).
+func TestGL005_UnredactedScanReport(t *testing.T) {
+	job := func(cmd, paths string) string {
+		return "secrets:\n  script:\n    - " + fmt.Sprintf("%q", cmd) + "\n  artifacts:\n    expire_in: 1 week\n    paths: [" + paths + "]\n"
+	}
+	report := func(f []finding.Finding) int {
+		n := 0
+		for _, x := range f {
+			if strings.Contains(x.Message, "gitleaks report") {
+				n++
+			}
+		}
+		return n
+	}
+	for name, tc := range map[string]struct {
+		cmd, paths string
+		want       int
+	}{
+		"report-path flag":        {"gitleaks detect --source . --report-path gitleaks.json", "gitleaks.json", 1},
+		"report-path=":            {"gitleaks detect --report-path=gitleaks.json -f json", "gitleaks.json", 1},
+		"short -r":                {"gitleaks dir . -r leaks.csv --report-format csv", "leaks.csv", 1},
+		"git subcommand":          {"gitleaks git -r report.json", "report.json", 1},
+		"directory holds it":      {"gitleaks detect --report-path=reports/gitleaks-report.json", "reports/", 1},
+		"directory without slash": {"gitleaks detect --report-path=reports/gitleaks-report.json", "reports", 1},
+		"glob matches it":         {"gitleaks detect --report-path=gitleaks-report.json", `"*.json"`, 1},
+		"project dir prefix":      {`gitleaks detect --report-path "$CI_PROJECT_DIR/leaks.json"`, "leaks.json", 1},
+		"after a wrapper":         {"timeout 600 gitleaks detect --report-path gitleaks.json", "gitleaks.json", 1},
+		"redact zero":             {"gitleaks detect --redact=0 --report-path gitleaks.json", "gitleaks.json", 1},
+		// Still silent.
+		"redacted":            {"gitleaks detect --redact --report-path gitleaks.json", "gitleaks.json", 0},
+		"redacted percent":    {"gitleaks detect --redact=100 --report-path gitleaks.json", "gitleaks.json", 0},
+		"report not uploaded": {"gitleaks detect --report-path gitleaks.json", "dist/", 0},
+		"no report":           {"gitleaks detect --source .", "gitleaks.json", 0},
+		"report to stdout":    {"gitleaks detect --report-path -", "gitleaks.json", 0},
+		"only printed":        {`echo "gitleaks detect --report-path gitleaks.json"`, "gitleaks.json", 0},
+		"other directory":     {"gitleaks detect --report-path=reports/gitleaks-report.json", "report", 0},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := report(findings005(t, job(tc.cmd, tc.paths))); got != tc.want {
+				t.Errorf("got %d report findings, want %d\n%s", got, tc.want, job(tc.cmd, tc.paths))
+			}
+		})
+	}
+	// The whole working directory is already reported as such, once.
+	f := findings005(t, job("gitleaks detect --report-path gitleaks.json", `"."`))
+	if report(f) != 0 || len(f) != 1 {
+		t.Errorf("whole directory: got %v, want only the whole-directory finding", f)
+	}
+}
+
+// The report is found where the job's script comes from a template.
+func TestGL005_UnredactedScanReportInherited(t *testing.T) {
+	f := findings005(t, `.scan:
+  script:
+    - gitleaks detect --report-path gitleaks.json
+secrets:
+  extends: .scan
+  artifacts:
+    expire_in: 1 week
+    paths: [gitleaks.json]
+`)
+	if len(f) != 1 || f[0].Job != "secrets" || f[0].Line != 8 {
+		t.Fatalf("got %v, want one finding in job secrets on line 8", f)
+	}
+}
+
+// A job that overrides secret_detection with its own gitleaks call writes an
+// unredacted report under GitLab's file name; the name alone doesn't make it
+// GitLab's masked report.
+func TestGL005_OwnGitleaksUnderGitLabReportName(t *testing.T) {
+	f := findings005(t, `secret_detection:
+  script:
+    - >
+      gitleaks git
+      --report-format=json
+      --report-path=gl-secret-detection-report.json
+  artifacts:
+    expire_in: 1 week
+    paths:
+      - gl-secret-detection-report.json
+`)
+	if len(f) != 1 || !strings.Contains(f[0].Message, "gitleaks report") {
+		t.Fatalf("got %v, want the unredacted report finding", f)
+	}
+}

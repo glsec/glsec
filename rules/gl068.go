@@ -77,11 +77,19 @@ func (r *gl068) Check(doc *yaml.Node, file string) []finding.Finding {
 // option outlives the line.
 // It also returns the index of the item line the enabling command is on.
 func scriptLineXtraceMessage(item string) (string, int, bool) {
+	if !mayTouchXtrace(item) {
+		return "", 0, false
+	}
+	cmds := shellCommands(item)
 	enabled := false
 	touched := false
 	at := 0
 	// A set -x inside a ( … ) subshell ends with it (#997).
-	for _, cmd := range shellCommands(blankSubshells(item)) {
+	setCmds := cmds
+	if blanked := blankSubshells(item); blanked != item {
+		setCmds = shellCommands(blanked)
+	}
+	for _, cmd := range setCmds {
 		if on, ok := setCommandXtrace(cmd.text); ok {
 			enabled = on
 			touched = true
@@ -93,18 +101,45 @@ func scriptLineXtraceMessage(item string) (string, int, bool) {
 	if touched && enabled {
 		return xtraceSetMessage, at, true
 	}
-	for _, cmd := range shellCommands(item) {
+	for _, cmd := range cmds {
 		if name, ok := shellInvocationXtrace(cmd.text); ok {
 			return "invoking " + name + " with xtrace enabled" + xtraceLeakTail + "; drop the x from the invocation", cmd.line, true
 		}
 	}
-	for _, cmd := range shellCommands(item) {
+	for _, cmd := range cmds {
 		if scriptShellOptsXtrace(cmd.text) {
 			return "SHELLOPTS containing xtrace enables shell xtrace" + xtraceLeakTail + "; remove xtrace from SHELLOPTS", cmd.line, true
 		}
 	}
 	return "", 0, false
 }
+
+// mayTouchXtrace reports whether item can change xtrace at all, before any
+// parsing (#1335): every form GL068 reads needs the word xtrace (set -o
+// xtrace, bash -o xtrace), SHELLOPTS, or a short-option cluster with an x
+// that starts a word (-x, -eux, +x, bash -xe). Most script items have none of
+// them, and parsing them three times was most of the rule's cost.
+func mayTouchXtrace(item string) bool {
+	if strings.Contains(item, "xtrace") || strings.Contains(item, "SHELLOPTS") {
+		return true
+	}
+	for i := 0; i < len(item); i++ {
+		if c := item[i]; c != '-' && c != '+' {
+			continue
+		}
+		if i > 0 && strings.IndexByte(" \t\n'\"(;&|", item[i-1]) < 0 {
+			continue
+		}
+		for j := i + 1; j < len(item) && (isASCIILetter(item[j]) || item[j] >= 0x80); j++ {
+			if item[j] == 'x' {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func isASCIILetter(c byte) bool { return 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' }
 
 // setCommandXtrace parses one simple command and reports whether it is a
 // `set` command that changes the xtrace option and to what value. ok is false
