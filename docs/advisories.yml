@@ -98,6 +98,26 @@
   issue: 1175
   note: "An include on a branch is reported, an include on a tag is not, and moving a tag was the attack."
 
+- id: CVE-2026-123852
+  kind: analogue
+  product: GitHub Actions
+  summary: "An untrusted actor identity bypassed a review gate and let an agent run with approvals disabled."
+  coverage: full
+  rules:
+    - {rule: GL085, severity: error}
+    - {rule: GL091, severity: warn}
+
+- id: CVE-2026-83493
+  aliases: [GHSA-6w7q-9vx7-v552]
+  kind: analogue
+  product: GitHub Actions
+  summary: "A privileged review workflow checked out and ran untrusted pull request code while retaining credentials."
+  coverage: partial
+  rules:
+    - {rule: GL044, severity: warn}
+  reason: not-static
+  note: "Protected variable and fork pipeline settings determine whether a merge request job receives secrets."
+
 - id: GHSA-7x29-qqmq-v6qc
   kind: analogue
   product: ultralytics/actions
