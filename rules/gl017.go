@@ -48,13 +48,14 @@ func jobScriptDeploys(in *Inheritance, job *yaml.Node) bool {
 	for _, line := range CollectJobScriptLines(in.Effective(job)) {
 		for _, cmd := range shellCommands(line.Value) {
 			// Placeholder instructions often print "deploy" or "publish"; that
-			// does not make the job a deployment. Check actual commands and
-			// discard prose inside quoted arguments.
+			// does not make the job a deployment. Check individual commands,
+			// but keep quoted arguments: they may name the deployed script,
+			// remote command, or deployment API endpoint.
 			switch commandName(commandWords(cmd.text)) {
 			case "echo", "printf":
 				continue
 			}
-			if deployScriptRe.MatchString(strings.ToLower(maskShellQuotes(cmd.text))) {
+			if deployScriptRe.MatchString(strings.ToLower(cmd.text)) {
 				return true
 			}
 		}

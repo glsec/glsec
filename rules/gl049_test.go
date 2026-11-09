@@ -19,6 +19,19 @@ func findings049(t *testing.T, yaml string) []finding.Finding {
 	return GL049.Check(doc.Root, "test.yml")
 }
 
+func TestGL049_PrintedDeployPlaceholder_NoFinding(t *testing.T) {
+	f := findings049(t, `
+instruction:
+  stage: deploy
+  interruptible: true
+  script:
+    - 'echo "Do your deploy here"'
+`)
+	if len(f) != 0 {
+		t.Fatalf("expected no finding for a printed deployment instruction, got %+v", f)
+	}
+}
+
 func TestGL049_DeployJobInterruptibleTrue(t *testing.T) {
 	f := findings049(t, `
 deploy-production:

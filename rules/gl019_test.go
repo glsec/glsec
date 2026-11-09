@@ -27,6 +27,9 @@ func TestGL019_DeployScriptCommandsOnly(t *testing.T) {
 		{`npm run deploy`, 1},
 		{`deploy --prod`, 1},
 		{`twine upload dist/*`, 1},
+		{`bash "$CI_PROJECT_DIR/scripts/deploy.sh"`, 1},
+		{`ssh deploy@host "cd /app && ./deploy.sh"`, 1},
+		{`curl -X POST "https://api.example.com/v1/deploy"`, 1},
 	} {
 		t.Run(tc.command, func(t *testing.T) {
 			f := findings019(t, fmt.Sprintf("deploy-example:\n  stage: deploy\n  script:\n    - %s\n", strconv.Quote(tc.command)))
