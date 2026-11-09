@@ -87,29 +87,13 @@ var lifecycleEcosystems = [...]lifecycleEcosystem{
 			}
 			return false
 		},
-		publishes: func(w []string) bool {
-			switch commandName(w) {
-			case "npm", "pnpm":
-				return subcommand(w) == "publish"
-			case "yarn":
-				if subcommand(w) == "publish" {
-					return true
-				}
-				// yarn npm publish, yarn workspaces foreach … npm publish
-				for i := 1; i+1 < len(w); i++ {
-					if w[i] == "npm" && w[i+1] == "publish" {
-						return true
-					}
-				}
-			}
-			return false
-		},
-		offRe:   scriptsOffRe,
-		onRe:    scriptsOnRe,
-		offArg:  func(w []string) bool { return scriptsOffArgRe.MatchString(strings.Join(w, " ")) },
-		offVars: scriptsDisabledByVariables,
-		risk:    "installs dependencies with lifecycle scripts enabled",
-		fix:     `any dependency's install script runs with the publish token; add --ignore-scripts or set NPM_CONFIG_IGNORE_SCRIPTS: "true", or build in one job and publish the artifact from a job that installs nothing (suppress if .npmrc sets ignore-scripts=true)`,
+		publishes: npmPublishes,
+		offRe:     scriptsOffRe,
+		onRe:      scriptsOnRe,
+		offArg:    func(w []string) bool { return scriptsOffArgRe.MatchString(strings.Join(w, " ")) },
+		offVars:   scriptsDisabledByVariables,
+		risk:      "installs dependencies with lifecycle scripts enabled",
+		fix:       `any dependency's install script runs with the publish token; add --ignore-scripts or set NPM_CONFIG_IGNORE_SCRIPTS: "true", or build in one job and publish the artifact from a job that installs nothing (suppress if .npmrc sets ignore-scripts=true)`,
 	},
 	{
 		installs:  pythonInstallsDeps,
@@ -268,6 +252,26 @@ func (r *gl090) Check(doc *yaml.Node, file string) []finding.Finding {
 		}
 	})
 	return findings
+}
+
+// npmPublishes reports a command that publishes to the npm registry: npm,
+// pnpm or Yarn publish, also through Yarn 2+ and workspaces (GL090, GL092).
+func npmPublishes(w []string) bool {
+	switch commandName(w) {
+	case "npm", "pnpm":
+		return subcommand(w) == "publish"
+	case "yarn":
+		if subcommand(w) == "publish" {
+			return true
+		}
+		// yarn npm publish, yarn workspaces foreach … npm publish
+		for i := 1; i+1 < len(w); i++ {
+			if w[i] == "npm" && w[i+1] == "publish" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // setting reports whether a command that neither installs nor publishes
