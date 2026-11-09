@@ -352,6 +352,33 @@ func TestGL020_OwnProject_NoFinding(t *testing.T) {
 	}
 }
 
+// A download from the loopback interface comes from the job itself (#1308).
+func TestGL020_Loopback_NoFinding(t *testing.T) {
+	for _, line := range []string{
+		`curl -o x http://localhost:8000/x`,
+		`curl -s http://localhost:8000/api/openapi.json -o openapi.json`,
+		`wget -O x http://127.0.0.1/x`,
+		`wget -O x http://127.1.2.3:8080/x`,
+		`curl -o x "http://[::1]:9000/x"`,
+		`curl -fsSLo x http://LOCALHOST/x`,
+	} {
+		if f := findings020(t, "job:\n  script:\n    - '"+line+"'\n"); len(f) != 0 {
+			t.Errorf("%s: got %v, want no finding", line, f)
+		}
+	}
+	for _, line := range []string{
+		`curl -o x https://example.com/x`,
+		`curl -o x http://localhost.example.com/x`,
+		`curl -o x http://docker:2375/x`,
+		`curl -o x http://10.0.0.5/x`,
+		`curl -o a http://localhost/a -o b https://example.com/b`,
+	} {
+		if f := findings020(t, "job:\n  script:\n    - '"+line+"'\n"); len(f) != 1 {
+			t.Errorf("%s: got %d findings, want 1", line, len(f))
+		}
+	}
+}
+
 // Words after a $( … ) belong to the outer command, not to curl (#1281).
 func TestGL020_SubstitutionArguments(t *testing.T) {
 	for line, want := range map[string]int{
