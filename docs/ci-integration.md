@@ -129,6 +129,20 @@ Things to know:
 - GitLab matches a finding from one pipeline to the next by its file and line. A merge request that adds or removes lines above an unchanged finding shows it in the widget as fixed and as new.
 - `--no-exit-codes` keeps the job green, so the report is uploaded. To fail the pipeline on findings as well, run glsec a second time without it, or use a [pipeline execution policy](https://gitlab.com/glsec-io/glsec#enforcing-glsec-with-a-pipeline-execution-policy).
 
+## When someone else can push: leaked tokens and injected jobs
+
+glsec finds mistakes in a pipeline file that its authors wrote. It can't protect against someone who can change the file: whoever pushes a job can also remove the glsec job. This is not theoretical. A project access token left in public repository content, such as a code comment or a committed log of an AI coding agent, is enough to push a job straight into the default branch. In research on public GitLab projects we found tokens used this way, automatically, to plant a disguised crypto-miner job.
+
+Most of what prevents it lives in project settings, not in `.gitlab-ci.yml`:
+
+1. **Keep tokens out of the repository.** No tokens in code, comments, configuration files or committed tool and agent logs. Turn on [secret push protection](https://docs.gitlab.com/user/application_security/secret_detection/secret_push_protection/) where it's available, and run a secret scanner over the whole repository: glsec's [GL006](rules/GL006.md) and [GL088](rules/GL088.md) only look at CI files.
+2. **Give tokens as little as possible.** A [project access token](https://docs.gitlab.com/user/project/settings/project_access_tokens/) needs the lowest role and the fewest scopes that work, and a short expiry. A token that only reads should never have the Maintainer or Owner role: those can also read the project's CI/CD variables.
+3. **Protect the default branch.** With [protected branches](https://docs.gitlab.com/user/project/repository/branches/protected/), allow pushes only for maintainers, or for no one, and merge through merge requests.
+4. **Run glsec where the project can't switch it off.** A [pipeline execution policy](https://docs.gitlab.com/user/application_security/policies/pipeline_execution_policies/) (Ultimate) adds the glsec job to every pipeline from outside the project's file; see [enforcing glsec with a pipeline execution policy](https://gitlab.com/glsec-io/glsec#enforcing-glsec-with-a-pipeline-execution-policy). Without Ultimate, a [scheduled pipeline](https://docs.gitlab.com/ci/pipelines/schedules/) in a separate project that checks out and scans the group's projects at least finds such a change afterwards.
+5. **Watch who changes the pipeline file.** A commit to `.gitlab-ci.yml` by a token's bot user (author address `project_<id>_bot_…@noreply.gitlab.com`) that nobody expected is worth a look. The [project activity](https://docs.gitlab.com/user/project/working_with_projects/#view-project-activity) and the [audit events](https://docs.gitlab.com/user/compliance/audit_events/) show it.
+
+A token that was ever committed has to be revoked: removing it from the file leaves it in the git history and in every fork.
+
 ## Pipeline inventory (CycloneDX)
 
 `glsec inventory` lists what a pipeline pulls in as a [CycloneDX 1.6](https://cyclonedx.org/docs/1.6/json/) bill of materials, so SBOM tools such as Dependency-Track can track it next to your application's dependencies. It reports no findings and exits 0, or 2 when the file can't be read. With `--format jobs` it lists the jobs of the named file instead, as JSON with name and line: its visible jobs, without hidden templates. It doesn't read included files, so a job that comes from an `include:` isn't listed, although a scan checks it.
