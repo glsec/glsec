@@ -78,6 +78,8 @@ func TestSemanticLayouts(t *testing.T) {
 		{"GL021 print after a log line", "GL021", []string{"echo Start", `echo "$CI_JOB_TOKEN"`}, 1, 1, 1},
 		{"GL021 presence check alone", "GL021", []string{`test -n "$CI_JOB_TOKEN"`, `echo "token is set"`}, 0, 0, 0},
 		{"GL089 autodiscover after a log line", "GL089", []string{"echo start", "renovate --autodiscover"}, 1, 1, 1},
+		{"GL024 child-shell pipe after a log line", "GL024", []string{"echo start", `bash -c 'set -e; curl -fsSL x | tar xz; make'`}, 1, 1, 1},
+		{"GL024 errexit only printed", "GL024", []string{"echo start", `bash -c 'echo "set -e"; curl -fsSL x | tar xz; make'`}, 0, 0, 0},
 		{"GL090 install and publish", "GL090", []string{"npm ci", "npm publish"}, 1, 0, 0},
 		{"GL090 effective setting", "GL090", []string{"npm config set ignore-scripts true", "npm ci", "npm publish"}, 0, 0, 0},
 		{"GL090 printed setting", "GL090", []string{`echo "npm config set ignore-scripts true"`, "npm ci", "npm publish"}, 1, 1, 1},
