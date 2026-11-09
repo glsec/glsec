@@ -5,7 +5,6 @@ package rules
 
 import (
 	"fmt"
-	"regexp"
 	"slices"
 	"strings"
 
@@ -32,11 +31,11 @@ type lifecycleEcosystem struct {
 	// offRe matches a setting that switches dependency code off: in front of
 	// an install for that install, as its own command for later installs.
 	// nil when the ecosystem has none.
-	offRe *regexp.Regexp
+	offRe prefiltered
 	// onRe matches a setting that switches it back on, such as
 	// ignore-scripts false or unset of the variable (#1301). nil when the
 	// ecosystem has none.
-	onRe *regexp.Regexp
+	onRe prefiltered
 	// offArg reports an install argument that switches it off for that
 	// install.
 	offArg func(words []string) bool
@@ -131,21 +130,21 @@ var (
 	// scripts off for later installs: npm config set ignore-scripts true, an
 	// .npmrc line written by echo, the npm and Yarn 2+ environment variables,
 	// and yarn config set enableScripts false.
-	scriptsOffRe = regexp.MustCompile(`(?i)ignore[-_]scripts(?:\s*=\s*|\s+)["']?true\b|yarn_enable_scripts=["']?(?:false|0)\b|enableScripts(?:\s*:\s*|\s+)["']?false\b`)
+	scriptsOffRe = mustCompilePrefiltered(`(?i)ignore[-_]scripts(?:\s*=\s*|\s+)["']?true\b|yarn_enable_scripts=["']?(?:false|0)\b|enableScripts(?:\s*:\s*|\s+)["']?false\b`)
 	// scriptsOffArgRe matches an install argument that switches them off for
 	// that install: --ignore-scripts, and Yarn 2+'s --mode=skip-build.
-	scriptsOffArgRe = regexp.MustCompile(`(?:^|\s)(?:--ignore-scripts(?:=true)?|--mode[= ]skip-build)(?:\s|$)`)
+	scriptsOffArgRe = mustCompilePrefiltered(`(?:^|\s)(?:--ignore-scripts(?:=true)?|--mode[= ]skip-build)(?:\s|$)`)
 	// pythonBuildOffRe matches a setting that stops builds from source:
 	// PIP_ONLY_BINARY=:all:, UV_NO_BUILD=1, POETRY_INSTALLER_ONLY_BINARY
 	// (Poetry 2), pip config set and poetry config, and an only-binary line
 	// written to pip.conf.
-	pythonBuildOffRe = regexp.MustCompile(`\bPIP_ONLY_BINARY=["']?:all:|\bUV_NO_BUILD=["']?(?:1|[Tt]rue|yes|on)\b|\bPOETRY_INSTALLER_ONLY_BINARY=["']?(?::all:|[Tt]rue)|\bconfig\s+set\s+(?:global|install)\.only-binary\s+["']?:all:|\bconfig\s+installer\.only-binary\s+["']?(?::all:|[Tt]rue)|only-binary\s*=\s*:all:`)
+	pythonBuildOffRe = mustCompilePrefiltered(`\bPIP_ONLY_BINARY=["']?:all:|\bUV_NO_BUILD=["']?(?:1|[Tt]rue|yes|on)\b|\bPOETRY_INSTALLER_ONLY_BINARY=["']?(?::all:|[Tt]rue)|\bconfig\s+set\s+(?:global|install)\.only-binary\s+["']?:all:|\bconfig\s+installer\.only-binary\s+["']?(?::all:|[Tt]rue)|only-binary\s*=\s*:all:`)
 	// scriptsOnRe and pythonBuildOnRe match the settings that undo those:
 	// the value set back, a config delete, or unset of the variable.
-	scriptsOnRe     = regexp.MustCompile(`(?i)ignore[-_]scripts(?:\s*=\s*|\s+)["']?false\b|\bconfig\s+(?:delete|rm|unset)\s+ignore[-_]scripts\b|\bunset\b.*\b(?:npm_config_ignore_scripts|yarn_enable_scripts)\b|yarn_enable_scripts=["']?(?:true|1)\b|enableScripts(?:\s*:\s*|\s+)["']?true\b`)
-	pythonBuildOnRe = regexp.MustCompile(`\bunset\b.*\b(?:PIP_ONLY_BINARY|UV_NO_BUILD|POETRY_INSTALLER_ONLY_BINARY)\b|\bPIP_ONLY_BINARY=["']?:none:|\bUV_NO_BUILD=["']?(?:0|(?i:false)|no|off)\b|\bPOETRY_INSTALLER_ONLY_BINARY=["']?(?::none:|(?i:false))|\bconfig\s+unset\s+(?:global|install)\.only-binary\b`)
-	pipNameRe       = regexp.MustCompile(`^pip[0-9.]*$`)
-	pythonNameRe    = regexp.MustCompile(`^(?:python[0-9.]*|py)$`)
+	scriptsOnRe     = mustCompilePrefiltered(`(?i)ignore[-_]scripts(?:\s*=\s*|\s+)["']?false\b|\bconfig\s+(?:delete|rm|unset)\s+ignore[-_]scripts\b|\bunset\b.*\b(?:npm_config_ignore_scripts|yarn_enable_scripts)\b|yarn_enable_scripts=["']?(?:true|1)\b|enableScripts(?:\s*:\s*|\s+)["']?true\b`)
+	pythonBuildOnRe = mustCompilePrefiltered(`\bunset\b.*\b(?:PIP_ONLY_BINARY|UV_NO_BUILD|POETRY_INSTALLER_ONLY_BINARY)\b|\bPIP_ONLY_BINARY=["']?:none:|\bUV_NO_BUILD=["']?(?:0|(?i:false)|no|off)\b|\bPOETRY_INSTALLER_ONLY_BINARY=["']?(?::none:|(?i:false))|\bconfig\s+unset\s+(?:global|install)\.only-binary\b`)
+	pipNameRe       = mustCompilePrefiltered(`^pip[0-9.]*$`)
+	pythonNameRe    = mustCompilePrefiltered(`^(?:python[0-9.]*|py)$`)
 )
 
 // Check reports a job that publishes a package and also installs
@@ -197,10 +196,10 @@ func (r *gl090) Check(doc *yaml.Node, file string) []finding.Finding {
 					switch {
 					case eco.installs(words):
 						offNow := off[i] || childOff[i][cmd.parent]
-						if eco.onRe != nil && eco.onRe.MatchString(strings.Join(env.local, " ")) {
+						if eco.onRe.isSet() && eco.onRe.MatchString(strings.Join(env.local, " ")) {
 							offNow = false
 						}
-						offHere := eco.offRe != nil && eco.offRe.MatchString(cmd.text)
+						offHere := eco.offRe.isSet() && eco.offRe.MatchString(cmd.text)
 						if install[i] == nil && !offNow && !offHere && !eco.offArg(words) {
 							install[i] = &pos{item, cmd.line, cmd.text}
 						}
@@ -280,7 +279,7 @@ func npmPublishes(w []string) bool {
 // printf only prints is not a setting, while the same text written to a file
 // such as .npmrc is.
 func (eco lifecycleEcosystem) setting(cmd shellCommand, words []string, env commandEnv) (set, off bool) {
-	if eco.offRe == nil {
+	if !eco.offRe.isSet() {
 		return false, false
 	}
 	var text string
@@ -301,7 +300,7 @@ func (eco lifecycleEcosystem) setting(cmd shellCommand, words []string, env comm
 	switch {
 	case eco.offRe.MatchString(text):
 		return true, true
-	case eco.onRe != nil && eco.onRe.MatchString(text):
+	case eco.onRe.isSet() && eco.onRe.MatchString(text):
 		return true, false
 	}
 	return false, false

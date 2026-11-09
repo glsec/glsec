@@ -4,7 +4,6 @@
 package rules
 
 import (
-	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -20,9 +19,9 @@ func (r *gl074) ID() string { return "GL074" }
 
 var (
 	// gl074CompRe matches a single "$VAR == "lit"" / "$VAR != "lit"" operand.
-	gl074CompRe = regexp.MustCompile(`^\$\{?(\w+)\}?\s*(==|!=)\s*["']([^"']*)["']$`)
+	gl074CompRe = mustCompilePrefiltered(`^\$\{?(\w+)\}?\s*(==|!=)\s*["']([^"']*)["']$`)
 	// gl074TwoLiteralRe matches a literal-vs-literal comparison ("a" == "b").
-	gl074TwoLiteralRe = regexp.MustCompile(`^["']([^"']*)["']\s*(==|!=)\s*["']([^"']*)["']$`)
+	gl074TwoLiteralRe = mustCompilePrefiltered(`^["']([^"']*)["']\s*(==|!=)\s*["']([^"']*)["']$`)
 )
 
 func (r *gl074) Check(doc *yaml.Node, file string) []finding.Finding {

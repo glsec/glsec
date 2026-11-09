@@ -5,7 +5,6 @@ package rules
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -33,7 +32,7 @@ var gl043Vars = []string{
 // A slash right after a backslash is part of the pattern, not its end (#700),
 // also after an escaped backslash, as GitLab's lexer reads it
 // (lib/gitlab/ci/pipeline/expression/lexeme/pattern.rb, #987).
-var gl043Re = regexp.MustCompile(
+var gl043Re = mustCompilePrefiltered(
 	`\$\{?(` + strings.Join(gl043Vars, "|") + `)\}?\s*=~\s*/((?:\\/|[^/])*)/`,
 )
 

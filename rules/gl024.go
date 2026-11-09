@@ -5,7 +5,6 @@ package rules
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -100,7 +99,7 @@ func gl024Scan(script string) gl024Line {
 }
 
 // errexitRe matches set -e, also bundled (set -eu) or spelled set -o errexit.
-var errexitRe = regexp.MustCompile(`\bset\s+(?:-[a-zA-Z]*e[a-zA-Z]*\b|-o\s+errexit\b)`)
+var errexitRe = mustCompilePrefiltered(`\bset\s+(?:-[a-zA-Z]*e[a-zA-Z]*\b|-o\s+errexit\b)`)
 
 // needsPipefail reports whether a script has a pipeline whose status counts
 // and whose earlier commands can fail unnoticed. Without errexit, the status

@@ -6,7 +6,6 @@ package rules
 import (
 	"fmt"
 	"path"
-	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -65,7 +64,7 @@ var userControlledVars = []string{
 
 // userVarRe matches any user-controlled variable reference ($VAR or ${VAR})
 // followed by a word boundary so that e.g. $CI_COMMIT_REF_NAME_EXTRA is not matched.
-var userVarRe = regexp.MustCompile(
+var userVarRe = mustCompilePrefiltered(
 	`\$\{?(` + strings.Join(userControlledVars, "|") + `)\b`,
 )
 
@@ -260,10 +259,10 @@ func notWordSplit(masked string, dollarPos, end int) bool {
 var (
 	// evalWordsRe matches eval with any arguments before the one at the end:
 	// eval joins them all into code.
-	evalWordsRe = regexp.MustCompile(`^\s*eval\s+(?:\S+\s+)*$`)
+	evalWordsRe = mustCompilePrefiltered(`^\s*eval\s+(?:\S+\s+)*$`)
 	// codeFlagRe matches a command whose next argument is code: sh -c,
 	// python -c, node -e, perl -e.
-	codeFlagRe = regexp.MustCompile(`(?:^|\s)(?:(?:ba|z|da|k)?sh\s+(?:-[a-zA-Z]+\s+)*-[a-zA-Z]*c|python[23]?(?:\.\d+)?\s+(?:-[a-zA-Z]+\s+)*-c|node\s+(?:-e|--eval|-p|--print)|(?:perl|ruby)\s+(?:-[a-zA-Z]+\s+)*-[a-zA-Z]*e)\s+$`)
+	codeFlagRe = mustCompilePrefiltered(`(?:^|\s)(?:(?:ba|z|da|k)?sh\s+(?:-[a-zA-Z]+\s+)*-[a-zA-Z]*c|python[23]?(?:\.\d+)?\s+(?:-[a-zA-Z]+\s+)*-c|node\s+(?:-e|--eval|-p|--print)|(?:perl|ruby)\s+(?:-[a-zA-Z]+\s+)*-[a-zA-Z]*e)\s+$`)
 )
 
 // unquotedCode reports whether an unquoted expansion after before is parsed

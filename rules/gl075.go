@@ -5,7 +5,6 @@ package rules
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -122,11 +121,11 @@ func gl075Finding(node *yaml.Node, file, msg string) []finding.Finding {
 
 // serverPrefix matches the predefined variables GitLab documents for writing a
 // component reference on the current instance.
-var serverPrefix = regexp.MustCompile(`(?i)^\$(?:\{CI_SERVER_(?:FQDN|HOST)\}|CI_SERVER_(?:FQDN|HOST)\b)/`)
+var serverPrefix = mustCompilePrefiltered(`(?i)^\$(?:\{CI_SERVER_(?:FQDN|HOST)\}|CI_SERVER_(?:FQDN|HOST)\b)/`)
 
 // ownProjectPrefix matches a path that starts in the scanned project's own
 // namespace, as in GitLab's $CI_SERVER_FQDN/$CI_PROJECT_PATH/my-component@1.0.
-var ownProjectPrefix = regexp.MustCompile(`(?i)^\$(?:\{CI_PROJECT_(?:PATH|NAMESPACE|ROOT_NAMESPACE)\}|CI_PROJECT_(?:PATH|NAMESPACE|ROOT_NAMESPACE)\b)(?:/|$)`)
+var ownProjectPrefix = mustCompilePrefiltered(`(?i)^\$(?:\{CI_PROJECT_(?:PATH|NAMESPACE|ROOT_NAMESPACE)\}|CI_PROJECT_(?:PATH|NAMESPACE|ROOT_NAMESPACE)\b)(?:/|$)`)
 
 // serverRelativeComponent returns the lower-cased path of a component written
 // as $CI_SERVER_FQDN/<path>[@version].

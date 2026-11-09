@@ -4,7 +4,6 @@
 package rules
 
 import (
-	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -20,23 +19,23 @@ func (r *gl026) ID() string { return "GL026" }
 
 var (
 	// shaRe matches a full 40-character lowercase hex commit SHA.
-	shaRe = regexp.MustCompile(`[0-9a-f]{40}`)
+	shaRe = mustCompilePrefiltered(`[0-9a-f]{40}`)
 
 	// gitCloneRe matches a git clone invocation (handles git -C <dir> clone too).
-	gitCloneRe = regexp.MustCompile(`\bgit\b[^|;&]*\bclone\b`)
+	gitCloneRe = mustCompilePrefiltered(`\bgit\b[^|;&]*\bclone\b`)
 
 	// gitCheckoutRe matches a git checkout invocation.
 	gitCheckoutRe = mustCompilePrefiltered(`\bgit\b[^|;&]*\bcheckout\b`)
 
 	// branchFlagRe captures the value of --branch or -b.
 	// Handles both space-separated (--branch main) and equals-sign (--branch=main) forms.
-	branchFlagRe = regexp.MustCompile(`(?:--branch|-b)(?:\s+|=)(\S+)`)
+	branchFlagRe = mustCompilePrefiltered(`(?:--branch|-b)(?:\s+|=)(\S+)`)
 )
 
 // shaVarRe matches a predefined variable that holds a commit SHA, such as
 // $CI_COMMIT_SHA, ${CI_MERGE_REQUEST_DIFF_BASE_SHA} or the deprecated
 // $CI_BUILD_REF: immutable like a literal SHA.
-var shaVarRe = regexp.MustCompile(`^\$\{?(?:CI_[A-Z_]*_SHA|CI_BUILD_REF)\}?$`)
+var shaVarRe = mustCompilePrefiltered(`^\$\{?(?:CI_[A-Z_]*_SHA|CI_BUILD_REF)\}?$`)
 
 // checksOutMutableRef reports whether a command is `git checkout <ref>` with a
 // ref other than a commit SHA. Creating a local branch (-b, -B, --orphan) and
@@ -92,14 +91,14 @@ func pinsCommit(words []string) bool {
 // ownBranchVarRe matches a branch of the project the pipeline runs for,
 // optionally on the origin remote. Checking it out in the project's own
 // clone brings in no third-party code (#984).
-var ownBranchVarRe = regexp.MustCompile(`^["']?(?:origin/)?\$\{?(?:CI_DEFAULT_BRANCH|CI_COMMIT_REF_NAME|CI_COMMIT_BRANCH|CI_MERGE_REQUEST_SOURCE_BRANCH_NAME|CI_MERGE_REQUEST_TARGET_BRANCH_NAME)\}?["']?$`)
+var ownBranchVarRe = mustCompilePrefiltered(`^["']?(?:origin/)?\$\{?(?:CI_DEFAULT_BRANCH|CI_COMMIT_REF_NAME|CI_COMMIT_BRANCH|CI_MERGE_REQUEST_SOURCE_BRANCH_NAME|CI_MERGE_REQUEST_TARGET_BRANCH_NAME)\}?["']?$`)
 
 // ownRepoSourceRe matches a clone source that is the project's own
 // repository: the checkout (., $CI_PROJECT_DIR), its remote
 // ($CI_REPOSITORY_URL), or a URL built from the project's predefined
 // variables: $CI_PROJECT_URL, or the server host or URL with $CI_PROJECT_PATH,
 // over HTTPS with any credentials or over SSH (#1049).
-var ownRepoSourceRe = regexp.MustCompile(`^(?:\.|\./|\$\{?CI_PROJECT_DIR\}?|\$\{?CI_REPOSITORY_URL\}?|(?:` +
+var ownRepoSourceRe = mustCompilePrefiltered(`^(?:\.|\./|\$\{?CI_PROJECT_DIR\}?|\$\{?CI_REPOSITORY_URL\}?|(?:` +
 	`\$\{?CI_PROJECT_URL\}?` +
 	`|\$\{?CI_SERVER_URL\}?/\$\{?CI_PROJECT_PATH\}?` +
 	`|(?:https?://(?:[^@/]+@)?|ssh://(?:[^@/]+@)?|git@)\$\{?CI_SERVER_(?:HOST|FQDN|SHELL_SSH_HOST)\}?(?::\d+|:\$\{?CI_SERVER_(?:PORT|SHELL_SSH_PORT)\}?)?[:/]\$\{?CI_PROJECT_PATH\}?` +

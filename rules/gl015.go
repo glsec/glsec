@@ -5,7 +5,6 @@ package rules
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -21,12 +20,12 @@ func (r *gl015) ID() string { return "GL015" }
 
 var (
 	// dockerCmdRe matches docker or podman build/push/tag/buildx commands.
-	dockerCmdRe = regexp.MustCompile(`\b(?:docker|podman)\s+(?:build|push|tag|buildx)\b`)
+	dockerCmdRe = mustCompilePrefiltered(`\b(?:docker|podman)\s+(?:build|push|tag|buildx)\b`)
 
 	// userControlledTagRe matches an image tag that uses a user-controlled variable,
 	// i.e. a colon (tag separator) followed by a user-controlled predefined variable.
 	// CI_COMMIT_SHA, CI_PIPELINE_ID, and CI_COMMIT_SHORT_SHA are safe — not listed here.
-	userControlledTagRe = regexp.MustCompile(
+	userControlledTagRe = mustCompilePrefiltered(
 		`:\$\{?(CI_COMMIT_REF_NAME|CI_COMMIT_REF_SLUG|CI_COMMIT_BRANCH|CI_MERGE_REQUEST_SOURCE_BRANCH_NAME)\}?`,
 	)
 )

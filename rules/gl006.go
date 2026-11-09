@@ -251,7 +251,7 @@ var placeholderMarkers = []string{"example", "placeholder", "changeme", "redacte
 
 // placeholderShapeRe matches whole values written as a placeholder (#991):
 // <your token>, _api_token_, {{ token }}, xxx…, TODO, replace-me.
-var placeholderShapeRe = regexp.MustCompile(`(?i)^(?:<[^<>]+>|_[a-z0-9_-]+_|\{\{[^{}]+\}\}|x{3,}|\*{3,}|todo|tbd|replace[-_ ]?me|set[-_ ]?me)$`)
+var placeholderShapeRe = mustCompilePrefiltered(`(?i)^(?:<[^<>]+>|_[a-z0-9_-]+_|\{\{[^{}]+\}\}|x{3,}|\*{3,}|todo|tbd|replace[-_ ]?me|set[-_ ]?me)$`)
 
 func looksLikePlaceholder(v string) bool {
 	lower := strings.ToLower(v)

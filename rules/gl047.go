@@ -4,7 +4,6 @@
 package rules
 
 import (
-	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -20,10 +19,10 @@ func (r *gl047) ID() string { return "GL047" }
 // sshRootRe matches an ssh invocation with root as the login user.
 // It allows arbitrary flags between ssh and root@ to cover common forms like
 // ssh -i key root@host, ssh -p 2222 root@host, ssh -o ... root@host.
-var sshRootRe = regexp.MustCompile(`\bssh\b.*\broot@`)
+var sshRootRe = mustCompilePrefiltered(`\bssh\b.*\broot@`)
 
 // rootHostRe captures the host after root@.
-var rootHostRe = regexp.MustCompile(`\broot@(\[[^\]]+\]|[^\s:/"']+)`)
+var rootHostRe = mustCompilePrefiltered(`\broot@(\[[^\]]+\]|[^\s:/"']+)`)
 
 // onlyLoopbackRoot reports whether every root@ login in line goes to the
 // local machine, such as a VM the job started with a forwarded port
