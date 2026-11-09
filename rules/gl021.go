@@ -36,10 +36,6 @@ var (
 	// without an underscore, as in DOCKER_TLS_CERTDIR.
 	nonSecretSuffixRe = regexp.MustCompile(`(?:_(?:ID|URL|URI|PATH|FILE|NAME|HOST|USER|USERNAME|TYPE|LENGTH|EXPIRES_AT|VERSION|PACKAGE|ENDPOINT|DOMAIN|PORT|REGION|ENABLED|MODE)|DIR)$`)
 
-	// safeCheckRe matches patterns that reference the variable without printing its value:
-	// length checks (-n "$VAR", test -n "$VAR"), default expansions (${VAR:-}, ${VAR:+}).
-	safeCheckRe = mustCompilePrefiltered(`\[\s*(?:-n|-z)\s+|\btest\s+-[nz]\b|:\-|:\+`)
-
 	// singleQuotedRe matches single-quoted spans, whose contents the shell does
 	// not expand (so a secret reference inside them is literal text).
 	singleQuotedRe = regexp.MustCompile(`'[^']*'`)
@@ -251,9 +247,6 @@ func printedSecret(line string) (string, bool) {
 	// Single-quoted spans are literal. Keep an empty quoted placeholder so a
 	// filename such as 6> 'private log.txt' still has a redirection target.
 	s := singleQuotedRe.ReplaceAllString(line, "''")
-	if safeCheckRe.MatchString(s) {
-		return "", false
-	}
 
 	for _, loc := range gl021VarRefRe.FindAllStringSubmatchIndex(s, -1) {
 		name := s[loc[2]:loc[3]]
@@ -267,6 +260,13 @@ func printedSecret(line string) (string, bool) {
 		start, end := loc[0], loc[1]
 		// \$NAME prints the text $NAME, not the value (#982).
 		if start > 0 && s[start-1] == '\\' {
+			continue
+		}
+		// ${NAME:+word} outputs word (or nothing), never NAME's value.
+		// Only exempt this reference: word may expand another secret, or a
+		// later command on the same line may print NAME itself (#1300).
+		// In contrast, ${NAME:-default} outputs NAME when it is set.
+		if strings.HasPrefix(s[end:], ":+") {
 			continue
 		}
 

@@ -158,6 +158,33 @@ debug:
 	}
 }
 
+func TestGL021_PresenceAndDefaultExpansionRegressions(t *testing.T) {
+	for _, tc := range []struct {
+		name, script string
+		want         bool
+	}{
+		{"presence then print", `test -n "$CI_JOB_TOKEN" && echo "$CI_JOB_TOKEN"`, true},
+		{"presence of another variable then print", `[ -n "$API_KEY" ] && echo "$DEPLOY_TOKEN"`, true},
+		{"default expansion prints a set secret", `echo "${CI_JOB_TOKEN:-missing}"`, true},
+		{"safe confirmation and another printed secret", `echo "${CI_JOB_TOKEN:+ (set)}" "$DEPLOY_TOKEN"`, true},
+		{"presence then safe confirmation", `test -n "$CI_JOB_TOKEN" && echo "token is set"`, false},
+		{"safe conditional expansion", `echo "${CI_JOB_TOKEN:+ (set)}"`, false},
+		{"literal reference", `echo '$CI_JOB_TOKEN'`, false},
+		{"redirected value", `test -n "$CI_JOB_TOKEN" && echo "$CI_JOB_TOKEN" > token.txt`, false},
+		{"non-printing argument", `test -n "$CI_JOB_TOKEN" && curl -H "JOB-TOKEN: $CI_JOB_TOKEN" https://example.org`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := findings021(t, "job:\n  script:\n    - "+strconv.Quote(tc.script)+"\n")
+			if (len(f) == 1) != tc.want || len(f) > 1 {
+				t.Fatalf("got %d findings, want %v: %+v", len(f), tc.want, f)
+			}
+			if tc.want && (f[0].RuleID != "GL021" || f[0].Severity != finding.Warn || f[0].Line != 3) {
+				t.Errorf("expected GL021 warn at line 3, got %+v", f[0])
+			}
+		})
+	}
+}
+
 func TestGL021_NoSecretVar_NoFinding(t *testing.T) {
 	f := findings021(t, `
 debug:
