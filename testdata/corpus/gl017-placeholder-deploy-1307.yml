@@ -1,0 +1,5 @@
+# #1307: a placeholder that prints the word deploy is not deployment.
+deploy-example:
+  stage: deploy
+  script:
+    - echo "Do your deploy here"

@@ -46,8 +46,17 @@ var deployScriptRe = mustCompilePrefiltered(
 // inherited via extends:) runs a command that ships or publishes something.
 func jobScriptDeploys(in *Inheritance, job *yaml.Node) bool {
 	for _, line := range CollectJobScriptLines(in.Effective(job)) {
-		if deployScriptRe.MatchString(strings.ToLower(line.Value)) {
-			return true
+		for _, cmd := range shellCommands(line.Value) {
+			// Placeholder instructions often print "deploy" or "publish"; that
+			// does not make the job a deployment. Check actual commands and
+			// discard prose inside quoted arguments.
+			switch commandName(commandWords(cmd.text)) {
+			case "echo", "printf":
+				continue
+			}
+			if deployScriptRe.MatchString(strings.ToLower(maskShellQuotes(cmd.text))) {
+				return true
+			}
 		}
 	}
 	return false
