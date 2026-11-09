@@ -353,6 +353,20 @@ func checkPMLine(line, file string, lineNum, col int) *finding.Finding {
 func pipUpgradeHasPackage(line string) bool {
 	for _, cmd := range shellCommands(line) {
 		words := commandWords(cmd.text)
+		// The update regex also recognises these pip launchers. Normalize
+		// them before checking the install subcommand and its arguments.
+		if len(words) >= 3 {
+			switch commandName(words) {
+			case "python", "python2", "python3":
+				if words[1] == "-m" {
+					words = words[2:]
+				}
+			case "uv":
+				if words[1] == "pip" {
+					words = words[1:]
+				}
+			}
+		}
 		if len(words) < 3 || (commandName(words) != "pip" && commandName(words) != "pip3" && commandName(words) != "pip2") || words[1] != "install" {
 			continue
 		}
@@ -367,16 +381,22 @@ func pipUpgradeHasPackage(line string) bool {
 			// These options consume the following word, which is a file, path,
 			// URL or option value rather than a named package.
 			switch arg {
-			case "-r", "--requirement", "-c", "--constraint", "-e", "--editable",
+			case "-r", "--requirement", "-c", "--constraint", "-e", "--editable", "-t",
 				"-i", "--index-url", "--extra-index-url", "-f", "--find-links",
 				"--trusted-host", "--proxy", "--timeout", "--retries",
 				"--cert", "--client-cert", "--src", "--target", "--prefix",
 				"--root", "--platform", "--python-version", "--implementation", "--abi",
-				"--only-binary", "--no-binary", "--progress-bar", "--config-settings":
+				"--only-binary", "--no-binary", "--progress-bar", "--config-settings", "--upgrade-strategy":
 				i++
 				continue
 			}
 			if strings.HasPrefix(arg, "-") {
+				continue
+			}
+			// A VCS or HTTP source can change independently of the pipeline.
+			// Unlike a local wheel or directory, it remains an unpinned upgrade.
+			if strings.HasPrefix(arg, "git+") || strings.HasPrefix(arg, "https://") || strings.HasPrefix(arg, "http://") {
+				packageNamed = true
 				continue
 			}
 			if arg == "." || arg == ".." || strings.HasPrefix(arg, ".[") || strings.HasPrefix(arg, "..[") ||

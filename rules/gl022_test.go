@@ -97,6 +97,17 @@ job:
 		{"pip install -U -e ./src", false},
 		{"pip install -U -r a.txt && echo done", false},
 		{"pip install -U -r a.txt && pip install -U wheel", true},
+		{"python -m pip install --upgrade pip", true},
+		{"python3 -m pip install -U pip setuptools", true},
+		{"python2 -m pip install -U pip", true},
+		{"uv pip install -U pip", true},
+		{"python -m pip install -U -r requirements.txt", false},
+		{"uv pip install --upgrade -e .", false},
+		{"pip install -U git+https://github.com/x/y", true},
+		{"pip install -U https://example.com/pkg.whl", true},
+		{"pip install -U -t libs -r requirements.txt", false},
+		{"pip install -U --target libs --upgrade-strategy eager -r requirements.txt", false},
+		{"pip install -U --upgrade-strategy eager requests", true},
 	} {
 		t.Run(tc.line, func(t *testing.T) {
 			got := checkPMLine(tc.line, "test.yml", 1, 1) != nil
