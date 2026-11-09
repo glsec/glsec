@@ -40,6 +40,19 @@ var secretPatterns = []secretPattern{
 	{"GitLab runner registration token (legacy)", regexp.MustCompile(`^GR1348941[0-9a-zA-Z_-]{20}$`)},
 	// A session cookie sits inside a longer value, such as a Cookie header.
 	{"GitLab session cookie", regexp.MustCompile(`_gitlab_session=[0-9a-z]{32}`)},
+	// A pre-signed storage URL is a bearer credential until it expires. It sits
+	// before "AWS access key" so an S3 URL is named for what it is, not for
+	// the key id inside it (#1315). Each form needs its signature parameter
+	// with a literal value: AWS SigV4, AWS SigV2 (key id and signature), Azure
+	// SAS (sig after another SAS parameter), GCS V4 and V2.
+	{"pre-signed storage URL", regexp.MustCompile(`^https?://[^\s"']*?(?:` +
+		`[?&]X-Amz-Signature=[0-9a-f]{64}` +
+		`|[?&]AWSAccessKeyId=(?:AKIA|ASIA)[0-9A-Z]{16}(?:&[^\s"'&]*)*&Signature=[A-Za-z0-9%+/=]{16,}` +
+		`|[?&]Signature=[A-Za-z0-9%+/=]{16,}(?:&[^\s"'&]*)*&AWSAccessKeyId=(?:AKIA|ASIA)[0-9A-Z]{16}` +
+		`|[?&](?:sv|se|sp|sr|st|spr|srt|ss|skoid|sktid)=[^\s"'&]*(?:&[^\s"'&]*)*&sig=[A-Za-z0-9%+/=]{20,}` +
+		`|[?&]X-Goog-Signature=[0-9a-f]{64,}` +
+		`|[?&]GoogleAccessId=[^\s"'&]+(?:&[^\s"'&]*)*&Signature=[A-Za-z0-9%+/=]{16,}` +
+		`)[^\s"']*$`)},
 	// AWS key-id prefixes: long-term (AKIA), temporary STS session (ASIA),
 	// the older A3T form, ABIA (STS service bearer token), ACCA (context-
 	// specific credential) and the various IAM resource-id prefixes.

@@ -173,3 +173,21 @@ build:
 		t.Fatalf("expected 1 finding on the token's line 7, got %+v", f)
 	}
 }
+
+// In a script line a pre-signed URL is one finding, named for what it is
+// (#1315).
+func TestGL088_PresignedURL(t *testing.T) {
+	for _, line := range []string{
+		`curl -sL "` + presignedS3V2 + `" -o /tmp/payload`,
+		"wget -O f.tgz '" + presignedS3V4 + "'",
+		"az storage blob download --blob-url " + presignedAzureSAS,
+	} {
+		f := findings088(t, fmt.Sprintf("job:\n  script:\n    - %q\n", line))
+		if len(f) != 1 || !strings.Contains(f[0].Message, "pre-signed storage URL") {
+			t.Errorf("%s: got %v, want one pre-signed URL finding", line[:30], f)
+		}
+	}
+	if f := findings088(t, "job:\n  script:\n    - curl -o f \"https://b.s3.amazonaws.com/f?X-Amz-Signature=$SIG\"\n"); len(f) != 0 {
+		t.Errorf("signature from a variable: got %v, want no finding", f)
+	}
+}
