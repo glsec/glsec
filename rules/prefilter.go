@@ -7,8 +7,27 @@ import (
 	"regexp"
 	"regexp/syntax"
 	"strings"
+	"sync"
 	"unicode"
 )
+
+// lazyRegexp compiles its expression on first use (#1329). Most of glsec's
+// expressions only run when their prefilter literal is in the input, which on
+// a typical pipeline is rare, and compiling all of them at start took about
+// half of a short run.
+type lazyRegexp struct {
+	expr string
+	once sync.Once
+	re   *regexp.Regexp
+}
+
+func (l *lazyRegexp) get() *regexp.Regexp {
+	l.once.Do(func() { l.re = regexp.MustCompile(l.expr) })
+	return l.re
+}
+
+// String returns the expression without compiling it.
+func (l *lazyRegexp) String() string { return l.expr }
 
 // prefiltered is a regexp that first checks, with strings.Contains, for the
 // literals every match must contain, and skips the regexp when none is in the
@@ -16,7 +35,7 @@ import (
 // check is far cheaper than the regexp (#870). Methods it doesn't wrap fall
 // through to the embedded regexp unfiltered.
 type prefiltered struct {
-	*regexp.Regexp
+	*lazyRegexp
 	// anyOf lists literals of which every match contains at least one; nil
 	// when the expression has no such literal.
 	anyOf []string
@@ -29,20 +48,48 @@ type prefiltered struct {
 // one gives the same results as the regexp alone.
 var allPrefiltered []prefiltered
 
+// packagePrefiltered counts the expressions of the package itself: package
+// variables are all initialised before any init function runs, and tests add
+// their own after.
+var packagePrefiltered int
+
+func init() { packagePrefiltered = len(allPrefiltered) }
+
+//go:generate go test -run TestPrefilterTableCurrent -update
+
 func mustCompilePrefiltered(expr string) prefiltered {
-	re := regexp.MustCompile(expr)
+	lits, ok := prefilterTable[expr]
+	if !ok {
+		lits = prefilterLiterals(expr)
+	}
+	p := prefiltered{&lazyRegexp{expr: expr}, lits.anyOf, lits.fold}
+	allPrefiltered = append(allPrefiltered, p)
+	return p
+}
+
+// prefilterLits are an expression's prefilter literals. prefilterTable in
+// prefilter_table.go holds them for every expression of the rules, generated
+// at build time, so start-up doesn't parse several hundred expressions
+// (#1329). An expression missing from it falls back to prefilterLiterals;
+// TestPrefilterTableCurrent keeps the table complete and current.
+type prefilterLits struct {
+	anyOf []string
+	fold  bool
+}
+
+// prefilterLiterals parses expr and returns the literals of which every match
+// contains at least one.
+func prefilterLiterals(expr string) prefilterLits {
 	parsed, err := syntax.Parse(expr, syntax.Perl)
 	if err != nil {
-		panic(err) // unreachable: regexp.MustCompile accepted it
+		panic(err)
 	}
 	simple := parsed.Simplify()
 	fold := hasFoldCase(simple)
 	if fold {
 		lowerCase(simple)
 	}
-	p := prefiltered{re, minimal(requiredLiterals(simple)), fold}
-	allPrefiltered = append(allPrefiltered, p)
-	return p
+	return prefilterLits{minimal(requiredLiterals(simple)), fold}
 }
 
 // minimal drops every literal that contains another one: a line with
@@ -83,49 +130,56 @@ func (p prefiltered) possible(s string) bool {
 }
 
 func (p prefiltered) MatchString(s string) bool {
-	return p.possible(s) && p.Regexp.MatchString(s)
+	return p.possible(s) && p.get().MatchString(s)
 }
 
 func (p prefiltered) FindString(s string) string {
 	if !p.possible(s) {
 		return ""
 	}
-	return p.Regexp.FindString(s)
+	return p.get().FindString(s)
 }
 
 func (p prefiltered) FindStringIndex(s string) []int {
 	if !p.possible(s) {
 		return nil
 	}
-	return p.Regexp.FindStringIndex(s)
+	return p.get().FindStringIndex(s)
 }
 
 func (p prefiltered) FindStringSubmatchIndex(s string) []int {
 	if !p.possible(s) {
 		return nil
 	}
-	return p.Regexp.FindStringSubmatchIndex(s)
+	return p.get().FindStringSubmatchIndex(s)
 }
 
 func (p prefiltered) FindAllStringIndex(s string, n int) [][]int {
 	if !p.possible(s) {
 		return nil
 	}
-	return p.Regexp.FindAllStringIndex(s, n)
+	return p.get().FindAllStringIndex(s, n)
 }
 
 func (p prefiltered) FindAllStringSubmatchIndex(s string, n int) [][]int {
 	if !p.possible(s) {
 		return nil
 	}
-	return p.Regexp.FindAllStringSubmatchIndex(s, n)
+	return p.get().FindAllStringSubmatchIndex(s, n)
+}
+
+func (p prefiltered) FindAllStringSubmatch(s string, n int) [][]string {
+	if !p.possible(s) {
+		return nil
+	}
+	return p.get().FindAllStringSubmatch(s, n)
 }
 
 func (p prefiltered) ReplaceAllString(src, repl string) string {
 	if !p.possible(src) {
 		return src
 	}
-	return p.Regexp.ReplaceAllString(src, repl)
+	return p.get().ReplaceAllString(src, repl)
 }
 
 // hasFoldCase reports whether any part of re matches letters in either case.
