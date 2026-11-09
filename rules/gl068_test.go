@@ -4,6 +4,7 @@
 package rules
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -235,5 +236,53 @@ func TestBlankSubshells_Escape(t *testing.T) {
 	got := blankSubshells(`echo \"; (set -x; make)`)
 	if strings.Contains(got, "set -x") {
 		t.Errorf("subshell not blanked: %q", got)
+	}
+}
+
+// The gate in front of the parsing lets every form GL068 reads through, and
+// skips items that can't touch xtrace (#1335).
+func TestMayTouchXtrace(t *testing.T) {
+	for item, want := range map[string]bool{
+		"set -x":                         true,
+		"set -eux":                       true,
+		"set -euxo pipefail":             true,
+		"set +x":                         true,
+		"set -o xtrace":                  true,
+		"bash -o xtrace script.sh":       true,
+		"bash -xe script.sh":             true,
+		`bash "-x" script.sh`:            true,
+		"(set -x; make)":                 true,
+		"make; set -x":                   true,
+		"make && set -x":                 true,
+		"export SHELLOPTS=braceexpand":   true,
+		"set -euo pipefail":              false,
+		"npm ci && npm test":             false,
+		"curl --max-time 10 https://x":   false,
+		"cp build/x86_64-linux/app dist": false,
+		"echo fix-up done":               false,
+		"set -äx":                        true, // isFlagCluster takes any letter
+	} {
+		if got := mayTouchXtrace(item); got != want {
+			t.Errorf("%q: got %v, want %v", item, got, want)
+		}
+	}
+}
+
+// Findings through the gate are unchanged, including a reset in the same
+// item and an xtrace shell invocation (#1335).
+func TestGL068_GateKeepsFindings(t *testing.T) {
+	for script, want := range map[string]int{
+		"set -eux":                            1,
+		"set -o xtrace":                       1,
+		"set -x; make; set +x":                0,
+		"bash -o xtrace deploy.sh":            1,
+		"sh -xe deploy.sh":                    1,
+		"export SHELLOPTS=braceexpand:xtrace": 1,
+		"tar -xzf app.tgz":                    0,
+		"npm ci":                              0,
+	} {
+		if f := findings068(t, "job:\n  script:\n    - "+fmt.Sprintf("%q", script)+"\n"); len(f) != want {
+			t.Errorf("%q: got %d findings %v, want %d", script, len(f), f, want)
+		}
 	}
 }
