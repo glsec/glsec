@@ -4,6 +4,8 @@
 package rules
 
 import (
+	"net"
+	"net/url"
 	"path"
 	"regexp"
 	"strings"
@@ -123,7 +125,7 @@ func firstSavedDownload(script string) int {
 			saved = redirectToFileRe.MatchString(cmd.text) ||
 				cmd.piped && i+1 < len(cmds) && extractors[commandName(commandWords(cmds[i+1].text))]
 		}
-		if saved && !fromOwnProject(words) {
+		if saved && !fromOwnProject(words) && !fromLoopback(words) {
 			return cmd.line
 		}
 	}
@@ -145,6 +147,34 @@ func fromOwnProject(words []string) bool {
 		}
 	}
 	return false
+}
+
+// fromLoopback reports a download whose URLs all point at the loopback
+// interface: the output of a service or process the job started itself, with
+// no upstream that could swap the file (#1308). Service-container hosts and
+// private addresses are still reported, since they can't be told apart from a
+// short internal hostname of a real server.
+func fromLoopback(words []string) bool {
+	found := false
+	for _, w := range words[min(1, len(words)):] {
+		if !strings.Contains(w, "://") {
+			continue
+		}
+		u, err := url.Parse(w)
+		if err != nil || !isLoopbackHost(u.Hostname()) {
+			return false
+		}
+		found = true
+	}
+	return found
+}
+
+func isLoopbackHost(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // savesDownload reports whether a command is curl or wget writing what it
