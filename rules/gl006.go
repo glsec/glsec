@@ -5,7 +5,6 @@ package rules
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -287,12 +286,19 @@ func checkSecretValue(node *yaml.Node, varName, file string) *finding.Finding {
 	return nil
 }
 
-// TokenPatterns returns GL006's token formats without their ^…$ anchors, to
-// find a token inside a longer text such as a source line or a message
-// (#831). The PEM and GCP service account entries are markers next to a
-// secret, not the secret itself, and are left out.
-func TokenPatterns() []*regexp.Regexp {
-	var out []*regexp.Regexp
+// TokenMatcher finds one of GL006's token formats in a longer text.
+type TokenMatcher interface {
+	MatchString(s string) bool
+	ReplaceAllStringFunc(src string, repl func(string) string) string
+	String() string
+}
+
+// tokenPatterns are GL006's token formats without their ^…$ anchors. They are
+// prefiltered and compile on first use like the rule's own, so the report
+// redaction neither compiles them all at start nor runs each on every
+// message (#1333).
+var tokenPatterns = func() []TokenMatcher {
+	var out []TokenMatcher
 	for _, p := range secretPatterns {
 		if p.name == "PEM private key" || p.name == "GCP service account key" {
 			continue
@@ -303,7 +309,13 @@ func TokenPatterns() []*regexp.Regexp {
 			flags, src = "(?i)", strings.TrimPrefix(src, "(?i)")
 		}
 		src = strings.TrimSuffix(strings.TrimPrefix(src, "^"), "$")
-		out = append(out, regexp.MustCompile(flags+src))
+		out = append(out, mustCompilePrefiltered(flags+src))
 	}
 	return out
-}
+}()
+
+// TokenPatterns returns GL006's token formats without their ^…$ anchors, to
+// find a token inside a longer text such as a source line or a message
+// (#831). The PEM and GCP service account entries are markers next to a
+// secret, not the secret itself, and are left out.
+func TokenPatterns() []TokenMatcher { return tokenPatterns }
