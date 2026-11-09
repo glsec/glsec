@@ -279,6 +279,9 @@ func checkPMLine(line, file string, lineNum, col int) *finding.Finding {
 	// Explicit update commands — always wrong in CI.
 	for _, uc := range pmUpdateChecks {
 		if uc.re.MatchString(line) {
+			if uc.manager == "pip (--upgrade)" && !pipUpgradeHasPackage(line) {
+				continue
+			}
 			f := finding.Finding{
 				RuleID:   "GL022",
 				Severity: finding.Warn,
@@ -342,4 +345,51 @@ func checkPMLine(line, file string, lineNum, col int) *finding.Finding {
 	}
 
 	return nil
+}
+
+// pipUpgradeHasPackage distinguishes an ad-hoc registry package from an
+// upgrade of only a requirements file or local project. File/option arguments
+// are not package names, even when -U precedes them.
+func pipUpgradeHasPackage(line string) bool {
+	for _, cmd := range shellCommands(line) {
+		words := commandWords(cmd.text)
+		if len(words) < 3 || (commandName(words) != "pip" && commandName(words) != "pip3" && commandName(words) != "pip2") || words[1] != "install" {
+			continue
+		}
+		upgrade := false
+		packageNamed := false
+		for i := 2; i < len(words); i++ {
+			arg := words[i]
+			if arg == "-U" || arg == "--upgrade" {
+				upgrade = true
+				continue
+			}
+			// These options consume the following word, which is a file, path,
+			// URL or option value rather than a named package.
+			switch arg {
+			case "-r", "--requirement", "-c", "--constraint", "-e", "--editable",
+				"-i", "--index-url", "--extra-index-url", "-f", "--find-links",
+				"--trusted-host", "--proxy", "--timeout", "--retries",
+				"--cert", "--client-cert", "--src", "--target", "--prefix",
+				"--root", "--platform", "--python-version", "--implementation", "--abi",
+				"--only-binary", "--no-binary", "--progress-bar", "--config-settings":
+				i++
+				continue
+			}
+			if strings.HasPrefix(arg, "-") {
+				continue
+			}
+			if arg == "." || arg == ".." || strings.HasPrefix(arg, ".[" ) || strings.HasPrefix(arg, "..[") ||
+				strings.HasPrefix(arg, "./") || strings.HasPrefix(arg, "../") ||
+				strings.HasPrefix(arg, "/") || strings.HasPrefix(arg, "file:") || strings.HasPrefix(arg, "git+") ||
+				strings.HasSuffix(arg, ".whl") || strings.HasSuffix(arg, ".tar.gz") || strings.HasSuffix(arg, ".zip") {
+				continue
+			}
+			packageNamed = true
+		}
+		if upgrade && packageNamed {
+			return true
+		}
+	}
+	return false
 }

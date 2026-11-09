@@ -69,6 +69,44 @@ build:
 	}
 }
 
+func TestGL022_PipUpgradeOnlyRequirementsOrLocal(t *testing.T) {
+	f := findings022(t, `
+job:
+  script:
+    - pip install -U -r requirements.txt
+    - pip install --upgrade -e .
+    - pip install -r requirements.txt
+    - pip install -U pip -r requirements.txt
+`)
+	if len(f) != 1 || f[0].RuleID != "GL022" || f[0].Line != 7 || f[0].Severity != finding.Warn {
+		t.Fatalf("expected only named pip package on line 7, got %+v", f)
+	}
+
+	for _, tc := range []struct {
+		line string
+		want bool
+	}{
+		{"pip install --upgrade -r a.txt -r b.txt", false},
+		{"pip install -U -c constraints.txt -r requirements.txt", false},
+		{"pip install -U ./dist/pkg.whl", false},
+		{"pip install -U /tmp/pkg.whl", false},
+		{"pip install -U .[dev]", false},
+		{"pip install --upgrade setuptools wheel", true},
+		{"pip install -U pip -r requirements.txt", true},
+		{"pip install -U --requirement=requirements.txt", false},
+		{"pip install -U -e ./src", false},
+		{"pip install -U -r a.txt && echo done", false},
+		{"pip install -U -r a.txt && pip install -U wheel", true},
+	} {
+		t.Run(tc.line, func(t *testing.T) {
+			got := checkPMLine(tc.line, "test.yml", 1, 1) != nil
+			if got != tc.want {
+				t.Errorf("finding=%v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestGL022_PipLocalPackage_NoFinding(t *testing.T) {
 	f := findings022(t, `
 build:
