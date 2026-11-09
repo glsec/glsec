@@ -48,6 +48,47 @@ build:
 	}
 }
 
+func TestGL024_PipefailMentionsAreNotProtection(t *testing.T) {
+	for _, tc := range []struct {
+		script string
+		want   int
+	}{
+		{`bash -c 'echo pipefail; false | cat'`, 1},
+		{`bash -c 'echo "set -o pipefail"; false | cat'`, 1},
+		{`bash -c 'set +o pipefail; false | cat'`, 1},
+		{`bash -c 'set -o pipefail; set +o pipefail; false | cat'`, 1},
+		{`bash -c '# set -o pipefail
+false | cat'`, 1},
+		{`bash -c 'set -o pipefail; false | cat'`, 0},
+		{`bash -c 'set -eo pipefail; false | cat'`, 0},
+		{`bash -c 'set -euo pipefail; a | b'`, 0},
+		{`ssh host 'set -euo pipefail; false | cat'`, 0},
+		{`bash -c 'shopt -so pipefail; false | cat'`, 0},
+		{`bash -c 'shopt -s -o pipefail; false | cat'`, 0},
+		{`bash -c 'set -eo pipefail; set +eo pipefail; false | cat'`, 1},
+		{`bash -c 'shopt -so pipefail; shopt -uo pipefail; false | cat'`, 1},
+		{`bash -c 'set +o pipefail; set -o pipefail; false | cat'`, 0},
+		// Known gap: childShellScript ignores later disabling of a launcher-level -o pipefail.
+		{`bash -o pipefail -c 'set +o pipefail; false | cat'`, 0},
+		{`bash -c 'echo pipefail; false | cat || true'`, 0},
+	} {
+		t.Run(tc.script, func(t *testing.T) {
+			if n := count024(t, tc.script); n != tc.want {
+				t.Errorf("got %d, want %d findings", n, tc.want)
+			}
+		})
+	}
+
+	f := findings024(t, `
+job:
+  script:
+    - "bash -c 'echo pipefail; false | cat'"
+`)
+	if len(f) != 1 || f[0].RuleID != "GL024" || f[0].Severity != finding.Info || f[0].Line != 4 || f[0].Col != 7 {
+		t.Fatalf("expected GL024 info at 4:7, got %+v", f)
+	}
+}
+
 // The runner starts job scripts with set -o pipefail, so pipes in the job's
 // own shell are not reported (#1047).
 func TestGL024_JobShellPipes_NoFinding(t *testing.T) {
