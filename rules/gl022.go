@@ -401,7 +401,7 @@ func pipUpgradeHasPackage(line string) bool {
 			}
 			if arg == "." || arg == ".." || strings.HasPrefix(arg, ".[") || strings.HasPrefix(arg, "..[") ||
 				strings.HasPrefix(arg, "./") || strings.HasPrefix(arg, "../") ||
-				strings.HasPrefix(arg, "/") || strings.HasPrefix(arg, "file:") || strings.HasPrefix(arg, "git+") ||
+				strings.HasPrefix(arg, "/") || strings.HasPrefix(arg, "file:") ||
 				strings.HasSuffix(arg, ".whl") || strings.HasSuffix(arg, ".tar.gz") || strings.HasSuffix(arg, ".zip") {
 				continue
 			}
