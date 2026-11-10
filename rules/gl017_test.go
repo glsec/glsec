@@ -4,11 +4,51 @@
 package rules
 
 import (
+	"fmt"
+	"strconv"
 	"testing"
 
 	"github.com/glsec/glsec/internal/finding"
 	"github.com/glsec/glsec/internal/parser"
 )
+
+func TestGL017_DeployScriptCommandsOnly(t *testing.T) {
+	for _, tc := range []struct {
+		command string
+		want    int
+	}{
+		{`echo "Do your deploy here"`, 0},
+		{`printf 'publish step\n'`, 0},
+		{`echo deploy`, 0},
+		{`echo 'publish here' && echo deploy`, 0},
+		{`echo deploy && ./deploy.sh`, 1},
+		{`./deploy.sh`, 1},
+		{`make deploy`, 1},
+		{`npm run deploy`, 1},
+		{`deploy --prod`, 1},
+		{`twine upload dist/*`, 1},
+		{`bash "$CI_PROJECT_DIR/scripts/deploy.sh"`, 1},
+		{`ssh deploy@host "cd /app && ./deploy.sh"`, 1},
+		{`curl -X POST "https://api.example.com/v1/deploy"`, 1},
+		{`echo 'kubectl apply -f k8s/'`, 0},
+		{`printf 'kubectl apply -f k8s/'`, 0},
+		{`echo 'kubectl apply -f k8s/' | ssh user@host bash`, 1},
+		{`printf 'kubectl apply -f k8s/' | ssh user@host bash`, 1},
+		{`ssh user@host bash -s <<EOF
+kubectl apply -f k8s/
+EOF`, 1},
+	} {
+		t.Run(tc.command, func(t *testing.T) {
+			f := findings017(t, fmt.Sprintf("deploy-example:\n  stage: deploy\n  script:\n    - %s\n", strconv.Quote(tc.command)))
+			if len(f) != tc.want {
+				t.Fatalf("got %+v, want %d findings", f, tc.want)
+			}
+			if tc.want == 1 && (f[0].RuleID != "GL017" || f[0].Severity != finding.Warn) {
+				t.Errorf("unexpected finding %+v", f[0])
+			}
+		})
+	}
+}
 
 func findings017(t *testing.T, yaml string) []finding.Finding {
 	t.Helper()

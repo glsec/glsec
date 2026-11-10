@@ -4,6 +4,8 @@
 package rules
 
 import (
+	"fmt"
+	"strconv"
 	"testing"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -17,6 +19,40 @@ func findings049(t *testing.T, yaml string) []finding.Finding {
 		t.Fatalf("parse error: %v", err)
 	}
 	return GL049.Check(doc.Root, "test.yml")
+}
+
+func TestGL049_PrintedDeployPlaceholder_NoFinding(t *testing.T) {
+	f := findings049(t, `
+instruction:
+  stage: deploy
+  interruptible: true
+  script:
+    - 'echo "Do your deploy here"'
+`)
+	if len(f) != 0 {
+		t.Fatalf("expected no finding for a printed deployment instruction, got %+v", f)
+	}
+}
+
+func TestGL049_DeployScriptCommandsOnly(t *testing.T) {
+	for _, tc := range []struct {
+		command string
+		want    int
+	}{
+		{`echo 'kubectl apply -f k8s/'`, 0},
+		{`printf 'kubectl apply -f k8s/'`, 0},
+		{`echo 'kubectl apply -f k8s/' | ssh user@host bash`, 1},
+		{`ssh user@host bash -s <<EOF
+kubectl apply -f k8s/
+EOF`, 1},
+	} {
+		t.Run(tc.command, func(t *testing.T) {
+			f := findings049(t, fmt.Sprintf("task:\n  stage: deploy\n  interruptible: true\n  script:\n    - %s\n", strconv.Quote(tc.command)))
+			if len(f) != tc.want {
+				t.Fatalf("got %+v, want %d findings", f, tc.want)
+			}
+		})
+	}
 }
 
 func TestGL049_DeployJobInterruptibleTrue(t *testing.T) {
