@@ -1,0 +1,32 @@
+name: Accessibility barrier
+description: Something about glsec or its docs is hard or impossible to use with assistive technology
+labels: [accessibility]
+body:
+  - type: textarea
+    id: barrier
+    attributes:
+      label: What got in the way
+      description: What were you trying to do, and what stopped you?
+    validations:
+      required: true
+  - type: input
+    id: surface
+    attributes:
+      label: Where
+      description: The CLI, a structured output format, or a page of the website (URL).
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Tool and assistive technology
+      description: Operating system, terminal or browser, and any screen reader or other assistive technology, with versions.
+    validations:
+      required: false
+  - type: textarea
+    id: expected
+    attributes:
+      label: What would help
+      description: Optional — what would make this usable for you.
+    validations:
+      required: false
