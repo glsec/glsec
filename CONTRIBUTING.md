@@ -549,3 +549,7 @@ GITHUB_TOKEN=$(gh auth token) go run ./cmd/ciduration
 `go run` turns every failure into exit 1, so exit 1 can also be an API or token error; build the binary (`go build ./cmd/ciduration`) to tell them apart: 1 is over the budget, 2 an error. The budget is not a check on pull requests, because shared runners vary by 10 to 30%.
 
 Read the maximum with care. GitHub's timestamps can be wrong: on 2026-11-01 at 08:00 UTC, jobs running at that moment reported an end 60 minutes late, so a job of a few seconds shows as an hour. The p90 and the budget aren't affected by a single run like that; to check one, compare the job's end with its step times.
+
+## Accessibility
+
+glsec aims to be usable with assistive technology; see [ACCESSIBILITY.md](ACCESSIBILITY.md). When you change how output is presented, keep the severity in the text (never color alone), keep `NO_COLOR` / `--no-color` and the non-terminal default working, and keep the structured formats (`json`, `sarif`, `codeclimate`, `junit`, `gitlab-sast`) complete. `internal/output` has guard tests for these. For a website change, run the site's accessibility check.
