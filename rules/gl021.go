@@ -290,7 +290,22 @@ func printedSecret(line string) (string, bool) {
 		// another command (e.g. git config credential.helper "!echo $TOKEN").
 		command := segmentPrintCommand(s[left+1 : start])
 		if command == "" {
-			continue
+			// A child-shell command may execute a quoted script containing
+			// separators (bash -c, eval, ssh, su, etc.). If the masked
+			// segment has no print command, retry the original separators
+			// to preserve the detection these scripts had before #1300.
+			left = start - 1
+			for left >= 0 && !isShellSep(s[left]) {
+				left--
+			}
+			right = end
+			for right < len(s) && !isShellSep(s[right]) {
+				right++
+			}
+			command = segmentPrintCommand(s[left+1 : start])
+			if command == "" {
+				continue
+			}
 		}
 		if powerShell || strings.HasPrefix(command, "write") {
 			escapeStart := start
@@ -327,39 +342,6 @@ func printedSecret(line string) (string, bool) {
 			continue
 		}
 		return varRefText(s[start:end]), true
-	}
-	// An sh -c or ssh argument is quoted in the outer shell, but it is a
-	// script in the child shell. Its internal separators must be considered
-	// when deciding whether a secret is printed (#1300).
-	return printedSecretInChildShell(line)
-}
-
-// printedSecretInChildShell examines scripts executed by a child shell without
-// treating arbitrary quoted arguments (such as git configuration) as scripts.
-// A redirect or non-logging pipe on the parent command still suppresses output.
-func printedSecretInChildShell(line string) (string, bool) {
-	if !strings.Contains(line, "sh") || !gl021VarRefRe.MatchString(line) {
-		return "", false
-	}
-	cmds := shellCommands(line)
-	for i, cmd := range cmds {
-		if cmd.parent != "" {
-			continue // shellCommands may have already expanded a local sh -c.
-		}
-		_, inner, _, ok := childShellScript(commandWords(cmd.text))
-		if !ok || len(inner) >= len(line) {
-			continue
-		}
-		masked := maskShellQuotes(cmd.text)
-		if stdoutRedirectRe.MatchString(masked) || strings.Contains(masked, "&>") {
-			continue
-		}
-		if cmd.piped && (i+1 >= len(cmds) || commandName(commandWords(cmds[i+1].text)) != "tee") {
-			continue
-		}
-		if match, printed := printedSecret(inner); printed {
-			return match, true
-		}
 	}
 	return "", false
 }

@@ -177,8 +177,15 @@ func TestGL021_PresenceAndDefaultExpansionRegressions(t *testing.T) {
 		{"bash child-shell print", `bash -c "true; echo $DEPLOY_TOKEN"`, true},
 		{"ssh remote child-shell print", `ssh host "cd /app && echo $DEPLOY_TOKEN"`, true},
 		{"sh child-shell printf", `sh -c "echo hi; printf '%s' $DEPLOY_TOKEN"`, true},
+		{"bash combined flags child-shell print", `bash -eo pipefail -c "true; echo $DEPLOY_TOKEN"`, true},
+		{"bash separate flags child-shell print", `bash -o pipefail -c "true; echo $DEPLOY_TOKEN"`, true},
+		{"bash login child-shell print", `bash --login -c "true; echo $DEPLOY_TOKEN"`, true},
+		{"eval child-shell print", `eval "true; echo $DEPLOY_TOKEN"`, true},
+		{"su child-shell print", `su app -c "cd /app; echo $DEPLOY_TOKEN"`, true},
 		{"child-shell redirect", `bash -c "true; echo $DEPLOY_TOKEN" > secret.txt`, false},
 		{"child-shell non-logging pipe", `ssh host "echo $DEPLOY_TOKEN" | docker login --password-stdin`, false},
+		{"ssh single-quoted literal", `ssh host 'echo $DEPLOY_TOKEN'`, false},
+		{"child-shell with flags redirected", `bash -eo pipefail -c "true; echo $DEPLOY_TOKEN" > secret.txt`, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := findings021(t, "job:\n  script:\n    - "+strconv.Quote(tc.script)+"\n")
