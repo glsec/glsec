@@ -336,19 +336,9 @@ func checkPMLine(line, file string, lineNum, col int) *finding.Finding {
 	return nil
 }
 
-// isPythonPipLauncher accepts Python's usual executable names: python,
-// python3, python3.11 and py.
-func isPythonPipLauncher(name string) bool {
-	if name == "py" || name == "python" {
-		return true
-	}
-	if !strings.HasPrefix(name, "python") {
-		return false
-	}
-	version := strings.TrimPrefix(name, "python")
-	return len(version) > 0 && version[0] >= '0' && version[0] <= '9' &&
-		strings.Trim(version, "0123456789.") == "" &&
-		!strings.Contains(version, "..") && !strings.HasSuffix(version, ".")
+// isPipModule reports the module name of a `python -m pip` invocation.
+func isPipModule(name string) bool {
+	return name == "pip" || name == "pip3" || name == "pip2"
 }
 
 // pipRemoteSource reports a VCS or HTTP source, which can change
@@ -366,11 +356,13 @@ func pipUpgradeHasPackage(line string) bool {
 		// The update regex also recognises these pip launchers. Normalize
 		// them before checking the install subcommand and its arguments.
 		if len(words) >= 3 {
-			name := commandName(words)
 			switch {
-			case words[1] == "-m" && isPythonPipLauncher(name):
+			// Only a Python interpreter runs `-m pip`, so any launcher before
+			// it is pip, including a shell variable or a path (#1319 follow-up:
+			// $PYTHON -m pip, python3.$V -m pip, C:\\Py\\python.exe -m pip).
+			case words[1] == "-m" && isPipModule(words[2]):
 				words = words[2:]
-			case name == "uv" && words[1] == "pip":
+			case commandName(words) == "uv" && words[1] == "pip":
 				words = words[1:]
 			}
 		}
