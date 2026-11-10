@@ -35,50 +35,64 @@ const (
 // straight into a shell, the line is already reported by isDownloadExecute;
 // decoding a variable is left out.
 func embeddedPayloadFindings(doc *yaml.Node, file string) []finding.Finding {
-	// First pass: the files each job later executes as a script.
+	// Cheap pass: the decode lines, and whether any job has one at all. Most
+	// pipelines have none, so the shell parsing below is skipped entirely.
+	type candidate struct {
+		node *yaml.Node
+		job  string
+	}
+	var candidates []candidate
+	EachScriptLine(doc, file, func(item *yaml.Node, _, job string) {
+		if strings.Contains(item.Value, "base64") ||
+			strings.Contains(item.Value, "base32") || strings.Contains(item.Value, "xxd") {
+			candidates = append(candidates, candidate{item, job})
+		}
+	})
+	if len(candidates) == 0 {
+		return nil
+	}
+
+	// The files each job runs as a script, to tell a decoded file that is
+	// executed later (error) from one that is only data (warn) (#1346).
 	executed := map[string]map[string]bool{}
 	EachScriptLine(doc, file, func(item *yaml.Node, _, job string) {
 		for _, l := range logicalLines(item.Value) {
-			for _, p := range executedScriptPaths(l.text) {
+			for _, path := range executedScriptPaths(l.text) {
 				if executed[job] == nil {
 					executed[job] = map[string]bool{}
 				}
-				executed[job][p] = true
+				executed[job][path] = true
 			}
 		}
 	})
 
 	var findings []finding.Finding
-	EachScriptLine(doc, file, func(item *yaml.Node, file, job string) {
-		if !strings.Contains(item.Value, "base64") &&
-			!strings.Contains(item.Value, "base32") && !strings.Contains(item.Value, "xxd") {
-			return
-		}
-		for _, l := range logicalLines(item.Value) {
+	for _, c := range candidates {
+		for _, l := range logicalLines(c.node.Value) {
 			path, ok := embeddedPayloadFile(l.text)
 			if !ok {
 				continue
 			}
 			sev := finding.Warn
 			msg := fmt.Sprintf("script line decodes an embedded payload; its content is hidden from review — commit the decoded file in readable form, or download it and verify a checksum: %q", truncate(l.text, 80))
-			if path != "" && executed[job][path] {
+			if path != "" && executed[c.job][path] {
 				sev = finding.Error
 				msg = fmt.Sprintf("script line decodes an embedded payload into %s, which the job runs as a script later; the executed code is hidden from review — commit it in readable form: %q", path, truncate(l.text, 80))
 			}
 			f := finding.Finding{
 				RuleID:   "GL011",
 				Severity: sev,
-				Job:      job,
+				Job:      c.job,
 				Message:  msg,
 				File:     file,
-				Line:     parser.ScalarContentLine(item, l.line),
+				Line:     parser.ScalarContentLine(c.node, l.line),
 			}
 			if l.line == 0 {
-				f.Col = item.Column
+				f.Col = c.node.Column
 			}
 			findings = append(findings, f)
 		}
-	})
+	}
 	return findings
 }
 
