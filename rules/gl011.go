@@ -29,6 +29,11 @@ func (r *gl011) ID() string { return "GL011" }
 
 const shellAlt = `bash|sh|python[23]?|ruby|perl|node`
 
+// shellPath is an optional path before an interpreter name, so a pipe into
+// /bin/bash or /usr/bin/python3 is read the same as bash or python3 (#1325,
+// metamorphic): writing the shell with a path must not evade the rule.
+const shellPath = `(?:\.{0,2}/(?:[\w.-]+/)*)?`
+
 // pipeInto matches a pipe and any privilege or environment wrappers before
 // the command it feeds: | sudo -E bash, | doas sh, | su -c sh,
 // | runuser -u app -- bash, | sudo env FOO=1 bash (#1131). An option that
@@ -46,14 +51,14 @@ var (
 	// python (python3 -c, bash -ec), -e/-p for node, -e/-E for perl and ruby,
 	// also bundled (perl -ne, perl -lane) (#1057). -e alone is errexit for a
 	// shell, so curl … | bash -e still runs the download.
-	interpreterDashCRe = mustCompilePrefiltered(pipeInto + `(?:` +
+	interpreterDashCRe = mustCompilePrefiltered(pipeInto + shellPath + `(?:` +
 		`(?:bash|sh|python[23]?)(?:\s+-[a-zA-Z]+)*?\s+-[a-zA-Z]*c\b` +
 		`|node(?:\s+--?[a-zA-Z][a-zA-Z-]*)*?\s+(?:-e|--eval|-p|--print)\b` +
 		`|(?:perl|ruby)(?:\s+-[a-zA-Z]+)*?\s+-[a-zA-Z]*[eE][a-zA-Z]*\b)`)
 	// downloadToolRe matches curl or wget anywhere in a script line.
 	downloadToolRe = mustCompilePrefiltered(`\b(?:curl|wget)\b`)
 	// pipeToShellRe matches a pipe into a shell interpreter.
-	pipeToShellRe = mustCompilePrefiltered(pipeInto + `(?:` + shellAlt + `)\b`)
+	pipeToShellRe = mustCompilePrefiltered(pipeInto + shellPath + `(?:` + shellAlt + `)\b`)
 	// processSubstRe matches bash process substitution: <(curl ...) or <(wget ...).
 	processSubstRe = mustCompilePrefiltered(`<\s*\(\s*(?:curl|wget)\b`)
 	// cmdSubstRe matches command substitution passed to a shell: bash -c "$(curl ...)".
@@ -62,13 +67,13 @@ var (
 	downloadSubstRe = mustCompilePrefiltered(`\$\(\s*(?:curl|wget)\b`)
 	// base64ExecRe matches a base64-decode piped straight into a shell, e.g.
 	// echo "…" | base64 -d | bash — an inline-obfuscated payload with no download tool.
-	base64ExecRe = mustCompilePrefiltered(`\bbase64\s+(?:-d|--decode)\b.*` + pipeInto + `(?:` + shellAlt + `)\b`)
+	base64ExecRe = mustCompilePrefiltered(`\bbase64\s+(?:-d|--decode)\b.*` + pipeInto + shellPath + `(?:` + shellAlt + `)\b`)
 	// hexExecRe matches a hex dump reversed by xxd -r and piped into a shell,
 	// e.g. echo 6375… | xxd -r -p | bash — the same as base64ExecRe in hex.
-	hexExecRe = mustCompilePrefiltered(`\bxxd\b[^|]*\s-[a-z]*r[a-z]*\b.*` + pipeInto + `(?:` + shellAlt + `)\b`)
+	hexExecRe = mustCompilePrefiltered(`\bxxd\b[^|]*\s-[a-z]*r[a-z]*\b.*` + pipeInto + shellPath + `(?:` + shellAlt + `)\b`)
 	// base32ExecRe matches a base32-decode piped straight into a shell, the
 	// base32 form of base64ExecRe (#1346).
-	base32ExecRe = mustCompilePrefiltered(`\bbase32\s+(?:-d|--decode)\b.*` + pipeInto + `(?:` + shellAlt + `)\b`)
+	base32ExecRe = mustCompilePrefiltered(`\bbase32\s+(?:-d|--decode)\b.*` + pipeInto + shellPath + `(?:` + shellAlt + `)\b`)
 	// escapePrinterRe and hexEscapeRe together match printf '\x63\x75…' | sh or
 	// echo -e "\x63…" | sh. The escapes sit inside quotes, so hexEscapeRe is
 	// matched against the raw line.
@@ -93,7 +98,7 @@ var (
 	// from crossing a pipe, so `wget … | gpg --dearmor -o keyring && sh -c '…'`
 	// (a keyring install, where the -o is gpg's) is not read as a download saved
 	// and executed (#1099).
-	downloadThenExecRe = mustCompilePrefiltered(`\b(?:curl|wget)\b[^|]*(?:\s-o\b|\s--output\b|[^0-9&]>).*(?:;|&&)\s*(?:` + shellAlt + `)\s+\S`)
+	downloadThenExecRe = mustCompilePrefiltered(`\b(?:curl|wget)\b[^|]*(?:\s-o\b|\s--output\b|[^0-9&]>).*(?:;|&&)\s*` + shellPath + `(?:` + shellAlt + `)\s+\S`)
 	// checksumGuardRe matches an integrity check on the same line; its presence means
 	// the fetched code is verified before execution, so the line is not flagged.
 	checksumGuardRe = mustCompilePrefiltered(`\b(?:sha256sum|sha512sum|shasum)\b|\bgpg\b.*--verify\b|\bcosign\b.*\bverify\b`)
