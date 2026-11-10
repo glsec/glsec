@@ -347,11 +347,8 @@ func checkPMLine(line, file string, lineNum, col int) *finding.Finding {
 	return nil
 }
 
-// pipUpgradeHasPackage distinguishes an ad-hoc registry package from an
-// upgrade of only a requirements file or local project. File/option arguments
-// are not package names, even when -U precedes them.
-// isPythonPipLauncher accepts Python's usual executable names without adding
-// a regexp dependency to the rule (the base branch uses prefiltered checks).
+// isPythonPipLauncher accepts Python's usual executable names: python,
+// python3, python3.11 and py.
 func isPythonPipLauncher(name string) bool {
 	if name == "py" || name == "python" {
 		return true
@@ -365,10 +362,15 @@ func isPythonPipLauncher(name string) bool {
 		!strings.Contains(version, "..") && !strings.HasSuffix(version, ".")
 }
 
+// pipRemoteSource reports a VCS or HTTP source, which can change
+// independently of the pipeline.
 func pipRemoteSource(arg string) bool {
 	return strings.HasPrefix(arg, "git+") || strings.HasPrefix(arg, "https://") || strings.HasPrefix(arg, "http://")
 }
 
+// pipUpgradeHasPackage distinguishes an ad-hoc registry package from an
+// upgrade of only a requirements file or local project. File/option arguments
+// are not package names, even when -U precedes them.
 func pipUpgradeHasPackage(line string) bool {
 	for _, cmd := range shellCommands(line) {
 		words := commandWords(cmd.text)
