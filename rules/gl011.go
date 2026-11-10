@@ -192,6 +192,12 @@ func isDownloadExecute(line string) gl011Match {
 	if hexEscapeRe.MatchString(line) && escapePrinterRe.MatchString(stripped) && pipeToShellRe.MatchString(stripped) {
 		return gl011EncodedPayload
 	}
+	// Retain the original broad detection for downloads invoked through wrappers
+	// (xargs, busybox, docker, shell groups). Pipeline scoping above selects the
+	// provenance of decoded payloads; it must not suppress these findings.
+	if downloadToolRe.MatchString(stripped) && pipeToShellRe.MatchString(stripped) {
+		return gl011RemoteDownload
+	}
 	// PowerShell commands usually arrive quoted (pwsh -c "…"), so match the raw line.
 	// Both need iex or Invoke-Expression; psPipeExecRe's own prefilter has the
 	// download words instead, which are on most curl and wget lines (#1336).
@@ -226,8 +232,7 @@ func downloadFeedsInterpreter(script string) bool {
 				}
 				pipeline.WriteString(cmds[k].text)
 				if k < j {
-					switch commandName(commandWords(cmds[k].text)) {
-					case "curl", "wget":
+					if downloadToolRe.MatchString(cmds[k].text) {
 						hasDownload = true
 					}
 				}
