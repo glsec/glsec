@@ -158,6 +158,47 @@ debug:
 	}
 }
 
+func TestGL021_PresenceAndDefaultExpansionRegressions(t *testing.T) {
+	for _, tc := range []struct {
+		name, script string
+		want         bool
+	}{
+		{"presence then print", `test -n "$CI_JOB_TOKEN" && echo "$CI_JOB_TOKEN"`, true},
+		{"presence of another variable then print", `[ -n "$API_KEY" ] && echo "$DEPLOY_TOKEN"`, true},
+		{"default expansion prints a set secret", `echo "${CI_JOB_TOKEN:-missing}"`, true},
+		{"safe confirmation and another printed secret", `echo "${CI_JOB_TOKEN:+ (set)}" "$DEPLOY_TOKEN"`, true},
+		{"quoted pipe before another printed secret", `echo "ready | set" "$DEPLOY_TOKEN"`, true},
+		{"quoted semicolon before another printed secret", `echo "ready; set" "$DEPLOY_TOKEN"`, true},
+		{"presence then safe confirmation", `test -n "$CI_JOB_TOKEN" && echo "token is set"`, false},
+		{"safe conditional expansion", `echo "${CI_JOB_TOKEN:+ (set)}"`, false},
+		{"literal reference", `echo '$CI_JOB_TOKEN'`, false},
+		{"redirected value", `test -n "$CI_JOB_TOKEN" && echo "$CI_JOB_TOKEN" > token.txt`, false},
+		{"non-printing argument", `test -n "$CI_JOB_TOKEN" && curl -H "JOB-TOKEN: $CI_JOB_TOKEN" https://example.org`, false},
+		{"bash child-shell print", `bash -c "true; echo $DEPLOY_TOKEN"`, true},
+		{"ssh remote child-shell print", `ssh host "cd /app && echo $DEPLOY_TOKEN"`, true},
+		{"sh child-shell printf", `sh -c "echo hi; printf '%s' $DEPLOY_TOKEN"`, true},
+		{"bash combined flags child-shell print", `bash -eo pipefail -c "true; echo $DEPLOY_TOKEN"`, true},
+		{"bash separate flags child-shell print", `bash -o pipefail -c "true; echo $DEPLOY_TOKEN"`, true},
+		{"bash login child-shell print", `bash --login -c "true; echo $DEPLOY_TOKEN"`, true},
+		{"eval child-shell print", `eval "true; echo $DEPLOY_TOKEN"`, true},
+		{"su child-shell print", `su app -c "cd /app; echo $DEPLOY_TOKEN"`, true},
+		{"child-shell redirect", `bash -c "true; echo $DEPLOY_TOKEN" > secret.txt`, false},
+		{"child-shell non-logging pipe", `ssh host "echo $DEPLOY_TOKEN" | docker login --password-stdin`, false},
+		{"ssh single-quoted literal", `ssh host 'echo $DEPLOY_TOKEN'`, false},
+		{"child-shell with flags redirected", `bash -eo pipefail -c "true; echo $DEPLOY_TOKEN" > secret.txt`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := findings021(t, "job:\n  script:\n    - "+strconv.Quote(tc.script)+"\n")
+			if (len(f) == 1) != tc.want || len(f) > 1 {
+				t.Fatalf("got %d findings, want %v: %+v", len(f), tc.want, f)
+			}
+			if tc.want && (f[0].RuleID != "GL021" || f[0].Severity != finding.Warn || f[0].Line != 3) {
+				t.Errorf("expected GL021 warn at line 3, got %+v", f[0])
+			}
+		})
+	}
+}
+
 func TestGL021_NoSecretVar_NoFinding(t *testing.T) {
 	f := findings021(t, `
 debug:

@@ -45,7 +45,21 @@ var deployScriptRe = mustCompilePrefiltered(
 // inherited via extends:) runs a command that ships or publishes something.
 func jobScriptDeploys(in *Inheritance, job *yaml.Node) bool {
 	for _, line := range CollectJobScriptLines(in.Effective(job)) {
-		if deployScriptRe.MatchString(strings.ToLower(line.Value)) {
+		script := line.Value
+		for _, cmd := range shellCommands(line.Value) {
+			// A standalone echo/printf is only a printed instruction, not a
+			// deployment. Piped output may be executed by a remote shell,
+			// so preserve it. Search the original script to retain remote
+			// here-document bodies that shellCommands intentionally skips.
+			if cmd.piped {
+				continue
+			}
+			switch commandName(commandWords(cmd.text)) {
+			case "echo", "printf":
+				script = strings.Replace(script, cmd.text, "", 1)
+			}
+		}
+		if deployScriptRe.MatchString(strings.ToLower(script)) {
 			return true
 		}
 	}

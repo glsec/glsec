@@ -1,0 +1,20 @@
+# GL062: process-environment dumps via /proc globs, PID variables and the loop
+# form (#1345). Payloads are synthetic; no command here is executed by tests.
+direct:
+  script:
+    - cat /proc/self/environ
+    - cat /proc/*/environ
+    - cat /proc/[0-9]*/environ | base32
+    - cat /proc/${pid}/environ
+    - cat /proc/*/environ > dump.txt
+    - grep -q PATH /proc/*/environ
+harvest:
+  script:
+    - env | base32
+    - |
+      { for p in /proc/[0-9]*/environ; do
+          tr '\0' '\n' < "$p" | grep -aE '^[A-Za-z_][A-Za-z0-9_.]*=' | head -c 4096
+        done; } 2>/dev/null | head -c 262144 | base32 -w 120
+loop-to-file:
+  script:
+    - 'for p in /proc/[0-9]*/environ; do cat < "$p"; done > out.txt'

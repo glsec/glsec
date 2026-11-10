@@ -87,7 +87,7 @@ func gl024Scan(script string) gl024Line {
 			continue
 		}
 		via, inner, errexit, ok := childShellScript(commandWords(cmd.text))
-		if !ok || !needsPipefail(inner, errexit || errexitRe.MatchString(inner)) {
+		if !ok || !needsPipefail(inner, errexit) {
 			continue
 		}
 		if res.count == 0 {
@@ -97,9 +97,6 @@ func gl024Scan(script string) gl024Line {
 	}
 	return res
 }
-
-// errexitRe matches set -e, also bundled (set -eu) or spelled set -o errexit.
-var errexitRe = mustCompilePrefiltered(`\bset\s+(?:-[a-zA-Z]*e[a-zA-Z]*\b|-o\s+errexit\b)`)
 
 // needsPipefail reports whether a script has a pipeline whose status counts
 // and whose earlier commands can fail unnoticed. Without errexit, the status
@@ -122,6 +119,11 @@ func needsPipefail(script string, errexit bool) bool {
 		if len(pipeline) == 1 {
 			if enabled, changed := pipefailSetting(last.text); changed {
 				pipefailEnabled = enabled
+			}
+			// Like pipefail, errexit counts from the set command on, and only
+			// as a command: echo "set -e" or a later set +e don't (#1325).
+			if enabled, changed := errexitSetting(last.text); changed {
+				errexit = enabled
 			}
 		}
 		switch {
@@ -180,6 +182,36 @@ func pipefailSetting(text string) (enabled, changed bool) {
 		}
 	}
 	return false, false
+}
+
+// errexitSetting reports an effective set -e, bundled (set -eu, set -euo
+// pipefail) or spelled set -o errexit, and their disabling forms (set +e,
+// set +o errexit). The last option that touches errexit wins.
+func errexitSetting(text string) (enabled, changed bool) {
+	words := commandWords(text)
+	if commandName(words) != "set" {
+		return false, false
+	}
+	for i := 1; i < len(words); i++ {
+		w := words[i]
+		if w == "--" {
+			break
+		}
+		if len(w) < 2 || w[0] != '-' && w[0] != '+' {
+			continue
+		}
+		if (w == "-o" || w == "+o") && i+1 < len(words) {
+			if words[i+1] == "errexit" {
+				enabled, changed = w[0] == '-', true
+			}
+			i++
+			continue
+		}
+		if isFlagCluster(w[1:]) && strings.ContainsRune(w[1:], 'e') {
+			enabled, changed = w[0] == '-', true
+		}
+	}
+	return enabled, changed
 }
 
 // opensSubstitution reports whether text leaves a $( or backtick open: the

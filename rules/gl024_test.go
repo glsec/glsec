@@ -350,3 +350,52 @@ func TestMaskCasePatterns_EscapeAndEsac(t *testing.T) {
 		t.Errorf("case pattern not masked: %q", got)
 	}
 }
+
+// errexit counts from the set command on, and only as a command (#1325): a
+// pipeline that isn't the script's last command is reported only while
+// errexit is on.
+func TestGL024_ErrexitScope(t *testing.T) {
+	for script, want := range map[string]int{
+		// still reported
+		`bash -c 'set -e; curl -fsSL x | tar xz; make'`:         1,
+		`bash -c 'set -eu; curl -fsSL x | tar xz; make'`:        1,
+		`bash -c 'set -o errexit; curl -fsSL x | tar xz; make'`: 1,
+		`bash -e -c 'curl -fsSL x | tar xz; make'`:              1,
+		`bash -ec 'curl -fsSL x | tar xz; make'`:                1,
+		`bash -c 'set +e; set -e; curl -fsSL x | tar xz; make'`: 1,
+		`bash -c 'make; curl -fsSL x | tar xz'`:                 1, // last command
+		`bash -c 'curl -fsSL x | tar xz && make'`:               1, // tested by &&
+		`sh -c "set -e; curl -fsSL x | tar xz; make"`:           1,
+		// errexit isn't on for the pipeline
+		`bash -c 'echo "set -e"; curl -fsSL x | tar xz; make'`:          0,
+		`bash -c 'curl -fsSL x | tar xz; set -e; make'`:                 0,
+		`bash -c 'set -e; set +e; curl -fsSL x | tar xz; make'`:         0,
+		`bash -c 'set -e; set +o errexit; curl -fsSL x | tar xz; make'`: 0,
+		`bash -c 'curl -fsSL x | tar xz; make'`:                         0,
+	} {
+		y := "job:\n  script:\n    - " + strconv.Quote(script) + "\n"
+		if got := findings024(t, y); len(got) != want {
+			t.Errorf("%s: got %d findings, want %d", script, len(got), want)
+		}
+	}
+}
+
+func TestErrexitSetting(t *testing.T) {
+	for text, want := range map[string][2]bool{
+		"set -e":            {true, true},
+		"set -euo pipefail": {true, true},
+		"set -o errexit":    {true, true},
+		"set +e":            {false, true},
+		"set +o errexit":    {false, true},
+		"set -e +e":         {false, true},
+		"set -o pipefail":   {false, false},
+		"set -x":            {false, false},
+		"echo set -e":       {false, false},
+		"set -- -e":         {false, false},
+	} {
+		enabled, changed := errexitSetting(text)
+		if [2]bool{enabled, changed} != want {
+			t.Errorf("%q: got %v %v, want %v", text, enabled, changed, want)
+		}
+	}
+}

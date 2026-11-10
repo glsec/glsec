@@ -268,6 +268,9 @@ func checkPMLine(line, file string, lineNum, col int) *finding.Finding {
 	// Explicit update commands — always wrong in CI.
 	for _, uc := range pmUpdateChecks {
 		if uc.re.MatchString(line) {
+			if uc.manager == "pip (--upgrade)" && !pipUpgradeHasPackage(line) {
+				continue
+			}
 			f := finding.Finding{
 				RuleID:   "GL022",
 				Severity: finding.Warn,
@@ -331,4 +334,95 @@ func checkPMLine(line, file string, lineNum, col int) *finding.Finding {
 	}
 
 	return nil
+}
+
+// isPipModule reports the module name of a `python -m pip` invocation.
+func isPipModule(name string) bool {
+	return name == "pip" || name == "pip3" || name == "pip2"
+}
+
+// pipRemoteSource reports a VCS or HTTP source, which can change
+// independently of the pipeline.
+func pipRemoteSource(arg string) bool {
+	return strings.HasPrefix(arg, "git+") || strings.HasPrefix(arg, "https://") || strings.HasPrefix(arg, "http://")
+}
+
+// pipUpgradeHasPackage distinguishes an ad-hoc registry package from an
+// upgrade of only a requirements file or local project. File/option arguments
+// are not package names, even when -U precedes them.
+func pipUpgradeHasPackage(line string) bool {
+	for _, cmd := range shellCommands(line) {
+		words := commandWords(cmd.text)
+		// The update regex also recognises these pip launchers. Normalize
+		// them before checking the install subcommand and its arguments.
+		if len(words) >= 3 {
+			switch {
+			// Only a Python interpreter runs `-m pip`, so any launcher before
+			// it is pip, including a shell variable or a path (#1319 follow-up:
+			// $PYTHON -m pip, python3.$V -m pip, C:\\Py\\python.exe -m pip).
+			case words[1] == "-m" && isPipModule(words[2]):
+				words = words[2:]
+			case commandName(words) == "uv" && words[1] == "pip":
+				words = words[1:]
+			}
+		}
+		if len(words) < 3 || (commandName(words) != "pip" && commandName(words) != "pip3" && commandName(words) != "pip2") || words[1] != "install" {
+			continue
+		}
+		upgrade := false
+		packageNamed := false
+		for i := 2; i < len(words); i++ {
+			arg := words[i]
+			if arg == "-U" || arg == "--upgrade" {
+				upgrade = true
+				continue
+			}
+			// Editable installs may name an unpinned remote VCS/HTTP source.
+			// Local editable paths are still safe from this upgrade check.
+			switch arg {
+			case "-e", "--editable":
+				if i+1 < len(words) && pipRemoteSource(words[i+1]) {
+					packageNamed = true
+				}
+				i++
+				continue
+			// Other options consume a file, path, URL or option value,
+			// not an independently upgraded package.
+			case "-r", "--requirement", "-c", "--constraint", "-t",
+				"-i", "--index-url", "--extra-index-url", "-f", "--find-links",
+				"--trusted-host", "--proxy", "--timeout", "--retries",
+				"--cert", "--client-cert", "--src", "--target", "--prefix",
+				"--root", "--platform", "--python-version", "--implementation", "--abi",
+				"--only-binary", "--no-binary", "--progress-bar", "--config-settings", "--upgrade-strategy":
+				i++
+				continue
+			}
+			if strings.HasPrefix(arg, "--editable=") {
+				if pipRemoteSource(strings.TrimPrefix(arg, "--editable=")) {
+					packageNamed = true
+				}
+				continue
+			}
+			if strings.HasPrefix(arg, "-") {
+				continue
+			}
+			// A VCS or HTTP source can change independently of the pipeline.
+			// Unlike a local wheel or directory, it remains an unpinned upgrade.
+			if pipRemoteSource(arg) {
+				packageNamed = true
+				continue
+			}
+			if arg == "." || arg == ".." || strings.HasPrefix(arg, ".[") || strings.HasPrefix(arg, "..[") ||
+				strings.HasPrefix(arg, "./") || strings.HasPrefix(arg, "../") ||
+				strings.HasPrefix(arg, "/") || strings.HasPrefix(arg, "file:") ||
+				strings.HasSuffix(arg, ".whl") || strings.HasSuffix(arg, ".tar.gz") || strings.HasSuffix(arg, ".zip") {
+				continue
+			}
+			packageNamed = true
+		}
+		if upgrade && packageNamed {
+			return true
+		}
+	}
+	return false
 }
