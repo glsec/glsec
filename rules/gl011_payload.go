@@ -17,41 +17,90 @@ import (
 // stay below it (#1306).
 const minEmbeddedPayload = 60
 
+// payloadEncoding is the alphabet a decoder command reverses.
+type payloadEncoding int
+
+const (
+	encNone payloadEncoding = iota
+	encBase64
+	encBase32
+	encHex
+)
+
 // embeddedPayloadFindings reports a script line that decodes a long literal
-// base64 or hex payload into a file or a program other than a shell, such as
-// echo <base64> | base64 -d > /tmp/.c (#1306). Decoded into a shell, the line
-// is already reported as executing code; decoding a variable is left out.
+// base64, base32 or hex payload into a file or a program other than a shell,
+// such as echo <base64> | base64 -d > /tmp/.c (#1306). When the decoded file
+// is executed later in the same job (sh /tmp/.c), the finding is raised to an
+// execution error, since the run code is hidden from review (#1346). Decoded
+// straight into a shell, the line is already reported by isDownloadExecute;
+// decoding a variable is left out.
 func embeddedPayloadFindings(doc *yaml.Node, file string) []finding.Finding {
-	var findings []finding.Finding
-	EachScriptLine(doc, file, func(item *yaml.Node, file, job string) {
-		if !strings.Contains(item.Value, "base64") && !strings.Contains(item.Value, "xxd") {
-			return
+	// Cheap pass: the decode lines, and whether any job has one at all. Most
+	// pipelines have none, so the shell parsing below is skipped entirely.
+	type candidate struct {
+		node *yaml.Node
+		job  string
+	}
+	var candidates []candidate
+	EachScriptLine(doc, file, func(item *yaml.Node, _, job string) {
+		if strings.Contains(item.Value, "base64") ||
+			strings.Contains(item.Value, "base32") || strings.Contains(item.Value, "xxd") {
+			candidates = append(candidates, candidate{item, job})
 		}
+	})
+	if len(candidates) == 0 {
+		return nil
+	}
+
+	// The files each job runs as a script, to tell a decoded file that is
+	// executed later (error) from one that is only data (warn) (#1346).
+	executed := map[string]map[string]bool{}
+	EachScriptLine(doc, file, func(item *yaml.Node, _, job string) {
 		for _, l := range logicalLines(item.Value) {
-			if !decodesEmbeddedPayload(l.text) {
+			for _, path := range executedScriptPaths(l.text) {
+				if executed[job] == nil {
+					executed[job] = map[string]bool{}
+				}
+				executed[job][path] = true
+			}
+		}
+	})
+
+	var findings []finding.Finding
+	for _, c := range candidates {
+		for _, l := range logicalLines(c.node.Value) {
+			path, ok := embeddedPayloadFile(l.text)
+			if !ok {
 				continue
+			}
+			sev := finding.Warn
+			msg := fmt.Sprintf("script line decodes an embedded payload; its content is hidden from review — commit the decoded file in readable form, or download it and verify a checksum: %q", truncate(l.text, 80))
+			if path != "" && executed[c.job][path] {
+				sev = finding.Error
+				msg = fmt.Sprintf("script line decodes an embedded payload into %s, which the job runs as a script later; the executed code is hidden from review — commit it in readable form: %q", path, truncate(l.text, 80))
 			}
 			f := finding.Finding{
 				RuleID:   "GL011",
-				Severity: finding.Warn,
-				Job:      job,
-				Message:  fmt.Sprintf("script line decodes an embedded payload; its content is hidden from review — commit the decoded file in readable form, or download it and verify a checksum: %q", truncate(l.text, 80)),
+				Severity: sev,
+				Job:      c.job,
+				Message:  msg,
 				File:     file,
-				Line:     parser.ScalarContentLine(item, l.line),
+				Line:     parser.ScalarContentLine(c.node, l.line),
 			}
 			if l.line == 0 {
-				f.Col = item.Column
+				f.Col = c.node.Column
 			}
 			findings = append(findings, f)
 		}
-	})
+	}
 	return findings
 }
 
-// decodesEmbeddedPayload reports a pipeline that feeds a long encoded literal
+// embeddedPayloadFile reports a pipeline that feeds a long encoded literal
 // (echo, printf or a here-string) to a decoder whose output goes to a file or
-// another program, not to a shell or interpreter.
-func decodesEmbeddedPayload(line string) bool {
+// another program, not to a shell or interpreter. path is the file the decoded
+// bytes are written to, or "" when they go into another program.
+func embeddedPayloadFile(line string) (path string, ok bool) {
 	cmds := shellCommands(line)
 	for i := 0; i < len(cmds); {
 		j := i
@@ -61,51 +110,109 @@ func decodesEmbeddedPayload(line string) bool {
 		pipeline := cmds[i : j+1]
 		i = j + 1
 		for k, c := range pipeline {
-			words := commandWords(c.text)
-			hex, ok := payloadDecoder(words)
-			if !ok {
+			enc, isDecoder := payloadDecoder(commandWords(c.text))
+			if !isDecoder {
 				continue
 			}
-			literal := hereStringLiteral(c.text, hex)
+			literal := hereStringLiteral(c.text, enc)
 			if !literal && k > 0 {
-				literal = printsEncodedLiteral(commandWords(pipeline[k-1].text), hex)
+				literal = printsEncodedLiteral(commandWords(pipeline[k-1].text), enc)
 			}
 			if !literal {
 				continue
 			}
 			if k+1 < len(pipeline) {
 				// Into a shell or interpreter is executing code, which
-				// base64ExecRe and hexExecRe already report.
+				// isDownloadExecute already reports.
 				if interpreterNames[commandName(commandWords(pipeline[k+1].text))] {
 					continue
 				}
-				return true
+				return "", true // into another program (tar, tee): no later file to correlate
 			}
-			if writesToFile(c) {
-				return true
+			if target := fileRedirectTarget(c); target != "" {
+				return target, true
 			}
 		}
 	}
-	return false
+	return "", false
 }
 
-// interpreterNames are the programs that run decoded text as code.
+// interpreterNames are the programs that run decoded text as code when it is
+// piped into them.
 var interpreterNames = map[string]bool{
 	"sh": true, "bash": true, "dash": true, "zsh": true, "ksh": true, "ash": true,
 	"python": true, "python2": true, "python3": true, "ruby": true, "perl": true, "node": true,
 	"pwsh": true, "powershell": true, "source": true, ".": true, "eval": true,
 }
 
-// payloadDecoder reports a command that decodes base64 (base64 -d, --decode,
-// macOS -D, openssl base64 -d) or reverses a hex dump (xxd -r), and whether it
-// is the hex form.
-func payloadDecoder(words []string) (hex, ok bool) {
+// scriptInterpreters run a file given as their first non-option argument.
+var scriptInterpreters = map[string]bool{
+	"sh": true, "bash": true, "dash": true, "zsh": true, "ksh": true, "ash": true,
+	"python": true, "python2": true, "python3": true, "ruby": true, "perl": true, "node": true,
+}
+
+// executedScriptPaths returns the files a line runs as a script: the argument
+// of a shell/interpreter (sh f, bash -x f), and the target of . / source. A
+// -c/-e command string is not a file, and arguments after the script are its
+// data, not code, so `sh sweep data1 data2` runs only sweep (#1346).
+func executedScriptPaths(line string) []string {
+	var paths []string
+	for _, c := range shellCommands(line) {
+		words := commandWords(c.text)
+		name := commandName(words)
+		switch {
+		case name == "." || name == "source":
+			if len(words) > 1 {
+				paths = append(paths, words[1])
+			}
+		case scriptInterpreters[name]:
+			for idx := 1; idx < len(words); idx++ {
+				w := words[idx]
+				if w == "--" {
+					if idx+1 < len(words) {
+						paths = append(paths, words[idx+1])
+					}
+					break
+				}
+				if strings.HasPrefix(w, "-") {
+					if runsCommandString(w) {
+						break // -c/-e: the code is inline, not a file
+					}
+					continue
+				}
+				paths = append(paths, w)
+				break
+			}
+		}
+	}
+	return paths
+}
+
+// runsCommandString reports an interpreter flag whose value is an inline
+// command string rather than a script file: -c, -e, --eval and the like, also
+// bundled as in sh -xc.
+func runsCommandString(flag string) bool {
+	switch flag {
+	case "-c", "-e", "-E", "-p", "--eval", "--print", "--command":
+		return true
+	}
+	return len(flag) > 1 && flag[0] == '-' && flag[1] != '-' && strings.ContainsRune(flag[1:], 'c')
+}
+
+// payloadDecoder reports a command that decodes an encoded payload and the
+// alphabet it reverses: base64 (base64 -d/--decode, macOS -D, openssl base64
+// -d), base32 (base32 -d/--decode), or a hex dump (xxd -r).
+func payloadDecoder(words []string) (payloadEncoding, bool) {
 	switch commandName(words) {
-	case "base64":
+	case "base64", "base32":
+		enc := encBase64
+		if commandName(words) == "base32" {
+			enc = encBase32
+		}
 		for _, w := range words[1:] {
 			if w == "-d" || w == "--decode" || w == "-D" ||
 				len(w) > 2 && w[0] == '-' && w[1] != '-' && strings.ContainsAny(w[1:], "dD") {
-				return false, true
+				return enc, true
 			}
 		}
 	case "openssl":
@@ -118,27 +225,29 @@ func payloadDecoder(words []string) (hex, ok bool) {
 				hasDecode = true
 			}
 		}
-		return false, hasBase64 && hasDecode
+		if hasBase64 && hasDecode {
+			return encBase64, true
+		}
 	case "xxd":
 		for _, w := range words[1:] {
 			if len(w) > 1 && w[0] == '-' && w[1] != '-' && strings.ContainsRune(w[1:], 'r') {
-				return true, true
+				return encHex, true
 			}
 		}
 	}
-	return false, false
+	return encNone, false
 }
 
 // printsEncodedLiteral reports an echo or printf whose argument is a long
 // encoded literal; a variable or substitution in it doesn't count.
-func printsEncodedLiteral(words []string, hex bool) bool {
+func printsEncodedLiteral(words []string, enc payloadEncoding) bool {
 	switch commandName(words) {
 	case "echo", "printf":
 	default:
 		return false
 	}
 	for _, w := range words[1:] {
-		if isEncodedLiteral(w, hex) {
+		if isEncodedLiteral(w, enc) {
 			return true
 		}
 	}
@@ -147,19 +256,20 @@ func printsEncodedLiteral(words []string, hex bool) bool {
 
 // hereStringLiteral reports a decoder fed a long literal through a
 // here-string: base64 -d <<< "…".
-func hereStringLiteral(text string, hex bool) bool {
+func hereStringLiteral(text string, enc payloadEncoding) bool {
 	_, rest, ok := strings.Cut(text, "<<<")
 	if !ok {
 		return false
 	}
 	words := shellWords(rest)
-	return len(words) > 0 && isEncodedLiteral(words[0], hex)
+	return len(words) > 0 && isEncodedLiteral(words[0], enc)
 }
 
-// isEncodedLiteral reports a word of at least minEmbeddedPayload base64 or hex
-// characters and nothing else, with base64 padding allowed at the end.
-func isEncodedLiteral(w string, hex bool) bool {
-	if hex {
+// isEncodedLiteral reports a word of at least minEmbeddedPayload characters
+// from the encoding's alphabet and nothing else, with base64/base32 padding
+// allowed at the end.
+func isEncodedLiteral(w string, enc payloadEncoding) bool {
+	if enc == encHex {
 		w = strings.ReplaceAll(w, " ", "")
 	} else {
 		w = strings.TrimRight(w, "=")
@@ -168,24 +278,34 @@ func isEncodedLiteral(w string, hex bool) bool {
 		return false
 	}
 	for i := 0; i < len(w); i++ {
-		c := w[i]
-		switch {
-		case '0' <= c && c <= '9', 'a' <= c && c <= 'f', 'A' <= c && c <= 'F':
-		case !hex && ('g' <= c && c <= 'z' || 'G' <= c && c <= 'Z' || c == '+' || c == '/'):
-		default:
+		if !encodingChar(w[i], enc) {
 			return false
 		}
 	}
 	return true
 }
 
-// writesToFile reports a command whose output goes to a file: a > or >>
-// redirection other than /dev/null or the standard streams.
-func writesToFile(c shellCommand) bool {
+// encodingChar reports whether c is in the encoding's alphabet.
+func encodingChar(c byte, enc payloadEncoding) bool {
+	hexDigit := '0' <= c && c <= '9' || 'a' <= c && c <= 'f' || 'A' <= c && c <= 'F'
+	switch enc {
+	case encHex:
+		return hexDigit
+	case encBase32:
+		// RFC 4648: A–Z and 2–7 (either case tolerated).
+		return 'A' <= c && c <= 'Z' || 'a' <= c && c <= 'z' || '2' <= c && c <= '7'
+	default: // encBase64
+		return '0' <= c && c <= '9' || 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || c == '+' || c == '/'
+	}
+}
+
+// fileRedirectTarget returns the file a command's output is redirected to, or
+// "" for none or only /dev/null and the standard streams.
+func fileRedirectTarget(c shellCommand) string {
 	for _, target := range rcRedirectTargets(c.text) {
 		if target != "/dev/null" && !strings.HasPrefix(target, "/dev/std") {
-			return true
+			return strings.Trim(target, `"'`)
 		}
 	}
-	return false
+	return ""
 }
