@@ -7,7 +7,6 @@ import (
 	"net"
 	"net/url"
 	"path"
-	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -22,7 +21,7 @@ var GL020 = &gl020{}
 func (r *gl020) ID() string { return "GL020" }
 
 // checksumRe matches checksum/signature verification commands.
-var checksumRe = regexp.MustCompile(`\b(?:sha(?:256|512|1|224|384)sum|shasum|md5sum|gpg\s+--verify|cosign\s+verify|openssl\s+dgst)\b`)
+var checksumRe = mustCompilePrefiltered(`\b(?:sha(?:256|512|1|224|384)sum|shasum|md5sum|gpg\s+--verify|cosign\s+verify|openssl\s+dgst)\b`)
 
 func (r *gl020) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
@@ -135,7 +134,7 @@ func firstSavedDownload(script string) int {
 // ownProjectURLRe matches a URL of the project the pipeline runs for: its web
 // URL or its API path. Another project on the same instance may belong to
 // someone else.
-var ownProjectURLRe = regexp.MustCompile(`^\$\{?CI_PROJECT_URL\}?(?:/|$)|^\$\{?CI_API_V4_URL\}?/projects/\$\{?CI_PROJECT_ID\}?(?:/|$)`)
+var ownProjectURLRe = mustCompilePrefiltered(`^\$\{?CI_PROJECT_URL\}?(?:/|$)|^\$\{?CI_API_V4_URL\}?/projects/\$\{?CI_PROJECT_ID\}?(?:/|$)`)
 
 // fromOwnInstance reports a download from the pipeline's own project: job
 // artifacts, packages and repository files that the project's access control
@@ -243,7 +242,7 @@ func withoutWrapper(words []string) []string {
 }
 
 // redirectToFileRe matches stdout redirected to a file other than /dev/null.
-var redirectToFileRe = regexp.MustCompile(`(?:^|[^0-9&>])>>?\s*(?:[^&\s/>]|/[^d\s]|/d[^e])`)
+var redirectToFileRe = mustCompilePrefiltered(`(?:^|[^0-9&>])>>?\s*(?:[^&\s/>]|/[^d\s]|/d[^e])`)
 
 // extractors unpack what they read from stdin onto disk.
 var extractors = map[string]bool{

@@ -4,7 +4,6 @@
 package rules
 
 import (
-	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -20,10 +19,10 @@ func (r *gl079) ID() string { return "GL079" }
 var (
 	// pipInstallRe matches a pip install invocation (pip, pip3, pip2, or
 	// `python -m pip install`).
-	pipInstallRe = regexp.MustCompile(`\bpip[0-9]*\s+install\b`)
+	pipInstallRe = mustCompilePrefiltered(`\bpip[0-9]*\s+install\b`)
 	// extraIndexRe matches pip's --extra-index-url flag, which adds a package
 	// index in addition to the default one.
-	extraIndexRe = regexp.MustCompile(`--extra-index-url(?:[=\s]|$)`)
+	extraIndexRe = mustCompilePrefiltered(`--extra-index-url(?:[=\s]|$)`)
 )
 
 func (r *gl079) Check(doc *yaml.Node, file string) []finding.Finding {

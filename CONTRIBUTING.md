@@ -226,6 +226,8 @@ Shared helpers live in `rules/helpers.go` and `rules/shell.go` (and `runsInherit
 | `CollectJobScriptLines(job)` | All scalar script lines of a single job |
 | `shellCommands(item)` | Splits a script item into simple commands, respecting quotes, escapes, comments and here-documents |
 | `commandWords(text)` / `commandName(words)` | The words of a command without keywords, assignments, `env` and quotes, and the base name of the program it runs |
+| `commandEnvironment(text)` | A command's assignments by scope: `local` ones before a program apply to that command only, `persistent` ones (`export X=1`, or a command of assignments only) to the commands after it in the same shell |
+| `printsOnly(cmd, words)` | `echo`/`printf` without an output redirection to a file: what it prints is text, not a command or a setting |
 | `logicalLines(item)` | The lines of an item, joining backslash continuations, with the index of the line each starts on |
 | `parser.ScalarContentLine(item, i)` | The source line of the item's `i`-th line, so a finding inside a `\|` block points at the line that triggers it |
 
@@ -514,6 +516,8 @@ A finding from the [precision review](RELEASING.md) that a fix changes goes into
 
 `TestMetamorphicWrappers` runs every single script line of the fixtures under `timeout 600`, `nice -n 10`, `sudo` and `sudo -Hu node` and fails when a rule loses a finding. Read the command with `commandWords`, which goes through wrappers, or use `unwrappedLine` when a rule finds the command position with a regular expression.
 
+`TestSemanticLayouts` writes the same commands into a job as separate list items, joined with `;`, one per line in a block, and with a command continued over two lines, and checks that the shell rules report the same findings on the line where the command starts. A rule that matches whole lines instead of commands fails it. Add a case when a rule starts reading commands.
+
 ```sh
 go test ./cmd/glsec -run TestMetamorphic
 ```
@@ -531,6 +535,8 @@ benchstat old.txt new.txt
 `BenchmarkParse`, `BenchmarkRules` and `BenchmarkRun` use a pipeline of 2,000 jobs with `extends:` and `!reference` chains, anchors, long script blocks and a very long line.
 
 The collector stays relaxed until `run` starts, because the regexps compiled during package initialisation live until the process exits (`internal/gctune`). Measure startup with `GODEBUG=inittrace=1 glsec --version`, which prints the time and allocations of each package.
+
+A `mustCompilePrefiltered` expression compiles on first use, only once its prefilter literal is in the input, and its literals come from `rules/prefilter_table.go`, generated at build time instead of parsed at start (#1329). After adding or changing one, run `go generate ./rules`; `TestPrefilterTableCurrent` fails with that hint when the table is stale, and `TestPrefilteredCompile` compiles every expression, so a typo still fails in CI. Package-level expressions in `rules/` use `mustCompilePrefiltered` rather than `regexp.MustCompile`, with or without a literal, so none of them compiles at start (#1334); `TestNoPackageLevelMustCompile` enforces it. An expression built at run time from input stays `regexp.MustCompile`.
 
 The pipelines have limits of their own. Every job sets `timeout-minutes`, three to four times its usual duration, and a test fails when one is missing. A job that calls a reusable workflow can't set one; the jobs inside it do.
 

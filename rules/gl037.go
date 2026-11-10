@@ -4,7 +4,6 @@
 package rules
 
 import (
-	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -95,7 +94,7 @@ func collectForwardedSecrets(node *yaml.Node, out map[string]bool) {
 }
 
 // secretRefRe matches a variable reference; group 1 is the name.
-var secretRefRe = regexp.MustCompile(`\$\{?([A-Za-z_][A-Za-z0-9_]*)`)
+var secretRefRe = mustCompilePrefiltered(`\$\{?([A-Za-z_][A-Za-z0-9_]*)`)
 
 // inheritsAnyOf reports whether a trigger job's inherit:variables value lets
 // any of the named top-level variables through.

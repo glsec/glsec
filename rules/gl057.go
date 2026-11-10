@@ -5,7 +5,6 @@ package rules
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -20,7 +19,7 @@ func (r *gl057) ID() string { return "GL057" }
 
 // capAddRe captures the capability passed to a --cap-add flag (space or =
 // separated). The value may carry a CAP_ prefix and any case.
-var capAddRe = regexp.MustCompile(`--cap-add[=\s]+([A-Za-z_]+)`)
+var capAddRe = mustCompilePrefiltered(`--cap-add[=\s]+([A-Za-z_]+)`)
 
 // dangerousCaps are individual Linux capabilities that meaningfully expand the
 // container's ability to affect the host. Granting any of these is flagged.

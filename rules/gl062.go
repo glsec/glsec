@@ -5,7 +5,6 @@ package rules
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -28,7 +27,7 @@ func (r *gl062) ID() string { return "GL062" }
 // `export FOO=bar`, `declare -a arr=(…)` and `Get-ChildItem env:PATH` are not
 // matched.
 // (?m): in a multi-line block the command can be on any line (#975).
-var envFullDumpRe = regexp.MustCompile(`(?m)(?:^|[;&|(])\s*(?:/usr/bin/|/bin/)?(` +
+var envFullDumpRe = mustCompilePrefiltered(`(?m)(?:^|[;&|(])\s*(?:/usr/bin/|/bin/)?(` +
 	`printenv|env(?:\s+(?:-0|--null))?|` +
 	`cat\s+/proc/(?:self|\$\$|[0-9]+)/environ|` +
 	`set|export(?:\s+-p)?|(?:declare|typeset)(?:\s+-[px]+)?|` +
@@ -156,14 +155,14 @@ func (r *gl062) Check(doc *yaml.Node, file string) []finding.Finding {
 var (
 	// psFileWriteRe matches a cmdlet that takes the pipeline's output to a
 	// file. Tee-Object writes to the log as well, so it isn't one.
-	psFileWriteRe = regexp.MustCompile(`(?i)^(?:out-file|set-content|add-content)\b`)
+	psFileWriteRe = mustCompilePrefiltered(`(?i)^(?:out-file|set-content|add-content)\b`)
 	// psSelectStringRe matches Select-String with one pattern and no other
 	// option. Group 1 is the pattern.
-	psSelectStringRe = regexp.MustCompile(`(?i)^(?:select-string|sls)\s+(?:-pattern\s+)?["']?([^\s"']+)["']?$`)
+	psSelectStringRe = mustCompilePrefiltered(`(?i)^(?:select-string|sls)\s+(?:-pattern\s+)?["']?([^\s"']+)["']?$`)
 	// psWhereNameRe matches Where-Object on the name alone, as a comparison
 	// or a script block. A test of $_.Value selects by content, and anything
 	// more than one comparison doesn't match.
-	psWhereNameRe = regexp.MustCompile(`(?i)^(?:where-object|where|\?)\s+(?:name\s+-i?(?:eq|match|like)\s+["']?([^\s"']+)["']?|\{\s*\$_\.name\s+-i?(?:eq|match|like)\s+["']?([^\s"']+)["']?\s*\})$`)
+	psWhereNameRe = mustCompilePrefiltered(`(?i)^(?:where-object|where|\?)\s+(?:name\s+-i?(?:eq|match|like)\s+["']?([^\s"']+)["']?|\{\s*\$_\.name\s+-i?(?:eq|match|like)\s+["']?([^\s"']+)["']?\s*\})$`)
 )
 
 // envFilter returns the filter in a pipeline stage after a dump, named for the
@@ -274,8 +273,8 @@ func narrowEnvName(pattern string) bool {
 	return true
 }
 
-var envFilterNameRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]{2,}$`)
+var envFilterNameRe = mustCompilePrefiltered(`^[A-Za-z_][A-Za-z0-9_]{2,}$`)
 
 // stdoutRedirectRe matches stdout redirected to a file (> f, >> f, 1> f),
 // not 2> or >&2.
-var stdoutRedirectRe = regexp.MustCompile(`(?:^|[^0-9&>])1?>>?\s*[^&\s]`)
+var stdoutRedirectRe = mustCompilePrefiltered(`(?:^|[^0-9&>])1?>>?\s*[^&\s]`)

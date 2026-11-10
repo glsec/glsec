@@ -4,7 +4,6 @@
 package rules
 
 import (
-	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -23,16 +22,16 @@ func (r *gl025) ID() string { return "GL025" }
 // is not one: it holds only [a-z0-9-], so it can't add a path segment, a query
 // or a field (#1055). CI_COMMIT_TAG is also excluded: creating a tag requires
 // push access, which a fork merge-request contributor does not have (#1097).
-var userControlledVarRe = regexp.MustCompile(
+var userControlledVarRe = mustCompilePrefiltered(
 	`\$\{?CI_(?:COMMIT_REF_NAME|COMMIT_BRANCH|COMMIT_MESSAGE|COMMIT_TITLE|COMMIT_DESCRIPTION|MERGE_REQUEST_SOURCE_BRANCH_NAME|MERGE_REQUEST_TITLE)\}?`,
 )
 
 // curlWgetRe matches curl or wget invocations.
-var curlWgetRe = regexp.MustCompile(`\b(?:curl|wget)\b`)
+var curlWgetRe = mustCompilePrefiltered(`\b(?:curl|wget)\b`)
 
 // urlEncodedArgRe matches a --data-urlencode argument. curl percent-encodes
 // its value, so a variable there can't change the host, path or other fields.
-var urlEncodedArgRe = regexp.MustCompile(`--data-urlencode(?:=|\s+)(?:"[^"]*"|'[^']*'|\S+)`)
+var urlEncodedArgRe = mustCompilePrefiltered(`--data-urlencode(?:=|\s+)(?:"[^"]*"|'[^']*'|\S+)`)
 
 func (r *gl025) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
@@ -69,11 +68,11 @@ func (r *gl025) Check(doc *yaml.Node, file string) []finding.Finding {
 
 // shellAssignRe matches a shell variable assignment at the start of a line, with
 // an optional export. Group 1 is the name, group 2 the value.
-var shellAssignRe = regexp.MustCompile(`^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$`)
+var shellAssignRe = mustCompilePrefiltered(`^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$`)
 
 // sanitiserRe matches the usual ways to strip or encode a value before it goes
 // into a URL: deleting all but a safe character set, sed, or jq's @uri.
-var sanitiserRe = regexp.MustCompile(`\btr\s+-(?:cd|dc)\b|\bsed\b|@uri\b`)
+var sanitiserRe = mustCompilePrefiltered(`\btr\s+-(?:cd|dc)\b|\bsed\b|@uri\b`)
 
 // userVarInRequest returns the first user-controlled variable used in a curl
 // or wget command in script, or "", and the index of the line it is on. Each shell line is checked on its own
@@ -119,7 +118,7 @@ func userVarInRequest(script string) (string, int) {
 }
 
 // shellVarRefRe matches a shell variable reference; group 1 is the name.
-var shellVarRefRe = regexp.MustCompile(`\$\{?([A-Za-z_][A-Za-z0-9_]*)`)
+var shellVarRefRe = mustCompilePrefiltered(`\$\{?([A-Za-z_][A-Za-z0-9_]*)`)
 
 // taintedRef returns the user-controlled variable behind the first reference
 // in s to a tainted shell variable, or "".

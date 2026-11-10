@@ -5,6 +5,7 @@ package rules
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -208,5 +209,76 @@ renovate:
 		if got := checkRule(t, GL089, fmt.Sprintf(src, tc.inherit)); len(got) != tc.want {
 			t.Errorf("inherit %s: got %d findings, want %d: %v", tc.inherit, len(got), tc.want, got)
 		}
+	}
+}
+
+func TestGL089_InlineEnvironmentOverrides(t *testing.T) {
+	for _, tc := range []struct {
+		name, inherited, script string
+		want                    int
+	}{
+		{"inline enables", "", `RENOVATE_AUTODISCOVER=true renovate`, 1},
+		{"inline enables wrapped npx", "", `RENOVATE_AUTODISCOVER=true npx --yes renovate`, 1},
+		{"inline enables wrapped pnpm", "", `RENOVATE_AUTODISCOVER=true pnpm dlx renovate`, 1},
+		{"inline enables wrapped bunx", "", `RENOVATE_AUTODISCOVER=true bunx renovate`, 1},
+		{"inline enables via path", "", `RENOVATE_AUTODISCOVER=true ./bin/renovate`, 1},
+		{"inline disables inherited", `RENOVATE_AUTODISCOVER: "true"`, `RENOVATE_AUTODISCOVER=false renovate`, 0},
+		{"inline empty disables inherited", `RENOVATE_AUTODISCOVER: "true"`, `RENOVATE_AUTODISCOVER= renovate`, 0},
+		{"inline filter limits inherited", `RENOVATE_AUTODISCOVER: "true"`, `RENOVATE_AUTODISCOVER_FILTER=my-group/* renovate`, 0},
+		{"inline empty filter overrides inherited", "RENOVATE_AUTODISCOVER_FILTER: my-group/*", `RENOVATE_AUTODISCOVER_FILTER= renovate --autodiscover`, 1},
+		{"inline empty filter also overrides with YAML autodiscovery", "RENOVATE_AUTODISCOVER: \"true\"\n  RENOVATE_AUTODISCOVER_FILTER: my-group/*", `RENOVATE_AUTODISCOVER_FILTER= renovate`, 1},
+		{"CLI flag enables despite inline off", "", `RENOVATE_AUTODISCOVER=false renovate --autodiscover`, 1},
+		{"CLI flag disables despite inline on", "", `RENOVATE_AUTODISCOVER=true renovate --autodiscover=false`, 0},
+		{"CLI filter limits inline on", "", `RENOVATE_AUTODISCOVER=true renovate --autodiscover-filter=my-group/*`, 0},
+		{"inline enable does not leak", "", `RENOVATE_AUTODISCOVER=true renovate --autodiscover-filter=my-group/*; renovate`, 0},
+		{"inline filter does not leak", "", `RENOVATE_AUTODISCOVER_FILTER=my-group/* renovate --autodiscover; renovate --autodiscover`, 1},
+		{"inline disable does not leak", `RENOVATE_AUTODISCOVER: "true"`, `RENOVATE_AUTODISCOVER=false renovate; renovate`, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			src := "job:\n"
+			wantLine := 3
+			if tc.inherited != "" {
+				src += "  variables:\n    " + tc.inherited + "\n"
+				wantLine += 2 + strings.Count(tc.inherited, "\n")
+			}
+			src += "  script:\n    - '" + tc.script + "'\n"
+			f := findings089(t, src)
+			if len(f) != tc.want {
+				t.Fatalf("got %d findings, want %d: %+v", len(f), tc.want, f)
+			}
+			if tc.want > 0 && (f[0].RuleID != "GL089" || f[0].Severity != finding.Warn || f[0].Job != "job" || f[0].Line != wantLine) {
+				t.Errorf("unexpected finding: %+v", f[0])
+			}
+		})
+	}
+}
+
+// Renovate is found command by command: on a later line of a block, right
+// before a ;, or continued over two lines, and the finding is on the line
+// where the command starts. An inline setting stays with its own command
+// (#1325).
+func TestGL089_CommandLevel(t *testing.T) {
+	const head = "variables:\n  RENOVATE_AUTODISCOVER: \"true\"\njob:\n  script:\n"
+	for name, tc := range map[string]struct {
+		script string
+		line   int
+	}{
+		"later block line":   {"    - |\n      echo start\n      renovate --autodiscover\n", 7},
+		"before semicolon":   {"    - renovate --autodiscover; echo done\n", 5},
+		"bare before ;":      {"    - echo start; renovate; echo done\n", 5},
+		"continued":          {"    - |\n      echo start\n      renovate \\\n        --autodiscover\n", 7},
+		"after and":          {"    - echo start && renovate\n", 5},
+		"inline then second": {"    - RENOVATE_AUTODISCOVER=false renovate && renovate\n", 5},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := findings089(t, head+tc.script)
+			if len(f) != 1 || f[0].Line != tc.line {
+				t.Fatalf("got %v, want one finding on line %d\n%s", f, tc.line, head+tc.script)
+			}
+		})
+	}
+	// The disabled invocation alone reports nothing.
+	if f := findings089(t, head+"    - RENOVATE_AUTODISCOVER=false renovate; echo done\n"); len(f) != 0 {
+		t.Errorf("inline disable: got %v, want none", f)
 	}
 }

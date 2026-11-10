@@ -5,7 +5,6 @@ package rules
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -26,7 +25,7 @@ var (
 	// variable names are case insensitive, so the env: prefix and the
 	// token name match in any case. A lowercase POSIX reference
 	// ($ci_job_token) is a different variable and does not match.
-	jobTokenPattern = regexp.MustCompile(`\$\{?CI_JOB_TOKEN\}?|\$(?i:\{?env:CI_JOB_TOKEN\}?)`)
+	jobTokenPattern = mustCompilePrefiltered(`\$\{?CI_JOB_TOKEN\}?|\$(?i:\{?env:CI_JOB_TOKEN\}?)`)
 )
 
 func (r *gl004) Check(doc *yaml.Node, file string) []finding.Finding {
@@ -117,8 +116,8 @@ func urlHost(word string) string {
 }
 
 var (
-	urlWordRe = regexp.MustCompile(`^(?i:https?)://(.+)$`)
-	hostRe    = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.\-]*$`)
+	urlWordRe = mustCompilePrefiltered(`^(?i:https?)://(.+)$`)
+	hostRe    = mustCompilePrefiltered(`^[A-Za-z0-9][A-Za-z0-9.\-]*$`)
 )
 
 // gitLabShapes are the markers of a GitLab API, job-artifact or trigger URL.

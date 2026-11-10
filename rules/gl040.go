@@ -4,8 +4,6 @@
 package rules
 
 import (
-	"regexp"
-
 	"github.com/glsec/glsec/internal/finding"
 	"gopkg.in/yaml.v3"
 )
@@ -19,10 +17,10 @@ func (r *gl040) ID() string { return "GL040" }
 // ftpURLRe matches ftp:// (case-insensitive) but not ftps:// or sftp://.
 // \bftp:// won't match sftp:// (no word boundary before ftp in sftp)
 // and won't match ftps:// because ftps != ftp followed by ://.
-var ftpURLRe = regexp.MustCompile(`(?i)\bftp://`)
+var ftpURLRe = mustCompilePrefiltered(`(?i)\bftp://`)
 
 // sslReqdRe matches curl's --ssl-reqd flag which upgrades ftp:// to explicit TLS.
-var sslReqdRe = regexp.MustCompile(`--ssl-reqd`)
+var sslReqdRe = mustCompilePrefiltered(`--ssl-reqd`)
 
 func (r *gl040) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding

@@ -5,7 +5,6 @@ package rules
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -18,11 +17,6 @@ type gl024 struct{}
 var GL024 = &gl024{}
 
 func (r *gl024) ID() string { return "GL024" }
-
-var (
-	// pipefailRe matches a line that enables pipefail.
-	pipefailRe = regexp.MustCompile(`\bpipefail\b`)
-)
 
 // gl024Line is the result for one script line: how many pipelines a new
 // shell runs without pipefail, where the first starts, and the command that
@@ -93,7 +87,7 @@ func gl024Scan(script string) gl024Line {
 			continue
 		}
 		via, inner, errexit, ok := childShellScript(commandWords(cmd.text))
-		if !ok || pipefailRe.MatchString(inner) || !needsPipefail(inner, errexit || errexitRe.MatchString(inner)) {
+		if !ok || !needsPipefail(inner, errexit) {
 			continue
 		}
 		if res.count == 0 {
@@ -104,9 +98,6 @@ func gl024Scan(script string) gl024Line {
 	return res
 }
 
-// errexitRe matches set -e, also bundled (set -eu) or spelled set -o errexit.
-var errexitRe = regexp.MustCompile(`\bset\s+(?:-[a-zA-Z]*e[a-zA-Z]*\b|-o\s+errexit\b)`)
-
 // needsPipefail reports whether a script has a pipeline whose status counts
 // and whose earlier commands can fail unnoticed. Without errexit, the status
 // of a pipeline counts only when it is the script's last command or && tests
@@ -116,6 +107,7 @@ var errexitRe = regexp.MustCompile(`\bset\s+(?:-[a-zA-Z]*e[a-zA-Z]*\b|-o\s+errex
 // those inside a command substitution, whose status is lost.
 func needsPipefail(script string, errexit bool) bool {
 	cmds := shellCommands(maskCasePatterns(script))
+	pipefailEnabled := false
 	for i := 0; i < len(cmds); {
 		j := i
 		for j < len(cmds)-1 && cmds[j].piped {
@@ -124,8 +116,18 @@ func needsPipefail(script string, errexit bool) bool {
 		pipeline := cmds[i : j+1]
 		i = j + 1
 		last := pipeline[len(pipeline)-1]
+		if len(pipeline) == 1 {
+			if enabled, changed := pipefailSetting(last.text); changed {
+				pipefailEnabled = enabled
+			}
+			// Like pipefail, errexit counts from the set command on, and only
+			// as a command: echo "set -e" or a later set +e don't (#1325).
+			if enabled, changed := errexitSetting(last.text); changed {
+				errexit = enabled
+			}
+		}
 		switch {
-		case len(pipeline) < 2, last.orElse, isCondition(pipeline[0].text), isQuietGrep(last.text),
+		case len(pipeline) < 2, pipefailEnabled, last.orElse, isCondition(pipeline[0].text), isQuietGrep(last.text),
 			opensSubstitution(pipeline[0].text),
 			!errexit && i < len(cmds) && !last.andThen:
 			continue
@@ -137,6 +139,79 @@ func needsPipefail(script string, errexit bool) bool {
 		}
 	}
 	return false
+}
+
+// pipefailSetting reports an effective `set -o pipefail`, bundled `set -euo
+// pipefail`, or `shopt -so pipefail` setting (and their disabling forms).
+// Mentions in echo output, comments or quoted data are not settings.
+func pipefailSetting(text string) (enabled, changed bool) {
+	words := commandWords(text)
+	switch commandName(words) {
+	case "set":
+		for i := 1; i+1 < len(words); i++ {
+			option := words[i]
+			if words[i+1] == "pipefail" && len(option) >= 2 &&
+				(option[0] == '-' || option[0] == '+') && strings.HasSuffix(option, "o") {
+				return option[0] == '-', true
+			}
+		}
+	case "shopt":
+		// Bash's shopt -so/-uo sets or unsets a `set -o` option.
+		for i := 1; i < len(words); i++ {
+			if words[i] != "pipefail" {
+				continue
+			}
+			var hasO bool
+			var action byte
+			for _, option := range words[1:i] {
+				if !strings.HasPrefix(option, "-") {
+					continue
+				}
+				for j := 1; j < len(option); j++ {
+					switch option[j] {
+					case 'o':
+						hasO = true
+					case 's', 'u':
+						action = option[j]
+					}
+				}
+			}
+			if hasO && action != 0 {
+				return action == 's', true
+			}
+		}
+	}
+	return false, false
+}
+
+// errexitSetting reports an effective set -e, bundled (set -eu, set -euo
+// pipefail) or spelled set -o errexit, and their disabling forms (set +e,
+// set +o errexit). The last option that touches errexit wins.
+func errexitSetting(text string) (enabled, changed bool) {
+	words := commandWords(text)
+	if commandName(words) != "set" {
+		return false, false
+	}
+	for i := 1; i < len(words); i++ {
+		w := words[i]
+		if w == "--" {
+			break
+		}
+		if len(w) < 2 || w[0] != '-' && w[0] != '+' {
+			continue
+		}
+		if (w == "-o" || w == "+o") && i+1 < len(words) {
+			if words[i+1] == "errexit" {
+				enabled, changed = w[0] == '-', true
+			}
+			i++
+			continue
+		}
+		if isFlagCluster(w[1:]) && strings.ContainsRune(w[1:], 'e') {
+			enabled, changed = w[0] == '-', true
+		}
+	}
+	return enabled, changed
 }
 
 // opensSubstitution reports whether text leaves a $( or backtick open: the

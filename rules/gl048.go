@@ -4,8 +4,6 @@
 package rules
 
 import (
-	"regexp"
-
 	"github.com/glsec/glsec/internal/finding"
 	"gopkg.in/yaml.v3"
 )
@@ -19,7 +17,7 @@ func (r *gl048) ID() string { return "GL048" }
 // sshStrictHostCheckingRe matches any script line that disables SSH host key
 // verification, either via command-line option (-o StrictHostKeyChecking=no/off)
 // or by writing the option into an SSH config file.
-var sshStrictHostCheckingRe = regexp.MustCompile(`StrictHostKeyChecking[=\s]+(no|off)\b`)
+var sshStrictHostCheckingRe = mustCompilePrefiltered(`StrictHostKeyChecking[=\s]+(no|off)\b`)
 
 func (r *gl048) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding

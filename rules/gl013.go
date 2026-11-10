@@ -5,7 +5,6 @@ package rules
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 	"unicode"
 
@@ -187,13 +186,13 @@ func deploysToEnvironment(env *yaml.Node) bool {
 var (
 	// mrSourceRe matches an operand that requires a merge request pipeline
 	// by its source, in either operand order.
-	mrSourceRe = regexp.MustCompile(`^(?:\$\{?CI_PIPELINE_SOURCE\}?\s*(?:==\s*["']merge_request_event["']|=~\s*/[^/]*merge_request[^/]*/[a-z]*)|["']merge_request_event["']\s*==\s*\$\{?CI_PIPELINE_SOURCE\}?)$`)
+	mrSourceRe = mustCompilePrefiltered(`^(?:\$\{?CI_PIPELINE_SOURCE\}?\s*(?:==\s*["']merge_request_event["']|=~\s*/[^/]*merge_request[^/]*/[a-z]*)|["']merge_request_event["']\s*==\s*\$\{?CI_PIPELINE_SOURCE\}?)$`)
 	// mrVarRe matches an operand that tests a merge request variable for
 	// presence or a value; these are only set in merge request pipelines.
-	mrVarRe = regexp.MustCompile(`^(?:\$\{?CI_MERGE_REQUEST_\w+\}?(?:\s*(?:==|=~)\s*(.+))?|(["'][^"']*["'])\s*==\s*\$\{?CI_MERGE_REQUEST_\w+\}?)$`)
+	mrVarRe = mustCompilePrefiltered(`^(?:\$\{?CI_MERGE_REQUEST_\w+\}?(?:\s*(?:==|=~)\s*(.+))?|(["'][^"']*["'])\s*==\s*\$\{?CI_MERGE_REQUEST_\w+\}?)$`)
 	// branchOrTagRe matches an operand that tests the branch or tag of a
 	// branch or tag pipeline; both are unset in a merge request pipeline.
-	branchOrTagRe = regexp.MustCompile(`\$\{?CI_COMMIT_(?:BRANCH|TAG)\b`)
+	branchOrTagRe = mustCompilePrefiltered(`\$\{?CI_COMMIT_(?:BRANCH|TAG)\b`)
 )
 
 // runsOnlyInMRPipelines reports whether every rule that lets the job run

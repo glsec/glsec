@@ -562,3 +562,68 @@ publish:
 		t.Errorf("job doesn't run default:before_script, got %v", got)
 	}
 }
+
+// A protective setting counts only when it takes effect for the install:
+// printed text is not a setting, an assignment in front of another command
+// applies to that command only, a reset undoes it, and a child shell's
+// setting ends with the child (#1301, #1325).
+func TestGL090_EffectiveSetting(t *testing.T) {
+	job := func(lines ...string) string {
+		var b strings.Builder
+		b.WriteString("publish:\n  script:\n")
+		for _, l := range lines {
+			fmt.Fprintf(&b, "    - %q\n", l)
+		}
+		return b.String()
+	}
+	for name, tc := range map[string]struct {
+		lines []string
+		want  int
+	}{
+		// #1301 reproductions.
+		"printed config text":       {[]string{`echo "npm config set ignore-scripts true"`, "npm ci", "npm publish"}, 1},
+		"local to another command":  {[]string{"NPM_CONFIG_IGNORE_SCRIPTS=true npm --version", "npm ci", "npm publish"}, 1},
+		"set then reset":            {[]string{"npm config set ignore-scripts true", "npm config set ignore-scripts false", "npm ci", "npm publish"}, 1},
+		"exported then unset":       {[]string{"export NPM_CONFIG_IGNORE_SCRIPTS=true", "unset NPM_CONFIG_IGNORE_SCRIPTS", "npm ci", "npm publish"}, 1},
+		"local reset on install":    {[]string{"export NPM_CONFIG_IGNORE_SCRIPTS=true", "NPM_CONFIG_IGNORE_SCRIPTS=false npm ci", "npm publish"}, 1},
+		"printf to stdout":          {[]string{"printf 'ignore-scripts=true\\n' > /dev/null", "npm ci", "npm publish"}, 1},
+		"python printed setting":    {[]string{`echo "PIP_ONLY_BINARY=:all:"`, "pip install -r requirements.txt", "twine upload dist/*"}, 1},
+		"python local to --version": {[]string{"PIP_ONLY_BINARY=:all: pip --version", "pip install -r requirements.txt", "twine upload dist/*"}, 1},
+		"child shell export ends":   {[]string{`bash -c "export NPM_CONFIG_IGNORE_SCRIPTS=true"`, "npm ci", "npm publish"}, 1},
+		// Settings that do take effect stay silent.
+		"install argument":       {[]string{"npm ci --ignore-scripts", "npm publish"}, 0},
+		"assignment on install":  {[]string{"NPM_CONFIG_IGNORE_SCRIPTS=true npm ci", "npm publish"}, 0},
+		"env on install":         {[]string{"env NPM_CONFIG_IGNORE_SCRIPTS=true npm ci", "npm publish"}, 0},
+		"exported":               {[]string{"export NPM_CONFIG_IGNORE_SCRIPTS=true", "npm ci", "npm publish"}, 0},
+		"bare assignment":        {[]string{"NPM_CONFIG_IGNORE_SCRIPTS=true", "npm ci", "npm publish"}, 0},
+		"npm config set":         {[]string{"npm config set ignore-scripts true", "npm ci", "npm publish"}, 0},
+		"echo into .npmrc":       {[]string{`echo "ignore-scripts=true" >> .npmrc`, "npm ci", "npm publish"}, 0},
+		"yarn config":            {[]string{"yarn config set enableScripts false", "yarn install", "npm publish"}, 0},
+		"python exported":        {[]string{"export PIP_ONLY_BINARY=:all:", "pip install -r requirements.txt", "twine upload dist/*"}, 0},
+		"pip config":             {[]string{"pip config set global.only-binary :all:", "pip install -r requirements.txt", "twine upload dist/*"}, 0},
+		"child shell same scope": {[]string{`bash -c "export NPM_CONFIG_IGNORE_SCRIPTS=true; npm ci"`, "npm publish"}, 0},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if f := findings090(t, job(tc.lines...)); len(f) != tc.want {
+				t.Errorf("got %d findings %v, want %d", len(f), f, tc.want)
+			}
+		})
+	}
+}
+
+// A setting in one job doesn't reach another.
+func TestGL090_SettingStaysInItsJob(t *testing.T) {
+	f := findings090(t, `protected:
+  script:
+    - export NPM_CONFIG_IGNORE_SCRIPTS=true
+    - npm ci
+    - npm publish
+open:
+  script:
+    - npm ci
+    - npm publish
+`)
+	if len(f) != 1 || f[0].Job != "open" {
+		t.Fatalf("got %v, want one finding in job open", f)
+	}
+}

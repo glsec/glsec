@@ -5,7 +5,6 @@ package rules
 
 import (
 	"fmt"
-	"regexp"
 
 	"github.com/glsec/glsec/internal/finding"
 	"gopkg.in/yaml.v3"
@@ -19,7 +18,7 @@ func (r *gl036) ID() string { return "GL036" }
 
 // connStringRe matches a URL with embedded userinfo where the password does not start with $.
 // Handles both "user:pass@" and ":pass@" (empty username, common in Redis URLs).
-var connStringRe = regexp.MustCompile(
+var connStringRe = mustCompilePrefiltered(
 	`[a-zA-Z][a-zA-Z0-9+\-.]*://[^\s@/]*:[^$\s@/][^\s@/]*@`,
 )
 

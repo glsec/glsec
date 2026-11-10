@@ -5,7 +5,6 @@ package rules
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -26,7 +25,7 @@ var envNameUserVars = append(
 	userControlledVars...,
 )
 
-var envNameUserVarRe = regexp.MustCompile(
+var envNameUserVarRe = mustCompilePrefiltered(
 	`\$\{?(` + strings.Join(envNameUserVars, "|") + `)\b`,
 )
 

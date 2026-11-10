@@ -6,7 +6,6 @@ package rules
 import (
 	"fmt"
 	"path"
-	"regexp"
 	"strconv"
 	"strings"
 
@@ -24,25 +23,25 @@ func (r *gl021) ID() string { return "GL021" }
 var (
 	// gl021VarRefRe also accepts PowerShell's $env:NAME and ${env:NAME}.
 	// The env: drive is case insensitive; the capture is the variable name.
-	gl021VarRefRe = regexp.MustCompile(`\$\{?(?i:env:)?([A-Za-z_][A-Za-z0-9_]*)\}?`)
+	gl021VarRefRe = mustCompilePrefiltered(`\$\{?(?i:env:)?([A-Za-z_][A-Za-z0-9_]*)\}?`)
 
 	// secretNameRe matches names carrying a secret indicator after at least one
 	// character, anywhere in the name: SECRET_KEY_BASE and DEPLOY_TOKEN alike.
-	secretNameRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*(?:_TOKEN|_SECRET|_PASSWORD|_PASSWD|_PASS|_PWD|_KEY|_CREDENTIAL|_CERT)`)
+	secretNameRe = mustCompilePrefiltered(`^[A-Za-z_][A-Za-z0-9_]*(?:_TOKEN|_SECRET|_PASSWORD|_PASSWD|_PASS|_PWD|_KEY|_CREDENTIAL|_CERT)`)
 
 	// nonSecretSuffixRe matches a final name segment that names something
 	// about the secret rather than the secret itself: GPG_KEY_ID,
 	// DOCKER_PASSWORD_FILE, DEPLOY_TOKENIZER_URL (#579). DIR also counts
 	// without an underscore, as in DOCKER_TLS_CERTDIR.
-	nonSecretSuffixRe = regexp.MustCompile(`(?:_(?:ID|URL|URI|PATH|FILE|NAME|HOST|USER|USERNAME|TYPE|LENGTH|EXPIRES_AT|VERSION|PACKAGE|ENDPOINT|DOMAIN|PORT|REGION|ENABLED|MODE)|DIR)$`)
+	nonSecretSuffixRe = mustCompilePrefiltered(`(?:_(?:ID|URL|URI|PATH|FILE|NAME|HOST|USER|USERNAME|TYPE|LENGTH|EXPIRES_AT|VERSION|PACKAGE|ENDPOINT|DOMAIN|PORT|REGION|ENABLED|MODE)|DIR)$`)
 
 	// singleQuotedRe matches single-quoted spans, whose contents the shell does
 	// not expand (so a secret reference inside them is literal text).
-	singleQuotedRe = regexp.MustCompile(`'[^']*'`)
+	singleQuotedRe = mustCompilePrefiltered(`'[^']*'`)
 
 	// A direct file redirect of PowerShell's information stream (or all
 	// streams) suppresses host output. A merge such as 6>&1 is not a file.
-	gl021InfoFileRedirectRe = regexp.MustCompile(`^(?:6|\*)>>?\s*[^&\s]`)
+	gl021InfoFileRedirectRe = mustCompilePrefiltered(`^(?:6|\*)>>?\s*[^&\s]`)
 )
 
 func (r *gl021) Check(doc *yaml.Node, file string) []finding.Finding {

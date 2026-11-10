@@ -6,9 +6,9 @@ package rules
 import (
 	"maps"
 	"path"
-	"regexp"
 	"slices"
 	"strings"
+	"sync"
 )
 
 // shellCommand is one simple command of a script item: the text between
@@ -28,7 +28,7 @@ type shellCommand struct {
 }
 
 // heredocRe matches a here-document operator and its delimiter, quoted or not.
-var heredocRe = regexp.MustCompile(`^<<-?\s*(?:'([^']+)'|"([^"]+)"|\\?([A-Za-z_][A-Za-z0-9_.-]*))`)
+var heredocRe = mustCompilePrefiltered(`^<<-?\s*(?:'([^']+)'|"([^"]+)"|\\?([A-Za-z_][A-Za-z0-9_.-]*))`)
 
 // inArithmetic reports whether text ends inside (( … )) or $(( … )), where <<
 // is a shift and not a here-document.
@@ -44,7 +44,39 @@ func inArithmetic(text string) bool {
 // (#1216): on another machine, as with ssh, it stays data. So is the script of
 // a local sh -c, after all other commands so that a pipeline stays in order
 // (#1218).
+//
+// The result depends only on script, so it is shared across rules and jobs
+// (#1325): callers must not change it. It is cut to its length, so an append
+// copies instead of writing into the shared array.
 func shellCommands(script string) []shellCommand {
+	commandCache.Lock()
+	cmds, ok := commandCache.m[script]
+	commandCache.Unlock()
+	if ok {
+		return cmds
+	}
+	cmds = parseShellCommands(script)
+	cmds = cmds[:len(cmds):len(cmds)]
+	commandCache.Lock()
+	if len(commandCache.m) >= commandCacheMax {
+		clear(commandCache.m)
+	}
+	commandCache.m[script] = cmds
+	commandCache.Unlock()
+	return cmds
+}
+
+// commandCache holds shellCommands results by script text. Each script item
+// is read by a dozen rules or more; parsing it once was about 13 % of rule
+// time. It is emptied when full, which bounds a long scan of many files.
+var commandCache = struct {
+	sync.Mutex
+	m map[string][]shellCommand
+}{m: map[string][]shellCommand{}}
+
+const commandCacheMax = 1 << 14
+
+func parseShellCommands(script string) []shellCommand {
 	var cmds []shellCommand
 	var cur strings.Builder
 	line, start := 0, -1
@@ -232,7 +264,8 @@ func heredocCommands(body, delim string, first int) []shellCommand {
 	if i := strings.LastIndexByte(body, '\n'); strings.TrimSpace(body[i+1:]) == delim {
 		body = body[:i+1]
 	}
-	cmds := shellCommands(body)
+	// A fresh parse: the line shift below must not reach the shared result.
+	cmds := parseShellCommands(body)
 	for i := range cmds {
 		cmds[i].line += first
 	}
@@ -348,7 +381,61 @@ var shellKeywords = map[string]bool{
 	"export": true, "local": true, "readonly": true, "declare": true,
 }
 
-var assignmentRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*=`)
+var assignmentRe = mustCompilePrefiltered(`^[A-Za-z_][A-Za-z0-9_]*=`)
+
+// commandEnv is what a simple command does with variables (#1325).
+type commandEnv struct {
+	// local are the NAME=value words before the program, also after env:
+	// they apply to that one command only (`X=1 npm ci`).
+	local []string
+	// persistent are assignments that stay for the following commands of the
+	// same shell: `export X=1`, or a command made of assignments only.
+	persistent []string
+}
+
+// declareKeywords are the builtins whose assignments stay in the shell.
+var declareKeywords = map[string]bool{"export": true, "declare": true, "typeset": true, "readonly": true, "local": true}
+
+// commandEnvironment returns the assignments of a simple command, split by
+// how long they apply. A command with a program after its assignments only
+// has local ones; without a program they are persistent.
+func commandEnvironment(text string) commandEnv {
+	words := shellWords(text)
+	var assigns []string
+	i := 0
+	for ; i < len(words); i++ {
+		w := words[i]
+		switch {
+		case declareKeywords[w], w == "env", strings.HasPrefix(w, "-") && i > 0:
+			continue
+		case assignmentRe.MatchString(w):
+			assigns = append(assigns, w)
+			continue
+		}
+		break
+	}
+	if i < len(words) {
+		return commandEnv{local: assigns}
+	}
+	return commandEnv{persistent: assigns}
+}
+
+// printsOnly reports a command that only prints its arguments: echo or printf
+// without an output redirection to a file. What it prints is text, not a
+// command or a setting.
+func printsOnly(cmd shellCommand, words []string) bool {
+	switch commandName(words) {
+	case "echo", "printf", "print":
+	default:
+		return false
+	}
+	for _, target := range rcRedirectTargets(cmd.text) {
+		if target != "/dev/null" && !strings.HasPrefix(target, "/dev/std") {
+			return false
+		}
+	}
+	return true
+}
 
 // commandWords returns the words of the program a simple command runs, with
 // quotes removed; see unwrapCommand.

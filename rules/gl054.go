@@ -5,7 +5,6 @@ package rules
 
 import (
 	"fmt"
-	"regexp"
 
 	"github.com/glsec/glsec/internal/finding"
 	"github.com/glsec/glsec/internal/parser"
@@ -20,10 +19,10 @@ func (r *gl054) ID() string { return "GL054" }
 
 // dindImageRe matches a docker-in-docker service image: docker:dind,
 // docker:26.0-dind, registry/docker:24-dind, etc.
-var dindImageRe = regexp.MustCompile(`(?:^|/)docker:[\w.-]*dind\b`)
+var dindImageRe = mustCompilePrefiltered(`(?:^|/)docker:[\w.-]*dind\b`)
 
 // dockerHostTCPRe matches a DOCKER_HOST value pointing at the dind daemon.
-var dockerHostTCPRe = regexp.MustCompile(`tcp://docker:23(?:75|76)\b`)
+var dockerHostTCPRe = mustCompilePrefiltered(`tcp://docker:23(?:75|76)\b`)
 
 func (r *gl054) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding

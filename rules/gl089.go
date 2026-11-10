@@ -5,7 +5,6 @@ package rules
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -29,11 +28,11 @@ var renovateCmdRe = mustCompilePrefiltered(
 		`(?:[\w./-]*/)?renovate(?:\s|$)`)
 
 var (
-	autodiscoverOnRe  = regexp.MustCompile(`(?:^|\s)--autodiscover(?:=true)?(?:\s|$)`)
-	autodiscoverOffRe = regexp.MustCompile(`(?:^|\s)--autodiscover=false(?:\s|$)`)
+	autodiscoverOnRe  = mustCompilePrefiltered(`(?:^|\s)--autodiscover(?:=true)?(?:\s|$)`)
+	autodiscoverOffRe = mustCompilePrefiltered(`(?:^|\s)--autodiscover=false(?:\s|$)`)
 	// autodiscoverLimitRe matches the flags that limit which repositories
 	// autodiscovery takes: by path, GitLab namespace, topic or Bitbucket project.
-	autodiscoverLimitRe = regexp.MustCompile(`(?:^|\s)--autodiscover-(?:filter|namespaces|topics|projects)\b`)
+	autodiscoverLimitRe = mustCompilePrefiltered(`(?:^|\s)--autodiscover-(?:filter|namespaces|topics|projects)\b`)
 )
 
 // autodiscoverLimitVars are the environment forms of autodiscoverLimitRe.
@@ -67,25 +66,32 @@ func (r *gl089) Check(doc *yaml.Node, file string) []finding.Finding {
 				continue
 			}
 			for _, item := range block.Content {
-				if item.Kind != yaml.ScalarNode || !runsRenovate.get(item, func() bool { return renovateCmdRe.MatchString(unwrappedLine(item.Value)) }) {
+				if item.Kind != yaml.ScalarNode || !runsRenovate.get(item, func() bool { return strings.Contains(item.Value, "renovate") }) {
 					continue
 				}
 				if !varsDone {
 					vars, varsDone = variablesOf(in, job, pipelineVars), true
 				}
-				for _, line := range strings.Split(unwrappedLine(strings.ReplaceAll(item.Value, "\\\n", " ")), "\n") {
-					if !unlimitedAutodiscover(line, vars) {
+				// Command by command, so an invocation on a later line of a
+				// block, or right before a ;, is found, its inline variables
+				// stay with it, and the finding points at its line (#1325).
+				for _, cmd := range shellCommands(item.Value) {
+					text := unwrappedLine(strings.ReplaceAll(cmd.text, "\\\n", " "))
+					if !unlimitedAutodiscover(text, vars) {
 						continue
 					}
-					findings = append(findings, finding.Finding{
+					f := finding.Finding{
 						RuleID:   "GL089",
 						Severity: finding.Warn,
 						Job:      name.Value,
 						Message:  fmt.Sprintf("job %q runs Renovate with autodiscovery and no filter — the bot works on every project its token can reach; set RENOVATE_AUTODISCOVER_FILTER (or autodiscoverNamespaces/autodiscoverTopics), unless a config file in the repository already does", name.Value),
 						File:     file,
-						Line:     item.Line,
-						Col:      item.Column,
-					})
+						Line:     parser.ScalarContentLine(item, cmd.line),
+					}
+					if cmd.line == 0 {
+						f.Col = item.Column
+					}
+					findings = append(findings, f)
 					return
 				}
 			}
@@ -97,24 +103,62 @@ func (r *gl089) Check(doc *yaml.Node, file string) []finding.Finding {
 // unlimitedAutodiscover reports whether line runs Renovate with autodiscovery
 // switched on, by flag or variable, and neither a flag nor a variable limits
 // it. A flag on the command line wins over the variable, as in Renovate.
+// Prefix assignments affect only their own invocation, not later commands.
 func unlimitedAutodiscover(line string, vars jobVariables) bool {
-	m := renovateCmdRe.FindStringIndex(line)
-	if m == nil {
-		return false
-	}
-	args := line[m[1]:]
-	if end := strings.IndexAny(args, "|;&"); end >= 0 {
-		args = args[:end]
-	}
-	on := autodiscoverOnRe.MatchString(args) ||
-		!autodiscoverOffRe.MatchString(args) && vars.sometimes("RENOVATE_AUTODISCOVER", isTrueValue)
-	if !on || autodiscoverLimitRe.MatchString(args) {
-		return false
-	}
-	for _, name := range autodiscoverLimitVars {
-		if vars.always(name, isSetValue) {
-			return false
+	for _, m := range renovateCmdRe.FindAllStringIndex(line, -1) {
+		local := renovateInlineVars(line[m[0]:m[1]])
+		args := line[m[1]:]
+		if end := strings.IndexAny(args, "|;&"); end >= 0 {
+			args = args[:end]
+		}
+		enabled := vars.sometimes("RENOVATE_AUTODISCOVER", isTrueValue)
+		if value, ok := local["RENOVATE_AUTODISCOVER"]; ok {
+			enabled = isTrueValue(value)
+		}
+		on := autodiscoverOnRe.MatchString(args) ||
+			!autodiscoverOffRe.MatchString(args) && enabled
+		if !on || autodiscoverLimitRe.MatchString(args) {
+			continue
+		}
+		limited := false
+		for _, name := range autodiscoverLimitVars {
+			if value, ok := local[name]; ok {
+				limited = isSetValue(value)
+			} else {
+				limited = vars.always(name, isSetValue)
+			}
+			if limited {
+				break
+			}
+		}
+		if !limited {
+			return true
 		}
 	}
-	return true
+	return false
+}
+
+// renovateInlineVars reads shell assignments immediately before a Renovate
+// invocation. The regex has already isolated the command prefix, including
+// supported wrappers (npx, bunx, pnpm dlx and exec). Empty values override
+// inherited values too: Renovate ignores an empty autodiscover filter.
+func renovateInlineVars(prefix string) map[string]string {
+	local := make(map[string]string)
+	for _, word := range shellWords(strings.TrimLeft(prefix, " \t;&|($")) {
+		if !assignmentRe.MatchString(word) {
+			break
+		}
+		name, value, _ := strings.Cut(word, "=")
+		if name == "RENOVATE_AUTODISCOVER" {
+			local[name] = value
+			continue
+		}
+		for _, limit := range autodiscoverLimitVars {
+			if name == limit {
+				local[name] = value
+				break
+			}
+		}
+	}
+	return local
 }

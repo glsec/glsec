@@ -4,7 +4,6 @@
 package rules
 
 import (
-	"regexp"
 	"slices"
 	"strings"
 
@@ -22,15 +21,15 @@ func (r *gl032) ID() string { return "GL032" }
 var (
 	// keyVarRe matches a variable reference whose name implies key material
 	// (contains PRIVATE or a _KEY segment). Group 1 is the variable name.
-	keyVarRe = regexp.MustCompile(`\$\{?([A-Za-z0-9_]*(?:PRIVATE|_KEY)[A-Za-z0-9_]*)\}?`)
+	keyVarRe = mustCompilePrefiltered(`\$\{?([A-Za-z0-9_]*(?:PRIVATE|_KEY)[A-Za-z0-9_]*)\}?`)
 
 	// substEchoRe matches echo/printf inside a process or command substitution;
 	// group 1 is what it prints.
-	substEchoRe = regexp.MustCompile(`(?:<\(|\$\()\s*(?:echo|printf)\b([^)]*)`)
+	substEchoRe = mustCompilePrefiltered(`(?:<\(|\$\()\s*(?:echo|printf)\b([^)]*)`)
 
 	// sshRedirectRe matches a pipeline's output redirected into a file under an
 	// .ssh/ directory; group 1 is the target filename.
-	sshRedirectRe = regexp.MustCompile(`>.*\.ssh/([A-Za-z0-9._-]*)`)
+	sshRedirectRe = mustCompilePrefiltered(`>.*\.ssh/([A-Za-z0-9._-]*)`)
 )
 
 // sshNonKeyTargets are .ssh/ files that hold configuration or public keys, not
@@ -144,7 +143,7 @@ func sshKeyEchoLines(script string) []keyEcho {
 	return slices.Compact(echoes)
 }
 
-var xtraceOnRe = regexp.MustCompile(`\bset\s+(?:-[a-zA-Z]*x|-o\s+xtrace)`)
+var xtraceOnRe = mustCompilePrefiltered(`\bset\s+(?:-[a-zA-Z]*x|-o\s+xtrace)`)
 
 // tracedFromParent reports whether debug tracing can show a command's key. A
 // command from a sh -c script runs in a child shell that doesn't inherit the

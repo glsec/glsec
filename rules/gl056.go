@@ -4,7 +4,6 @@
 package rules
 
 import (
-	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -19,8 +18,8 @@ func (r *gl056) ID() string { return "GL056" }
 
 var (
 	dockerRunRe          = mustCompilePrefiltered(`\bdocker\s+(?:container\s+)?run\b`)
-	privilegedFlagRe     = regexp.MustCompile(`--privileged\b`)
-	privilegedDisabledRe = regexp.MustCompile(`--privileged=(?:false|0)\b`)
+	privilegedFlagRe     = mustCompilePrefiltered(`--privileged\b`)
+	privilegedDisabledRe = mustCompilePrefiltered(`--privileged=(?:false|0)\b`)
 )
 
 func (r *gl056) Check(doc *yaml.Node, file string) []finding.Finding {

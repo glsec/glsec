@@ -4,7 +4,6 @@
 package rules
 
 import (
-	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -20,11 +19,11 @@ func (r *gl063) ID() string { return "GL063" }
 var (
 	// chmodModeRe captures the mode argument of a chmod invocation: any
 	// leading flags (-R, -v, …) followed by the first non-flag token.
-	chmodModeRe = regexp.MustCompile(`\bchmod\s+((?:-[A-Za-z-]+\s+)*)(\S+)`)
-	octalModeRe = regexp.MustCompile(`^[0-7]{3,4}$`)
+	chmodModeRe = mustCompilePrefiltered(`\bchmod\s+((?:-[A-Za-z-]+\s+)*)(\S+)`)
+	octalModeRe = mustCompilePrefiltered(`^[0-7]{3,4}$`)
 	// symbolicWorldWriteRe matches a symbolic clause granting write to
 	// "others" or "all" (who part contains o or a, op is + or =, perms have w).
-	symbolicWorldWriteRe = regexp.MustCompile(`[ugoa]*[ao][ugoa]*[+=][rwxXst]*w`)
+	symbolicWorldWriteRe = mustCompilePrefiltered(`[ugoa]*[ao][ugoa]*[+=][rwxXst]*w`)
 )
 
 func (r *gl063) Check(doc *yaml.Node, file string) []finding.Finding {

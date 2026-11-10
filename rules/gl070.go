@@ -4,7 +4,6 @@
 package rules
 
 import (
-	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -25,14 +24,14 @@ type staticCredCheck struct {
 var (
 	// gcloud activate-service-account, or any gcloud --key-file. The keyless
 	// WIF form uses --cred-file (not --key-file), so it is not matched.
-	gcpKeyRe = regexp.MustCompile(`\bgcloud\b.*(?:\bactivate-service-account\b|--key-file\b)`)
+	gcpKeyRe = mustCompilePrefiltered(`\bgcloud\b.*(?:\bactivate-service-account\b|--key-file\b)`)
 	// aws configure set aws_secret_access_key …
-	awsConfigRe = regexp.MustCompile(`\baws\s+configure\s+set\s+aws_secret_access_key\b`)
+	awsConfigRe = mustCompilePrefiltered(`\baws\s+configure\s+set\s+aws_secret_access_key\b`)
 	// AWS_SECRET_ACCESS_KEY=… assigned/exported in a script line.
 	// Only as an assignment at a command boundary, also after export, env
 	// or other assignments: a form field or JSON key named
 	// AWS_SECRET_ACCESS_KEY inside a quoted argument is neither (#998).
-	awsEnvRe = regexp.MustCompile(`(?m)(?:^|[;&|({]|\$\()\s*(?:(?:export|env|declare|local|readonly)\s+(?:-\w+\s+)*)?(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*AWS_SECRET_ACCESS_KEY\s*=`)
+	awsEnvRe = mustCompilePrefiltered(`(?m)(?:^|[;&|({]|\$\()\s*(?:(?:export|env|declare|local|readonly)\s+(?:-\w+\s+)*)?(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*AWS_SECRET_ACCESS_KEY\s*=`)
 )
 
 // Indexes of the AWS checks in staticCredChecks.

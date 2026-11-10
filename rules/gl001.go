@@ -5,7 +5,6 @@ package rules
 
 import (
 	"fmt"
-	"regexp"
 	"slices"
 	"strings"
 
@@ -127,7 +126,7 @@ func (r *gl001) checkServicesNode(node *yaml.Node, file string, resolve varResol
 // imageVarRe matches what GitLab replaces in an image reference: an input of
 // the file or the job, ${NAME} or $NAME. $[[ inputs.x | function ]] changes the
 // value, so it doesn't match and stays unknown.
-var imageVarRe = regexp.MustCompile(`\$\[\[\s*inputs\.([A-Za-z0-9_-]+)\s*\]\]|\$\{\{\s*job\.inputs\.([A-Za-z0-9_-]+)\s*\}\}|\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)`)
+var imageVarRe = mustCompilePrefiltered(`\$\[\[\s*inputs\.([A-Za-z0-9_-]+)\s*\]\]|\$\{\{\s*job\.inputs\.([A-Za-z0-9_-]+)\s*\}\}|\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)`)
 
 // imageVarName returns the name to resolve for a match of imageVarRe.
 func imageVarName(m []string) string {
@@ -361,7 +360,7 @@ func isVarRef(ref string) bool {
 
 // gitlabMacOSImage matches the VM images of GitLab-hosted macOS runners
 // (macos-14-xcode-15). They are selected by name and cannot carry a tag.
-var gitlabMacOSImage = regexp.MustCompile(`^macos-[0-9]+-xcode-[0-9]+$`)
+var gitlabMacOSImage = mustCompilePrefiltered(`^macos-[0-9]+-xcode-[0-9]+$`)
 
 // checkRef checks ref; label names the image in the message.
 func checkRef(ref, label string, line, col int, file string, requireDigest bool) []finding.Finding {
