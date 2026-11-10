@@ -69,6 +69,76 @@ build:
 	}
 }
 
+func TestGL022_PipUpgradeOnlyRequirementsOrLocal(t *testing.T) {
+	f := findings022(t, `
+job:
+  script:
+    - pip install -U -r requirements.txt
+    - pip install --upgrade -e .
+    - pip install -r requirements.txt
+    - pip install -U pip -r requirements.txt
+    - pip install -U -e git+https://github.com/x/y#egg=y
+    - python3.11 -m pip install -U pip
+    - py -m pip install -U pip
+`)
+	if len(f) != 4 {
+		t.Fatalf("expected four named or remote pip upgrades, got %+v", f)
+	}
+	for i, line := range []int{7, 8, 9, 10} {
+		if f[i].RuleID != "GL022" || f[i].Line != line || f[i].Severity != finding.Warn {
+			t.Errorf("expected GL022 warning on line %d, got %+v", line, f[i])
+		}
+	}
+
+	for _, tc := range []struct {
+		line string
+		want bool
+	}{
+		{"pip install --upgrade -r a.txt -r b.txt", false},
+		{"pip install -U -c constraints.txt -r requirements.txt", false},
+		{"pip install -U ./dist/pkg.whl", false},
+		{"pip install -U /tmp/pkg.whl", false},
+		{"pip install -U .[dev]", false},
+		{"pip install --upgrade setuptools wheel", true},
+		{"pip install -U pip -r requirements.txt", true},
+		{"pip install -U --requirement=requirements.txt", false},
+		{"pip install -U -e ./src", false},
+		{"pip install -U --editable=.", false},
+		{"pip install -U --editable ./src", false},
+		{"pip install -U -e git+https://github.com/x/y#egg=y", true},
+		{"pip install -U --editable git+https://github.com/x/y#egg=y", true},
+		{"pip install -U --editable=git+https://github.com/x/y#egg=y", true},
+		{"pip install -U --editable https://example.com/src", true},
+		{"pip install -U -r a.txt && echo done", false},
+		{"pip install -U -r a.txt && pip install -U wheel", true},
+		{"python -m pip install --upgrade pip", true},
+		{"python3 -m pip install -U pip setuptools", true},
+		{"python2 -m pip install -U pip", true},
+		{"python3.11 -m pip install -U pip", true},
+		{"python2.7 -m pip install -U setuptools", true},
+		{"py -m pip install -U pip", true},
+		{"pythonish -m pip install -U pip", false},
+		{"python3.beta -m pip install -U pip", false},
+		{"uv pip install -U pip", true},
+		{"python -m pip install -U -r requirements.txt", false},
+		{"python3.11 -m pip install -U -r requirements.txt", false},
+		{"py -m pip install -U -e .", false},
+		{"uv pip install --upgrade -e .", false},
+		{"pip install -U git+https://github.com/x/y", true},
+		{"pip install -U https://example.com/pkg.whl", true},
+		{"pip install -U -t libs -r requirements.txt", false},
+		{"pip install -U --target libs --upgrade-strategy eager -r requirements.txt", false},
+		{"pip install -U --upgrade-strategy eager requests", true},
+	} {
+		t.Run(tc.line, func(t *testing.T) {
+			got := checkPMLine(tc.line, "test.yml", 1, 1) != nil
+			if got != tc.want {
+				t.Errorf("finding=%v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestGL022_PipLocalPackage_NoFinding(t *testing.T) {
 	f := findings022(t, `
 build:
