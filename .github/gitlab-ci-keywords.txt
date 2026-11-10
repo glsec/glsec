@@ -238,6 +238,7 @@ job.dast_configuration
 job.dast_configuration.scanner_profile
 job.dast_configuration.site_profile
 job.dependencies
+job.description
 job.environment
 job.environment.action
 job.environment.auto_stop_in
