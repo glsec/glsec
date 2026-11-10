@@ -124,26 +124,38 @@ var pkgAuthChecks = []pkgAuthCheck{
 		re:  mustCompilePrefiltered(`\b(?:GONOSUMDB|GOINSECURE)=(?:"\*"|'\*'|\*)(?:\s|$)`),
 		msg: `GONOSUMDB=* or GOINSECURE=* disables module checksum or TLS verification for every host, not just the private ones it was meant for — list your own module hosts instead of a wildcard`,
 	},
+	{
+		re:  mustCompilePrefiltered(`\bDOCKER_CONTENT_TRUST=(?:"0"|'0'|0)(?:\s|$)`),
+		msg: `DOCKER_CONTENT_TRUST=0 turns off image signature verification — an unsigned or tampered image from a compromised or MITM'd registry pulls and runs without error; keep content trust on and sign images instead`,
+	},
+	{
+		re:  mustCompilePrefiltered(`\bdocker\b[^\n]*--disable-content-trust\b`),
+		msg: `docker "--disable-content-trust" turns off image signature verification — an unsigned or tampered image from a compromised or MITM'd registry pulls and runs without error; drop the flag and sign images instead`,
+	},
 }
 
-// goModuleVerificationOff maps the Go settings that switch off module
+// goModuleVerificationOff maps the settings that switch off package or image
 // verification to the value that does it. A specific host such as
 // GONOSUMDB=gitlab.example.com/* is the normal private-module setup and must
 // stay quiet, so only "off" and a bare "*" count.
 var goModuleVerificationOff = map[string]string{
-	"GOSUMDB":    "off",
-	"GONOSUMDB":  "*",
-	"GOINSECURE": "*",
+	"GOSUMDB":              "off",
+	"GONOSUMDB":            "*",
+	"GOINSECURE":           "*",
+	"DOCKER_CONTENT_TRUST": "0",
 }
 
 func goModuleVerificationMessage(name string) string {
-	if name == "GOSUMDB" {
+	switch name {
+	case "GOSUMDB":
 		return `GOSUMDB=off disables the Go checksum database — modules are fetched without being verified against sum.golang.org, so a tampered dependency installs silently; keep the default and scope private modules with GOPRIVATE/GONOSUMDB instead`
+	case "DOCKER_CONTENT_TRUST":
+		return `DOCKER_CONTENT_TRUST=0 turns off image signature verification — an unsigned or tampered image from a compromised or MITM'd registry pulls and runs without error; keep content trust on and sign images instead`
 	}
 	return `GONOSUMDB=* or GOINSECURE=* disables module checksum or TLS verification for every host, not just the private ones it was meant for — list your own module hosts instead of a wildcard`
 }
 
-// checkGoModuleVariables reports Go verification switched off through a
+// checkGoModuleVariables reports package verification switched off through a
 // variables block, which EachScriptLine does not reach.
 func checkGoModuleVariables(node *yaml.Node, file, job string) []finding.Finding {
 	if node == nil || node.Kind != yaml.MappingNode {
