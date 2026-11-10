@@ -202,6 +202,31 @@ func TestGL069_NotFlaggedVariables(t *testing.T) {
 	}
 }
 
+func TestGL069_DockerContentTrust(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		yaml    string
+		flagged bool
+	}{
+		{"export in script", "job:\n  script:\n    - export DOCKER_CONTENT_TRUST=0\n", true},
+		{"env prefix on pull", "job:\n  script:\n    - DOCKER_CONTENT_TRUST=0 docker pull registry.example.com/app:latest\n", true},
+		{"disable-content-trust flag", "job:\n  script:\n    - docker pull --disable-content-trust app:latest\n", true},
+		{"disable-content-trust on run", "job:\n  script:\n    - docker run --disable-content-trust app:latest\n", true},
+		{"global variable", "variables:\n  DOCKER_CONTENT_TRUST: \"0\"\njob:\n  script:\n    - docker pull app:latest\n", true},
+		{"global variable unquoted", "variables:\n  DOCKER_CONTENT_TRUST: 0\njob:\n  script:\n    - docker pull app:latest\n", true},
+		{"content trust on", "variables:\n  DOCKER_CONTENT_TRUST: \"1\"\njob:\n  script:\n    - docker pull app@sha256:abc\n", false},
+		{"content trust env on", "job:\n  script:\n    - DOCKER_CONTENT_TRUST=1 docker pull app:latest\n", false},
+		{"digest pull", "job:\n  script:\n    - docker pull app@sha256:abc\n", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := findings069(t, tc.yaml)
+			if tc.flagged != (len(f) == 1) {
+				t.Fatalf("got %d findings, want %v: %+v", len(f), tc.flagged, f)
+			}
+		})
+	}
+}
+
 func escapeSingle(s string) string {
 	out := ""
 	for _, r := range s {
