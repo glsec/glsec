@@ -350,21 +350,24 @@ func checkPMLine(line, file string, lineNum, col int) *finding.Finding {
 // pipUpgradeHasPackage distinguishes an ad-hoc registry package from an
 // upgrade of only a requirements file or local project. File/option arguments
 // are not package names, even when -U precedes them.
+var pythonPipLauncherRe = regexp.MustCompile(`^python[0-9]*(?:\.[0-9]+)*$`)
+
+func pipRemoteSource(arg string) bool {
+	return strings.HasPrefix(arg, "git+") || strings.HasPrefix(arg, "https://") || strings.HasPrefix(arg, "http://")
+}
+
 func pipUpgradeHasPackage(line string) bool {
 	for _, cmd := range shellCommands(line) {
 		words := commandWords(cmd.text)
 		// The update regex also recognises these pip launchers. Normalize
 		// them before checking the install subcommand and its arguments.
 		if len(words) >= 3 {
-			switch commandName(words) {
-			case "python", "python2", "python3":
-				if words[1] == "-m" {
-					words = words[2:]
-				}
-			case "uv":
-				if words[1] == "pip" {
-					words = words[1:]
-				}
+			name := commandName(words)
+			switch {
+			case words[1] == "-m" && (name == "py" || pythonPipLauncherRe.MatchString(name)):
+				words = words[2:]
+			case name == "uv" && words[1] == "pip":
+				words = words[1:]
 			}
 		}
 		if len(words) < 3 || (commandName(words) != "pip" && commandName(words) != "pip3" && commandName(words) != "pip2") || words[1] != "install" {
@@ -378,10 +381,18 @@ func pipUpgradeHasPackage(line string) bool {
 				upgrade = true
 				continue
 			}
-			// These options consume the following word, which is a file, path,
-			// URL or option value rather than a named package.
+			// Editable installs may name an unpinned remote VCS/HTTP source.
+			// Local editable paths are still safe from this upgrade check.
 			switch arg {
-			case "-r", "--requirement", "-c", "--constraint", "-e", "--editable", "-t",
+			case "-e", "--editable":
+				if i+1 < len(words) && pipRemoteSource(words[i+1]) {
+					packageNamed = true
+				}
+				i++
+				continue
+			// Other options consume a file, path, URL or option value,
+			// not an independently upgraded package.
+			case "-r", "--requirement", "-c", "--constraint", "-t",
 				"-i", "--index-url", "--extra-index-url", "-f", "--find-links",
 				"--trusted-host", "--proxy", "--timeout", "--retries",
 				"--cert", "--client-cert", "--src", "--target", "--prefix",
@@ -390,12 +401,18 @@ func pipUpgradeHasPackage(line string) bool {
 				i++
 				continue
 			}
+			if strings.HasPrefix(arg, "--editable=") {
+				if pipRemoteSource(strings.TrimPrefix(arg, "--editable=")) {
+					packageNamed = true
+				}
+				continue
+			}
 			if strings.HasPrefix(arg, "-") {
 				continue
 			}
 			// A VCS or HTTP source can change independently of the pipeline.
 			// Unlike a local wheel or directory, it remains an unpinned upgrade.
-			if strings.HasPrefix(arg, "git+") || strings.HasPrefix(arg, "https://") || strings.HasPrefix(arg, "http://") {
+			if pipRemoteSource(arg) {
 				packageNamed = true
 				continue
 			}

@@ -77,9 +77,17 @@ job:
     - pip install --upgrade -e .
     - pip install -r requirements.txt
     - pip install -U pip -r requirements.txt
+    - pip install -U -e git+https://github.com/x/y#egg=y
+    - python3.11 -m pip install -U pip
+    - py -m pip install -U pip
 `)
-	if len(f) != 1 || f[0].RuleID != "GL022" || f[0].Line != 7 || f[0].Severity != finding.Warn {
-		t.Fatalf("expected only named pip package on line 7, got %+v", f)
+	if len(f) != 4 {
+		t.Fatalf("expected four named or remote pip upgrades, got %+v", f)
+	}
+	for i, line := range []int{7, 8, 9, 10} {
+		if f[i].RuleID != "GL022" || f[i].Line != line || f[i].Severity != finding.Warn {
+			t.Errorf("expected GL022 warning on line %d, got %+v", line, f[i])
+		}
 	}
 
 	for _, tc := range []struct {
@@ -95,13 +103,24 @@ job:
 		{"pip install -U pip -r requirements.txt", true},
 		{"pip install -U --requirement=requirements.txt", false},
 		{"pip install -U -e ./src", false},
+		{"pip install -U --editable=.", false},
+		{"pip install -U --editable ./src", false},
+		{"pip install -U -e git+https://github.com/x/y#egg=y", true},
+		{"pip install -U --editable git+https://github.com/x/y#egg=y", true},
+		{"pip install -U --editable=git+https://github.com/x/y#egg=y", true},
+		{"pip install -U --editable https://example.com/src", true},
 		{"pip install -U -r a.txt && echo done", false},
 		{"pip install -U -r a.txt && pip install -U wheel", true},
 		{"python -m pip install --upgrade pip", true},
 		{"python3 -m pip install -U pip setuptools", true},
 		{"python2 -m pip install -U pip", true},
+		{"python3.11 -m pip install -U pip", true},
+		{"python2.7 -m pip install -U setuptools", true},
+		{"py -m pip install -U pip", true},
 		{"uv pip install -U pip", true},
 		{"python -m pip install -U -r requirements.txt", false},
+		{"python3.11 -m pip install -U -r requirements.txt", false},
+		{"py -m pip install -U -e .", false},
 		{"uv pip install --upgrade -e .", false},
 		{"pip install -U git+https://github.com/x/y", true},
 		{"pip install -U https://example.com/pkg.whl", true},
