@@ -5,6 +5,7 @@ package rules
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -406,5 +407,54 @@ func TestGL062_GrepFilterAlternatives(t *testing.T) {
 				t.Fatalf("got %v, want %d findings", f, want)
 			}
 		})
+	}
+}
+
+// GL062 reports a process-environment dump written with a /proc glob or a PID
+// variable, and the loop form that reads every process's environment, while
+// keeping the single-process and negative cases (#1345).
+func TestGL062_ProcEnvironWildcards(t *testing.T) {
+	for script, want := range map[string]int{
+		// direct reads reaching the log
+		"cat /proc/self/environ":            1,
+		"cat /proc/1234/environ":            1,
+		"cat /proc/*/environ":               1,
+		"cat /proc/[0-9]*/environ":          1,
+		"cat /proc/$pid/environ":            1,
+		"cat /proc/${pid}/environ":          1,
+		"cat /proc/[0-9]*/environ | base32": 1,
+		// not a dump to the log
+		"cat /proc/*/environ > dump.txt": 0,
+		"grep -q PATH /proc/*/environ":   0,
+		"grep -l SECRET /proc/*/environ": 0,
+		`echo "cat /proc/*/environ"`:     0,
+		"cat /proc/*/cmdline":            0,
+		// loop forms
+		`for p in /proc/[0-9]*/environ; do tr "\0" "\n" < "$p"; done | base32`: 1,
+		`for p in /proc/${pid}/environ; do tr "\0" "\n" < "${p}"; done`:        1,
+		`for p in /proc/[0-9]*/environ; do cat < "$p"; done > out.txt`:         0,
+		`for p in /proc/[0-9]*/environ; do echo found; done`:                   0,
+		`out=$(for p in /proc/[0-9]*/environ; do cat < "$p"; done)`:            0,
+	} {
+		y := "job:\n  script:\n    - " + strconv.Quote(script) + "\n"
+		if got := findings062(t, y); len(got) != want {
+			t.Errorf("%s: got %d findings, want %d", script, len(got), want)
+		}
+	}
+}
+
+// The motivating multi-section harvest block: the process-environment loop is
+// detected independently of an ordinary env dump in the same job (#1345).
+func TestGL062_ProcEnvironLoopBlock(t *testing.T) {
+	y := "job:\n  script:\n    - env | base32\n    - |\n" +
+		"      { for p in /proc/[0-9]*/environ; do\n" +
+		"          tr '\\0' '\\n' < \"$p\" | grep -aE '^[A-Za-z_][A-Za-z0-9_.]*=' | head -c 4096\n" +
+		"        done; } 2>/dev/null | head -c 262144 | base32 -w 120\n"
+	f := findings062(t, y)
+	if len(f) != 2 {
+		t.Fatalf("got %d findings, want 2 (env dump and the /proc loop) %+v", len(f), f)
+	}
+	if f[1].Line != 5 || !strings.Contains(f[1].Message, "/proc") {
+		t.Errorf("loop finding: got line %d %q, want line 5 mentioning /proc", f[1].Line, f[1].Message)
 	}
 }

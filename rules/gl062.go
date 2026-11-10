@@ -5,6 +5,7 @@ package rules
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -29,7 +30,7 @@ func (r *gl062) ID() string { return "GL062" }
 // (?m): in a multi-line block the command can be on any line (#975).
 var envFullDumpRe = mustCompilePrefiltered(`(?m)(?:^|[;&|(])\s*(?:/usr/bin/|/bin/)?(` +
 	`printenv|env(?:\s+(?:-0|--null))?|` +
-	`cat\s+/proc/(?:self|\$\$|[0-9]+)/environ|` +
+	`cat\s+/proc/(?:self|\$\$|[0-9]+|\*|\[0-9\]\*|\$\{?[A-Za-z_][A-Za-z0-9_]*\}?)/environ|` +
 	`set|export(?:\s+-p)?|(?:declare|typeset)(?:\s+-[px]+)?|` +
 	psEnvDump +
 	`)\s*(?:$|[;&|#)])`)
@@ -37,6 +38,15 @@ var envFullDumpRe = mustCompilePrefiltered(`(?m)(?:^|[;&|(])\s*(?:/usr/bin/|/bin
 // Keep the original env/printenv matching and message, including commands
 // inside a quoted sh -c payload. Quote suppression applies only to new forms.
 var legacyEnvFullDumpRe = mustCompilePrefiltered(`(?m)(?:^|[;&|(])\s*(?:/usr/bin/|/bin/)?(?:printenv|env)\s*(?:$|[;&|#)])`)
+
+// procLoopEnvironRe matches a loop that enumerates process-environment files,
+// for p in /proc/[0-9]*/environ; do … (#1345). Group 1 is the loop variable,
+// read later with < "$p". A single process (self/$$/<pid>) stays with the
+// cat form in envFullDumpRe.
+var procLoopEnvironRe = mustCompilePrefiltered(`(?m)\bfor\s+([A-Za-z_][A-Za-z0-9_]*)\s+in\b[^;\n]*?/proc/(?:\*|\[0-9\]\*|\$\{?[A-Za-z_][A-Za-z0-9_]*\}?|[0-9]+|self|\$\$)/environ`)
+
+// doneWordRe ends a for/while loop body.
+var doneWordRe = mustCompilePrefiltered(`\bdone\b`)
 
 // findEnvFullDump keeps a closing parenthesis as a boundary only when an
 // opening parenthesis precedes it. Otherwise set) and export) are case labels.
@@ -89,7 +99,7 @@ func (r *gl062) Check(doc *yaml.Node, file string) []finding.Finding {
 		}
 		// Preserve legacy matching in sh -c payloads. Mask only the new forms,
 		// so `echo "hello; set; done"` is not read as a dump (#1161).
-		if !mayRunShellC(v) && !wrapperWordRe.MatchString(v) && !legacyEnvFullDumpRe.MatchString(v) && !envFullDumpRe.MatchString(maskShellQuotes(v)) {
+		if !mayRunShellC(v) && !wrapperWordRe.MatchString(v) && !legacyEnvFullDumpRe.MatchString(v) && !envFullDumpRe.MatchString(maskShellQuotes(v)) && !procLoopEnvironRe.MatchString(v) {
 			return
 		}
 		cmds := shellCommands(v)
@@ -147,8 +157,63 @@ func (r *gl062) Check(doc *yaml.Node, file string) []finding.Finding {
 			findings = append(findings, f)
 			return
 		}
+		if at, ok := procLoopEnvironDump(v); ok {
+			f := finding.Finding{
+				RuleID:   "GL062",
+				Severity: finding.Warn,
+				Job:      job,
+				Message:  "a loop over /proc/<glob>/environ dumps every process's environment to the job log — on a shared or non-ephemeral runner this can expose other jobs' CI/CD secrets; read only the specific variables you need",
+				File:     file,
+				Line:     parser.ScalarContentLine(line, at),
+			}
+			if at == 0 {
+				f.Col = line.Column
+			}
+			findings = append(findings, f)
+		}
 	})
 	return findings
+}
+
+// procLoopEnvironDump reports a loop that reads every process's environment
+// through /proc/<glob>/environ and whose output reaches the job log: the
+// motivating credential-harvest shape
+//
+//	for p in /proc/[0-9]*/environ; do tr '\0' '\n' < "$p" …; done | base32
+//
+// It returns the item-relative line of the loop. Output redirected to a file
+// or captured in a command substitution, and a loop whose variable is never
+// read with < "$p", are not reported (#1345).
+func procLoopEnvironDump(item string) (int, bool) {
+	masked := maskShellQuotes(item)
+	m := procLoopEnvironRe.FindStringSubmatchIndex(masked)
+	if m == nil {
+		return 0, false
+	}
+	varName := item[m[2]:m[3]]
+	read := regexp.MustCompile(`<\s*["']?\$\{?` + regexp.QuoteMeta(varName) + `(?:[^A-Za-z0-9_]|$)`)
+	if !read.MatchString(item[m[1]:]) {
+		return 0, false // the loop variable is never read as a file
+	}
+	// Captured in a command substitution: the loop's output goes to a
+	// variable, not the log.
+	if opensSubstitution(item[:m[0]]) {
+		return 0, false
+	}
+	// The dump's own pipeline, up to the end of the line that closes the
+	// loop, writes to a file: its output doesn't reach the log. 2>/dev/null
+	// only drops stderr, and a > elsewhere in a multi-section block is another
+	// command's.
+	sinkEnd := len(item)
+	if d := doneWordRe.FindStringIndex(masked[m[1]:]); d != nil {
+		if nl := strings.IndexByte(item[m[1]+d[1]:], '\n'); nl >= 0 {
+			sinkEnd = m[1] + d[1] + nl
+		}
+	}
+	if stdoutRedirectRe.MatchString(maskShellQuotes(item[m[0]:sinkEnd])) {
+		return 0, false
+	}
+	return strings.Count(item[:m[0]], "\n"), true
 }
 
 // PowerShell forms of a pipeline stage after an env: listing (#1172).
