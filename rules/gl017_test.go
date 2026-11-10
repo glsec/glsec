@@ -30,6 +30,13 @@ func TestGL017_DeployScriptCommandsOnly(t *testing.T) {
 		{`bash "$CI_PROJECT_DIR/scripts/deploy.sh"`, 1},
 		{`ssh deploy@host "cd /app && ./deploy.sh"`, 1},
 		{`curl -X POST "https://api.example.com/v1/deploy"`, 1},
+		{`echo 'kubectl apply -f k8s/'`, 0},
+		{`printf 'kubectl apply -f k8s/'`, 0},
+		{`echo 'kubectl apply -f k8s/' | ssh user@host bash`, 1},
+		{`printf 'kubectl apply -f k8s/' | ssh user@host bash`, 1},
+		{`ssh user@host bash -s <<EOF
+kubectl apply -f k8s/
+EOF`, 1},
 	} {
 		t.Run(tc.command, func(t *testing.T) {
 			f := findings017(t, fmt.Sprintf("deploy-example:\n  stage: deploy\n  script:\n    - %s\n", strconv.Quote(tc.command)))
