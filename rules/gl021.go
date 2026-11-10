@@ -35,10 +35,6 @@ var (
 	// without an underscore, as in DOCKER_TLS_CERTDIR.
 	nonSecretSuffixRe = mustCompilePrefiltered(`(?:_(?:ID|URL|URI|PATH|FILE|NAME|HOST|USER|USERNAME|TYPE|LENGTH|EXPIRES_AT|VERSION|PACKAGE|ENDPOINT|DOMAIN|PORT|REGION|ENABLED|MODE)|DIR)$`)
 
-	// safeCheckRe matches patterns that reference the variable without printing its value:
-	// length checks (-n "$VAR", test -n "$VAR"), default expansions (${VAR:-}, ${VAR:+}).
-	safeCheckRe = mustCompilePrefiltered(`\[\s*(?:-n|-z)\s+|\btest\s+-[nz]\b|:\-|:\+`)
-
 	// singleQuotedRe matches single-quoted spans, whose contents the shell does
 	// not expand (so a secret reference inside them is literal text).
 	singleQuotedRe = mustCompilePrefiltered(`'[^']*'`)
@@ -250,9 +246,10 @@ func printedSecret(line string) (string, bool) {
 	// Single-quoted spans are literal. Keep an empty quoted placeholder so a
 	// filename such as 6> 'private log.txt' still has a redirection target.
 	s := singleQuotedRe.ReplaceAllString(line, "''")
-	if safeCheckRe.MatchString(s) {
-		return "", false
-	}
+	// Command separators inside quoted arguments (such as the parentheses in
+	// "${TOKEN:+ (set)}") are literal characters, not segment boundaries.
+	// maskShellQuotes preserves offsets while hiding those separators.
+	separators := maskShellQuotes(s)
 
 	for _, loc := range gl021VarRefRe.FindAllStringSubmatchIndex(s, -1) {
 		name := s[loc[2]:loc[3]]
@@ -268,15 +265,22 @@ func printedSecret(line string) (string, bool) {
 		if start > 0 && s[start-1] == '\\' {
 			continue
 		}
+		// ${NAME:+word} outputs word (or nothing), never NAME's value.
+		// Only exempt this reference: word may expand another secret, or a
+		// later command on the same line may print NAME itself (#1300).
+		// In contrast, ${NAME:-default} outputs NAME when it is set.
+		if strings.HasPrefix(s[end:], ":+") {
+			continue
+		}
 
 		// Find the command segment the secret belongs to (split on shell
 		// command separators).
 		left := start - 1
-		for left >= 0 && !isShellSep(s[left]) {
+		for left >= 0 && !isShellSep(separators[left]) {
 			left--
 		}
 		right := end
-		for right < len(s) && !isShellSep(s[right]) {
+		for right < len(s) && !isShellSep(separators[right]) {
 			right++
 		}
 
@@ -285,7 +289,22 @@ func printedSecret(line string) (string, bool) {
 		// another command (e.g. git config credential.helper "!echo $TOKEN").
 		command := segmentPrintCommand(s[left+1 : start])
 		if command == "" {
-			continue
+			// A child-shell command may execute a quoted script containing
+			// separators (bash -c, eval, ssh, su, etc.). If the masked
+			// segment has no print command, retry the original separators
+			// to preserve the detection these scripts had before #1300.
+			left = start - 1
+			for left >= 0 && !isShellSep(s[left]) {
+				left--
+			}
+			right = end
+			for right < len(s) && !isShellSep(s[right]) {
+				right++
+			}
+			command = segmentPrintCommand(s[left+1 : start])
+			if command == "" {
+				continue
+			}
 		}
 		if powerShell || strings.HasPrefix(command, "write") {
 			escapeStart := start
