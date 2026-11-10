@@ -57,7 +57,9 @@ func TestPrintedSecret(t *testing.T) {
 		{`ssh host "echo $DEPLOY_TOKEN" | docker login --password-stdin`, false},
 		{`ssh host 'echo $DEPLOY_TOKEN'`, false},
 		{`bash -eo pipefail -c "true; echo $DEPLOY_TOKEN" > token.txt`, false},
-		{`eval 'true; echo $DEPLOY_TOKEN'`, false},
+		// Not listed: eval 'true; echo $DEPLOY_TOKEN' and bash -c 'echo $DEPLOY_TOKEN'
+		// do print the token (eval re-parses, the child shell expands), but
+		// single-quoted local child scripts aren't analysed yet; known gap.
 		{`echo $USERNAME`, false},
 		{`echo $DEPLOY_TOKENIZER_URL`, false},
 		{`echo $GPG_KEY_ID`, false},
