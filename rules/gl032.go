@@ -121,8 +121,16 @@ func sshKeyEchoLines(script string) []keyEcho {
 		// redirected to a file. An echo that only prints a key-named
 		// variable, often a cache key, writes nothing; printing a secret is
 		// GL021's (#993).
-		written := len(pipeline) > 1 || strings.Contains(maskSingleQuoted(joined), ">")
-		if !written {
+		redirected := strings.Contains(maskSingleQuoted(joined), ">")
+		// An echo piped into an encoder with nowhere to go but stdout
+		// (echo "$API_KEY" | base64) only leaks the value, encoded, into the
+		// job log: that masking bypass is GL021's (#1361), not a private-key
+		// write. A decode redirected to a file (… | base64 -d > ~/.ssh/id_rsa)
+		// reconstructs key material and still counts.
+		encodedToLog := len(pipeline) > 1 && !redirected &&
+			encodesToStdout(commandWords(pipeline[len(pipeline)-1]))
+		written := (len(pipeline) > 1 || redirected) && !encodedToLog
+		if !written && !encodedToLog {
 			if at := strings.Index(script, first.text); at >= 0 {
 				written = groupOutputDiverted(script, at) // { …; echo "$KEY"; } | gpg --import
 			}
@@ -156,6 +164,19 @@ func tracedFromParent(cmd shellCommand) bool {
 	}
 	private, credential, _ := printedKeyVars(maskSingleQuoted(cmd.parent))
 	return private || credential || xtraceOnRe.MatchString(cmd.parent)
+}
+
+// encodesToStdout reports a byte encoder (base64, base32, xxd) running in its
+// default encode direction, so its stdin leaves re-encoded on stdout. A decode
+// flag (base64 -d, xxd -r) reverses this: it reconstructs the original bytes,
+// which is a write of key material, not a masking bypass.
+func encodesToStdout(words []string) bool {
+	switch commandName(words) {
+	case "base64", "base32", "xxd":
+		_, decodes := payloadDecoder(words)
+		return !decodes
+	}
+	return false
 }
 
 // printedKeyVars classifies the key-named variables a print command outputs:

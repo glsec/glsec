@@ -130,6 +130,34 @@ func TestGL032(t *testing.T) {
     - echo "storePassword=$ANDROID_KEYSTORE_PASSWORD" > key.properties`,
 			wantHits: 1,
 		},
+		{
+			name: "key-named secret piped into an encoder only reaches the log — GL021's, not a private-key write",
+			yaml: `j:
+  script:
+    - echo "$API_KEY" | base64`,
+			wantHits: 0,
+		},
+		{
+			name: "private-key var encoded to stdout is also a log leak, not a write",
+			yaml: `j:
+  script:
+    - echo "$SSH_PRIVATE_KEY" | base64`,
+			wantHits: 0,
+		},
+		{
+			name: "base32 encode to stdout is not a key write",
+			yaml: `j:
+  script:
+    - echo "$DEPLOY_KEY" | base32`,
+			wantHits: 0,
+		},
+		{
+			name: "decode redirected into a key file is still a write",
+			yaml: `j:
+  script:
+    - echo "$DEPLOY_KEY" | base64 -d > ~/.ssh/id_ed25519`,
+			wantHits: 1,
+		},
 	}
 
 	for _, tt := range tests {
