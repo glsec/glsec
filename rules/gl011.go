@@ -57,6 +57,9 @@ var (
 	// hexExecRe matches a hex dump reversed by xxd -r and piped into a shell,
 	// e.g. echo 6375… | xxd -r -p | bash — the same as base64ExecRe in hex.
 	hexExecRe = mustCompilePrefiltered(`\bxxd\b[^|]*\s-[a-z]*r[a-z]*\b.*` + pipeInto + `(?:` + shellAlt + `)\b`)
+	// base32ExecRe matches a base32-decode piped straight into a shell, the
+	// base32 form of base64ExecRe (#1346).
+	base32ExecRe = mustCompilePrefiltered(`\bbase32\s+(?:-d|--decode)\b.*` + pipeInto + `(?:` + shellAlt + `)\b`)
 	// escapePrinterRe and hexEscapeRe together match printf '\x63\x75…' | sh or
 	// echo -e "\x63…" | sh. The escapes sit inside quotes, so hexEscapeRe is
 	// matched against the raw line.
@@ -158,7 +161,7 @@ func isDownloadExecute(line string) bool {
 	if downloadToolRe.MatchString(stripped) && pipeToShellRe.MatchString(stripped) {
 		return true
 	}
-	if base64ExecRe.MatchString(stripped) || hexExecRe.MatchString(stripped) {
+	if base64ExecRe.MatchString(stripped) || base32ExecRe.MatchString(stripped) || hexExecRe.MatchString(stripped) {
 		return true
 	}
 	if hexEscapeRe.MatchString(line) && escapePrinterRe.MatchString(stripped) && pipeToShellRe.MatchString(stripped) {

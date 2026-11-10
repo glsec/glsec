@@ -331,6 +331,7 @@ var prefilterTable = map[string]prefilterLits{
 	"\\bapk\\s+add\\b":                     {anyOf: []string{"apk"}},
 	"\\bapt(?:-get)?\\s+install\\b":        {anyOf: []string{"install"}},
 	"\\baws\\s+configure\\s+set\\s+aws_secret_access_key\\b": {anyOf: []string{"aws_secret_access_key"}},
+	"\\bbase32\\s+(?:-d|--decode)\\b.*\\|\\s*(?:(?:sudo|doas|su|runuser|env)(?:\\s+(?:-[ugCDhprtU]\\s+[^\\s|;&-][^\\s|;&]*|-[abcdefijklmnoqsvwxyzABEFGHIJKLMNOPQRSTVWXYZ]|-[a-zA-Z]{2,}|--[a-zA-Z][\\w-]*(?:=[^\\s|;&]*)?|--|[A-Za-z_]\\w*=[^\\s|;&]*))*\\s+)*(?:bash|sh|python[23]?|ruby|perl|node)\\b": {anyOf: []string{"base32"}},
 	"\\bbase64\\s+(?:-d|--decode)\\b.*\\|\\s*(?:(?:sudo|doas|su|runuser|env)(?:\\s+(?:-[ugCDhprtU]\\s+[^\\s|;&-][^\\s|;&]*|-[abcdefijklmnoqsvwxyzABEFGHIJKLMNOPQRSTVWXYZ]|-[a-zA-Z]{2,}|--[a-zA-Z][\\w-]*(?:=[^\\s|;&]*)?|--|[A-Za-z_]\\w*=[^\\s|;&]*))*\\s+)*(?:bash|sh|python[23]?|ruby|perl|node)\\b": {anyOf: []string{"base64"}},
 	"\\bbundle\\s+add\\s+(?:-{1,2}[\\w=@./:-]+\\s+)*[^-\\s\"']":                                                  {anyOf: []string{"bundle"}},
 	"\\bbundle\\s+config\\s+(?:set\\s+)?(?:--(?:global|local)\\s+)?(?:frozen|deployment)\\s+[\"']?(?:true|1)\\b": {anyOf: []string{"bundle"}},
