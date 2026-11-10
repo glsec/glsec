@@ -115,9 +115,14 @@ func (r *gl011) Check(doc *yaml.Node, file string) []finding.Finding {
 			if kind == gl011None {
 				continue
 			}
-			message := fmt.Sprintf("script line downloads and executes remote code without integrity verification: %q", truncate(l.text, 80))
+			// Quote the offending command, not the whole `;`-joined line, so a
+			// log line before it (echo start; curl … | bash) is left out and
+			// the finding reads the same however the commands are laid out
+			// (#1325).
+			quoted := offendingCommand(l.text)
+			message := fmt.Sprintf("script line downloads and executes remote code without integrity verification: %q", truncate(quoted, 80))
 			if kind == gl011EncodedPayload {
-				message = fmt.Sprintf("script line decodes and executes an opaque payload in an interpreter — the executable code is difficult to review: %q", truncate(l.text, 80))
+				message = fmt.Sprintf("script line decodes and executes an opaque payload in an interpreter — the executable code is difficult to review: %q", truncate(quoted, 80))
 			}
 			f := finding.Finding{
 				RuleID:   "GL011",
@@ -254,4 +259,53 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n] + "…"
+}
+
+// offendingCommand narrows a logical line to the download-execute command it
+// contains, so the finding quotes that and not an unrelated earlier command
+// joined with ; (#1325). When the pattern spans a ; (curl -o f; sh f), no
+// single segment matches, so the whole line is kept.
+func offendingCommand(line string) string {
+	segments := splitTopLevelSemicolons(line)
+	if len(segments) < 2 {
+		return strings.TrimSpace(line)
+	}
+	for _, seg := range segments {
+		s := strings.TrimSpace(seg)
+		if isDownloadExecute(s) != gl011None || childShellDownloadExecute(s) != gl011None {
+			return s
+		}
+	}
+	return strings.TrimSpace(line)
+}
+
+// splitTopLevelSemicolons splits text at ; outside quotes, command
+// substitutions and parentheses.
+func splitTopLevelSemicolons(text string) []string {
+	var segments []string
+	var quote byte
+	depth, start := 0, 0
+	for i := 0; i < len(text); i++ {
+		c := text[i]
+		switch {
+		case quote != 0:
+			if c == quote {
+				quote = 0
+			} else if c == '\\' && quote == '"' && i+1 < len(text) {
+				i++
+			}
+		case c == '\\' && i+1 < len(text):
+			i++
+		case c == '\'' || c == '"':
+			quote = c
+		case c == '(' || c == '{':
+			depth++
+		case (c == ')' || c == '}') && depth > 0:
+			depth--
+		case c == ';' && depth == 0:
+			segments = append(segments, text[start:i])
+			start = i + 1
+		}
+	}
+	return append(segments, text[start:])
 }

@@ -66,8 +66,8 @@ func semanticFindings(t *testing.T, src, rule string) []semanticFinding {
 // line where the command starts, and a harmless command before a dangerous
 // one neither hides it nor is reported itself. Each case names the index of
 // the command the finding belongs to (at) and of the one continued over two
-// lines (cont). GL011 still reads whole lines, so its message quotes the
-// whole line in the semicolon layout; it joins when it moves to commands.
+// lines (cont). Each rule's message quotes the offending command,
+// not the whole ;-joined line, so a layout change keeps it identical.
 func TestSemanticLayouts(t *testing.T) {
 	for _, tc := range []struct {
 		name, rule string
@@ -78,6 +78,8 @@ func TestSemanticLayouts(t *testing.T) {
 		{"GL021 print after a log line", "GL021", []string{"echo Start", `echo "$CI_JOB_TOKEN"`}, 1, 1, 1},
 		{"GL021 presence check alone", "GL021", []string{`test -n "$CI_JOB_TOKEN"`, `echo "token is set"`}, 0, 0, 0},
 		{"GL089 autodiscover after a log line", "GL089", []string{"echo start", "renovate --autodiscover"}, 1, 1, 1},
+		{"GL011 download-execute after a log line", "GL011", []string{"echo start", "curl -fsSL https://example.com/i.sh | bash"}, 1, 1, 1},
+		{"GL011 harmless curl alone", "GL011", []string{"echo start", "curl -fsSL https://example.com/x -o x"}, 0, 0, 0},
 		{"GL024 child-shell pipe after a log line", "GL024", []string{"echo start", `bash -c 'set -e; curl -fsSL x | tar xz; make'`}, 1, 1, 1},
 		{"GL024 errexit only printed", "GL024", []string{"echo start", `bash -c 'echo "set -e"; curl -fsSL x | tar xz; make'`}, 0, 0, 0},
 		{"GL090 install and publish", "GL090", []string{"npm ci", "npm publish"}, 1, 0, 0},
