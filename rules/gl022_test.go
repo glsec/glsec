@@ -117,6 +117,8 @@ job:
 		{"python3.11 -m pip install -U pip", true},
 		{"python2.7 -m pip install -U setuptools", true},
 		{"py -m pip install -U pip", true},
+		{"pythonish -m pip install -U pip", false},
+		{"python3.beta -m pip install -U pip", false},
 		{"uv pip install -U pip", true},
 		{"python -m pip install -U -r requirements.txt", false},
 		{"python3.11 -m pip install -U -r requirements.txt", false},

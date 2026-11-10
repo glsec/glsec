@@ -350,7 +350,20 @@ func checkPMLine(line, file string, lineNum, col int) *finding.Finding {
 // pipUpgradeHasPackage distinguishes an ad-hoc registry package from an
 // upgrade of only a requirements file or local project. File/option arguments
 // are not package names, even when -U precedes them.
-var pythonPipLauncherRe = regexp.MustCompile(`^python[0-9]*(?:\.[0-9]+)*$`)
+// isPythonPipLauncher accepts Python's usual executable names without adding
+// a regexp dependency to the rule (the base branch uses prefiltered checks).
+func isPythonPipLauncher(name string) bool {
+	if name == "py" || name == "python" {
+		return true
+	}
+	if !strings.HasPrefix(name, "python") {
+		return false
+	}
+	version := strings.TrimPrefix(name, "python")
+	return len(version) > 0 && version[0] >= '0' && version[0] <= '9' &&
+		strings.Trim(version, "0123456789.") == "" &&
+		!strings.Contains(version, "..") && !strings.HasSuffix(version, ".")
+}
 
 func pipRemoteSource(arg string) bool {
 	return strings.HasPrefix(arg, "git+") || strings.HasPrefix(arg, "https://") || strings.HasPrefix(arg, "http://")
@@ -364,7 +377,7 @@ func pipUpgradeHasPackage(line string) bool {
 		if len(words) >= 3 {
 			name := commandName(words)
 			switch {
-			case words[1] == "-m" && (name == "py" || pythonPipLauncherRe.MatchString(name)):
+			case words[1] == "-m" && isPythonPipLauncher(name):
 				words = words[2:]
 			case name == "uv" && words[1] == "pip":
 				words = words[1:]
