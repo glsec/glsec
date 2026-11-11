@@ -91,6 +91,9 @@ func (r *gl083) Check(doc *yaml.Node, file string) []finding.Finding {
 		switch {
 		case exfil && strings.HasPrefix(kind, "environment"):
 			msg = "script line sends the job environment to a network host (%s): %q — that includes CI_JOB_TOKEN and every masked variable; send only the variables the receiver needs"
+		case exfil && strings.HasPrefix(kind, "DNS"):
+			severity = finding.Warn
+			msg = "script line smuggles command output into a %s: %q — the queried subdomain carries data off the runner, past egress rules that only watch HTTP; remove it"
 		case exfil:
 			msg = "script line sends a credential to a network host (%s): %q — this exfiltrates secrets from the runner; remove it"
 		case kind == "":
@@ -182,6 +185,9 @@ func credentialExfilKind(line string) string {
 	if k := pipedCredential(line); k != "" {
 		return k
 	}
+	if k := dnsExfilKind(line); k != "" {
+		return k
+	}
 	if scpRe.MatchString(line) {
 		for _, m := range creds {
 			before := line[:m[0]]
@@ -194,6 +200,27 @@ func credentialExfilKind(line string) string {
 		}
 	}
 	return ""
+}
+
+// dnsExfilRe matches a DNS lookup tool, at command position, whose queried name
+// carries a command substitution ($(…) or backticks): data smuggled in a
+// subdomain label, past egress rules that only watch HTTP. A plain host
+// (`dig example.com`) or a bare variable (`dig +short "$REGISTRY_HOST"`) has no
+// substitution and is not matched. `host` must be the command, not an argument
+// such as the target in `ssh host "$(cmd)"`.
+var dnsExfilRe = mustCompilePrefiltered(
+	"(?:^|[;&|({])\\s*(dig|nslookup|host|drill)\\b[^;&|\\n]*(?:\\$\\((?:[^()]|\\([^()]*\\))*\\)|`[^`]*`)",
+)
+
+// dnsExfilKind reports a DNS-channel exfiltration on line, or the empty string.
+// MatchString runs on every line, so it avoids allocating a submatch slice
+// until there is a real match.
+func dnsExfilKind(line string) string {
+	if !dnsExfilRe.MatchString(line) {
+		return ""
+	}
+	m := dnsExfilRe.FindStringSubmatch(line)
+	return "DNS query (" + m[1] + ")"
 }
 
 // pipedCredential reports a credential produced in one pipeline stage and
