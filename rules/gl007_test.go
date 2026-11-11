@@ -213,3 +213,96 @@ build:
 		t.Error("expected non-zero line number")
 	}
 }
+
+func TestGL007_NestedInFileLiteral_Warn(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		yaml string
+	}{
+		{"interpolated in-file literals", `
+variables:
+  UV_VERSION: "0.5.0"
+  PYTHON_VERSION: "3.12"
+  BASE_LAYER: "bookworm-slim"
+  UV_IMAGE: "ghcr.io/astral-sh/uv:$UV_VERSION-python$PYTHON_VERSION-$BASE_LAYER"
+build:
+  image: $UV_IMAGE
+  script: [make]
+`},
+		{"brace-form nested literal", `
+variables:
+  docker_version: "20.10.16"
+  dind: "docker:${docker_version}"
+build:
+  image: $dind
+  script: [make]
+`},
+		{"two-step alias to a literal", `
+variables:
+  OTHER_IMAGE: node:24-alpine
+  IMG: $OTHER_IMAGE
+build:
+  image: $IMG
+  script: [make]
+`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := findings007(t, tc.yaml)
+			if len(f) != 1 {
+				t.Fatalf("expected 1 finding, got %d", len(f))
+			}
+			if f[0].Severity != finding.Warn {
+				t.Errorf("expected Warn for a nested in-file literal image var, got %s", f[0].Severity)
+			}
+		})
+	}
+}
+
+func TestGL007_MatrixLiteralList_Warn(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		yaml string
+	}{
+		{"matrix sequence of literals", `
+test:
+  parallel:
+    matrix:
+      - PYTHON_TEST_IMAGE: python:3.11-slim
+      - PYTHON_TEST_IMAGE: python:3.12-slim
+  image: $PYTHON_TEST_IMAGE
+  script: [pytest]
+`},
+		{"matrix list form", `
+test:
+  parallel:
+    matrix:
+      - IMAGE: ["python:3.11-slim", "python:3.12-slim"]
+  image: $IMAGE
+  script: [pytest]
+`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := findings007(t, tc.yaml)
+			if len(f) != 1 {
+				t.Fatalf("expected 1 finding, got %d", len(f))
+			}
+			if f[0].Severity != finding.Warn {
+				t.Errorf("expected Warn for a parallel:matrix list of literal images, got %s", f[0].Severity)
+			}
+		})
+	}
+}
+
+func TestGL007_UndefinedInFileStillError(t *testing.T) {
+	f := findings007(t, `
+build:
+  image: $DEFAULT_CI_IMAGE
+  script: [make]
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding, got %d", len(f))
+	}
+	if f[0].Severity != finding.Error {
+		t.Errorf("expected Error for an undefined in-file image var, got %s", f[0].Severity)
+	}
+}
