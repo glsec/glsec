@@ -69,11 +69,11 @@ var userVarRe = mustCompilePrefiltered(
 )
 
 // evalArgRe matches a command that parses its argument as code, up to and
-// including the opening double quote of that argument. The outer shell
-// expands variables inside the double quotes first, so the command then
-// parses the attacker's value as code: quoting protects nothing here.
+// including the opening quote of that argument. Inside double quotes the
+// outer shell expands variables first; inside single quotes a child shell
+// or eval still expands them when it runs the script (#1356).
 var evalArgRe = mustCompilePrefiltered(
-	`(?:^|[\s;&|/(` + "`" + `])(eval|(?:ba|z|da|k)?sh[ \t]+(?:-[a-zA-Z]+[ \t]+)*-[a-zA-Z]*c|python[23]?(?:\.\d+)?[ \t]+(?:-[a-zA-Z]+[ \t]+)*-c|node[ \t]+(?:-e|--eval|-p|--print)|(?:perl|ruby)[ \t]+(?:-[a-zA-Z]+[ \t]+)*-[a-zA-Z]*e)[ \t]+"`,
+	`(?:^|[\s;&|/(` + "`" + `])(eval|(?:ba|z|da|k)?sh[ \t]+(?:-[a-zA-Z]+[ \t]+)*-[a-zA-Z]*c|python[23]?(?:\.\d+)?[ \t]+(?:-[a-zA-Z]+[ \t]+)*-c|node[ \t]+(?:-e|--eval|-p|--print)|(?:perl|ruby)[ \t]+(?:-[a-zA-Z]+[ \t]+)*-[a-zA-Z]*e)[ \t]+(['"])`,
 )
 
 func (r *gl002) Check(doc *yaml.Node, file string) []finding.Finding {
@@ -165,21 +165,30 @@ func whoSets(name string) string {
 	return "set by commit authors"
 }
 
-// checkEvaluatedArgs reports user-controlled variables inside the
-// double-quoted argument of a command that evaluates it as code (eval, sh -c,
-// python -c, …). masked is maskShellQuotes(node.Value); masking keeps offsets,
-// so the command is located on the masked copy, where a keyword inside a
-// quoted string cannot match, and the argument is read from the raw value.
+// checkEvaluatedArgs reports user-controlled variables inside the quoted
+// argument of a command that evaluates it as code (eval, sh -c, python -c,
+// …). masked is maskShellQuotes(node.Value); masking keeps offsets, so the
+// command is located on the masked copy, where a keyword inside a quoted
+// string cannot match, and the argument is read from the raw value.
+// Single-quoted scripts are only flagged for eval and POSIX shells: those
+// expand $VAR when they run the script. python/node/perl/ruby do not.
 func checkEvaluatedArgs(node *yaml.Node, file, masked string, seen map[string]bool) []finding.Finding {
 	var findings []finding.Finding
 	for _, m := range evalArgRe.FindAllStringSubmatchIndex(masked, -1) {
 		open := m[1] - 1
-		end := strings.IndexByte(masked[open+1:], '"')
+		if open < 0 || open >= len(masked) {
+			continue
+		}
+		quote := masked[open]
+		end := strings.IndexByte(masked[open+1:], quote)
 		if end < 0 {
 			continue
 		}
 		arg := node.Value[open+1 : open+1+end]
 		cmd := strings.Join(strings.Fields(masked[m[2]:m[3]]), " ")
+		if quote == '\'' && !shellOrEvalCode(cmd) {
+			continue
+		}
 		for _, loc := range userVarRe.FindAllStringSubmatchIndex(arg, -1) {
 			// \$VAR inside double quotes is a literal dollar sign.
 			if loc[0] > 0 && arg[loc[0]-1] == '\\' {
@@ -190,6 +199,7 @@ func checkEvaluatedArgs(node *yaml.Node, file, masked string, seen map[string]bo
 				continue
 			}
 			seen[varName] = true
+			line, col := scriptMatchPos(node, open)
 			findings = append(findings, finding.Finding{
 				RuleID:   "GL002",
 				Severity: finding.Warn,
@@ -198,8 +208,8 @@ func checkEvaluatedArgs(node *yaml.Node, file, masked string, seen map[string]bo
 					varName, cmd,
 				),
 				File: file,
-				Line: node.Line,
-				Col:  node.Column,
+				Line: line,
+				Col:  col,
 			})
 		}
 	}
@@ -269,6 +279,18 @@ var (
 // as code: an argument of eval, or the one right after sh -c and the like.
 func unquotedCode(before string) bool {
 	return evalWordsRe.MatchString(before) || codeFlagRe.MatchString(before)
+}
+
+// shellOrEvalCode reports whether cmd is eval or a POSIX shell -c invocation,
+// whose script is expanded by a shell even when the caller quoted it with
+// single quotes.
+func shellOrEvalCode(cmd string) bool {
+	fields := strings.Fields(cmd)
+	if len(fields) == 0 {
+		return false
+	}
+	name := path.Base(fields[0])
+	return name == "eval" || posixShells[name]
 }
 
 // commandStart returns where the simple command holding pos starts. The
