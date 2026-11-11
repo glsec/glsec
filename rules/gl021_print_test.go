@@ -76,6 +76,21 @@ func TestPrintedSecret(t *testing.T) {
 		{`echo $AWS_SECRET_ACCESS_KEY`, true},
 		{`echo $MY_TOKENS`, true},
 		{`echo $GPG_KEY_ID $DEPLOY_TOKEN`, true},
+
+		// A short substring prints a prefix, not the secret (#1370).
+		{`echo "token starts with ${CI_JOB_TOKEN:0:8}..."`, false},
+		{`echo "${CRATES_IO_PUBLISH_TOKEN::16}..."`, false},
+		{`echo "${DEPLOY_TOKEN: 2 : 4}"`, false},
+		{`echo "${DEPLOY_TOKEN:0:17}"`, true},
+		{`echo "${DEPLOY_TOKEN:8}"`, true},
+		{`echo "${DEPLOY_TOKEN:0:-4}"`, true},
+		{`echo "${DEPLOY_TOKEN:0:$LEN}"`, true},
+		{`echo "${DEPLOY_TOKEN:$OFFSET:8}"`, true},
+		{`echo "$DEPLOY_TOKEN:0:8"`, true},
+		{`echo "${DEPLOY_TOKEN:0:8}" "$API_KEY"`, true},
+		// A flag that a token is configured is not the token (#1370).
+		{`echo "git token: ${GIT_TOKEN_CONFIGURED:-unknown}"`, false},
+		{`echo "galaxy: ${GALAXY_TOKENS_CONFIGURED:-unknown}"`, false},
 	}
 	for _, tt := range tests {
 		if _, got := printedSecret(tt.line); got != tt.want {
@@ -121,6 +136,7 @@ func TestIsSecretName(t *testing.T) {
 		"TOKEN":                 false, // nothing before the indicator
 		"BYPASS":                false,
 		"API_TOKEN_EXPIRES_AT":  false,
+		"GIT_TOKEN_CONFIGURED":  false,
 		"REGISTRY_PASS_USER":    false,
 		"API_KEY_IDENTIFIER":    true, // _IDENTIFIER is not _ID
 		"WEBHOOK_SECRET_HEADER": true,
