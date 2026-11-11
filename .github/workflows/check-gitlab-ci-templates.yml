@@ -1,0 +1,88 @@
+name: Check GitLab CI templates
+
+# Weekly check for CI/CD templates GitLab adds to or removes from
+# lib/gitlab/ci/templates/ (Docker, Kaniko, Terraform, Cosign, the security
+# scanners, …). Each template is a tool GitLab recommends running inside a
+# pipeline; a new one is a new tool whose misconfigurations glsec may need a
+# rule for. Mirrors check-gitlab-ci-schema.yml.
+#
+# Compares the template list with the reviewed snapshot in
+# .github/gitlab-ci-templates.txt and opens an issue on a difference, or updates
+# the open one. After reviewing, regenerate the snapshot with
+# .github/scripts/gitlab-ci-templates.sh and commit it. Not run on pull
+# requests, so this repository's CI doesn't depend on gitlab.com.
+
+on:
+  schedule:
+    - cron: "15 8 * * 2" # 08:15 UTC every Tuesday (just after the schema check)
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  check:
+    name: Compare GitLab's CI/CD templates with the reviewed snapshot
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write # open or update the issue
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Compare the templates
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SNAPSHOT: .github/gitlab-ci-templates.txt
+        run: |
+          set -euo pipefail
+          export LC_ALL=C
+
+          bash .github/scripts/gitlab-ci-templates.sh > "$RUNNER_TEMP/templates.txt"
+
+          added=$(comm -13 "$SNAPSHOT" "$RUNNER_TEMP/templates.txt")
+          removed=$(comm -23 "$SNAPSHOT" "$RUNNER_TEMP/templates.txt")
+          echo "added: $(grep -c . <<< "$added" || true), removed: $(grep -c . <<< "$removed" || true)"
+          if [ -z "$added" ] && [ -z "$removed" ]; then
+            echo "GitLab's CI/CD templates match the reviewed snapshot."
+            exit 0
+          fi
+
+          # Template paths are file names under lib/gitlab/ci/templates/.
+          list() { sed -e 's/^/- `/' -e 's/$/`/' | head -n 200; }
+          {
+            echo "GitLab's [CI/CD templates](https://gitlab.com/gitlab-org/gitlab/-/tree/master/lib/gitlab/ci/templates) differ from the reviewed snapshot in \`$SNAPSHOT\`."
+            echo
+            if [ -n "$added" ]; then
+              echo "## New in GitLab"
+              echo
+              list <<< "$added"
+              echo
+            fi
+            if [ -n "$removed" ]; then
+              echo "## No longer in GitLab's templates"
+              echo
+              list <<< "$removed"
+              echo
+            fi
+            echo "## What to do"
+            echo
+            echo "Each template is a tool GitLab recommends running inside a pipeline. For each new one, look at what the template's jobs actually run and decide whether glsec should flag a misconfiguration of that tool: a dangerous flag (e.g. a TLS-verify skip), an unpinned/insecure fetch, a secret in a command, a deploy action without a source guard. File an issue for each that does. Then regenerate the snapshot and close this issue with the commit:"
+            echo
+            echo '```sh'
+            echo "bash .github/scripts/gitlab-ci-templates.sh > $SNAPSHOT"
+            echo '```'
+          } > "$RUNNER_TEMP/body.md"
+
+          title="GitLab CI/CD templates changed"
+          existing=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            # REST, not gh issue edit: that one also queries the retired
+            # classic projects and fails.
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/$existing" -F "body=@$RUNNER_TEMP/body.md" --silent
+            echo "Updated #$existing."
+          else
+            gh issue create --title "$title" --label enhancement --label rule --body-file "$RUNNER_TEMP/body.md"
+          fi
