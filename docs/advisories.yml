@@ -54,12 +54,21 @@
   aliases: [GHSA-69fq-xp46-6x23]
   kind: cve
   product: Trivy
-  summary: "A malicious Trivy 0.69.4 release reached jobs that pull a moving image tag."
+  summary: "A malicious Trivy 0.69.4 release reached jobs that pull a moving image tag or install it unpinned."
   coverage: partial
   rules:
     - {rule: GL001, severity: error}
+    - {rule: GL022, severity: warn}
   reason: by-design
-  note: "A version tag such as 0.69.4 is only reported with require_image_digest: true."
+  note: "An unpinned install (apt-get install trivy, the vector in the LiteLLM pipeline compromise) is reported by default by GL022; a pinned version image tag such as 0.69.4 only with require_image_digest: true (GL001)."
+
+- id: GHSA-5mg7-485q-xm76
+  kind: cve
+  product: LiteLLM
+  summary: "LiteLLM 1.82.7 and 1.82.8 shipped credential-harvesting malware that runs on import."
+  coverage: none
+  reason: not-static
+  note: "glsec scans pipeline config and scripts, not package contents, and the compromised version is pinned, so the install line looks ordinary. The pipeline vector that led to this compromise, an unpinned Trivy install, is reported by GL022 (see CVE-2026-33634)."
 
 - id: CVE-2023-49291
   aliases: [GHSA-8v8w-v8xg-79rf]
