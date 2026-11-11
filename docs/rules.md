@@ -80,6 +80,7 @@ User-controlled inputs and unversioned component references that allow malicious
 | [GL067](rules/GL067.md) | `warn`  | `SECURE_ANALYZERS_PREFIX` (or `*_ANALYZER_IMAGE`) repoints managed security scanners off `registry.gitlab.com` |
 | [GL078](rules/GL078.md) | `warn`  | Invisible / bidirectional Unicode control characters (Trojan Source) and line breaks only YAML sees — rendered file can differ from what runs |
 | [GL083](rules/GL083.md) | `error`/`warn` | Reverse shell, backdoor or credential exfiltration in `script:` — connects the runner back to an attacker-controlled host, or sends a credential file, minted token, or the job environment to one |
+| [GL093](rules/GL093.md) | `error` | Interpreter runs a file with a non-script extension (`node fonts/x.ttf`) — an executable payload disguised behind a data/asset/document extension (the PolinRider technique) |
 | [GL084](rules/GL084.md) | `error`/`warn` | CI variable interpolation in an `include:` target — the included configuration is picked at pipeline start |
 | [GL085](rules/GL085.md) | `error`/`warn` | AI coding agent (Claude Code, Codex, Gemini CLI, Copilot CLI) run with approvals disabled, or with user-controlled text in its prompt |
 
