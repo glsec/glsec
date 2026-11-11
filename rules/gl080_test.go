@@ -21,6 +21,35 @@ func findings080(t *testing.T, yaml string) []finding.Finding {
 	return GL080.Check(doc.Root, "test.yml")
 }
 
+func TestGL080_RequiresDeploySignal(t *testing.T) {
+	// A deploy-sounding name alone, with no credential and no real deploy, is
+	// not sensitive; a real deploy/publish/infra-apply command is, regardless
+	// of the job name (#1371). Jobs are unguarded, so a sensitive one fires.
+	for _, tc := range []struct {
+		name, yaml string
+		want       int
+	}{
+		{"deploy echo placeholder", "deploy-example:\n  stage: deploy\n  script: [echo \"do your deploy here\"]", 0},
+		{"release writes a note", "release:\n  script: [echo hi >> notes.md]", 0},
+		{"dotnet publish is a local build", "publish-app:\n  script: [dotnet publish -o out]", 0},
+		{"provision builds an image", "provision-img:\n  script: [./build-super-img.sh]", 0},
+		{"terraform apply, not named deploy", "infra:\n  script: [terraform apply -auto-approve]", 1},
+		{"pulumi up", "stack:\n  script: [pulumi up --yes]", 1},
+		{"kubectl apply", "k8s:\n  script: [kubectl apply -f k8s/]", 1},
+		{"helm upgrade install", "chart:\n  script: [helm upgrade --install app ./chart]", 1},
+		{"npm publish", "publish:\n  script: [npm publish]", 1},
+		{"dotnet nuget push", "nuget:\n  script: [dotnet nuget push pkg.nupkg -s https://nuget.org -k $K]", 1},
+		{"custom deploy with a credential", "deploy:\n  script: ['./deploy.sh \"$DEPLOY_TOKEN\"']", 1},
+		{"release name with a credential variable", "release:\n  variables:\n    PROD_DEPLOY_KEY: x\n  script: [./ship]", 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if f := findings080(t, "\n"+tc.yaml+"\n"); len(f) != tc.want {
+				t.Errorf("got %d findings, want %d: %+v", len(f), tc.want, f)
+			}
+		})
+	}
+}
+
 func TestGL080_DeployNoGuard(t *testing.T) {
 	f := findings080(t, `
 deploy-prod:

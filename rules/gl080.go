@@ -45,9 +45,6 @@ func (r *gl080) Check(doc *yaml.Node, file string) []finding.Finding {
 			return
 		}
 		job := in.Effective(own)
-		if !gl080Sensitive(name.Value, job) {
-			return
-		}
 		// The production-environment-without-rules case is already covered by
 		// GL013; skip it here to avoid a duplicate finding.
 		if gl013Owns(name.Value, job) {
@@ -57,6 +54,13 @@ func (r *gl080) Check(doc *yaml.Node, file string) []finding.Finding {
 		msg := ""
 		switch {
 		case state != guardEffective && !wfRestricts:
+			// An unguarded job is reported only when it really deploys: an
+			// environment, a deploy/publish/infra-apply command, or a
+			// deploy-named job that uses a credential (#1371). A deploy-sounding
+			// name alone is not enough.
+			if !gl080Sensitive(in, name.Value, own, job) {
+				return
+			}
 			msg = gl080Message(name.Value, state, jobManualOnly(job))
 		case state == guardEffective && mrPipelines && gl080MROnlyProduction(in, name.Value, own, job):
 			msg = fmt.Sprintf(
@@ -180,11 +184,30 @@ var gl080NotDeployKeywords = []string{
 }
 
 // gl080Sensitive reports whether a job deploys or publishes to an external
-// target. An environment: (other than a teardown/stop job) is the strongest
-// signal; otherwise a narrow deploy keyword in the job or stage name, unless a
-// build/test/package keyword vetoes it.
-func gl080Sensitive(name string, job *yaml.Node) bool {
+// target. A deploy-sounding job name is not enough on its own — at scale it
+// flagged jobs that only build a local artifact, run tests, or generate files,
+// with no credential to steal on a fork MR (#1371). A job is sensitive when:
+//
+//   - it has an environment: (other than a teardown/stop job); or
+//   - its effective script runs a real deploy, publish or infrastructure-apply
+//     command (docker/podman push, npm/twine/cargo publish, kubectl/helm/
+//     terraform/pulumi apply, rsync/scp, …) — this also catches an infra-apply
+//     job whose name is `terraform` or `plan-apply`, not `deploy`; or
+//   - it has a deploy/release/publish-named job or stage AND uses a credential
+//     (a secret-named variable), so a custom deploy (`./deploy.sh "$TOKEN"`)
+//     glsec can't read as a command still counts, while a `publish-docs` or
+//     `release-notes` job with no credential does not.
+func gl080Sensitive(in *Inheritance, name string, own, job *yaml.Node) bool {
 	if env := parser.FindKey(job, "environment"); env != nil && !envActionStop(env) && extractEnvName(env) != "" {
+		return true
+	}
+	// A GitLab Pages job publishes a site — a deployment. The main-site case is
+	// GL013's and has already returned via gl013Owns, so a Pages job reaching
+	// gl080Sensitive is a path-prefixed (non-main) deploy.
+	if name == "pages" || parser.FindKey(job, "pages") != nil {
+		return true
+	}
+	if jobScriptDeploys(in, own) {
 		return true
 	}
 	hay := strings.ToLower(name) + " " + jobStageName(job)
@@ -195,7 +218,30 @@ func gl080Sensitive(name string, job *yaml.Node) bool {
 	}
 	for _, kw := range gl080DeployKeywords {
 		if strings.Contains(hay, kw) {
-			return true
+			return jobUsesCredential(job)
+		}
+	}
+	return false
+}
+
+// jobUsesCredential reports whether a job's effective definition carries a
+// secret: a secret-named variable set in variables:, or referenced in a
+// script line (`$DEPLOY_TOKEN`, `$CI_REGISTRY_PASSWORD`). It gates the
+// name-keyword path of gl080Sensitive so a deploy-named job counts only when
+// it actually has a credential to protect.
+func jobUsesCredential(job *yaml.Node) bool {
+	if vars := parser.FindKey(job, "variables"); vars != nil && vars.Kind == yaml.MappingNode {
+		for i := 0; i+1 < len(vars.Content); i += 2 {
+			if isSecretName(strings.ToUpper(vars.Content[i].Value)) {
+				return true
+			}
+		}
+	}
+	for _, line := range CollectJobScriptLines(job) {
+		for _, loc := range gl021VarRefRe.FindAllStringSubmatchIndex(line.Value, -1) {
+			if isSecretName(line.Value[loc[2]:loc[3]]) {
+				return true
+			}
 		}
 	}
 	return false

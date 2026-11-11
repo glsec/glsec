@@ -20,7 +20,7 @@ func TestIncludedJobOverrides(t *testing.T) {
 		job  string
 	}{
 		{GL013, "pages:\n  needs: [docs]\n"},
-		{GL080, "release-job:\n  dependencies: []\n"},
+		{GL080, "release-job:\n  variables:\n    DEPLOY_TOKEN: secret\n"},
 		{GL081, "cloud-job:\n  id_tokens:\n    CLOUD_TOKEN:\n      aud: https://example.com\n"},
 		{GL005, "build:\n  artifacts:\n    paths: [dist/]\n"},
 		{GL017, "deploy:\n  environment: production\n"},
