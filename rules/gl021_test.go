@@ -552,9 +552,10 @@ func TestGL021_EmptyQuotedCommandFragment(t *testing.T) {
 	}
 }
 
-// A substring expansion is shown with its closing brace (#977).
+// A substring expansion is shown with its closing brace (#977). From offset 4
+// to the end prints most of the value; a short ${NAME:0:4} is exempt (#1370).
 func TestGL021_SubstringExpansionName(t *testing.T) {
-	doc, err := parser.Parse([]byte("job:\n  script:\n    - echo \"prefix ${PUBLISH_TOKEN:0:4}\"\n"), "test.yml")
+	doc, err := parser.Parse([]byte("job:\n  script:\n    - echo \"suffix ${PUBLISH_TOKEN:4}\"\n"), "test.yml")
 	if err != nil {
 		t.Fatal(err)
 	}

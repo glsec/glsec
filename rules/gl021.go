@@ -32,8 +32,9 @@ var (
 	// nonSecretSuffixRe matches a final name segment that names something
 	// about the secret rather than the secret itself: GPG_KEY_ID,
 	// DOCKER_PASSWORD_FILE, DEPLOY_TOKENIZER_URL (#579). DIR also counts
-	// without an underscore, as in DOCKER_TLS_CERTDIR.
-	nonSecretSuffixRe = mustCompilePrefiltered(`(?:_(?:ID|URL|URI|PATH|FILE|NAME|HOST|USER|USERNAME|TYPE|LENGTH|EXPIRES_AT|VERSION|PACKAGE|ENDPOINT|DOMAIN|PORT|REGION|ENABLED|MODE)|DIR)$`)
+	// without an underscore, as in DOCKER_TLS_CERTDIR. GIT_TOKEN_CONFIGURED is
+	// a flag that a token is set (#1370).
+	nonSecretSuffixRe = mustCompilePrefiltered(`(?:_(?:ID|URL|URI|PATH|FILE|NAME|HOST|USER|USERNAME|TYPE|LENGTH|EXPIRES_AT|VERSION|PACKAGE|ENDPOINT|DOMAIN|PORT|REGION|ENABLED|CONFIGURED|MODE)|DIR)$`)
 
 	// singleQuotedRe matches single-quoted spans, whose contents the shell does
 	// not expand (so a secret reference inside them is literal text).
@@ -314,6 +315,11 @@ func printedSecretDirect(line string) (string, bool) {
 		if strings.HasPrefix(s[end:], ":+") {
 			continue
 		}
+		// ${NAME:offset:length} with a literal length of at most 16 prints a
+		// short slice of the value, like head -c 16, not the secret (#1370).
+		if strings.HasPrefix(s[start:], "${") && shortSubstring(s[end:]) {
+			continue
+		}
 
 		// Find the command segment the secret belongs to (split on shell
 		// command separators).
@@ -385,6 +391,35 @@ func printedSecretDirect(line string) (string, bool) {
 		return varRefText(s[start:end]), true
 	}
 	return "", false
+}
+
+// shortSubstring reports whether rest, the text after a braced variable name,
+// is a substring expansion :offset:length} whose length is a literal from 0
+// to 16. The offset may be empty (${NAME::8}). A negative or computed length,
+// or a missing one (${NAME:8} prints to the end), does not count.
+func shortSubstring(rest string) bool {
+	if !strings.HasPrefix(rest, ":") {
+		return false
+	}
+	body, _, closed := strings.Cut(rest[1:], "}")
+	if !closed {
+		return false
+	}
+	offset, length, ok := strings.Cut(body, ":")
+	if !ok || strings.Contains(length, ":") {
+		return false
+	}
+	offset, length = strings.TrimSpace(offset), strings.TrimSpace(length)
+	if offset != "" {
+		if _, err := strconv.Atoi(offset); err != nil {
+			return false
+		}
+	}
+	if length == "" || length[0] < '0' || length[0] > '9' {
+		return false
+	}
+	n, err := strconv.Atoi(length)
+	return err == nil && n <= 16
 }
 
 // informationRedirected checks for a direct information-stream file redirect,
