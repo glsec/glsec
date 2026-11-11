@@ -88,6 +88,9 @@ func TestPrintedSecret(t *testing.T) {
 		{`echo "${DEPLOY_TOKEN:$OFFSET:8}"`, true},
 		{`echo "$DEPLOY_TOKEN:0:8"`, true},
 		{`echo "${DEPLOY_TOKEN:0:8}" "$API_KEY"`, true},
+		{`echo "${DEPLOY_TOKEN:0:8"`, true},
+		{`ssh -T git@host "echo $DEPLOY_TOKEN"`, true},
+		{`ssh -i ~/.ssh/id "$DEPLOY_HOST"`, false},
 		// A flag that a token is configured is not the token (#1370).
 		{`echo "git token: ${GIT_TOKEN_CONFIGURED:-unknown}"`, false},
 		{`echo "galaxy: ${GALAXY_TOKENS_CONFIGURED:-unknown}"`, false},
