@@ -113,11 +113,20 @@ func gl094ExfilReason(cmds []shellCommand) string {
 		if len(w) == 0 {
 			continue
 		}
+		// Only an encoder running in its encode direction stages a key for
+		// exfiltration. `base64 -d` / `base32 -d` decode, which is how a CI job
+		// writes a deploy key into place (echo "$KEY_B64" | base64 -d >
+		// ~/.ssh/id_rsa) — not a read for exfil (#1398 false positive).
 		if gl094Encoders[commandName(w)] {
-			encoder = true
+			if _, decodes := payloadDecoder(w); !decodes {
+				encoder = true
+			}
 		}
-		for _, a := range gl094Args(w) {
-			if gl094IsKeyArg(a) {
+		// A key path that is a redirect target (`> ~/.ssh/id_rsa`) is written,
+		// not read, so it is not a key being staged for exfiltration.
+		args := gl094Args(w)
+		for i, a := range args {
+			if gl094IsKeyArg(a) && (i == 0 || !isRedirectWord(args[i-1])) {
 				keyArg = true
 			}
 		}
@@ -140,9 +149,14 @@ func gl094ExfilReason(cmds []shellCommand) string {
 				}
 			}
 		}
-		// cp/mv SOURCE… DEST: a key among the sources is copied off; a key only
-		// as the destination is a write into place (GL032's side), not a read.
+		// cp/mv SOURCE… DEST: a key among the sources is copied off. A key moved
+		// or copied INTO ~/.ssh (or onto another key path) installs it for use,
+		// not an exfiltration — the destination decides (#1398 false positive).
 		if gl094CopyOff[name] && len(args) >= 2 {
+			dest := strings.Trim(args[len(args)-1], `"'`)
+			if gl094IsKeyArg(dest) || strings.Contains(dest, ".ssh") {
+				continue
+			}
 			for _, a := range args[:len(args)-1] {
 				if gl094IsKeyArg(a) {
 					return "copied to another location"

@@ -209,7 +209,7 @@ func credentialExfilKind(line string) string {
 // substitution and is not matched. `host` must be the command, not an argument
 // such as the target in `ssh host "$(cmd)"`.
 var dnsExfilRe = mustCompilePrefiltered(
-	"(?:^|[;&|({])\\s*(dig|nslookup|host|drill)\\b[^;&|\\n]*(?:\\$\\((?:[^()]|\\([^()]*\\))*\\)|`[^`]*`)",
+	"(?:^|[;&|({])\\s*(dig|nslookup|host|drill)\\s[^;&|\\n]*(?:\\$\\((?:[^()]|\\([^()]*\\))*\\)|`[^`]*`)",
 )
 
 // dnsExfilKind reports a DNS-channel exfiltration on line, or the empty string.
