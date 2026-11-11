@@ -540,3 +540,99 @@ func TestGL016_ProbeOptionClusters(t *testing.T) {
 		}
 	}
 }
+
+// helm repo add and terraform/tofu init with an http backend fetch or send over
+// plaintext too (#1387); other http:// words of these tools are not reported.
+func TestGL016_HelmAndTerraformHTTP(t *testing.T) {
+	for line, want := range map[string]finding.Severity{
+		`helm repo add myrepo http://charts.example.com`:                                                        finding.Warn,
+		`helm repo add --force-update myrepo HTTP://charts.example.com/stable`:                                  finding.Warn,
+		`sudo helm repo add myrepo http://charts.corp`:                                                          finding.Info,
+		`terraform init -backend-config="address=http://state.example.com"`:                                     finding.Warn,
+		`terraform -chdir=infra init -input=false -backend-config "lock_address=http://state.example.com/lock"`: finding.Warn,
+		`tofu init --backend-config=unlock_address=http://10.0.0.5/lock`:                                        finding.Info,
+		`terraform init -backend-config='address = "http://state.example.com"'`:                                 finding.Warn,
+	} {
+		t.Run(line, func(t *testing.T) {
+			f := findings016(t, fmt.Sprintf("job:\n  script:\n    - %q\n", line))
+			if len(f) != 1 || f[0].Severity != want {
+				t.Fatalf("got %v, want one %s finding", f, want)
+			}
+		})
+	}
+}
+
+func TestGL016_HelmAndTerraformHTTP_NoFinding(t *testing.T) {
+	for _, line := range []string{
+		`helm repo add myrepo https://charts.example.com`,
+		`helm install app ./local-chart`,
+		`helm install app ./chart --set api=http://api.example.com`,
+		`helm repo add myrepo http://localhost:8080`,
+		`helm repo update`,
+		`helm repo`,
+		`terraform init -backend-config="address=https://state.example.com"`,
+		`terraform init -backend-config=backend.hcl`,
+		`terraform init -backend-config`,
+		`terraform init -backend-config="bucket=http-state"`,
+		`terraform plan -backend-config="address=http://state.example.com"`,
+		`terraform init -backend-config="address=http://127.0.0.1:8080"`,
+		`echo "see http://docs.example.com"`,
+		`kubectl apply -f http://manifests.example.com/app.yaml`,
+		`retry --helm=http://charts.example.com`,
+		`echo "helm repo add myrepo http://charts.example.com"`,
+		`helm upgrade app ./chart --set url=http://api.example.com`,
+		`helm --kube-apiserver=http://10.0.0.1 repo add myrepo https://charts.example.com`,
+		`terraform init http://state.example.com -backend-config`,
+		`terraform init -backend-config="address=https://state.example.com" -var docs=http://docs.example.com`,
+	} {
+		t.Run(line, func(t *testing.T) {
+			if f := findings016(t, fmt.Sprintf("job:\n  script:\n    - %q\n", line)); len(f) != 0 {
+				t.Fatalf("got %v, want no findings", f)
+			}
+		})
+	}
+}
+
+func TestGL016_HelmTerraformMessages(t *testing.T) {
+	f := findings016(t, `
+job:
+  script:
+    - helm repo add myrepo http://charts.example.com
+    - terraform init -backend-config="address=http://state.internal"
+`)
+	if len(f) != 2 {
+		t.Fatalf("expected 2 findings, got %v", f)
+	}
+	if f[0].Message != helmRepoHTTPMessages[0] || f[0].Line != 4 {
+		t.Errorf("helm finding: %+v", f[0])
+	}
+	if f[1].Message != terraformBackendHTTPMessages[1] || f[1].Line != 5 {
+		t.Errorf("terraform finding: %+v", f[1])
+	}
+}
+
+func TestGL016_ProbeLongOptions(t *testing.T) {
+	for line, want := range map[string]int{
+		`curl -s --output=/dev/null http://example.com/`:     0,
+		`curl -O http://example.com/tool.tgz -o /dev/null`:   1,
+		`wget -q --output-document=/dev/null http://ex.com/`: 0,
+	} {
+		if f := findings016(t, fmt.Sprintf("job:\n  script:\n    - %q\n", line)); len(f) != want {
+			t.Errorf("%s: got %v, want %d findings", line, f, want)
+		}
+	}
+}
+
+func TestGL016_VariableWithoutScalarValue_NoFinding(t *testing.T) {
+	f := findings016(t, `
+variables:
+  MIRROR:
+    description: "http://mirror.example.com is the default"
+  LIST: [http://mirror.example.com]
+job:
+  script: [echo]
+`)
+	if len(f) != 0 {
+		t.Errorf("expected no findings, got %v", f)
+	}
+}

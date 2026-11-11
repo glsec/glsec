@@ -6,6 +6,7 @@ package rules
 import (
 	"net"
 	"net/url"
+	"slices"
 	"strings"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -234,20 +235,26 @@ func (r *gl016) scriptLineFinding(item *yaml.Node, file string) *finding.Finding
 	// http:// URL in a variable or heredoc elsewhere in the block is not what
 	// curl or git fetches.
 	for _, cmd := range shellCommands(item.Value) {
-		if !curlWgetHTTPRe.MatchString(cmd.text) && !gitFetchHTTPRe.MatchString(cmd.text) {
-			continue
-		}
-		// curl and wget accept the scheme in any case (HTTP://, Http://), so
-		// the match ignores case (#827). git refuses an uppercase scheme ("git:
-		// 'remote-HTTP' is not a git command"), so gitFetchHTTPRe does not.
 		var url string
-		for _, w := range shellWords(cmd.text) {
-			if len(w) >= len("http://") && strings.EqualFold(w[:len("http://")], "http://") {
-				url = w
-				break
+		msgs := downloadHTTPMessages
+		switch {
+		case curlWgetHTTPRe.MatchString(cmd.text) || gitFetchHTTPRe.MatchString(cmd.text):
+			// curl and wget accept the scheme in any case (HTTP://, Http://), so
+			// the match ignores case (#827). git refuses an uppercase scheme ("git:
+			// 'remote-HTTP' is not a git command"), so gitFetchHTTPRe does not.
+			for _, w := range shellWords(cmd.text) {
+				if isHTTPURL(w) {
+					url = w
+					break
+				}
 			}
+			if !cmd.piped && discardsResponse(cmd.text) {
+				continue
+			}
+		default:
+			url, msgs = toolHTTPURL(cmd.text)
 		}
-		if url == "" || !cmd.piped && discardsResponse(cmd.text) {
+		if url == "" {
 			continue
 		}
 		host := hostOf(url)
@@ -255,10 +262,10 @@ func (r *gl016) scriptLineFinding(item *yaml.Node, file string) *finding.Finding
 			continue
 		}
 		sev := finding.Warn
-		msg := "script downloads over HTTP — a MITM attacker can serve malicious content"
+		msg := msgs[0]
 		if isPrivateOrInternal(host) {
 			sev = finding.Info
-			msg = "script downloads over HTTP from a private/internal host — consider HTTPS"
+			msg = msgs[1]
 		}
 		f := &finding.Finding{
 			RuleID: "GL016", Severity: sev, Message: msg,
@@ -270,6 +277,93 @@ func (r *gl016) scriptLineFinding(item *yaml.Node, file string) *finding.Finding
 		return f
 	}
 	return nil
+}
+
+// Each pair is the message for a public host, then for a private/internal one.
+var (
+	downloadHTTPMessages = [2]string{
+		"script downloads over HTTP — a MITM attacker can serve malicious content",
+		"script downloads over HTTP from a private/internal host — consider HTTPS",
+	}
+	helmRepoHTTPMessages = [2]string{
+		"helm repo add uses HTTP — a MITM attacker can serve tampered charts (arbitrary Kubernetes manifests and images)",
+		"helm repo add uses HTTP to a private/internal host — consider HTTPS",
+	}
+	terraformBackendHTTPMessages = [2]string{
+		"terraform init sends state over HTTP — state often holds secrets a MITM attacker can read or modify",
+		"terraform init sends state over HTTP to a private/internal host — consider HTTPS",
+	}
+)
+
+// containsHTTPFold reports whether s contains "http://" in any case, without
+// allocating.
+func containsHTTPFold(s string) bool {
+	for i := 0; i+len("http://") <= len(s); i++ {
+		if isHTTPURL(s[i : i+len("http://")]) {
+			return true
+		}
+	}
+	return false
+}
+
+func isHTTPURL(w string) bool {
+	return len(w) >= len("http://") && strings.EqualFold(w[:len("http://")], "http://")
+}
+
+// toolHTTPURL returns the http:// URL a command other than curl, wget or git
+// fetches from or sends to, and the messages to report it with: the URL of
+// `helm repo add NAME URL`, or an http backend's address passed to `terraform
+// init` (or `tofu init`) with -backend-config. Other http:// words, such as
+// an API endpoint in a `helm install --set`, are not what these tools fetch.
+func toolHTTPURL(text string) (string, [2]string) {
+	// Most commands name neither tool: skip them before splitting into words.
+	if !strings.Contains(text, "helm") && !strings.Contains(text, "terraform") && !strings.Contains(text, "tofu") ||
+		!containsHTTPFold(text) {
+		return "", [2]string{}
+	}
+	words := withoutWrapper(commandWords(text))
+	if len(words) == 0 {
+		return "", [2]string{}
+	}
+	args := words[1:]
+	switch commandName(words) {
+	case "helm":
+		for i := 0; i+1 < len(args); i++ {
+			if args[i] != "repo" || args[i+1] != "add" {
+				continue
+			}
+			for _, w := range args[i+2:] {
+				if isHTTPURL(w) {
+					return w, helmRepoHTTPMessages
+				}
+			}
+			break
+		}
+	case "terraform", "tofu":
+		if !slices.Contains(args, "init") {
+			break
+		}
+		for i, a := range args {
+			var value string
+			switch {
+			case a == "-backend-config" || a == "--backend-config":
+				if i+1 < len(args) {
+					value = args[i+1]
+				}
+			case strings.HasPrefix(a, "-backend-config="), strings.HasPrefix(a, "--backend-config="):
+				_, value, _ = strings.Cut(a, "=")
+			}
+			// A key=value pair; a value without "=" is a file of settings.
+			key, val, ok := strings.Cut(value, "=")
+			switch strings.TrimSpace(key) {
+			case "address", "lock_address", "unlock_address":
+				if val = strings.Trim(strings.TrimSpace(val), `"`); ok && isHTTPURL(val) {
+					return val, terraformBackendHTTPMessages
+				}
+			}
+		}
+	}
+	return "", [2]string{}
 }
 
 // devNullStdoutRe matches stdout redirected to /dev/null: > /dev/null,
