@@ -396,3 +396,34 @@ func TestGL049_YAML11Booleans(t *testing.T) {
 		})
 	}
 }
+
+// An extends: entry that is not a job name is skipped, and an environment:
+// without a name or tier still counts: the job inherits both from the template.
+func TestGL049_ExtendsSkipsNonScalarEntry(t *testing.T) {
+	f := findings049(t, `
+.deploy-template:
+  interruptible: true
+  environment:
+    url: https://example.com
+  script: [./deploy.sh]
+release-site:
+  extends: [{ not: a-name }, .deploy-template]
+`)
+	if len(f) != 1 {
+		t.Fatalf("got %+v, want 1 finding inherited through the named template", f)
+	}
+}
+
+// GitLab rejects an environment: list, but the rule must not misread it: it
+// is neither a name nor a mapping, so the deploy-like job name still decides.
+func TestGL049_EnvironmentListIsNotAName(t *testing.T) {
+	f := findings049(t, `
+deploy-site:
+  interruptible: true
+  environment: [production]
+  script: [./deploy.sh]
+`)
+	if len(f) != 1 {
+		t.Fatalf("got %+v, want 1 finding", f)
+	}
+}
