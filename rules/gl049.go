@@ -21,6 +21,14 @@ func (r *gl049) ID() string { return "GL049" }
 func (r *gl049) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
 	in := NewInheritance(doc)
+	// A global default: interruptible is one shared node; every job that inherits
+	// it resolves to the same line, so anchoring the finding there would collapse
+	// several deploy jobs into one (findings are de-duplicated by location).
+	// Anchor those at the job instead, so each affected job is reported (#1396).
+	var defaultInterruptible *yaml.Node
+	if def := parser.FindKey(parser.Unwrap(doc), "default"); def != nil {
+		defaultInterruptible = parser.FindKey(def, "interruptible")
+	}
 
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
 		// A job extending a template from another file still counts: its own
@@ -37,6 +45,10 @@ func (r *gl049) Check(doc *yaml.Node, file string) []finding.Finding {
 		if rules := in.Key(job, "rules"); rules != nil && rules.Kind == yaml.SequenceNode && onlyNever(rules) {
 			return
 		}
+		line, col := interruptible.Line, interruptible.Column
+		if interruptible == defaultInterruptible {
+			line, col = name.Line, name.Column
+		}
 		findings = append(findings, finding.Finding{
 			RuleID:   "GL049",
 			Severity: finding.Warn,
@@ -46,8 +58,8 @@ func (r *gl049) Check(doc *yaml.Node, file string) []finding.Finding {
 				name.Value,
 			),
 			File: file,
-			Line: interruptible.Line,
-			Col:  interruptible.Column,
+			Line: line,
+			Col:  col,
 		})
 	})
 
