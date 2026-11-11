@@ -133,6 +133,32 @@ publish-npm:
 	}
 }
 
+func TestGL049_WeakArtifactNameRequiresDeployScript(t *testing.T) {
+	// release/dist names that only build or package an artifact are not deploys,
+	// regardless of stage (#1372). Each has default: interruptible.
+	for _, tc := range []struct {
+		name, yaml string
+		want       int
+	}{
+		{"dist tarball", "default: {interruptible: true}\ndist-job: {script: [tar czf o.tgz dist/]}", 0},
+		{"python sdist", "default: {interruptible: true}\nsdist: {script: [python setup.py sdist]}", 0},
+		{"make release no target", "default: {interruptible: true}\nmake-release: {script: [make release]}", 0},
+		{"empty timer gate", "default: {interruptible: true}\ndelay_release: {script: [\"\"]}", 0},
+		{"android build in build stage", "default: {interruptible: true}\nandroid-release: {stage: build, script: [./gradlew assembleRelease]}", 0},
+		{"release-cli create is a deploy", "default: {interruptible: true}\nrelease-cli-tag: {script: [release-cli create --tag-name v1]}", 1},
+		{"gh release create is a deploy", "default: {interruptible: true}\ngithub-release: {script: [gh release create v1]}", 1},
+		{"release name in a deploy stage", "default: {interruptible: true}\nrelease-prod: {stage: deploy, script: [./run.sh]}", 1},
+		{"migrate name settles without a deploy command", "default: {interruptible: true}\nrun-migrations: {script: [./run.sh]}", 1},
+		{"provision name settles", "default: {interruptible: true}\nprovision-infra: {script: [./setup.sh]}", 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if f := findings049(t, tc.yaml); len(f) != tc.want {
+				t.Errorf("got %d findings, want %d: %+v", len(f), tc.want, f)
+			}
+		})
+	}
+}
+
 func TestGL049_MigrateJobNameMatch(t *testing.T) {
 	f := findings049(t, `
 run-migrations:
@@ -364,7 +390,7 @@ release-dry-run:
 		{"dry-named job that is not a dry run still counts", `
 release-dry:
   interruptible: true
-  script: [./run.sh]
+  script: [kubectl apply -f k8s/]
 `, 1},
 		{"real deploy by environment", `
 d:
