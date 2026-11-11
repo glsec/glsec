@@ -33,7 +33,7 @@ var deployScriptRe = mustCompilePrefiltered(
 	`(?:docker|podman|buildah|crane|skopeo|nerdctl|ko)\s+push\b` +
 		`|helm\s+(?:push|upgrade|install)\b` +
 		`|twine\s+upload\b|cargo\s+publish\b|(?:npm|yarn|pnpm)\s+publish\b|gem\s+push\b|dotnet\s+nuget\s+push\b|(?:uv|flit|poetry|maturin)\s+(?:publish|upload)\b` +
-		`|goreleaser\s+release\b|gh\s+release\s+(?:create|upload)\b|glab\s+release\b` +
+		`|goreleaser\s+release\b|gh\s+release\s+(?:create|upload)\b|glab\s+release\b|release-cli\s+create\b` +
 		`|kubectl\s+(?:apply|rollout|set|create|patch|replace)\b|kustomize\b|argocd\b|skaffold\s+(?:run|deploy)\b` +
 		`|aws\s+(?:s3|deploy|ecs|lambda|cloudformation|elasticbeanstalk|amplify|cloudfront)\b|gcloud\s+(?:app|run|functions|compute|container|storage)\b|az\s+(?:webapp|functionapp|aks|acr|storage)\b|flyctl?\s+deploy\b|netlify[^|;&]*deploy\b|vercel\b|railway\s+up\b` +
 		`|serverless\s+deploy\b|sls\s+deploy\b|terraform\s+apply\b|pulumi\s+up\b|ansible-playbook\b|cap\s+\S+\s+deploy\b|mina\s+deploy\b|fastlane\b` +

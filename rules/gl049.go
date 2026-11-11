@@ -78,18 +78,25 @@ func deployLikeInherited(in *Inheritance, jobName string, job *yaml.Node) bool {
 		return true
 	}
 	if deployLikeName(strings.ToLower(jobName), deployLikeKeywords) {
-		if stage := in.Key(job, "stage"); stage != nil && stage.Kind == yaml.ScalarNode &&
-			hasWordPrefix(strings.ToLower(stage.Value), checkOnlyKeywords) {
+		if checkStage {
 			return false
 		}
-		// A job named only with a weak word (release, dist, migrate) in a build
-		// stage (prepare-release, android-release in stage: build), or a dry run
-		// (release_dry_run_linux), usually only builds an artifact, so it counts
-		// only when its script deploys (#1372). Push, publish or ship in the
-		// name still decide on their own.
+		// A deploy-like stage together with a deploy-like name is signal enough
+		// (run migrations in stage: deploy), so the script is not consulted.
+		deployStage := stage != nil && stage.Kind == yaml.ScalarNode &&
+			deployLikeName(strings.ToLower(stage.Value), deployLikeKeywords)
 		lowerName := strings.ToLower(jobName)
-		buildStage := stage != nil && stage.Kind == yaml.ScalarNode && hasWordPrefix(strings.ToLower(stage.Value), buildKeywords)
-		if (buildStage && !containsAny(lowerName, strongDeployKeywords)) || dryRunName(lowerName) {
+		// Outside a deploy stage, a job whose only deploy signal is an
+		// artifact-building word (release, dist) or a dry run usually just
+		// builds or packages an artifact without shipping it — a tarball, an
+		// sdist, an APK, a `make release`, an empty timer gate — so it counts
+		// only when its script actually deploys (#1372, generalizing the
+		// build-stage guard of #1104/#1385 to build, test and unstaged jobs). A
+		// strong keyword (deploy, publish, push, …) or a deploy-action word
+		// (migrate, provision) names the deployment itself and decides alone.
+		if !deployStage && !containsAny(lowerName, strongDeployKeywords) &&
+			!containsAny(lowerName, deployActionWeakKeywords) &&
+			(dryRunName(lowerName) || containsAny(lowerName, artifactWeakKeywords)) {
 			return jobScriptDeploys(in, job)
 		}
 		return true
@@ -104,6 +111,16 @@ func deployLikeInherited(in *Inheritance, jobName string, job *yaml.Node) bool {
 	}
 	return false
 }
+
+// artifactWeakKeywords name jobs that usually build or package an artifact (a
+// release tarball, an sdist) and only sometimes ship it, so a name match alone
+// over-reports (#1372). deployActionWeakKeywords name the deployment action
+// itself (a database migration, infrastructure provisioning), which the name
+// settles without reading the script.
+var (
+	artifactWeakKeywords     = []string{"release", "dist"}
+	deployActionWeakKeywords = []string{"migrat", "provision"}
+)
 
 // dryRunName reports a job name with the words dry run (release_dry_run,
 // release-dryrun), whose job rehearses a release without changing anything.
