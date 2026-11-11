@@ -35,7 +35,7 @@ var (
 // shaVarRe matches a predefined variable that holds a commit SHA, such as
 // $CI_COMMIT_SHA, ${CI_MERGE_REQUEST_DIFF_BASE_SHA} or the deprecated
 // $CI_BUILD_REF: immutable like a literal SHA.
-var shaVarRe = mustCompilePrefiltered(`^\$\{?(?:CI_[A-Z_]*_SHA|CI_BUILD_REF)\}?$`)
+var shaVarRe = mustCompilePrefiltered(`^\$\{?(?:CI_[A-Z_]*_SHA|CI_BUILD_REF|SHA)\}?$`)
 
 // checksOutMutableRef reports whether a command is `git checkout <ref>` with a
 // ref other than a commit SHA. Creating a local branch (-b, -B, --orphan) and
@@ -96,12 +96,14 @@ var ownBranchVarRe = mustCompilePrefiltered(`^["']?(?:origin/)?\$\{?(?:CI_DEFAUL
 // ownRepoSourceRe matches a clone source that is the project's own
 // repository: the checkout (., $CI_PROJECT_DIR), its remote
 // ($CI_REPOSITORY_URL), or a URL built from the project's predefined
-// variables: $CI_PROJECT_URL, or the server host or URL with $CI_PROJECT_PATH,
+// variables: $CI_PROJECT_URL, a bare $CI_PROJECT_PATH, https://gitlab.com/$CI_PROJECT_PATH, or the server host or URL with $CI_PROJECT_PATH,
 // over HTTPS with any credentials or over SSH (#1049).
 var ownRepoSourceRe = mustCompilePrefiltered(`^(?:\.|\./|\$\{?CI_PROJECT_DIR\}?|\$\{?CI_REPOSITORY_URL\}?|(?:` +
 	`\$\{?CI_PROJECT_URL\}?` +
 	`|\$\{?CI_SERVER_URL\}?/\$\{?CI_PROJECT_PATH\}?` +
 	`|(?:https?://(?:[^@/]+@)?|ssh://(?:[^@/]+@)?|git@)\$\{?CI_SERVER_(?:HOST|FQDN|SHELL_SSH_HOST)\}?(?::\d+|:\$\{?CI_SERVER_(?:PORT|SHELL_SSH_PORT)\}?)?[:/]\$\{?CI_PROJECT_PATH\}?` +
+	`|https?://gitlab\.com/\$\{?CI_PROJECT_PATH\}?` +
+	`|\$\{?CI_PROJECT_PATH\}?` +
 	`)(?:\.git)?/?)$`)
 
 // localCloneSource reports whether a git clone copies the project's own
