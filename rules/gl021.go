@@ -74,6 +74,17 @@ func (r *gl021) Check(doc *yaml.Node, file string) []finding.Finding {
 				for _, l := range logicalLines(item.Value) {
 					i, line := l.line, l.text
 					match, ok, viaEncoder := printedSecret(line)
+					// A { … } group or ( … ) subshell whose output is redirected
+					// to a file or piped into a consumer can span several physical
+					// lines of a block scalar, so the echo's own line shows no
+					// brace or redirect and printedSecret's per-line check misses
+					// it (#1370: { echo "$T"; } >> .npmrc across lines). Re-check
+					// against the whole item, where the brace and redirect are
+					// visible. An encoder pipe still reaches the log, so a
+					// viaEncoder hit is kept.
+					if ok && !viaEncoder && multilineGroupDiverted(item.Value, l.line) {
+						continue
+					}
 					message := ""
 					if ok && viaEncoder {
 						message = fmt.Sprintf("script pipes secret variable %s into an encoder (base64/base32/xxd/…) — the encoded value reaches the job log, past GitLab's value masking", match)
@@ -501,7 +512,26 @@ func informationRedirected(seg string) bool {
 // value: it carries a secret indicator and doesn't end in a segment such as
 // _ID or _URL that names something else.
 func isSecretName(name string) bool {
-	return secretNameRe.MatchString(name) && !nonSecretSuffixRe.MatchString(name) && !nonSecretPredefined[name]
+	return secretNameRe.MatchString(name) && !nonSecretSuffixRe.MatchString(name) &&
+		!nonSecretPredefined[name] && !publicKeyName(name)
+}
+
+var (
+	// publicKeySegmentRe matches a PUBLIC or PUBLISHABLE segment of a variable
+	// name. A publishable/frontend key (NEXT_PUBLIC_API_KEY, PUBLIC_POSTHOG_KEY,
+	// STRIPE_PUBLISHABLE_KEY) is shipped to clients by design, not a credential
+	// (#1370). The segment boundary keeps a real secret like REPUBLIC_API_KEY
+	// reported — its PUBLIC is inside REPUBLIC, not a segment of its own.
+	publicKeySegmentRe = mustCompilePrefiltered(`(?:^|_)(?:PUBLIC|PUBLISHABLE)(?:_|$)`)
+	// secretWordSegmentRe keeps a name that also carries an explicit secret word
+	// (a contrived PUBLISHABLE_SECRET_KEY) reported despite a public segment.
+	secretWordSegmentRe = mustCompilePrefiltered(`(?:^|_)(?:SECRET|PRIVATE|PASSWORD|PASSWD|PWD|CREDENTIAL)(?:_|$)`)
+)
+
+// publicKeyName reports a variable named as a public or publishable key, which
+// is meant to reach clients and is not a secret (#1370).
+func publicKeyName(name string) bool {
+	return publicKeySegmentRe.MatchString(name) && !secretWordSegmentRe.MatchString(name)
 }
 
 // nonSecretPredefined are predefined variables whose names look secret but
@@ -577,6 +607,23 @@ func varRefText(ref string) string {
 // inside a `{ …; }` group or a `( … )` subshell whose output goes to a file
 // or a pipe: `{ echo …; } >> .npmrc`, `( echo … ) | ssh-add -`. Brackets of
 // ${…}, $(…) and quoted text don't count.
+// multilineGroupDiverted reports whether the physical line at physLine of a
+// block scalar sits inside a { … } group or ( … ) subshell whose output is
+// redirected or piped away from the log — a group that groupOutputDiverted
+// cannot see line by line because its brace and redirect are on other lines
+// (#1370). The start of physLine is a position between the group's open brace
+// (on an earlier line, or the same line before it) and its close.
+func multilineGroupDiverted(script string, physLine int) bool {
+	offset := 0
+	for i, ln := range strings.Split(script, "\n") {
+		if i >= physLine {
+			break
+		}
+		offset += len(ln) + 1
+	}
+	return groupOutputDiverted(script, offset)
+}
+
 func groupOutputDiverted(s string, pos int) bool {
 	type open struct {
 		at    int
