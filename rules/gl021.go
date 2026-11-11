@@ -243,6 +243,48 @@ func gl021InSubstitution(prefix string) bool {
 // reach the log absent debug tracing. PowerShell's information stream is
 // separate from success output and needs its own redirection.
 func printedSecret(line string) (string, bool) {
+	// A child shell expands its script itself, so a single-command
+	// `bash -c "echo $DEPLOY_TOKEN"` (or the same with single quotes / eval)
+	// prints the secret even though the outer command is not echo. Recurse
+	// into that script before stripping quotes, then honour outer redirects.
+	if mayHandScriptToChild(line) {
+		if name, printed, decided := childScriptPrintsSecret(line); decided {
+			return name, printed
+		}
+	}
+
+	return printedSecretDirect(line)
+}
+
+// childScriptPrintsSecret reports a secret printed by the script a
+// single-command line hands to a child shell or eval, unless the child's
+// output is redirected, piped, or captured. decided is false when the child
+// script prints nothing, so the caller goes on to check the line itself.
+func childScriptPrintsSecret(line string) (name string, printed, decided bool) {
+	if script, ok := childPrintScript(line); ok && script != line {
+		if name, printed := printedSecret(script); printed {
+			if childShellOutputDiverted(line) {
+				return "", false, true
+			}
+			return name, true, true
+		}
+	}
+	return "", false, false
+}
+
+// mayHandScriptToChild is a cheap, allocation-free check that line could
+// start a child shell, su, ssh or eval and reference a variable, so
+// printedSecret only splits the line into words when that is possible.
+func mayHandScriptToChild(line string) bool {
+	if strings.IndexByte(line, '$') < 0 {
+		return false
+	}
+	return strings.Contains(line, "sh") || strings.Contains(line, "eval") || strings.Contains(line, "su")
+}
+
+// printedSecretDirect is printedSecret for the line itself, without looking
+// into a child shell script.
+func printedSecretDirect(line string) (string, bool) {
 	// Single-quoted spans are literal. Keep an empty quoted placeholder so a
 	// filename such as 6> 'private log.txt' still has a redirection target.
 	s := singleQuotedRe.ReplaceAllString(line, "''")
@@ -487,4 +529,153 @@ func groupOutputDiverted(s string, pos int) bool {
 		}
 	}
 	return false
+}
+
+// childPrintScript returns the script a command hands to a new shell or to
+// eval. Unlike childShellScript this includes eval, su -c, and shells started
+// with -o pipefail: those still expand and may print a secret (#1356).
+func childPrintScript(text string) (string, bool) {
+	words := commandWords(text)
+	if len(words) == 0 {
+		return "", false
+	}
+	if commandName(words) == "eval" && len(words) > 1 {
+		return strings.Join(words[1:], " "), true
+	}
+	if commandName(words) == "ssh" {
+		// A single-quoted remote command is not expanded by the job shell, so
+		// $DEPLOY_TOKEN in ssh host 'echo $DEPLOY_TOKEN' is the remote
+		// environment, not the CI secret.
+		if sshRemoteCommandSingleQuoted(text) {
+			return "", false
+		}
+		i := 1
+		for ; i < len(words) && len(words[i]) > 1 && words[i][0] == '-'; i++ {
+			if len(words[i]) == 2 && strings.IndexByte(sshValueOptions, words[i][1]) >= 0 {
+				i++
+			}
+		}
+		if i+1 < len(words) {
+			return strings.Join(words[i+1:], " "), true
+		}
+		return "", false
+	}
+	for i, w := range words {
+		name := commandName([]string{w})
+		if !posixShells[name] && name != "su" {
+			continue
+		}
+		for j := i + 1; j < len(words); j++ {
+			opt := words[j]
+			switch {
+			case opt == "-c" || opt == "--command":
+				if j+1 < len(words) {
+					return words[j+1], true
+				}
+				return "", false
+			case strings.HasPrefix(opt, "--"):
+				// --login and long options are not a -c flag.
+			case strings.HasPrefix(opt, "-") && strings.ContainsRune(opt[1:], 'c'):
+				if j+1 < len(words) {
+					return words[j+1], true
+				}
+				return "", false
+			case opt == "-o":
+				j++
+			}
+		}
+	}
+	return "", false
+}
+
+// childShellOutputDiverted reports whether a child-shell command's output is
+// redirected, piped, or captured, so a print inside the script does not reach
+// the job log.
+func childShellOutputDiverted(line string) bool {
+	s := singleQuotedRe.ReplaceAllString(line, "''")
+	masked := maskShellQuotes(s)
+	if strings.Contains(masked, ">") || strings.Contains(masked, "|") {
+		return true
+	}
+	if strings.Contains(masked, "$(") || strings.Contains(masked, "<(") {
+		return true
+	}
+	// Approximate the command start; a wrapping { …; } or ( … ) group with
+	// diverted output is the same as for a direct print.
+	return groupOutputDiverted(s, len(s)/2)
+}
+
+// sshRemoteCommandSingleQuoted reports whether the remote command of an ssh
+// invocation is a single-quoted word in the job script.
+func sshRemoteCommandSingleQuoted(text string) bool {
+	i := 0
+	found := false
+	for i < len(text) {
+		word, quote, j := nextRawShellWord(text, i)
+		if word == "" {
+			return false
+		}
+		if commandName([]string{word}) == "ssh" && quote == 0 {
+			i = j
+			found = true
+			break
+		}
+		i = j
+	}
+	if !found {
+		return false
+	}
+	sawHost := false
+	for i < len(text) {
+		word, quote, j := nextRawShellWord(text, i)
+		if word == "" {
+			return false
+		}
+		if !sawHost {
+			if strings.HasPrefix(word, "-") && quote == 0 {
+				if len(word) == 2 && strings.IndexByte(sshValueOptions, word[1]) >= 0 {
+					_, _, j = nextRawShellWord(text, j)
+				}
+				i = j
+				continue
+			}
+			sawHost = true
+			i = j
+			continue
+		}
+		return quote == '\''
+	}
+	return false
+}
+
+// nextRawShellWord returns the next shell word in s starting at i, the quote
+// that wrapped it (' or " or 0), and the index after the word.
+func nextRawShellWord(s string, i int) (word string, quote byte, j int) {
+	for i < len(s) && (s[i] == ' ' || s[i] == '\t') {
+		i++
+	}
+	if i >= len(s) {
+		return "", 0, i
+	}
+	if s[i] == '\'' || s[i] == '"' {
+		q := s[i]
+		i++
+		start := i
+		for i < len(s) && s[i] != q {
+			if s[i] == '\\' && q == '"' && i+1 < len(s) {
+				i++
+			}
+			i++
+		}
+		word = s[start:i]
+		if i < len(s) {
+			i++
+		}
+		return word, q, i
+	}
+	start := i
+	for i < len(s) && s[i] != ' ' && s[i] != '\t' {
+		i++
+	}
+	return s[start:i], 0, i
 }

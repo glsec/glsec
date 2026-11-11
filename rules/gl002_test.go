@@ -388,6 +388,9 @@ func TestGL002_EvaluatedQuotedArg(t *testing.T) {
 		`/bin/sh -c "echo $CI_COMMIT_MESSAGE"`:                "`sh -c`",
 		`docker run img /bin/bash -c "deploy $CI_COMMIT_TAG"`: "`bash -c`",
 		`test -n "$X" && eval "notify $GITLAB_USER_NAME"`:     "`eval`",
+		`sh -c 'deploy $CI_COMMIT_MESSAGE'`:                   "`sh -c`",
+		`eval 'echo $CI_COMMIT_MESSAGE'`:                      "`eval`",
+		`bash -c 'echo $CI_COMMIT_TITLE'`:                     "`bash -c`",
 	}
 	for line, cmd := range cases {
 		f := findings002(t, "job:\n  script:\n    - '"+strings.ReplaceAll(line, "'", "''")+"'\n")
@@ -412,6 +415,8 @@ func TestGL002_EvaluatedQuotedArg_NoFinding(t *testing.T) {
 		`eval "echo \$CI_COMMIT_MESSAGE"`,
 		`echo "remember to eval \"$CI_COMMIT_TITLE\" later"`,
 		`python3 -c "import sys; print(sys.argv[1])" "$CI_COMMIT_BRANCH"`,
+		`python3 -c 'print("$CI_COMMIT_BRANCH")'`,
+		`sh -c 'echo "token saved"'`,
 	} {
 		f := findings002(t, "job:\n  script:\n    - '"+strings.ReplaceAll(line, "'", "''")+"'\n")
 		if len(f) != 0 {
