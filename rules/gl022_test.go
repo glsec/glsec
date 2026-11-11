@@ -729,6 +729,9 @@ func first022Msg(f []finding.Finding) string {
 
 func TestGL022_FetchAndRunUnpinned(t *testing.T) {
 	for _, line := range []string{
+		"bunx cowsay@latest hello",
+		"bun x create-next-app@latest app",
+		"bunx --bun @angular/cli@next new app",
 		"npx -y surge dist",
 		`npx --yes qrcode "hi"`,
 		"npx --quiet -y serve build",
@@ -757,6 +760,15 @@ func TestGL022_FetchAndRunUnpinned(t *testing.T) {
 
 func TestGL022_FetchAndRun_NoFinding(t *testing.T) {
 	for _, line := range []string{
+		"bunx create-vite@5.2.0 app",
+		"bun x @angular/cli@17.3.6 new app",
+		"bunx vite build",
+		"bun x svelte-kit sync",
+		"bunx $TOOL",
+		"bun x ${TOOL}",
+		"bunx ./local-tool",
+		"bun x",
+		`echo "run bunx create-vite locally"`,
 		"npx -y eslint@10 .",
 		"npx --yes @redocly/cli@2.46.0 lint",
 		"npx create-vite@5.2.0 app",
