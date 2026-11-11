@@ -38,6 +38,27 @@ var ephemeralTagRe = mustCompilePrefiltered(
 		`|--tag[= ]\$?\{?CI_COMMIT_REF_SLUG\}?`,
 )
 
+// gl045DeployRe matches a command that deploys an artifact — runs it on
+// infrastructure — rather than publishing it for consumers to download. A job
+// that pushes an image and then brings it up (docker compose up, kubectl apply,
+// helm upgrade) is a deployment, not a signable consumer release: nobody
+// downstream verifies a signature on it (#1376).
+var gl045DeployRe = mustCompilePrefiltered(
+	`\bdocker(?:\s+compose|-compose)\b[^|;&\n]*\bup\b` +
+		`|\bdocker\s+stack\s+deploy\b` +
+		`|\bdocker\s+service\s+(?:create|update)\b` +
+		`|\bkubectl\s+(?:apply|rollout)\b` +
+		`|\bhelm\s+(?:upgrade|install)\b` +
+		`|\bnomad\s+(?:job\s+)?run\b`,
+)
+
+// internalRegistryLatestRe matches a push of the moving :latest tag to the
+// project's own CI registry ($CI_REGISTRY_IMAGE / $CI_REGISTRY) — an internal
+// CI image, not a pinned consumer release (#1376, alongside the per-branch and
+// per-MR carve-outs of #1100). A versioned own-registry push
+// ($CI_REGISTRY_IMAGE:$CI_COMMIT_TAG) is still a release and is not matched.
+var internalRegistryLatestRe = mustCompilePrefiltered(`(?i)(?:CI_REGISTRY_IMAGE|CI_REGISTRY)\b[^|;&]*:latest\b`)
+
 // mrScopedEnv reports an environment: scoped to a merge request, e.g.
 // environment: { name: "mr/$CI_MERGE_REQUEST_IID" } — a per-MR preview, not a
 // release target.
@@ -93,17 +114,24 @@ func (r *gl045) Check(doc *yaml.Node, file string) []finding.Finding {
 
 		var pushLine *yaml.Node
 		hasSigning := false
+		deploys := false
 
 		for _, line := range lines {
-			if pushLine == nil && releasePushRe.MatchString(line.Value) && !ephemeralTagRe.MatchString(line.Value) {
+			if pushLine == nil && releasePushRe.MatchString(line.Value) &&
+				!ephemeralTagRe.MatchString(line.Value) && !internalRegistryLatestRe.MatchString(line.Value) {
 				pushLine = line
 			}
 			if releaseSigningRe.MatchString(line.Value) {
 				hasSigning = true
 			}
+			if gl045DeployRe.MatchString(line.Value) {
+				deploys = true
+			}
 		}
 
-		if pushLine == nil || hasSigning {
+		// A job that deploys the artifact it built is not publishing a consumer
+		// release, so there is no signature for a downstream consumer to verify.
+		if pushLine == nil || hasSigning || deploys {
 			return
 		}
 

@@ -19,6 +19,31 @@ func findings045(t *testing.T, yaml string) []finding.Finding {
 	return GL045.Check(doc.Root, "test.yml")
 }
 
+func TestGL045_ReleaseDeployBoundary(t *testing.T) {
+	// Deployments and internal own-registry :latest pushes are not signable
+	// consumer releases; versioned pushes still are (#1376).
+	for _, tc := range []struct {
+		name, yaml string
+		want       int
+	}{
+		{"deploy with docker compose up", "deploy_prod:\n  stage: deploy\n  environment: prod\n  when: manual\n  script:\n    - docker push $CI_REGISTRY_IMAGE:release\n    - docker compose -f prod.yml up -d\n", 0},
+		{"deploy with kubectl apply", "k8s:\n  stage: deploy\n  environment: production\n  script:\n    - docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA\n    - kubectl apply -f k8s/\n", 0},
+		{"deploy with helm upgrade", "rollout:\n  stage: deploy\n  script:\n    - helm push chart.tgz oci://reg\n    - helm upgrade --install app ./chart\n", 0},
+		{"own-registry latest push", "push-latest:\n  stage: release\n  script:\n    - docker push $CI_REGISTRY_IMAGE:latest\n", 0},
+		{"own-registry versioned push still a release", "release:\n  stage: release\n  script:\n    - docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_TAG\n", 1},
+		{"external versioned release", "release:\n  stage: release\n  script:\n    - docker push myorg/app:$CI_COMMIT_TAG\n", 1},
+		{"external latest is still a consumer release", "publish:\n  stage: release\n  script:\n    - docker push myorg/app:latest\n", 1},
+		{"compose config is not a deploy", "release:\n  stage: release\n  script:\n    - docker push myorg/app:$CI_COMMIT_TAG\n    - docker compose config\n", 1},
+		{"setup is not a deploy (word boundary)", "release:\n  stage: release\n  script:\n    - make setup\n    - docker push myorg/app:$CI_COMMIT_TAG\n", 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if f := findings045(t, tc.yaml); len(f) != tc.want {
+				t.Errorf("got %d findings, want %d: %+v", len(f), tc.want, f)
+			}
+		})
+	}
+}
+
 func TestGL045_DockerPushWithoutSigning(t *testing.T) {
 	f := findings045(t, `
 publish:
