@@ -110,6 +110,15 @@ var (
 			run:     true,
 		},
 		{
+			// Like npx, bunx first resolves a locally installed binary. Only an
+			// explicit floating dist-tag proves that CI fetches a registry package.
+			manager: "bunx / bun x",
+			trigger: mustCompilePrefiltered(`\b(?:bunx|bun\s+x)\s+(?:-{1,2}[\w=@./:-]+\s+)*(?:@[\w.-]+/)?[\w.-]+@[A-Za-z]`),
+			pinned:  mustCompilePrefiltered(`@\d`),
+			mask:    true,
+			run:     true,
+		},
+		{
 			manager: "uvx / pipx run",
 			trigger: mustCompilePrefiltered(`\b(?:uvx|uv\s+tool\s+run|pipx\s+run)` + adhocFirstArg),
 			pinned:  mustCompilePrefiltered(`@\d|==\d`),

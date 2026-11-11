@@ -297,6 +297,7 @@ var prefilterTable = map[string]prefilterLits{
 	"\\b(?:apt-get|apt|aptitude)\\b[^\\n]*--allow-insecure-repositories\\b": {anyOf: []string{"--allow-insecure-repositories"}},
 	"\\b(?:apt-get|apt|aptitude)\\b[^\\n]*--allow-unauthenticated\\b":       {anyOf: []string{"--allow-unauthenticated"}},
 	"\\b(?:bash|sh)\\b.*\\$\\(\\s*(?:curl|wget)\\b":                         {anyOf: []string{"curl", "wget"}},
+	"\\b(?:bunx|bun\\s+x)\\s+(?:-{1,2}[\\w=@./:-]+\\s+)*(?:@[\\w.-]+/)?[\\w.-]+@[A-Za-z]": {anyOf: []string{"bun"}},
 	"\\b(?:curl|wget)\\b": {anyOf: []string{"curl", "wget"}},
 	"\\b(?:curl|wget)\\b[^|]*(?:\\s-o\\b|\\s--output\\b|[^0-9&]>).*(?:;|&&)\\s*(?:\\.{0,2}/(?:[\\w.-]+/)*)?(?:bash|sh|python[23]?|ruby|perl|node)\\s+\\S": {anyOf: []string{"curl", "wget"}},
 	"\\b(?:curl|wget)\\b[^|]*\\b(?i:http)://":                                                                                           {anyOf: []string{"http://"}, fold: true},
