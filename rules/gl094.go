@@ -45,6 +45,13 @@ var (
 	gl094CopyOff = map[string]bool{"cp": true, "mv": true, "install": true}
 )
 
+// gl094MentionsKey is a cheap substring prefilter for the Check loop.
+func gl094MentionsKey(v string) bool {
+	return strings.Contains(v, ".ssh") ||
+		strings.Contains(v, "id_rsa") || strings.Contains(v, "id_dsa") ||
+		strings.Contains(v, "id_ecdsa") || strings.Contains(v, "id_ed25519")
+}
+
 func gl094IsKeyArg(word string) bool {
 	w := strings.Trim(word, `"'`)
 	return gl094KeyFileRe.MatchString(w) || gl094SSHDirRe.MatchString(w)
@@ -66,6 +73,12 @@ func (r *gl094) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
 	EachScriptLine(doc, file, func(line *yaml.Node, file, job string) {
 		v := line.Value
+		// Most script lines mention no key at all. Skip the shell parse unless a
+		// key filename or the .ssh directory is present (a cheap prefilter, so
+		// the rule costs almost nothing on ordinary lines).
+		if !gl094MentionsKey(v) {
+			return
+		}
 		if strings.HasPrefix(strings.TrimSpace(v), "#") {
 			return
 		}
