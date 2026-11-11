@@ -66,11 +66,23 @@ var tlsChecks = []tlsCheck{
 		msg:  `container tool invoked with "--tls-verify=false" — TLS certificate verification disabled for the registry, allowing a man-in-the-middle to swap images; add the registry CA to the trust store instead`,
 	},
 	{
+		// Kaniko, GitLab's documented rootless image builder (#1386). The
+		// -registry forms take a registry name; the others are booleans, so
+		// --insecure=false is not reported.
+		tool: "kaniko",
+		re:   mustCompilePrefiltered(`\bkaniko\b.*\s--(?:(?:insecure|skip-tls-verify)(?:-pull)?(?:=true)?(?:\s|$)|(?:insecure|skip-tls-verify)-registry(?:=|\s))`),
+		msg:  `kaniko invoked with "%s" — the registry's certificate isn't checked (or plain HTTP is used), so a man-in-the-middle can swap the base image or receive the pushed one; trust the registry CA with --registry-certificate instead`,
+	},
+	{
 		tool: "dockerd",
 		re:   mustCompilePrefiltered(`\bdockerd\b.*--insecure-registry\b`),
 		msg:  insecureRegistryMsg,
 	},
 }
+
+// kanikoFlagRe finds the flag a kaniko match reports. The match's greedy .*
+// makes it end at the last such flag on the line.
+var kanikoFlagRe = mustCompilePrefiltered(`--(?:insecure|skip-tls-verify)(?:-pull|-registry)?`)
 
 const insecureRegistryMsg = `dockerd started with "--insecure-registry" — TLS certificate verification disabled for the registry, allowing a man-in-the-middle to swap images; add the registry CA to the certs.d directory instead`
 
@@ -181,6 +193,11 @@ func checkTLSLines(node *yaml.Node, file, job string) []finding.Finding {
 			if check.tool == "curl" {
 				flag := mustCompilePrefiltered(`-k|--insecure`).FindString(m)
 				msg = fmt.Sprintf(msg, flag)
+			}
+			if check.tool == "kaniko" {
+				flags := kanikoFlagRe.FindAllStringIndex(m, -1)
+				last := flags[len(flags)-1]
+				msg = fmt.Sprintf(msg, m[last[0]:last[1]])
 			}
 			findings = append(findings, finding.Finding{
 				RuleID:   "GL042",
