@@ -159,6 +159,43 @@ func TestGL049_WeakArtifactNameRequiresDeployScript(t *testing.T) {
 	}
 }
 
+func TestGL049_DefaultInterruptibleReportedPerJob(t *testing.T) {
+	// interruptible inherited from a global default: is one shared node; each
+	// deploy job must still be reported, anchored at the job, not collapsed to a
+	// single finding by location de-duplication (#1396).
+	f := findings049(t, `
+default:
+  interruptible: true
+deploy-a:
+  script: [kubectl apply -f k8s/]
+deploy-b:
+  script: [helm upgrade --install app ./chart]
+`)
+	if len(f) != 2 {
+		t.Fatalf("got %d findings, want 2 (one per deploy job): %+v", len(f), f)
+	}
+	jobs := map[string]bool{}
+	lines := map[int]bool{}
+	for _, x := range f {
+		jobs[x.Job] = true
+		lines[x.Line] = true
+	}
+	if !jobs["deploy-a"] || !jobs["deploy-b"] {
+		t.Errorf("expected both deploy-a and deploy-b, got %v", jobs)
+	}
+	if len(lines) != 2 {
+		t.Errorf("expected findings at two distinct lines, got %v", lines)
+	}
+}
+
+func TestGL049_OwnInterruptibleAnchoredAtKey(t *testing.T) {
+	// A job that sets interruptible itself is still anchored at that key.
+	f := findings049(t, "deploy:\n  interruptible: true\n  script: [kubectl apply -f k8s/]\n")
+	if len(f) != 1 || f[0].Line != 2 {
+		t.Fatalf("got %+v, want one finding at line 2 (the interruptible: key)", f)
+	}
+}
+
 func TestGL049_MigrateJobNameMatch(t *testing.T) {
 	f := findings049(t, `
 run-migrations:
