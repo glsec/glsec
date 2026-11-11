@@ -100,6 +100,31 @@ build:
 	}
 }
 
+func TestGL002_SingleQuotedChildShell(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		yaml string
+		want int
+	}{
+		// eval and a POSIX shell expand a single-quoted script when they run it.
+		{"eval expands single-quoted", "build:\n  script:\n    - eval 'echo $CI_COMMIT_REF_NAME'\n", 1},
+		{"sh -c expands single-quoted", "build:\n  script:\n    - sh -c 'deploy --tag $CI_COMMIT_TAG'\n", 1},
+		// python -c does not expand $VAR inside single quotes.
+		{"python -c keeps single quotes literal", "build:\n  script:\n    - python -c 'print(\"$CI_COMMIT_BRANCH\")'\n", 0},
+		// eval reached after a pipe, so the command starts at the `|`.
+		{"eval after a pipe", "build:\n  script:\n    - cmd | eval \"$CI_COMMIT_REF_NAME\"\n", 1},
+		// The same variable twice is reported once (deduplicated).
+		{"duplicate var deduped", "build:\n  script:\n    - eval \"echo $CI_COMMIT_REF_NAME $CI_COMMIT_REF_NAME\"\n", 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := findings002(t, tc.yaml)
+			if len(f) != tc.want {
+				t.Fatalf("got %d findings, want %d: %+v", len(f), tc.want, f)
+			}
+		})
+	}
+}
+
 func TestGL002_EscapedDollar(t *testing.T) {
 	f := findings002(t, `
 build:
