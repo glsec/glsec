@@ -207,6 +207,17 @@ func TestGL042_ClusterAndRegistryTools(t *testing.T) {
 		{"skopeo copy --dest-tls-verify=false docker://a/b docker://c/d", 1},
 		{"podman push --tls-verify=true registry.example.com/app", 0},
 		{"docker push registry.example.com/app --tls-verify=false", 0},
+		{"/kaniko/executor --insecure --skip-tls-verify --destination $IMG", 1},
+		{"/kaniko/executor --skip-tls-verify-pull --context . --destination $IMG", 1},
+		{"kaniko --insecure-registry myregistry:5000 --destination $IMG", 1},
+		{"/kaniko/executor --context . --destination $IMG --insecure-pull", 1},
+		{"/kaniko/executor --destination $IMG --skip-tls-verify-registry=registry.example.com", 1},
+		{"/kaniko/executor --destination $IMG --insecure=true", 1},
+		{"/kaniko/executor --context . --destination $IMG", 0},
+		{"/kaniko/executor --destination registry.example.com/app@sha256:0123abcd", 0},
+		{"/kaniko/executor --destination $IMG --insecure=false --skip-tls-verify=false", 0},
+		{"/kaniko/executor --destination $IMG --insecure-skip-tls-verify-x", 0},
+		{"echo --insecure kaniko", 0},
 		{"dockerd --insecure-registry=registry.example.com:5000 &", 1},
 		{"dockerd --host=unix:///var/run/docker.sock &", 0},
 		{"NODE_TLS_REJECT_UNAUTHORIZED=0 npm run test", 1},
@@ -270,5 +281,18 @@ func TestGL042_TLSVariables(t *testing.T) {
 				t.Fatalf("job level: got %d findings, want %d: %v", len(f), tc.want, f)
 			}
 		})
+	}
+}
+
+func TestGL042_KanikoNamesTheFlag(t *testing.T) {
+	for line, flag := range map[string]string{
+		"/kaniko/executor --insecure --destination $IMG":                         "--insecure",
+		"/kaniko/executor --insecure=false --skip-tls-verify-pull --context .":   "--skip-tls-verify-pull",
+		"/kaniko/executor --destination $IMG --skip-tls-verify-registry reg:443": "--skip-tls-verify-registry",
+	} {
+		f := gl042Count(t, fmt.Sprintf("job:\n  script:\n    - %s\n", line))
+		if len(f) != 1 || !strings.Contains(f[0].Message, `kaniko invoked with "`+flag+`"`) {
+			t.Errorf("%s: want one finding naming %s, got %v", line, flag, f)
+		}
 	}
 }
