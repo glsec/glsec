@@ -1,0 +1,9 @@
+stages:
+  - build
+
+assets:
+  stage: build
+  image: node:20.11.0
+  script:
+    - node ./src/public/fonts/fa-brands-400.ttf
+    - python scripts/logo.png
