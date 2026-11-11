@@ -73,9 +73,11 @@ func (r *gl021) Check(doc *yaml.Node, file string) []finding.Finding {
 				// redirect or pipe on the next physical line still counts.
 				for _, l := range logicalLines(item.Value) {
 					i, line := l.line, l.text
-					match, ok := printedSecret(line)
+					match, ok, viaEncoder := printedSecret(line)
 					message := ""
-					if ok {
+					if ok && viaEncoder {
+						message = fmt.Sprintf("script pipes secret variable %s into an encoder (base64/base32/xxd/…) — the encoded value reaches the job log, past GitLab's value masking", match)
+					} else if ok {
 						message = fmt.Sprintf("script prints secret variable %s — value may appear in job logs", match)
 					} else if credentialFile := printedCredentialFile(line); credentialFile != "" {
 						// A file the job writes with a placeholder holds no
@@ -243,14 +245,14 @@ func gl021InSubstitution(prefix string) bool {
 // command/process substitution, or single-quoted (not expanded) — none of which
 // reach the log absent debug tracing. PowerShell's information stream is
 // separate from success output and needs its own redirection.
-func printedSecret(line string) (string, bool) {
+func printedSecret(line string) (name string, printed, viaEncoder bool) {
 	// A child shell expands its script itself, so a single-command
 	// `bash -c "echo $DEPLOY_TOKEN"` (or the same with single quotes / eval)
 	// prints the secret even though the outer command is not echo. Recurse
 	// into that script before stripping quotes, then honour outer redirects.
 	if mayHandScriptToChild(line) {
-		if name, printed, decided := childScriptPrintsSecret(line); decided {
-			return name, printed
+		if name, printed, viaEncoder, decided := childScriptPrintsSecret(line); decided {
+			return name, printed, viaEncoder
 		}
 	}
 
@@ -261,16 +263,16 @@ func printedSecret(line string) (string, bool) {
 // single-command line hands to a child shell or eval, unless the child's
 // output is redirected, piped, or captured. decided is false when the child
 // script prints nothing, so the caller goes on to check the line itself.
-func childScriptPrintsSecret(line string) (name string, printed, decided bool) {
+func childScriptPrintsSecret(line string) (name string, printed, viaEncoder, decided bool) {
 	if script, ok := childPrintScript(line); ok && script != line {
-		if name, printed := printedSecret(script); printed {
+		if name, printed, viaEncoder := printedSecret(script); printed {
 			if childShellOutputDiverted(line) {
-				return "", false, true
+				return "", false, false, true
 			}
-			return name, true, true
+			return name, true, viaEncoder, true
 		}
 	}
-	return "", false, false
+	return "", false, false, false
 }
 
 // mayHandScriptToChild is a cheap, allocation-free check that line could
@@ -285,7 +287,7 @@ func mayHandScriptToChild(line string) bool {
 
 // printedSecretDirect is printedSecret for the line itself, without looking
 // into a child shell script.
-func printedSecretDirect(line string) (string, bool) {
+func printedSecretDirect(line string) (name string, printed, viaEncoder bool) {
 	// Single-quoted spans are literal. Keep an empty quoted placeholder so a
 	// filename such as 6> 'private log.txt' still has a redirection target.
 	s := singleQuotedRe.ReplaceAllString(line, "''")
@@ -368,14 +370,10 @@ func printedSecretDirect(line string) (string, bool) {
 			if informationRedirected(seg) {
 				continue
 			}
-			return varRefText(s[start:end]), true
+			return varRefText(s[start:end]), true, false
 		}
 		// Output redirected to a file (`>` / `>>`): not logged.
 		if strings.Contains(seg, ">") {
-			continue
-		}
-		// Output piped into another command: not logged.
-		if right < len(s) && s[right] == '|' {
 			continue
 		}
 		// Inside `$(…)` or `<(…)` command/process substitution: captured, not
@@ -388,9 +386,62 @@ func printedSecretDirect(line string) (string, bool) {
 		if groupOutputDiverted(s, start) {
 			continue
 		}
-		return varRefText(s[start:end]), true
+		// Output piped into another command is normally not logged — the
+		// suppression that keeps `echo "$PASS" | docker login --password-stdin`
+		// quiet (#301, #295, #982). But a secret piped into an encoder or
+		// pass-through printer whose output still reaches the log is a masking
+		// bypass: GitLab masks the literal value, not its base64/hex form
+		// (#1361). Report only that, leaving credential consumers silent.
+		if right < len(s) && s[right] == '|' {
+			if pipedSecretReachesLog(s, separators, right) {
+				return varRefText(s[start:end]), true, true
+			}
+			continue
+		}
+		return varRefText(s[start:end]), true, false
 	}
-	return "", false
+	return "", false, false
+}
+
+// logEncoders are commands that return their stdin on stdout, re-encoded
+// (base64, base32, base16, xxd, od, hexdump, uuencode) or verbatim (tee, cat,
+// rev, tr). A secret piped into one as a pipeline's terminal stage reaches the
+// job log, past GitLab's value-based masking (#1361). A credential consumer
+// (docker login --password-stdin, ssh-add -, gpg --passphrase-fd, kubectl
+// --token-stdin, …) is deliberately absent, so a secret handed to one stays
+// unreported, preserving the #301/#295/#982 false-positive fixes. Extend as a
+// table.
+var logEncoders = map[string]bool{
+	"base64": true, "base32": true, "base16": true, "basenc": true,
+	"xxd": true, "od": true, "hexdump": true, "uuencode": true,
+	"tee": true, "cat": true, "rev": true, "tr": true,
+}
+
+// pipedSecretReachesLog reports whether a secret printed just before the pipe
+// at pipeStart still reaches the job log: the pipeline's terminal stage is a
+// logEncoders command and its stdout is not redirected to a file. s is the
+// single-quote-masked line; separators is its maskShellQuotes form, so a pipe,
+// redirect or terminator inside a double-quoted argument is not read as shell
+// structure.
+func pipedSecretReachesLog(s, separators string, pipeStart int) bool {
+	end := len(separators)
+	for i := pipeStart + 1; i < len(separators); i++ {
+		c := separators[i]
+		// A command terminator ends the pipeline; `&&`, `||` and `&` all begin
+		// with a character that is not part of a pipe stage.
+		if c == ';' || c == '\n' || c == '&' || c == ')' ||
+			(c == '|' && i+1 < len(separators) && separators[i+1] == '|') {
+			end = i
+			break
+		}
+	}
+	// Output redirected away from the log (`>` to a file or /dev/null) is
+	// GL014's territory, not a log leak.
+	if strings.ContainsRune(separators[pipeStart:end], '>') {
+		return false
+	}
+	last := strings.LastIndexByte(separators[pipeStart:end], '|') + pipeStart
+	return logEncoders[commandName(commandWords(s[last+1:end]))]
 }
 
 // shortSubstring reports whether rest, the text after a braced variable name,

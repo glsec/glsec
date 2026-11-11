@@ -99,10 +99,57 @@ func TestPrintedSecret(t *testing.T) {
 		// A flag that a token is configured is not the token (#1370).
 		{`echo "git token: ${GIT_TOKEN_CONFIGURED:-unknown}"`, false},
 		{`echo "galaxy: ${GALAXY_TOKENS_CONFIGURED:-unknown}"`, false},
+
+		// Piped into an encoder / pass-through printer whose output reaches the
+		// log: a masking bypass (#1361).
+		{`echo "$DEPLOY_TOKEN" | base64`, true},
+		{`printf '%s' "$DB_PASSWORD" | base32`, true},
+		{`echo "$DEPLOY_TOKEN" | xxd`, true},
+		{`echo "$DEPLOY_TOKEN" | od -An -tx1`, true},
+		{`echo "$DEPLOY_TOKEN" | hexdump`, true},
+		{`echo "$DEPLOY_TOKEN" | base64 | tee out.txt`, true},
+		{`echo "$DB_PASSWORD" | tr -d '\n' | base64`, true},
+		{`echo "$DEPLOY_TOKEN" | cat`, true},
+		{`echo "$DEPLOY_TOKEN" | rev`, true},
+		{`echo "$DEPLOY_TOKEN" | base64 &`, true},
+		{`echo "$DEPLOY_TOKEN" | base64 && deploy`, true},
+		{`bash -c "echo \"$DEPLOY_TOKEN\" | base64"`, true},
+		// Piped into a consumer, redirected away, captured, or literal: silent,
+		// preserving #301/#295/#982.
+		{`echo "$DEPLOY_TOKEN" | base64 > /dev/null`, false},
+		{`echo "$DEPLOY_TOKEN" | base64 > out.txt`, false},
+		{`echo "$SSH_KEY" | ssh-add -`, false},
+		{`echo "$GPG_PASSWORD" | gpg --batch --passphrase-fd 0 enc`, false},
+		{`echo "$DEPLOY_TOKEN" | base64 | docker login --password-stdin`, false},
+		{`echo "$DEPLOY_TOKEN" | grep -o .`, false},
+		{`TOKEN=$(echo "$DEPLOY_TOKEN" | base64)`, false},
+		{`echo '$DEPLOY_TOKEN' | base64`, false},
 	}
 	for _, tt := range tests {
-		if _, got := printedSecret(tt.line); got != tt.want {
+		if _, got, _ := printedSecret(tt.line); got != tt.want {
 			t.Errorf("printedSecret(%q) = %v, want %v", tt.line, got, tt.want)
+		}
+	}
+}
+
+func TestPrintedSecretViaEncoder(t *testing.T) {
+	encoder := []string{
+		`echo "$DEPLOY_TOKEN" | base64`,
+		`echo "$DEPLOY_TOKEN" | base64 | tee out.txt`,
+		`echo "$DB_PASSWORD" | tr -d '\n' | base64`,
+		`echo "$DEPLOY_TOKEN" | xxd`,
+		`bash -c "echo \"$DEPLOY_TOKEN\" | base64"`,
+	}
+	for _, line := range encoder {
+		if _, printed, via := printedSecret(line); !printed || !via {
+			t.Errorf("printedSecret(%q) = printed %v, viaEncoder %v; want both true", line, printed, via)
+		}
+	}
+	// A plain print is a leak but not the encoder path, so it keeps the plain
+	// wording.
+	for _, line := range []string{`echo "$DEPLOY_TOKEN"`, `printf '%s' "$DB_PASSWORD"`} {
+		if _, printed, via := printedSecret(line); !printed || via {
+			t.Errorf("printedSecret(%q) = printed %v, viaEncoder %v; want printed true, viaEncoder false", line, printed, via)
 		}
 	}
 }
