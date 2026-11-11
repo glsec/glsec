@@ -374,8 +374,9 @@ func printedSecretDirect(line string) (string, bool) {
 		if strings.Contains(seg, ">") {
 			continue
 		}
-		// Output piped into another command: not logged.
-		if right < len(s) && s[right] == '|' {
+		// Most consumers keep the secret off the log. Encoders and
+		// pass-through printers still write the transformed secret to stdout.
+		if right < len(s) && s[right] == '|' && !gl021PipelinePrintsToLog(s[left+1:]) {
 			continue
 		}
 		// Inside `$(…)` or `<(…)` command/process substitution: captured, not
@@ -391,6 +392,32 @@ func printedSecretDirect(line string) (string, bool) {
 		return varRefText(s[start:end]), true
 	}
 	return "", false
+}
+
+// gl021PipelinePrintsToLog admits only pipelines whose stages after the
+// secret-printing command all encode or pass through data and whose final
+// stdout still reaches the job log. A credential consumer at any stage is
+// excluded. This deliberately does not generalize to arbitrary pipelines.
+func gl021PipelinePrintsToLog(script string) bool {
+	cmds := shellCommands(script)
+	if len(cmds) < 2 || !cmds[0].piped {
+		return false
+	}
+	for i := 1; i < len(cmds); i++ {
+		switch commandName(commandWords(cmds[i].text)) {
+		case "base64", "base32", "base16", "xxd", "od", "hexdump", "uuencode", "tee", "cat", "rev", "tr":
+		default:
+			return false
+		}
+		masked := maskShellQuotes(cmds[i].text)
+		if stdoutRedirectRe.MatchString(masked) || strings.Contains(masked, "&>") {
+			return false
+		}
+		if !cmds[i].piped {
+			return true
+		}
+	}
+	return false
 }
 
 // shortSubstring reports whether rest, the text after a braced variable name,

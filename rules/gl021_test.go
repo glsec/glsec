@@ -329,6 +329,44 @@ deploy:
 	}
 }
 
+func TestGL021_EncodedSecretPipeline(t *testing.T) {
+	for _, tc := range []struct {
+		line string
+		want int
+	}{
+		{`echo "$SECRET_TOKEN" | base64`, 1},
+		{`printf '%s' "$API_KEY" | base32`, 1},
+		{`echo "$DEPLOY_TOKEN" | xxd`, 1},
+		{`echo "$DEPLOY_TOKEN" | base64 | tee out.txt`, 1},
+		{`echo "$DEPLOY_SECRET" | tr -d '\n' | base64`, 1},
+		{`echo "$DEPLOY_SECRET" | base16 | cat`, 1},
+		{`echo "$DEPLOY_SECRET" | od`, 1},
+		{`echo "$DEPLOY_SECRET" | hexdump`, 1},
+		{`echo "$DEPLOY_SECRET" | uuencode out`, 1},
+		{`echo "$DEPLOY_SECRET" | rev`, 1},
+		{`echo "$DEPLOY_SECRET" | tee out.txt`, 1},
+		{`echo "$REGISTRY_PASSWORD" | docker login -u u --password-stdin`, 0},
+		{`echo "$SSH_KEY" | ssh-add -`, 0},
+		{`echo "$PASSPHRASE" | gpg --batch --passphrase-fd 0`, 0},
+		{`echo "$TOKEN" | kubectl auth can-i --token-stdin`, 0},
+		{`echo "$DEPLOY_SECRET" | base64 > /dev/null`, 0},
+		{`echo "$DEPLOY_SECRET" | base64 | tee out.txt > /dev/null`, 0},
+		{`echo "$DEPLOY_SECRET" | base64 | docker login --password-stdin`, 0},
+		{`echo '$DEPLOY_SECRET' | base64`, 0},
+		{`TOKEN=$(echo "$DEPLOY_SECRET" | base64)`, 0},
+	} {
+		t.Run(tc.line, func(t *testing.T) {
+			findings := findings021(t, "job:\n  script:\n    - "+strconv.Quote(tc.line)+"\n")
+			if len(findings) != tc.want {
+				t.Fatalf("got %d findings, want %d: %+v", len(findings), tc.want, findings)
+			}
+			if tc.want == 1 && findings[0].Severity != finding.Warn {
+				t.Fatalf("got severity %s, want warn", findings[0].Severity)
+			}
+		})
+	}
+}
+
 func TestGL021_SshAddStdin_NoFinding(t *testing.T) {
 	// The very idiom GL032's message recommends; the key never hits the log.
 	f := findings021(t, `
