@@ -247,15 +247,44 @@ func printedSecret(line string) (string, bool) {
 	// `bash -c "echo $DEPLOY_TOKEN"` (or the same with single quotes / eval)
 	// prints the secret even though the outer command is not echo. Recurse
 	// into that script before stripping quotes, then honour outer redirects.
-	if script, ok := childPrintScript(line); ok && script != line {
-		if name, printed := printedSecret(script); printed {
-			if childShellOutputDiverted(line) {
-				return "", false
-			}
-			return name, true
+	if mayHandScriptToChild(line) {
+		if name, printed, decided := childScriptPrintsSecret(line); decided {
+			return name, printed
 		}
 	}
 
+	return printedSecretDirect(line)
+}
+
+// childScriptPrintsSecret reports a secret printed by the script a
+// single-command line hands to a child shell or eval, unless the child's
+// output is redirected, piped, or captured. decided is false when the child
+// script prints nothing, so the caller goes on to check the line itself.
+func childScriptPrintsSecret(line string) (name string, printed, decided bool) {
+	if script, ok := childPrintScript(line); ok && script != line {
+		if name, printed := printedSecret(script); printed {
+			if childShellOutputDiverted(line) {
+				return "", false, true
+			}
+			return name, true, true
+		}
+	}
+	return "", false, false
+}
+
+// mayHandScriptToChild is a cheap, allocation-free check that line could
+// start a child shell, su, ssh or eval and reference a variable, so
+// printedSecret only splits the line into words when that is possible.
+func mayHandScriptToChild(line string) bool {
+	if strings.IndexByte(line, '$') < 0 {
+		return false
+	}
+	return strings.Contains(line, "sh") || strings.Contains(line, "eval") || strings.Contains(line, "su")
+}
+
+// printedSecretDirect is printedSecret for the line itself, without looking
+// into a child shell script.
+func printedSecretDirect(line string) (string, bool) {
 	// Single-quoted spans are literal. Keep an empty quoted placeholder so a
 	// filename such as 6> 'private log.txt' still has a redirection target.
 	s := singleQuotedRe.ReplaceAllString(line, "''")
