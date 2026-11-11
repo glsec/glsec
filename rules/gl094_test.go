@@ -47,17 +47,22 @@ func TestGL094_ExfilPrep(t *testing.T) {
 
 func TestGL094_NoFinding(t *testing.T) {
 	for _, line := range []string{
-		"cat ~/.ssh/id_rsa",                      // bare read
-		"echo \"$SSH_KEY\" > ~/.ssh/id_rsa",      // write — GL032's
-		"chmod 600 ~/.ssh/id_rsa",                // using
-		"ssh-add ~/.ssh/id_rsa",                  // using
-		"ssh-keygen -t ed25519 -f ~/.ssh/id_rsa", // generating
-		"cat ~/.ssh/id_rsa.pub | base64",         // public key
-		"cp /tmp/key ~/.ssh/id_rsa",              // written into place, not read off
-		"tar czf logs.tgz ./logs",                // unrelated archive
-		"base64 config.json",                     // unrelated encode
-		"echo \"cat ~/.ssh/id_rsa | base64\"",    // quoted prose, not a command
-		"cat ~/.ssh/known_hosts | base64",        // a non-key file under .ssh
+		"cat ~/.ssh/id_rsa",                                       // bare read
+		"echo \"$SSH_KEY\" > ~/.ssh/id_rsa",                       // write — GL032's
+		"chmod 600 ~/.ssh/id_rsa",                                 // using
+		"ssh-add ~/.ssh/id_rsa",                                   // using
+		"ssh-keygen -t ed25519 -f ~/.ssh/id_rsa",                  // generating
+		"cat ~/.ssh/id_rsa.pub | base64",                          // public key
+		"cp /tmp/key ~/.ssh/id_rsa",                               // written into place, not read off
+		"tar czf logs.tgz ./logs",                                 // unrelated archive
+		"base64 config.json",                                      // unrelated encode
+		"echo \"cat ~/.ssh/id_rsa | base64\"",                     // quoted prose, not a command
+		"cat ~/.ssh/known_hosts | base64",                         // a non-key file under .ssh
+		"echo \"${SSH_KEY_BASE64}\" | base64 -d > ~/.ssh/id_rsa",  // decode-and-write (deploy-key injection), #1398
+		"echo \"$VPS_SSH_KEY\" | base64 --decode > ~/.ssh/id_rsa", // decode-and-write
+		"mv id_rsa ${HOME}/.ssh",                                  // install the key into .ssh, not off
+		"cp deploy_key ~/.ssh/id_rsa",                             // written into place (dest is a key)
+		"cp ~/.ssh/id_rsa ~/.ssh/id_rsa.bak",                      // stays under .ssh, not copied off
 	} {
 		t.Run(line, func(t *testing.T) {
 			f := findings094(t, "j:\n  script:\n    - "+line+"\n")

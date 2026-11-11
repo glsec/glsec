@@ -49,6 +49,7 @@ func TestGL083_DNSExfil_NoFinding(t *testing.T) {
 		`dig +short "$REGISTRY_HOST"`, // plain variable, no command substitution
 		`ssh host "$(cmd)"`,           // host is ssh's argument, not the command
 		`echo "configure digest"`,     // dig/host as substrings, not commands
+		`host=$(echo $CI_JOB_NAME | cut -d/ -f2)`, // a variable assignment named host, not the DNS command (#1398)
 		`host example.com`,
 	} {
 		t.Run(line, func(t *testing.T) {
