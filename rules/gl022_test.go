@@ -58,6 +58,20 @@ build:
 	}
 }
 
+func TestGL022_PipValueFlags(t *testing.T) {
+	// A named package installed past several value-taking pip flags is still an
+	// unpinned ad-hoc install: the flag values must be skipped, not read as the
+	// package.
+	f := findings022(t, `
+build:
+  script:
+    - pip install --index-url https://idx.example/ --extra-index-url https://x.example/ --trusted-host h.example --timeout 5 --retries 3 --proxy http://p lodash-py
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding, got %d: %+v", len(f), f)
+	}
+}
+
 func TestGL022_PipUpgrade(t *testing.T) {
 	f := findings022(t, `
 build:

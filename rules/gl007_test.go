@@ -293,6 +293,52 @@ test:
 	}
 }
 
+func TestGL007_VarResolutionEdges(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		yaml string
+		sev  finding.Severity
+	}{
+		// A cyclic reference ($A -> $B -> $A) can't resolve to a literal, so it
+		// stays error (exercises the recursion's seen-cycle guard).
+		{"cyclic reference stays error", `
+variables:
+  A: "$B"
+  B: "$A"
+build:
+  image: $A
+  script: [x]
+`, finding.Error},
+		// An empty in-file value isn't an image literal, so it stays error.
+		{"empty in-file value stays error", `
+variables:
+  IMG: ""
+build:
+  image: $IMG
+  script: [x]
+`, finding.Error},
+		// A malformed ${ with no closing brace interpolates no variable, so the
+		// value is treated as an in-file literal and downgraded to warn.
+		{"unclosed brace is a literal", `
+variables:
+  Z: "img:${"
+build:
+  image: $Z
+  script: [x]
+`, finding.Warn},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := findings007(t, tc.yaml)
+			if len(f) != 1 {
+				t.Fatalf("expected 1 finding, got %d", len(f))
+			}
+			if f[0].Severity != tc.sev {
+				t.Errorf("got %s, want %s", f[0].Severity, tc.sev)
+			}
+		})
+	}
+}
+
 func TestGL007_UndefinedInFileStillError(t *testing.T) {
 	f := findings007(t, `
 build:

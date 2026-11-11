@@ -43,6 +43,10 @@ func TestPrintedSecret(t *testing.T) {
 		{`eval "true; echo $DEPLOY_TOKEN"`, true},
 		{`su app -c "cd /app; echo $DEPLOY_TOKEN"`, true},
 		{`su app -c "echo $DEPLOY_TOKEN"`, true},
+		{`ssh -p 2222 deploy@host "echo $DEPLOY_TOKEN"`, true},
+		{`ssh -i key.pem -p 2222 host "echo $DEPLOY_TOKEN"`, true},
+		{`bash -xc "echo $DEPLOY_TOKEN"`, true},
+		{`bash -xc "true; echo $DEPLOY_TOKEN"`, true},
 
 		// Not printed.
 		{`$DEPLOY_TOKEN`, false},
@@ -62,6 +66,7 @@ func TestPrintedSecret(t *testing.T) {
 		{`echo "${CI_JOB_TOKEN:+ (set)}" > check.log`, false},
 		{`bash -c "echo $DEPLOY_TOKEN" > token.txt`, false},
 		{`ssh host 'echo $DEPLOY_TOKEN'`, false},
+		{`ssh -p 2222 host 'echo $DEPLOY_TOKEN'`, false},
 		{`ssh host "echo $DEPLOY_TOKEN" | docker login --password-stdin`, false},
 		{`TOKEN=$(bash -c "echo $DEPLOY_TOKEN")`, false},
 		{`sh -c 'echo "token saved"'`, false},
