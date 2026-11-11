@@ -100,6 +100,18 @@ func TestPrintedSecret(t *testing.T) {
 		{`echo "git token: ${GIT_TOKEN_CONFIGURED:-unknown}"`, false},
 		{`echo "galaxy: ${GALAXY_TOKENS_CONFIGURED:-unknown}"`, false},
 
+		// A public / publishable key ships to clients, not a secret (#1370).
+		{`echo $PUBLIC_POSTHOG_KEY`, false},
+		{`echo $NEXT_PUBLIC_API_KEY`, false},
+		{`echo $STRIPE_PUBLISHABLE_KEY`, false},
+		{`echo $VITE_PUBLIC_STRIPE_KEY`, false},
+		{`echo $MY_PUBLIC_KEY`, false},
+		// A PUBLIC substring that is not its own segment, or an explicit secret
+		// word, keeps the name reported.
+		{`echo $REPUBLIC_API_KEY`, true},
+		{`echo $PUBLISHABLE_SECRET_KEY`, true},
+		{`echo $STRIPE_SECRET_KEY`, true},
+
 		// Piped into an encoder / pass-through printer whose output reaches the
 		// log: a masking bypass (#1361).
 		{`echo "$DEPLOY_TOKEN" | base64`, true},

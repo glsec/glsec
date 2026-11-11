@@ -158,6 +158,29 @@ debug:
 	}
 }
 
+func TestGL021_MultilineGroupRedirect(t *testing.T) {
+	// A { … } group redirected to a file across several physical lines of a
+	// block scalar writes to the file, not the log (#1370).
+	redirected := findings021(t, "w:\n  script:\n    - |\n      {\n        echo \"//r/:_authToken=${CI_JOB_TOKEN}\"\n      } > .npmrc\n")
+	if len(redirected) != 0 {
+		t.Errorf("multi-line group redirected to a file: got %d findings, want 0: %+v", len(redirected), redirected)
+	}
+	appended := findings021(t, "w:\n  script:\n    - |\n      {\n        echo \"_authToken=${CI_JOB_TOKEN}\"\n      } >> .npmrc\n")
+	if len(appended) != 0 {
+		t.Errorf("multi-line group appended to a file: got %d findings, want 0", len(appended))
+	}
+	// A plain multi-line block scalar with no enclosing group still leaks.
+	plain := findings021(t, "w:\n  script:\n    - |\n      echo \"$CI_JOB_TOKEN\"\n      make build\n")
+	if len(plain) != 1 {
+		t.Errorf("multi-line plain echo: got %d findings, want 1", len(plain))
+	}
+	// Piped to tee duplicates to stdout, so it reaches the log and is reported.
+	tee := findings021(t, "w:\n  script:\n    - echo \"${CI_JOB_TOKEN}\" | tee -a .npmrc\n")
+	if len(tee) != 1 {
+		t.Errorf("tee -a .npmrc: got %d findings, want 1", len(tee))
+	}
+}
+
 func TestGL021_PresenceAndDefaultExpansionRegressions(t *testing.T) {
 	for _, tc := range []struct {
 		name, script string
