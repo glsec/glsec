@@ -295,6 +295,17 @@ var (
 	}
 )
 
+// containsHTTPFold reports whether s contains "http://" in any case, without
+// allocating.
+func containsHTTPFold(s string) bool {
+	for i := 0; i+len("http://") <= len(s); i++ {
+		if isHTTPURL(s[i : i+len("http://")]) {
+			return true
+		}
+	}
+	return false
+}
+
 func isHTTPURL(w string) bool {
 	return len(w) >= len("http://") && strings.EqualFold(w[:len("http://")], "http://")
 }
@@ -305,6 +316,11 @@ func isHTTPURL(w string) bool {
 // init` (or `tofu init`) with -backend-config. Other http:// words, such as
 // an API endpoint in a `helm install --set`, are not what these tools fetch.
 func toolHTTPURL(text string) (string, [2]string) {
+	// Most commands name neither tool: skip them before splitting into words.
+	if !strings.Contains(text, "helm") && !strings.Contains(text, "terraform") && !strings.Contains(text, "tofu") ||
+		!containsHTTPFold(text) {
+		return "", [2]string{}
+	}
 	words := withoutWrapper(commandWords(text))
 	if len(words) == 0 {
 		return "", [2]string{}

@@ -578,7 +578,12 @@ func TestGL016_HelmAndTerraformHTTP_NoFinding(t *testing.T) {
 		`terraform init -backend-config="address=http://127.0.0.1:8080"`,
 		`echo "see http://docs.example.com"`,
 		`kubectl apply -f http://manifests.example.com/app.yaml`,
-		`retry`,
+		`retry --helm=http://charts.example.com`,
+		`echo "helm repo add myrepo http://charts.example.com"`,
+		`helm upgrade app ./chart --set url=http://api.example.com`,
+		`helm --kube-apiserver=http://10.0.0.1 repo add myrepo https://charts.example.com`,
+		`terraform init http://state.example.com -backend-config`,
+		`terraform init -backend-config="address=https://state.example.com" -var docs=http://docs.example.com`,
 	} {
 		t.Run(line, func(t *testing.T) {
 			if f := findings016(t, fmt.Sprintf("job:\n  script:\n    - %q\n", line)); len(f) != 0 {
