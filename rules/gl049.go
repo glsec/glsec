@@ -82,6 +82,16 @@ func deployLikeInherited(in *Inheritance, jobName string, job *yaml.Node) bool {
 			hasWordPrefix(strings.ToLower(stage.Value), checkOnlyKeywords) {
 			return false
 		}
+		// A job named only with a weak word (release, dist, migrate) in a build
+		// stage (prepare-release, android-release in stage: build), or a dry run
+		// (release_dry_run_linux), usually only builds an artifact, so it counts
+		// only when its script deploys (#1372). Push, publish or ship in the
+		// name still decide on their own.
+		lowerName := strings.ToLower(jobName)
+		buildStage := stage != nil && stage.Kind == yaml.ScalarNode && hasWordPrefix(strings.ToLower(stage.Value), buildKeywords)
+		if (buildStage && !containsAny(lowerName, strongDeployKeywords)) || dryRunName(lowerName) {
+			return jobScriptDeploys(in, job)
+		}
 		return true
 	}
 	if stage := in.Key(job, "stage"); stage != nil && stage.Kind == yaml.ScalarNode &&
@@ -91,6 +101,20 @@ func deployLikeInherited(in *Inheritance, jobName string, job *yaml.Node) bool {
 		// stage alone, require the script to actually deploy or publish (#1104,
 		// mirroring the GL017/GL019 guard in #1096).
 		return jobScriptDeploys(in, job)
+	}
+	return false
+}
+
+// dryRunName reports a job name with the words dry run (release_dry_run,
+// release-dryrun), whose job rehearses a release without changing anything.
+func dryRunName(lower string) bool {
+	words := strings.FieldsFunc(lower, func(r rune) bool {
+		return (r < 'a' || r > 'z') && (r < '0' || r > '9')
+	})
+	for i, w := range words {
+		if w == "dryrun" || (w == "dry" && i+1 < len(words) && words[i+1] == "run") {
+			return true
+		}
 	}
 	return false
 }

@@ -328,6 +328,44 @@ d:
   interruptible: true
   script: [kubectl apply -f k8s/]
 `, 1},
+		{"release-named job in a build stage that only builds (#1372)", `
+android-release:
+  stage: build
+  interruptible: true
+  script: [./gradlew assembleRelease]
+`, 0},
+		{"prepare-release zipping an artifact in a build stage (#1372)", `
+prepare-release:
+  stage: build
+  interruptible: true
+  script: [zip -r dist.zip build/]
+`, 0},
+		{"release dry run (#1372)", `
+release_dry_run_linux:
+  interruptible: true
+  script: [cargo build --release]
+`, 0},
+		{"release dryrun spelled as one word (#1372)", `
+release-dryrun:
+  interruptible: true
+  script: [cargo build --release]
+`, 0},
+		{"release-named job in a build stage that pushes", `
+release-image:
+  stage: build
+  interruptible: true
+  script: [docker push registry.example.com/app:latest]
+`, 1},
+		{"release dry run whose script still pushes", `
+release-dry-run:
+  interruptible: true
+  script: [docker push registry.example.com/app:latest]
+`, 1},
+		{"dry-named job that is not a dry run still counts", `
+release-dry:
+  interruptible: true
+  script: [./run.sh]
+`, 1},
 		{"real deploy by environment", `
 d:
   environment: production
