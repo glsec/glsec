@@ -212,6 +212,39 @@ build:
 	}
 }
 
+func TestGL022_NpmAuditFixForce(t *testing.T) {
+	f := findings022(t, `
+build:
+  script:
+    - npm audit fix --force
+    - npm audit fix --package-lock-only --force
+    - npm audit fix --force --audit-level=high
+    - npm audit fix --force && npm test
+`)
+	if len(f) != 4 {
+		t.Fatalf("expected 4 findings for npm audit fix --force, got %d: %+v", len(f), f)
+	}
+	for _, x := range f {
+		if x.Severity != finding.Warn || !strings.Contains(x.Message, "npm audit fix --force") {
+			t.Errorf("unexpected finding %+v", x)
+		}
+	}
+}
+
+func TestGL022_NpmAuditFixWithoutForce_NoFinding(t *testing.T) {
+	f := findings022(t, `
+build:
+  script:
+    - npm audit fix
+    - npm audit --audit-level=high
+    - npm audit fix --dry-run
+    - echo "locally you can run npm audit fix --force"
+`)
+	if len(f) != 0 {
+		t.Fatalf("expected no findings, got %d: %+v", len(f), f)
+	}
+}
+
 func TestGL022_NpmInstallLocal_NoFinding(t *testing.T) {
 	// npm install without -g installs from package.json — covered by GL023
 	f := findings022(t, `

@@ -241,6 +241,12 @@ var (
 	}
 )
 
+// npmAuditFixForce matches `npm audit fix` with --force anywhere among its
+// flags. --force lets npm apply semver-major upgrades to direct dependencies
+// and rewrite the lockfile. Bare `npm audit fix` stays within the manifest's
+// semver ranges and is not flagged (#1358).
+var npmAuditFixForce = mustCompilePrefiltered(`\bnpm\s+audit\s+fix\b(?:\s+-{1,2}[\w=@./:-]+)*?\s+--force(?:$|[\s;&|)])`)
+
 func (r *gl022) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
 
@@ -280,6 +286,19 @@ func checkPMLine(line, file string, lineNum, col int) *finding.Finding {
 				Col:      col,
 			}
 			return &f
+		}
+	}
+
+	// Checked on the quote-masked line, so prose such as
+	// `echo "run npm audit fix --force"` is not read as a command.
+	if npmAuditFixForce.MatchString(maskShellQuotes(line)) {
+		return &finding.Finding{
+			RuleID:   "GL022",
+			Severity: finding.Warn,
+			Message:  "npm audit fix --force used in CI — applies semver-major dependency upgrades without review and rewrites the lockfile",
+			File:     file,
+			Line:     lineNum,
+			Col:      col,
 		}
 	}
 
