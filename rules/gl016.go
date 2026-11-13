@@ -204,17 +204,18 @@ func (r *gl016) checkScriptHTTP(node *yaml.Node, file string) []finding.Finding 
 		if item.Kind != yaml.ScalarNode {
 			continue
 		}
-		if f := r.scriptLineFinding(item, file); f != nil {
-			findings = append(findings, *f)
-		}
+		findings = append(findings, r.scriptLineFinding(item, file)...)
 	}
 	return findings
 }
 
-// scriptLineFinding reports at most one insecure-transport finding for a single
-// script line: git:// anywhere on the line, otherwise an HTTP URL fetched by a
-// known downloader (curl, wget, git).
-func (r *gl016) scriptLineFinding(item *yaml.Node, file string) *finding.Finding {
+// scriptLineFinding reports every insecure-transport finding for a single
+// script scalar: git:// anywhere on the line, otherwise one finding per HTTP
+// URL fetched by a known downloader (curl, wget, git) or tool (helm,
+// terraform). A `|` block or a `;`-joined line can hold several independent
+// downloads of different severities, so each qualifying command is reported,
+// not just the first (#1415).
+func (r *gl016) scriptLineFinding(item *yaml.Node, file string) []finding.Finding {
 	if m := gitURLRe.FindString(item.Value); m != "" {
 		host := hostOf(m)
 		if !r.skip(host) {
@@ -224,16 +225,17 @@ func (r *gl016) scriptLineFinding(item *yaml.Node, file string) *finding.Finding
 				sev = finding.Info
 				msg = "script fetches over git:// from a private/internal host — use https:// or ssh://"
 			}
-			return &finding.Finding{
+			return []finding.Finding{{
 				RuleID: "GL016", Severity: sev, Message: msg,
 				File: file, Line: item.Line, Col: item.Column,
-			}
+			}}
 		}
 	}
 
 	// Each command on its own, and the URL must be one of its words: an
 	// http:// URL in a variable or heredoc elsewhere in the block is not what
 	// curl or git fetches.
+	var findings []finding.Finding
 	for _, cmd := range shellCommands(item.Value) {
 		var url string
 		msgs := downloadHTTPMessages
@@ -267,16 +269,16 @@ func (r *gl016) scriptLineFinding(item *yaml.Node, file string) *finding.Finding
 			sev = finding.Info
 			msg = msgs[1]
 		}
-		f := &finding.Finding{
+		f := finding.Finding{
 			RuleID: "GL016", Severity: sev, Message: msg,
 			File: file, Line: parser.ScalarContentLine(item, cmd.line),
 		}
 		if cmd.line == 0 {
 			f.Col = item.Column
 		}
-		return f
+		findings = append(findings, f)
 	}
-	return nil
+	return findings
 }
 
 // Each pair is the message for a public host, then for a private/internal one.
