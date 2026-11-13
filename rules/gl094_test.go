@@ -63,6 +63,10 @@ func TestGL094_NoFinding(t *testing.T) {
 		"mv id_rsa ${HOME}/.ssh",                                  // install the key into .ssh, not off
 		"cp deploy_key ~/.ssh/id_rsa",                             // written into place (dest is a key)
 		"cp ~/.ssh/id_rsa ~/.ssh/id_rsa.bak",                      // stays under .ssh, not copied off
+		"chmod 600 ~/.ssh/id_rsa; base64 config.json",             // key touched, unrelated encode (#1414)
+		"echo \"$SSH_KEY\" > ~/.ssh/id_rsa; base64 config.json",   // key written, unrelated encode (#1414)
+		"ssh-keygen -y -f ~/.ssh/id_rsa | base64",                 // exports the PUBLIC key, not private content (#1414)
+		"chmod 600 ~/.ssh/id_rsa && base64 config.json",           // && is not a pipe (#1414)
 	} {
 		t.Run(line, func(t *testing.T) {
 			f := findings094(t, "j:\n  script:\n    - "+line+"\n")
@@ -70,6 +74,31 @@ func TestGL094_NoFinding(t *testing.T) {
 				t.Fatalf("expected no GL094 finding for %q, got %+v", line, f)
 			}
 		})
+	}
+}
+
+// TestGL094_BlockScalarPipelineMembership checks that commands on separate
+// physical lines of a block scalar are not combined: a key touched on one line
+// and an encoder on another is not exfiltration, while a connected pipeline on
+// one line still is (#1414).
+func TestGL094_BlockScalarPipelineMembership(t *testing.T) {
+	noFinding := "j:\n  script:\n    - |\n      chmod 600 ~/.ssh/id_rsa\n      base64 config.json\n"
+	if f := findings094(t, noFinding); len(f) != 0 {
+		t.Fatalf("expected no GL094 finding for a key line and an unrelated encoder line, got %+v", f)
+	}
+
+	write := "j:\n  script:\n    - |\n      echo \"$SSH_KEY\" > ~/.ssh/id_rsa\n      base64 config.json\n"
+	if f := findings094(t, write); len(f) != 0 {
+		t.Fatalf("expected no GL094 finding for a key write and an unrelated encoder line, got %+v", f)
+	}
+
+	connected := "j:\n  script:\n    - |\n      echo start\n      cat ~/.ssh/id_rsa | base64\n"
+	f := findings094(t, connected)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 GL094 finding for a connected key pipeline in a block scalar, got %d: %+v", len(f), f)
+	}
+	if !strings.Contains(f[0].Message, "piped into an encoder") {
+		t.Errorf("unexpected message %q", f[0].Message)
 	}
 }
 
