@@ -84,3 +84,59 @@ func TestGL093_PositionAndJob(t *testing.T) {
 		t.Errorf("got job %q line %d, want deploy line 4", f[0].Job, f[0].Line)
 	}
 }
+
+// block093 wraps a single command in a literal `|` block script item, the form
+// the #1413 acceptance cases use: quoting and child shells must be resolved the
+// same whether the command is a plain item or a block line.
+func block093(t *testing.T, command string) []finding.Finding {
+	t.Helper()
+	return findings093(t, "j:\n  script:\n    - |\n      "+command+"\n")
+}
+
+// TestGL093_CommandPosition covers #1413: a quoted interpreter or operand and a
+// child-shell payload must flag, while an interpreter that is only an argument
+// to another command (echo) or sits in an inline comment must stay silent.
+func TestGL093_CommandPosition(t *testing.T) {
+	flagged := []string{
+		`node fonts/x.ttf`,           // bare (kept)
+		`node "fonts/x.ttf"`,         // quoted operand
+		`"node" fonts/x.ttf`,         // quoted command name
+		`'node' "fonts/x.ttf"`,       // both quoted
+		`bash -c 'node fonts/x.ttf'`, // child-shell payload
+		`sh -c "node fonts/x.ttf"`,   // child-shell payload, double-quoted
+	}
+	for _, c := range flagged {
+		t.Run("flag/"+c, func(t *testing.T) {
+			f := block093(t, c)
+			if len(f) == 0 {
+				t.Fatalf("expected a GL093 finding for %q", c)
+			}
+			if f[0].Severity != finding.Error || !strings.Contains(f[0].Message, "non-script file") {
+				t.Errorf("unexpected finding %+v", f[0])
+			}
+		})
+	}
+
+	silent := []string{
+		`echo node fonts/x.ttf`,          // interpreter is echo's argument (data)
+		`echo ok # node fonts/x.ttf`,     // interpreter in an inline comment
+		`echo "node payload.ttf"`,        // interpreter inside a quoted argument
+		`printf 'node payload.ttf\n'`,    // same, printf
+		`node -e 'require("./x.ttf")'`,   // inline code, not a file operand
+		`python -c 'open("x.ttf")'`,      // inline code
+		`python -m http.server`,          // module invocation
+		`node --experimental-vm-modules`, // flag only, no file
+		`node app.js`,                    // real script file
+		`python run.py`,                  // real script file
+		`bash deploy.sh`,                 // bash is not an interpreter here
+		`deno run server.ts`,             // real .ts via run subcommand
+	}
+	for _, c := range silent {
+		t.Run("silent/"+c, func(t *testing.T) {
+			f := block093(t, c)
+			if len(f) != 0 {
+				t.Fatalf("expected no GL093 finding for %q, got %+v", c, f)
+			}
+		})
+	}
+}
