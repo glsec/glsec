@@ -102,37 +102,83 @@ func (r *gl094) Check(doc *yaml.Node, file string) []finding.Finding {
 	return findings
 }
 
-// gl094ExfilReason returns why a script line stages a private key for
-// exfiltration, or "" if it does not.
-func gl094ExfilReason(cmds []shellCommand) string {
-	// A key whose output is re-encoded, in one command (base64 id_rsa) or along
-	// a pipeline (cat id_rsa | base64).
-	encoder, keyArg := false, false
-	for _, c := range cmds {
+// gl094IsEncoder reports whether a command runs an encoder in its encode
+// direction. `base64 -d` / `base32 -d` decode, which is how a CI job writes a
+// deploy key into place (echo "$KEY_B64" | base64 -d > ~/.ssh/id_rsa) — not a
+// read for exfil (#1398 false positive).
+func gl094IsEncoder(w []string) bool {
+	if !gl094Encoders[commandName(w)] {
+		return false
+	}
+	_, decodes := payloadDecoder(w)
+	return !decodes
+}
+
+// gl094KeyOperand reports whether a command reads a key path as one of its own
+// operands. A key path that is a redirect target (`> ~/.ssh/id_rsa`) is
+// written, not read, so it does not count.
+func gl094KeyOperand(w []string) bool {
+	args := gl094Args(w)
+	for i, a := range args {
+		if gl094IsKeyArg(a) && (i == 0 || !isRedirectWord(args[i-1])) {
+			return true
+		}
+	}
+	return false
+}
+
+// gl094EmitsKey reports whether a command streams a private key's own bytes to
+// stdout, so a downstream encoder would re-encode the key itself. ssh-keygen is
+// excluded: `ssh-keygen -y -f id_rsa` derives and prints the PUBLIC key, not
+// private-key content, so piping it into an encoder is not exfiltration (#1414).
+func gl094EmitsKey(w []string) bool {
+	if commandName(w) == "ssh-keygen" {
+		return false
+	}
+	return gl094KeyOperand(w)
+}
+
+// gl094KeyReachesEncoder reports whether a private key is read into an encoder
+// within a single connected pipeline: the encoder reads the key as its own file
+// operand (base64 id_rsa), or an earlier stage emits the key's bytes into an
+// encoder stage downstream (cat id_rsa | base64).
+func gl094KeyReachesEncoder(pipe []shellCommand) bool {
+	for pos, c := range pipe {
 		w := commandWords(c.text)
 		if len(w) == 0 {
 			continue
 		}
-		// Only an encoder running in its encode direction stages a key for
-		// exfiltration. `base64 -d` / `base32 -d` decode, which is how a CI job
-		// writes a deploy key into place (echo "$KEY_B64" | base64 -d >
-		// ~/.ssh/id_rsa) — not a read for exfil (#1398 false positive).
-		if gl094Encoders[commandName(w)] {
-			if _, decodes := payloadDecoder(w); !decodes {
-				encoder = true
-			}
+		if gl094IsEncoder(w) && gl094KeyOperand(w) {
+			return true
 		}
-		// A key path that is a redirect target (`> ~/.ssh/id_rsa`) is written,
-		// not read, so it is not a key being staged for exfiltration.
-		args := gl094Args(w)
-		for i, a := range args {
-			if gl094IsKeyArg(a) && (i == 0 || !isRedirectWord(args[i-1])) {
-				keyArg = true
+		if gl094EmitsKey(w) {
+			for _, later := range pipe[pos+1:] {
+				if lw := commandWords(later.text); len(lw) > 0 && gl094IsEncoder(lw) {
+					return true
+				}
 			}
 		}
 	}
-	if encoder && keyArg {
-		return "piped into an encoder"
+	return false
+}
+
+// gl094ExfilReason returns why a script line stages a private key for
+// exfiltration, or "" if it does not.
+func gl094ExfilReason(cmds []shellCommand) string {
+	// A private key read into an encoder, either as the encoder's own file
+	// operand (base64 id_rsa) or along one connected pipeline (cat id_rsa |
+	// base64). Commands separated by ;, &&, ||, or a newline run in different
+	// pipelines and must not be combined: a key touched on one line and an
+	// unrelated encoder on another is not exfiltration (#1414).
+	for i := 0; i < len(cmds); {
+		j := i
+		for j < len(cmds)-1 && cmds[j].piped {
+			j++
+		}
+		if gl094KeyReachesEncoder(cmds[i : j+1]) {
+			return "piped into an encoder"
+		}
+		i = j + 1
 	}
 	// Archived, or copied/moved off to another path.
 	for _, c := range cmds {
