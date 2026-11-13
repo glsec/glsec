@@ -53,7 +53,7 @@ func TestMetamorphic(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					orig, errOut, ok := metamorphicFindings(t, string(src))
+					orig, errOut, origCode, ok := metamorphicFindings(t, string(src))
 					if !ok {
 						t.Fatalf("glsec can't scan the original:\n%s", errOut)
 					}
@@ -64,7 +64,7 @@ func TestMetamorphic(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					got, errOut, ok := metamorphicFindings(t, out)
+					got, errOut, gotCode, ok := metamorphicFindings(t, out)
 					if !ok {
 						t.Fatalf("glsec can't scan the rewritten pipeline:\n%s\n%s", errOut, out)
 					}
@@ -81,6 +81,14 @@ func TestMetamorphic(t *testing.T) {
 					}
 					if len(unexpected) > 0 {
 						t.Errorf("findings changed:\n%s\nrewritten pipeline:\n%s", strings.Join(unexpected, "\n"), out)
+					}
+					// When no finding diverged, an equivalent rewrite must not
+					// change the selected policy: the CLI exit (0 vs 1) has to
+					// match, so a severity flip that stops CI failing can't hide
+					// behind an otherwise-unchanged finding set (#1416). Exit 2
+					// is already a hard scan failure handled above.
+					if len(unexpected) == 0 && origCode != gotCode {
+						t.Errorf("exit code changed from %d to %d with no finding difference\nrewritten pipeline:\n%s", origCode, gotCode, out)
 					}
 				})
 			}
@@ -431,11 +439,11 @@ func TestMetamorphicWrappers(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					orig, errOut, ok := metamorphicFindings(t, string(src))
+					orig, errOut, _, ok := metamorphicFindings(t, string(src))
 					if !ok {
 						t.Fatalf("glsec can't scan the original:\n%s", errOut)
 					}
-					got, errOut, ok := metamorphicFindings(t, out)
+					got, errOut, _, ok := metamorphicFindings(t, out)
 					if !ok {
 						t.Fatalf("glsec can't scan the rewritten pipeline:\n%s\n%s", errOut, out)
 					}
@@ -484,7 +492,7 @@ func TestMetamorphicSplitTemplates(t *testing.T) {
 			if !ok {
 				t.Skip("no hidden job to move")
 			}
-			orig, errOut, ok := metamorphicFindings(t, extended)
+			orig, errOut, _, ok := metamorphicFindings(t, extended)
 			if !ok {
 				t.Fatalf("glsec can't scan the original:\n%s", errOut)
 			}
@@ -596,22 +604,25 @@ func wrapScripts(root *yaml.Node, wrapper string) bool {
 }
 
 type metamorphicFinding struct {
-	Rule    string `json:"rule"`
-	Job     string `json:"job"`
-	Message string `json:"message"`
+	Rule     string `json:"rule"`
+	Severity string `json:"severity"`
+	Job      string `json:"job"`
+	Message  string `json:"message"`
 }
 
 func (f metamorphicFinding) String() string {
-	return fmt.Sprintf("%s [%s] %s", f.Rule, f.Job, f.Message)
+	return fmt.Sprintf("%s %s [%s] %s", f.Rule, f.Severity, f.Job, f.Message)
 }
 
-// metamorphicFindings scans src as .gitlab-ci.yml; ok is false on exit 2, with stderr returned.
-func metamorphicFindings(t *testing.T, src string) (findings []metamorphicFinding, stderr string, ok bool) {
+// metamorphicFindings scans src as .gitlab-ci.yml; ok is false on exit 2, with
+// stderr returned. code is the CLI exit status (0 when no error finding fails
+// the run, 1 when one does), so callers can assert exit invariance too.
+func metamorphicFindings(t *testing.T, src string) (findings []metamorphicFinding, stderr string, code int, ok bool) {
 	t.Helper()
 	code, stdout, errOut := runCLI(t, map[string]string{".gitlab-ci.yml": src},
 		"--no-cache", "--no-repo-config", "--format", "json", ".gitlab-ci.yml")
 	if code == 2 {
-		return nil, errOut, false
+		return nil, errOut, code, false
 	}
 	var out struct {
 		Findings []metamorphicFinding `json:"findings"`
@@ -622,16 +633,50 @@ func metamorphicFindings(t *testing.T, src string) (findings []metamorphicFindin
 	for i := range out.Findings {
 		out.Findings[i].Message = position.ReplaceAllString(out.Findings[i].Message, "$1 N")
 	}
-	return out.Findings, errOut, true
+	return out.Findings, errOut, code, true
 }
 
 func TestMetamorphicFindingsExit2PreservesStderr(t *testing.T) {
-	_, errOut, ok := metamorphicFindings(t, "job:\n  script: [unclosed\n")
+	_, errOut, _, ok := metamorphicFindings(t, "job:\n  script: [unclosed\n")
 	if ok {
 		t.Fatal("expected ok=false for unscannable YAML (exit 2)")
 	}
 	if strings.TrimSpace(errOut) == "" {
 		t.Fatal("expected non-empty stderr message when scan exits 2")
+	}
+}
+
+// TestMetamorphicFindingsDiffSeverity proves the oracle's comparison now
+// accounts for severity: two findings that agree on rule, job and message but
+// differ only in severity must compare UNEQUAL, so a rewrite that silently
+// downgrades a finding (e.g. image: node:latest -> image: "node:latest"
+// turning an error into an info and flipping the CLI exit from 1 to 0) can no
+// longer pass unnoticed (#1416).
+func TestMetamorphicFindingsDiffSeverity(t *testing.T) {
+	orig := []metamorphicFinding{{Rule: "GL001", Severity: "error", Job: "build", Message: "image uses the latest tag"}}
+	got := []metamorphicFinding{{Rule: "GL001", Severity: "info", Job: "build", Message: "image uses the latest tag"}}
+
+	diff := findingsDiff(orig, got)
+	if len(diff) != 2 {
+		t.Fatalf("severity-only difference must be detected: got %d diffs, want 2:\n%v", len(diff), diff)
+	}
+	var removed, added bool
+	for _, d := range diff {
+		switch {
+		case !d.added && d.Severity == "error":
+			removed = true
+		case d.added && d.Severity == "info":
+			added = true
+		}
+	}
+	if !removed || !added {
+		t.Fatalf("expected the error finding removed and the info finding added, got:\n%v", diff)
+	}
+
+	// Identical findings (severity included) must still compare equal, so the
+	// added field does not make every equivalent rewrite look divergent.
+	if diff := findingsDiff(orig, orig); len(diff) != 0 {
+		t.Fatalf("identical findings must compare equal, got:\n%v", diff)
 	}
 }
 
