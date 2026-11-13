@@ -311,17 +311,50 @@ func grepAlternatives(p string, extended, fixed bool) []string {
 
 // narrowEnvFilter reports a filter that selects variables a dump prints
 // harmlessly: every alternative is a literal name without a secret-like
-// word, not the CI prefix whose variables include the job's tokens.
+// word, not the CI prefix whose variables include the job's tokens. A
+// filter is also narrow when none of its alternatives can actually match one
+// of the CI/CD secret names the rule warns about, even if the alternative's
+// own name looks secret-like (#1375).
 func narrowEnvFilter(names []string) bool {
 	if len(names) == 0 {
 		return false
 	}
 	for _, n := range names {
-		if !narrowEnvName(n) {
+		if !narrowEnvName(n) && canReachSecret(n) {
 			return false
 		}
 	}
 	return true
+}
+
+// secretTargetNames are the CI/CD secret variable names a broad filter could
+// expose. A grep alternative that cannot match any of them cannot widen a
+// dump into the secrets the message warns about.
+var secretTargetNames = []string{
+	"CI_JOB_TOKEN", "CI_REGISTRY_PASSWORD", "CI_DEPENDENCY_PROXY_PASSWORD",
+	"CI_DEPLOY_PASSWORD", "CI_JOB_JWT", "CI_JOB_JWT_V1", "CI_JOB_JWT_V2",
+	"CI_API_TOKEN", "CI_PRIVATE_TOKEN", "GITLAB_TOKEN", "GITLAB_PRIVATE_TOKEN",
+	"CI_TOKEN", "CI_SECRET", "CI_PASSWORD", "CI_KEY", "CI_CRED", "CI_AUTH",
+	"CI_PRIVATE", "GITLAB_SECRET", "GITLAB_PASSWORD", "GITLAB_KEY",
+	"GITLAB_CRED", "GITLAB_AUTH", "GITLAB_PRIVATE",
+}
+
+// canReachSecret reports whether the grep alternative pattern can match any of
+// the secret target names above. A pattern that fails to compile is treated as
+// unable to reach a secret.
+func canReachSecret(pattern string) bool {
+	re, err := regexp.Compile("(?i)" + pattern)
+	if err != nil {
+		// An invalid pattern cannot be matched against the target names; treat
+		// it as unable to reach a secret.
+		return false
+	}
+	for _, target := range secretTargetNames {
+		if re.MatchString(target) {
+			return true
+		}
+	}
+	return false
 }
 
 func narrowEnvName(pattern string) bool {
