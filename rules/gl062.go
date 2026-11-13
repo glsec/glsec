@@ -345,12 +345,8 @@ var secretTargetNames = []string{
 func canReachSecret(pattern string) bool {
 	re, err := regexp.Compile("(?i)" + pattern)
 	if err != nil {
-		upper := strings.ToUpper(pattern)
-		for _, target := range secretTargetNames {
-			if strings.Contains(target, upper) {
-				return true
-			}
-		}
+		// An invalid pattern cannot be matched against the target names; treat
+		// it as unable to reach a secret.
 		return false
 	}
 	for _, target := range secretTargetNames {
