@@ -340,8 +340,8 @@ var secretTargetNames = []string{
 }
 
 // canReachSecret reports whether the grep alternative pattern can match any of
-// the secret target names above. Invalid patterns fall back to a substring
-// check.
+// the secret target names above. A pattern that fails to compile is treated as
+// unable to reach a secret.
 func canReachSecret(pattern string) bool {
 	re, err := regexp.Compile("(?i)" + pattern)
 	if err != nil {
