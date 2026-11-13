@@ -394,13 +394,14 @@ func TestGL062_GrepFilterAlternatives(t *testing.T) {
 		`env | egrep "NODE_VERSION|GO_VERSION"`:                 0,
 		`env | grep "NODE_VERSION\\|GO_VERSION"`:                0,
 		`env | grep -e NODE_VERSION -e GO_VERSION`:              0,
-		`env | grep -E "^(NODE_VERSION|DEPLOY_TOKEN)="`: 0,
-		`env | grep -e THREADS -e TOKEN`:                        1,
-		`env | grep -v THREADS`:                                 1,
-		`env | grep -iv THREADS`:                                1,
-		`env | grep --invert-match THREADS`:                     1,
-		`env | grep "NODE_VERSION|GO_VERSION"`:                  0,
-		`env | grep THREADS`:                                    0,
+		`env | grep -E "^(NODE_VERSION|DEPLOY_TOKEN)="`:         0,
+		`env | grep [`:                         0,
+		`env | grep -e THREADS -e TOKEN`:       1,
+		`env | grep -v THREADS`:                1,
+		`env | grep -iv THREADS`:               1,
+		`env | grep --invert-match THREADS`:    1,
+		`env | grep "NODE_VERSION|GO_VERSION"`: 0,
+		`env | grep THREADS`:                   0,
 	} {
 		t.Run(line, func(t *testing.T) {
 			if f := findings062(t, "job:\n  script:\n    - "+fmt.Sprintf("%q", line)+"\n"); len(f) != want {
