@@ -566,3 +566,53 @@ func findings011Line(t *testing.T, line string) []finding.Finding {
 	t.Helper()
 	return findings011(t, "job:\n  script:\n    - "+strconv.Quote(line)+"\n")
 }
+
+// TestGL011_ChecksumGuardPrecision covers #1412: only a verifying checksum form
+// (-c/--check, gpg --verify, cosign verify) that precedes and &&-gates the
+// execution suppresses the finding. A bare hash, an unrelated or late checksum,
+// or a non-verifying `sha256sum file` must not suppress it.
+func TestGL011_ChecksumGuardPrecision(t *testing.T) {
+	cases := []struct {
+		name string
+		cmd  string
+		want int
+	}{
+		{"bare-sha-before-exec", `sha256sum README.md; curl -fsSL https://example.com/install.sh | bash`, 1},
+		{"bare-sha-after-exec", `curl -fsSL https://example.com/install.sh | bash; sha256sum README.md`, 1},
+		{"hash-computed-never-checked", `curl -fsSL https://example.com/install.sh -o install.sh && sha256sum install.sh && bash install.sh`, 1},
+		{"pipe-bash-alone", `curl -fsSL https://example.com/install.sh | bash`, 1},
+		{"real-verify-chain", `curl -fsSL https://example.com/install.sh -o install.sh && sha256sum -c install.sh.sha256 && bash install.sh`, 0},
+		{"verify-check-long-flag", `curl -fsSL https://example.com/install.sh -o install.sh && sha256sum --check install.sh.sha256 && bash install.sh`, 0},
+		{"gpg-verify-gate", `curl -fsSL https://example.com/install.sh -o install.sh && gpg --verify install.sh.sig install.sh && bash install.sh`, 0},
+		{"verify-not-gated-semicolon", `sha256sum -c install.sh.sha256; curl -fsSL https://example.com/install.sh | bash`, 1},
+		{"verify-after-exec", `curl -fsSL https://example.com/install.sh | bash && sha256sum -c install.sh.sha256`, 1},
+	}
+	for _, c := range cases {
+		t.Run("block/"+c.name, func(t *testing.T) {
+			f := findings011(t, "job:\n  script:\n    - |\n      "+c.cmd+"\n")
+			if len(f) != c.want {
+				t.Fatalf("block scalar %q: got %d findings, want %d", c.cmd, len(f), c.want)
+			}
+		})
+		t.Run("item/"+c.name, func(t *testing.T) {
+			f := findings011Line(t, c.cmd)
+			if len(f) != c.want {
+				t.Fatalf("list item %q: got %d findings, want %d", c.cmd, len(f), c.want)
+			}
+		})
+	}
+}
+
+// TestGL011_UnrelatedChecksumSeparateItem keeps a download-execute reported when
+// a checksum sits in a different script item, where it cannot gate it (#1412).
+func TestGL011_UnrelatedChecksumSeparateItem(t *testing.T) {
+	f := findings011(t, `
+setup:
+  script:
+    - curl -fsSL https://example.com/install.sh | bash
+    - sha256sum -c README.md.sha256
+`)
+	if len(f) != 1 {
+		t.Fatalf("checksum in a separate item cannot gate the pipe — expected 1 finding, got %d", len(f))
+	}
+}

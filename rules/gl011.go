@@ -99,9 +99,15 @@ var (
 	// (a keyring install, where the -o is gpg's) is not read as a download saved
 	// and executed (#1099).
 	downloadThenExecRe = mustCompilePrefiltered(`\b(?:curl|wget)\b[^|]*(?:\s-o\b|\s--output\b|[^0-9&]>).*(?:;|&&)\s*` + shellPath + `(?:` + shellAlt + `)\s+\S`)
-	// checksumGuardRe matches an integrity check on the same line; its presence means
-	// the fetched code is verified before execution, so the line is not flagged.
-	checksumGuardRe = mustCompilePrefiltered(`\b(?:sha256sum|sha512sum|shasum)\b|\bgpg\b.*--verify\b|\bcosign\b.*\bverify\b`)
+	// verifyingChecksumRe matches a genuine integrity VERIFICATION, not a bare
+	// hash computation: sha256sum/sha512sum/shasum with -c/--check, gpg --verify,
+	// or cosign verify. A bare `sha256sum file` (no -c) only prints a digest and
+	// gates nothing, so it does not match (#1412).
+	verifyingChecksumRe = mustCompilePrefiltered(`\b(?:sha256sum|sha512sum|shasum)\b[^|;&]*\s(?:-[a-zA-Z]*c\b|--check\b)|\bgpg\b[^|;&]*--verify\b|\bcosign\b[^|;&]*\bverify\b`)
+	// execInterpreterRe matches a command whose program is a shell interpreter,
+	// so the command that runs downloaded or piped code can be located to check
+	// that a verification precedes and gates it.
+	execInterpreterRe = mustCompilePrefiltered(`^` + shellPath + `(?:` + shellAlt + `)\b`)
 	// quotedRe matches single- or double-quoted substrings, stripped before matching so
 	// a "| bash" inside a string literal does not trigger.
 	quotedRe = mustCompilePrefiltered(`"[^"]*"|'[^']*'`)
@@ -180,13 +186,24 @@ func childShellDownloadExecute(line string) gl011Match {
 // whether the line matches. A download elsewhere on the line must not make
 // an unrelated decoder pipeline appear to execute remote code (#1306).
 func isDownloadExecute(line string) gl011Match {
+	kind := detectDownloadExecute(line)
+	// A genuine integrity verification that runs before and &&-gates the
+	// execution means the code is checked before it runs, so the line is not
+	// flagged. A bare hash, an unrelated checksum, or a check after the execute
+	// does not gate anything and must not suppress the finding (#1412).
+	if kind != gl011None && verificationGatesExecution(line) {
+		return gl011None
+	}
+	return kind
+}
+
+// detectDownloadExecute classifies the kind of execution without applying the
+// integrity-verification guard. A download elsewhere on the line must not make
+// an unrelated decoder pipeline appear to execute remote code (#1306).
+func detectDownloadExecute(line string) gl011Match {
 	// An interpreter given its program on the command line reads stdin as
 	// data: curl … | python3 -c "import json, sys; …" runs no downloaded code.
 	stripped := interpreterDashCRe.ReplaceAllString(quotedRe.ReplaceAllString(line, ""), "| data")
-	// An integrity check on the same line means the code is verified before running.
-	if checksumGuardRe.MatchString(stripped) {
-		return gl011None
-	}
 	// Command/process substitution intentionally lives inside quotes, so match the raw line.
 	if processSubstRe.MatchString(line) || cmdSubstRe.MatchString(line) {
 		return gl011RemoteDownload
@@ -221,6 +238,52 @@ func isDownloadExecute(line string) gl011Match {
 		return gl011RemoteDownload
 	}
 	return gl011None
+}
+
+// verificationGatesExecution reports whether a genuine integrity check gates the
+// executed code: a verifying form (sha*sum -c/--check, gpg --verify, cosign
+// verify) that precedes the interpreter execution and is chained to it with &&,
+// so a failed check stops the execution. A bare `sha256sum file` (no -c), a
+// checksum of an unrelated file, or a check after the execute does not gate and
+// returns false (#1412).
+func verificationGatesExecution(line string) bool {
+	cmds := shellCommands(line)
+	// execStart is the first command of the interpreter execution. In a
+	// download pipeline (curl … | bash) it is the pipeline's first command; for
+	// a saved file (… && bash file) it is the interpreter command itself.
+	execStart := -1
+	for i, c := range cmds {
+		if !execInterpreterRe.MatchString(c.text) {
+			continue
+		}
+		start := i
+		for start > 0 && cmds[start-1].piped {
+			start--
+		}
+		execStart = start
+		break
+	}
+	if execStart <= 0 {
+		return false
+	}
+	// A verifying command must sit before the execution and reach it through an
+	// unbroken && chain, so its failure aborts before the code runs.
+	for i := 0; i < execStart; i++ {
+		if !verifyingChecksumRe.MatchString(cmds[i].text) {
+			continue
+		}
+		gated := true
+		for k := i; k < execStart; k++ {
+			if !cmds[k].andThen {
+				gated = false
+				break
+			}
+		}
+		if gated {
+			return true
+		}
+	}
+	return false
 }
 
 // downloadFeedsInterpreter checks pipeline membership, not mere co-occurrence
