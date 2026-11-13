@@ -151,6 +151,134 @@ build:
 	}
 }
 
+// countSeverities016 tallies findings by severity.
+func countSeverities016(f []finding.Finding) map[finding.Severity]int {
+	m := map[finding.Severity]int{}
+	for _, x := range f {
+		m[x.Severity]++
+	}
+	return m
+}
+
+// A `|` block scalar can hold several independent downloads of different
+// severities. Every qualifying one must be reported, not just the first
+// (regression for #1415: the internal `info` used to suppress the public
+// `warn`, flipping the --strict exit code by YAML layout).
+func TestGL016_BlockScalarMultipleDownloads_BothSeverities(t *testing.T) {
+	f := findings016(t, `
+build:
+  script:
+    - |
+      curl http://nexus.internal/repo/tool -o internal-tool
+      curl http://downloads.example.com/tool -o tool
+`)
+	if len(f) != 2 {
+		t.Fatalf("expected 2 findings (info + warn), got %d: %+v", len(f), f)
+	}
+	if sev := countSeverities016(f); sev[finding.Info] != 1 || sev[finding.Warn] != 1 {
+		t.Errorf("expected one Info and one Warn, got %v", sev)
+	}
+	if f[0].Line == f[1].Line {
+		t.Errorf("expected findings on distinct lines, got %d and %d", f[0].Line, f[1].Line)
+	}
+}
+
+// Public-then-internal order must also report both (the later finding is not
+// dropped).
+func TestGL016_BlockScalarReversedOrder_BothSeverities(t *testing.T) {
+	f := findings016(t, `
+build:
+  script:
+    - |
+      curl http://downloads.example.com/tool -o tool
+      curl http://nexus.internal/repo/tool -o internal-tool
+`)
+	if len(f) != 2 {
+		t.Fatalf("expected 2 findings, got %d: %+v", len(f), f)
+	}
+	if f[0].Severity != finding.Warn {
+		t.Errorf("expected first (public) finding Warn, got %s", f[0].Severity)
+	}
+	if f[1].Severity != finding.Info {
+		t.Errorf("expected second (internal) finding Info, got %s", f[1].Severity)
+	}
+}
+
+// Commands joined with `;` on one physical line share the line/col, but their
+// differing severities give differing messages, so Dedupe keeps both — the
+// --strict exit code must reflect the public `warn`.
+func TestGL016_SemicolonJoinedDownloads_BothSurviveDedupe(t *testing.T) {
+	f := findings016(t, `
+build:
+  script:
+    - curl http://nexus.internal/repo/tool -o internal-tool; curl http://downloads.example.com/tool -o tool
+`)
+	if len(f) != 2 {
+		t.Fatalf("expected 2 findings, got %d: %+v", len(f), f)
+	}
+	f = finding.Dedupe(f)
+	if len(f) != 2 {
+		t.Fatalf("Dedupe collapsed distinct-severity downloads: %+v", f)
+	}
+	if sev := countSeverities016(f); sev[finding.Info] != 1 || sev[finding.Warn] != 1 {
+		t.Errorf("expected one Info and one Warn after dedupe, got %v", sev)
+	}
+}
+
+// Two list items were already reported correctly; keep that as a regression.
+func TestGL016_ListItemsMultipleDownloads_BothSeverities(t *testing.T) {
+	f := findings016(t, `
+build:
+  script:
+    - curl http://nexus.internal/repo/tool -o internal-tool
+    - curl http://downloads.example.com/tool -o tool
+`)
+	if len(f) != 2 {
+		t.Fatalf("expected 2 findings, got %d: %+v", len(f), f)
+	}
+	if sev := countSeverities016(f); sev[finding.Info] != 1 || sev[finding.Warn] != 1 {
+		t.Errorf("expected one Info and one Warn, got %v", sev)
+	}
+}
+
+// A response-discarding probe earlier in the scalar must stay skipped while a
+// real download after it is still reported.
+func TestGL016_BlockScalarDiscardThenDownload(t *testing.T) {
+	f := findings016(t, `
+build:
+  script:
+    - |
+      curl -I http://nexus.internal/health
+      curl http://downloads.example.com/tool -o tool
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding (probe skipped), got %d: %+v", len(f), f)
+	}
+	if f[0].Severity != finding.Warn {
+		t.Errorf("expected Warn for the real public download, got %s", f[0].Severity)
+	}
+}
+
+// The helm/terraform HTTP forms can also appear several times in one scalar.
+func TestGL016_BlockScalarMultipleHelmRepos_BothSeverities(t *testing.T) {
+	f := findings016(t, `
+build:
+  script:
+    - |
+      helm repo add internal http://charts.internal/stable
+      helm repo add public http://charts.example.com/stable
+`)
+	if len(f) != 2 {
+		t.Fatalf("expected 2 helm findings, got %d: %+v", len(f), f)
+	}
+	if f[0].Severity != finding.Info || f[0].Message != helmRepoHTTPMessages[1] {
+		t.Errorf("expected internal helm Info, got %+v", f[0])
+	}
+	if f[1].Severity != finding.Warn || f[1].Message != helmRepoHTTPMessages[0] {
+		t.Errorf("expected public helm Warn, got %+v", f[1])
+	}
+}
+
 func TestGL016_VariableHTTP_Warn(t *testing.T) {
 	f := findings016(t, `
 variables:
