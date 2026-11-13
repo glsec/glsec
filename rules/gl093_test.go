@@ -140,3 +140,37 @@ func TestGL093_CommandPosition(t *testing.T) {
 		})
 	}
 }
+
+// TestGL093_InlineCodeFlags is a regression for a corpus false positive: an
+// interpreter run with an inline-code flag executes a code string, not a file,
+// so a disguised extension at the end of that string (pwsh -c "Get-Content
+// x.txt", python3 -c "handle data.txt") is not a file the interpreter runs. A
+// real file run through pwsh -File or a bare operand is still flagged.
+func TestGL093_InlineCodeFlags(t *testing.T) {
+	silent := []string{
+		`pwsh -c "Get-Content myartifactfile.txt"`,         // the corpus false positive
+		`powershell -Command "Get-Content x.log"`,          // long flag form
+		`pwsh -c "echo hello.txt"`,                         // trailing data ext in the code
+		`pwsh -NoProfile -Command "Write-Output done.png"`, // boolean flag before -Command
+		`python3 -c "handle data.txt"`,                     // same trap for a POSIX interpreter
+	}
+	for _, c := range silent {
+		t.Run("silent/"+c, func(t *testing.T) {
+			if f := block093(t, c); len(f) != 0 {
+				t.Fatalf("expected no GL093 finding for %q, got %+v", c, f)
+			}
+		})
+	}
+	flagged := []string{
+		`pwsh -File payload.ttf`, // -File runs an actual script file
+		`pwsh fonts/x.ttf`,       // direct file operand, no inline-code flag
+	}
+	for _, c := range flagged {
+		t.Run("flag/"+c, func(t *testing.T) {
+			f := block093(t, c)
+			if len(f) == 0 || f[0].Severity != finding.Error {
+				t.Fatalf("expected a GL093 error for %q, got %+v", c, f)
+			}
+		})
+	}
+}

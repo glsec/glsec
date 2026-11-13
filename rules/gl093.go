@@ -100,9 +100,35 @@ func gl093DisguisedFile(words []string) (string, bool) {
 	// argument cannot turn a plain run into a match.
 	for _, a := range args {
 		if strings.HasPrefix(a, "-") {
+			// An inline-code flag runs a code string, not a script file, and
+			// its value must not be read as the operand: pwsh -c "Get-Content
+			// x.txt" executes no .txt file (#1413).
+			if gl093InlineCodeFlag(name, a) {
+				return "", false
+			}
 			continue
 		}
 		return a, gl093DisguisedExtRe.MatchString(a)
 	}
 	return "", false
+}
+
+// gl093InlineCodeFlag reports whether flag makes the interpreter run an inline
+// code string rather than a script file, so its value is not an operand to
+// test. PowerShell's -Command/-EncodedCommand (and their abbreviations) and the
+// -e/-c/-p eval flags of node, python, perl and ruby all take code, not a
+// filename. A real file run such as `pwsh -File payload.ttf` keeps its operand.
+func gl093InlineCodeFlag(name, flag string) bool {
+	f := strings.ToLower(strings.TrimLeft(flag, "-"))
+	if f == "" {
+		return false
+	}
+	if name == "pwsh" || name == "powershell" {
+		return strings.HasPrefix("command", f) || strings.HasPrefix("encodedcommand", f)
+	}
+	switch f {
+	case "e", "c", "p", "eval", "print":
+		return true
+	}
+	return false
 }
