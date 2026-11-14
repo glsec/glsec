@@ -5,6 +5,10 @@ Fixes #
 
 ## Why
 
+## Approach
+
+<!-- Skip if trivial. What did you consider and rule out, and why this way? What does this change deliberately NOT do (the scope boundary)? If the issue's framing or scope seemed off, say what you'd change. -->
+
 ## How to test
 
 <!-- Commands you ran and what they showed. For a new or changed rule: how many findings it adds or removes on real pipelines. -->
@@ -18,4 +22,4 @@ Fixes #
 
 ## AI assistance
 
-<!-- Did you use an AI tool? If so, which one and what it did. "None" is a fine answer. See CONTRIBUTING.md#ai-assisted-contributions. -->
+<!-- Did you use an AI tool? If so, which one, what it did, and what you checked yourself: the GitLab behaviour you confirmed against the docs, and the finding delta you ran on real pipelines. "None" is a fine answer. See CONTRIBUTING.md#ai-assisted-contributions. -->

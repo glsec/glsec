@@ -448,6 +448,22 @@ A new push removes the label again, so it always reflects the reviewed code — 
 - **Allow edits by maintainers:** keep the box "Allow edits and access to secrets by maintainers" ticked when you open a pull request from a fork (it is on by default). `main` moves quickly, and with it a maintainer can rebase your branch, resolve a conflict or fix a small detail directly, instead of asking you for another round. Your commits keep your authorship and sign-off. GitHub only offers the option for forks in a personal account; if you work from a fork owned by an organization, say so in the pull request.
 - **Tests:** new functionality and bug fixes come with tests in the same PR. A new rule needs its fixture and unit tests (see above); a bug fix needs a test that fails without the fix. The required checks must pass before merging: the build, the tests on Linux, macOS and Windows, lint, branch coverage, fixture validation, license headers, DCO, the sensitive paths gate and the security checks. Fuzzing and CodeQL run on every change as well, but they are not required checks.
 
+## Engage with the problem, not just the ticket
+
+An issue is a hypothesis about a problem, not a specification to fill in. The most useful contributions test that hypothesis before writing code, and say what they found. We would rather merge a smaller change with a clear argument behind it than a larger one that only does what the title said. This matters more now that most contributions involve an AI tool, because [confidence in a tool tends to come at the cost of your own scrutiny](https://advait.org/files/lee_2025_ai_critical_thinking_survey.pdf).
+
+Before and while you work on an issue:
+
+- **Check the premise against the primary source.** glsec's value is precision. Confirm the pattern is really what GitLab Runner does, checked against the [CI/CD YAML reference](https://docs.gitlab.com/ci/yaml/), the variable constraints, the runner's behaviour, or the attack the rule is about, not just that the YAML is valid or the regexp matches. A rule that matches "as documented" but not "as it really behaves" is a bug, green tests and all. Link what you checked.
+- **Bring the edge cases yourself.** State the realistic benign config that would trip your change, and show it stays clean. For a false-positive fix, list the cases that must stay reported, so the fix doesn't quietly drop real findings. Make the scope boundary explicit: what the change deliberately does not flag, and why.
+- **Measure, don't assume.** Run a new or changed rule against real pipelines and put the finding delta in the pull request. Say how many it adds, how many it removes, and whether each is a true or a false positive. Green unit tests do not mean corpus-clean.
+- **Propose the better approach, and show your working.** If you see a cleaner design, a helper that already exists, an adjacent gap the issue misses, or a scope that is too narrow or too broad, say so. Name the alternative you ruled out and why, and the main drawback of the approach you picked. Argue the tradeoff in the open rather than deciding it silently.
+- **Disagreeing is welcome.** If the issue's framing, threat model or scope seems wrong or incomplete, comment on the issue before you build it. A comment that sharpens the problem is worth as much as the code that follows, and we won't read it as overstepping. Bring the evidence and we'll talk it through.
+
+You don't need an open issue to contribute an idea. If you hit a pattern in a real pipeline that glsec should catch, or see a rule that could be sharper, open one and make the case: show the pipeline, say why it's a risk, and check first whether an existing rule already covers it (the *How to add a rule* section explains when a new `GLNNN` is worth it). A sharp proposal with a real example is worth more than a long list of maybes, and we would rather hear a good idea and decide against it than never hear it.
+
+This applies to your AI tool as much as to you. A tool's output reads as plausible whether or not it is right, so [verify it against the source yourself](https://arxiv.org/abs/2211.03622) rather than trusting it because it looks correct. If you used one, it should have done this thinking with you: a pull request that restates the issue title with no sign that the premise was tested reads as unreviewed, whoever or whatever wrote it.
+
 ## AI-assisted contributions
 
 You're welcome to use AI tools. What counts is the change itself and that you stand behind it:
