@@ -460,6 +460,8 @@ Before and while you work on an issue:
 - **Propose the better approach, and show your working.** If you see a cleaner design, a helper that already exists, an adjacent gap the issue misses, or a scope that is too narrow or too broad, say so. Name the alternative you ruled out and why, and the main drawback of the approach you picked. Argue the tradeoff in the open rather than deciding it silently.
 - **Disagreeing is welcome.** If the issue's framing, threat model or scope seems wrong or incomplete, comment on the issue before you build it. A comment that sharpens the problem is worth as much as the code that follows, and we won't read it as overstepping. Bring the evidence and we'll talk it through.
 
+You don't need an open issue to contribute an idea. If you hit a pattern in a real pipeline that glsec should catch, or see a rule that could be sharper, open one and make the case: show the pipeline, say why it's a risk, and check first whether an existing rule already covers it (the *How to add a rule* section explains when a new `GLNNN` is worth it). A sharp proposal with a real example is worth more than a long list of maybes, and we would rather hear a good idea and decide against it than never hear it.
+
 This applies to your AI tool as much as to you. A tool's output reads as plausible whether or not it is right, so [verify it against the source yourself](https://arxiv.org/abs/2211.03622) rather than trusting it because it looks correct. If you used one, it should have done this thinking with you: a pull request that restates the issue title with no sign that the premise was tested reads as unreviewed, whoever or whatever wrote it.
 
 ## AI-assisted contributions
