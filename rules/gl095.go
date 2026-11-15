@@ -26,14 +26,6 @@ var GL095 = &gl095{}
 func (r *gl095) ID() string { return "GL095" }
 
 var (
-	// gl095MetaHostRe matches the cloud instance metadata endpoint: the AWS/Azure
-	// link-local address or the GCP metadata hostname. The host is bounded by
-	// non-host characters on both sides, so it matches the real endpoint in a URL
-	// but not a lookalike domain that merely contains it (metadata.google.internal.evil.com)
-	// and not a longer number such as 169.254.169.2544. Only the exact metadata IP
-	// is matched, so an unrelated 169.254.x.x link-local service does not.
-	gl095MetaHostRe = mustCompilePrefiltered(
-		`(?:^|[^0-9A-Za-z._-])(?:169\.254\.169\.254|metadata\.google\.internal)(?:[^0-9A-Za-z._-]|$)`)
 	// gl095CloudCredRe matches the credential path of a metadata request: the AWS
 	// role-credential and IMDSv2-token paths, the GCP service-account token, and
 	// the Azure OAuth2 token. Reaching one of these retrieves the runner's cloud
@@ -44,6 +36,46 @@ var (
 	// token, i.e. its cluster identity.
 	gl095K8sTokenRe = mustCompilePrefiltered(`/var/run/secrets/kubernetes\.io/serviceaccount/token`)
 )
+
+// gl095MetaHosts are the cloud instance metadata endpoints: the AWS/Azure
+// link-local address and the GCP metadata hostname. Matched by a plain string
+// scan rather than a regexp, so a lookalike domain cannot slip in and so the
+// pattern is not an unanchored host regexp.
+var gl095MetaHosts = []string{"169.254.169.254", "metadata.google.internal"}
+
+func gl095IsHostByte(b byte) bool {
+	return b >= '0' && b <= '9' ||
+		b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z' ||
+		b == '.' || b == '-' || b == '_'
+}
+
+// gl095ReachesMetaHost returns the metadata host referenced in text as its own
+// token (bounded by non-host bytes), or "". A longer address (169.254.169.2544)
+// or a lookalike domain (metadata.google.internal.evil.com) is not a match, and
+// only the exact metadata IP matches, so an unrelated 169.254.x.x service does not.
+func gl095ReachesMetaHost(text string) string {
+	for _, h := range gl095MetaHosts {
+		for i := 0; ; {
+			j := strings.Index(text[i:], h)
+			if j < 0 {
+				break
+			}
+			j += i
+			var before, after byte
+			if j > 0 {
+				before = text[j-1]
+			}
+			if end := j + len(h); end < len(text) {
+				after = text[end]
+			}
+			if !gl095IsHostByte(before) && !gl095IsHostByte(after) {
+				return h
+			}
+			i = j + len(h)
+		}
+	}
+	return ""
+}
 
 // gl095Mentions is a cheap substring prefilter: a line with none of these anchors
 // cannot match, so the shell parse is skipped. The cloud credential paths always
@@ -117,7 +149,7 @@ func gl095Assess(v string) (finding.Severity, string, string) {
 			return finding.Error, gl095MsgCred, m
 		}
 		if warnTrigger == "" {
-			if m := gl095MetaHostRe.FindString(t); m != "" {
+			if m := gl095ReachesMetaHost(t); m != "" {
 				warnTrigger = m
 			}
 		}
