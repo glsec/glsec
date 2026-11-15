@@ -21,53 +21,165 @@ func (r *gl017) ID() string { return "GL017" }
 // deployStageKeywords identifies stages that indicate deployment activity.
 var deployStageKeywords = []string{"deploy", "release", "publish", "ship"}
 
-// deployScriptRe matches script commands that actually ship or publish
-// something. A deploy/release-named stage over-fires on build-only jobs that
-// only produce the artifact a later job ships (cargo build, meson dist, pnpm
-// build), so a stage-only classification is corroborated against the script
-// before GL017/GL019 fire (#1096). Bare "release"/"upload"/"push" are left out
-// because they occur in build contexts (cargo build --release, upload
-// coverage); only command-qualified forms and the plain verbs deploy/publish
-// count.
-var deployScriptRe = mustCompilePrefiltered(
+// deployCmdRe matches commands that ship or publish to an external target as
+// adjacent tokens (docker push, kubectl apply), so a match is a real command,
+// not a word in a comment, a path, or a flag. The bare verbs deploy/publish and
+// the snapshot-capable release tools are handled separately, in command
+// position, so `# build for deploy`, `deploy/compose.yml` or
+// `--no-check-publish` no longer read as a deployment (#1096, release FP scan).
+var deployCmdRe = mustCompilePrefiltered(
 	`(?:docker|podman|buildah|crane|skopeo|nerdctl|ko)\s+push\b` +
 		`|helm\s+(?:push|upgrade|install)\b` +
 		`|twine\s+upload\b|cargo\s+publish\b|(?:npm|yarn|pnpm)\s+publish\b|gem\s+push\b|dotnet\s+nuget\s+push\b|(?:uv|flit|poetry|maturin)\s+(?:publish|upload)\b` +
-		`|goreleaser\s+release\b|gh\s+release\s+(?:create|upload)\b|glab\s+release\b|release-cli\s+create\b|semantic-release\b` +
 		`|kubectl\s+(?:apply|rollout|set|create|patch|replace)\b|kustomize\b|argocd\b|skaffold\s+(?:run|deploy)\b` +
 		`|aws\s+(?:s3|deploy|ecs|lambda|cloudformation|elasticbeanstalk|amplify|cloudfront)\b|gcloud\s+(?:app|run|functions|compute|container|storage)\b|az\s+(?:webapp|functionapp|aks|acr|storage)\b|flyctl?\s+deploy\b|netlify[^|;&]*deploy\b|vercel\b|railway\s+up\b` +
 		`|serverless\s+deploy\b|sls\s+deploy\b|terraform\s+apply\b|pulumi\s+up\b|ansible-playbook\b|cap\s+\S+\s+deploy\b|mina\s+deploy\b|fastlane\b` +
-		`|rsync\b|scp\b|rclone\b|git\s+push\b` +
-		`|\bdeploy\b|\bpublish\b`,
+		`|rsync\b|scp\b|rclone\b|git\s+push\b`,
+)
+
+// releaseCmdRe matches release tools that publish but also run in a local
+// snapshot or skip-publish mode; a match counts only when the line does not opt
+// out of publishing (goreleaser release --snapshot ships nothing).
+var releaseCmdRe = mustCompilePrefiltered(
+	`goreleaser\s+release\b|gh\s+release\s+(?:create|upload)\b|glab\s+release\b|release-cli\s+create\b|semantic-release\b`,
+)
+
+// deployVerbRe matches a bare deploy/publish verb as its own word: make deploy,
+// a /deploy webhook URL, deploy@host. The boundaries exclude a flag
+// (--no-check-publish), a directory prefix (deploy/compose.yml) and a filename
+// or compound word (publish.el, docker-kubernetes-deploy), so only a standalone
+// verb counts. A deploy/publish script whose extension hides it here
+// (./deploy.sh) is caught in command position by runsDeployScript.
+var deployVerbRe = mustCompilePrefiltered(
+	`(?:^|[^0-9a-z._-])(?:deploy|publish)(?:$|[^0-9a-z._/-])`,
 )
 
 // jobScriptDeploys reports whether the job's effective script (its own and any
 // inherited via extends:) runs a command that ships or publishes something.
 func jobScriptDeploys(in *Inheritance, job *yaml.Node) bool {
 	for _, line := range CollectJobScriptLines(in.Effective(job)) {
-		script := line.Value
-		for _, cmd := range shellCommands(line.Value) {
-			// A standalone echo/printf is only a printed instruction, not a
-			// deployment. Piped output may be executed by a remote shell,
-			// so preserve it. Search the original script to retain remote
-			// here-document bodies that shellCommands intentionally skips.
-			if cmd.piped {
-				continue
-			}
-			switch commandName(commandWords(cmd.text)) {
-			case "echo", "printf":
-				script = strings.Replace(script, cmd.text, "", 1)
-			case "dotnet":
-				// `dotnet publish` builds and writes output locally; only
-				// `dotnet nuget push` ships to a registry (matched on its own).
-				// Drop the bare publish verb so the broad `\bpublish\b` term
-				// doesn't read a local `dotnet publish -o out` as a deployment.
-				if w := commandWords(cmd.text); len(w) >= 2 && strings.EqualFold(w[1], "publish") {
-					script = strings.Replace(script, cmd.text, "", 1)
-				}
+		if lineDeploys(line.Value) {
+			return true
+		}
+	}
+	return false
+}
+
+// lineDeploys reports whether one script line runs a deploy or publish command.
+// Comments are blanked first, so a verb in `# build for deploy` is not read as a
+// command; a here-document body kept by blankShellComments still matches a real
+// remote command.
+func lineDeploys(raw string) bool {
+	code := blankShellComments(raw)
+	lower := strings.ToLower(code)
+	// echo/printf only print text unless piped into a shell, so drop their
+	// arguments before the line-level match for the adjacent-token commands.
+	for _, cmd := range shellCommands(code) {
+		if cmd.piped {
+			continue
+		}
+		w := commandWords(cmd.text)
+		switch commandName(w) {
+		case "echo", "printf":
+			lower = strings.Replace(lower, strings.ToLower(cmd.text), "", 1)
+		case "dotnet":
+			// `dotnet publish` builds and writes output locally; only `dotnet
+			// nuget push` ships to a registry (matched by deployCmdRe). Drop the
+			// local publish so the bare verb does not read it as a deployment.
+			if len(w) >= 2 && strings.EqualFold(w[1], "publish") {
+				lower = strings.Replace(lower, strings.ToLower(cmd.text), "", 1)
 			}
 		}
-		if deployScriptRe.MatchString(strings.ToLower(script)) {
+	}
+	if deployCmdRe.MatchString(lower) {
+		return true
+	}
+	if releaseCmdRe.MatchString(lower) &&
+		!strings.Contains(lower, "--snapshot") && !skipsPublish(lower) {
+		return true
+	}
+	if deployVerbRe.MatchString(lower) && !skipsPublish(lower) {
+		return true
+	}
+	for _, cmd := range shellCommands(code) {
+		if !cmd.piped && runsDeployScript(cmd) {
+			return true
+		}
+	}
+	return false
+}
+
+// skipsPublish reports whether a release command opts out of publishing.
+func skipsPublish(lower string) bool {
+	return strings.Contains(lower, "--skip publish") ||
+		strings.Contains(lower, "--skip=publish") ||
+		strings.Contains(lower, "--skip-publish")
+}
+
+// deployVerbRunners run a deploy/publish target by name (make container-publish,
+// npm run deploy, task xray-publish). Only for these is a non-flag argument that
+// names a deploy/publish target counted, so a deploy/publish word elsewhere on
+// the line (a path, a flag, a filename) does not.
+var deployVerbRunners = map[string]bool{
+	"make": true, "rake": true, "task": true, "just": true, "invoke": true,
+	"mage": true, "mix": true, "gulp": true, "grunt": true, "nx": true,
+	"turbo": true, "lerna": true, "npm": true, "yarn": true, "pnpm": true,
+	"bun": true, "hugo": true, "firebase": true, "wrangler": true,
+	"eb": true, "sam": true, "surge": true, "heroku": true,
+}
+
+// runsDeployScript reports whether a command runs a deploy/publish that
+// deployVerbRe cannot see: a program whose name is a deploy/publish script
+// (./deploy.sh, deploy-staging.sh; or the script a shell runs, bash deploy.sh),
+// or a task runner invoking a deploy/publish target whose name is compound
+// (make container-publish, task xray-publish).
+func runsDeployScript(cmd shellCommand) bool {
+	w := commandWords(cmd.text)
+	if len(w) == 0 {
+		return false
+	}
+	name := strings.ToLower(commandName(w))
+	if isDeployStem(name) {
+		return true
+	}
+	switch name {
+	case "sh", "bash", "zsh", "ash", "dash", "ksh":
+		for _, a := range w[1:] {
+			if strings.HasPrefix(a, "-") {
+				continue
+			}
+			return isDeployStem(a)
+		}
+		return false
+	}
+	if deployVerbRunners[name] {
+		for _, a := range w[1:] {
+			if strings.HasPrefix(a, "-") {
+				continue
+			}
+			la := strings.ToLower(a)
+			if la == "run" || la == "run-s" || la == "run-p" {
+				continue
+			}
+			return strings.Contains(la, "deploy") || strings.Contains(la, "publish")
+		}
+	}
+	return false
+}
+
+// isDeployStem reports whether a program or script name is a deploy/publish
+// script: exactly deploy/publish, or prefixed (deploy-staging, publish_docs),
+// with any directory and extension removed.
+func isDeployStem(name string) bool {
+	name = strings.ToLower(name)
+	if i := strings.LastIndexByte(name, '/'); i >= 0 {
+		name = name[i+1:]
+	}
+	if i := strings.LastIndexByte(name, '.'); i > 0 {
+		name = name[:i]
+	}
+	for _, v := range [2]string{"deploy", "publish"} {
+		if name == v || strings.HasPrefix(name, v+"-") || strings.HasPrefix(name, v+"_") {
 			return true
 		}
 	}
