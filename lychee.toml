@@ -19,6 +19,9 @@ exclude = [
   '\.example(/|:|$)',
   '^https?://(198\.51\.100|203\.0\.113|192\.0\.2)\.',
   '^https?://(localhost|127\.0\.0\.1)',
+  # Cloud instance metadata endpoints appear only in GL095's examples of what it flags.
+  '^https?://169\.254\.169\.254',
+  '^https?://metadata\.google\.internal',
   '^https?://[^/]*\.internal(/|:|$)',
   '^https?://(github\.com|gitlab\.com)/org/',
   '^https://raw\.githubusercontent\.com/org/',
