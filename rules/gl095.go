@@ -36,7 +36,7 @@ var gl095CloudCredRe = mustCompilePrefiltered(
 // gl095K8sTokenPath is the runner pod's Kubernetes service-account token, i.e.
 // its cluster identity. Matched as a literal string, so the `kubernetes.io`
 // authority is not an unanchored host regexp.
-const gl095K8sTokenPath = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+const gl095K8sTokenPath = "/var/run/secrets/kubernetes.io/serviceaccount/token" // #nosec G101 -- a filesystem path to the pod's token, not a hardcoded credential
 
 // gl095MetaHosts are the cloud instance metadata endpoints: the AWS/Azure
 // link-local address and the GCP metadata hostname. Matched by a plain string
