@@ -244,3 +244,44 @@ review:
 		t.Fatalf("expected a review deploy to still need runner tags, got %+v", f)
 	}
 }
+
+// TestLineDeploys covers the release false-positive scan of jobScriptDeploys:
+// a deploy/publish verb in a comment, a path, a flag, a filename argument, a
+// local dotnet publish, or a snapshot/skip-publish release is not a deployment,
+// while a real deploy command, script, or webhook still is.
+func TestLineDeploys(t *testing.T) {
+	for _, tc := range []struct {
+		line string
+		want bool
+	}{
+		{`./deploy.sh`, true},
+		{`bash scripts/deploy-prod.sh`, true},
+		{`make deploy`, true},
+		{`npm run publish`, true},
+		{`firebase deploy --only hosting`, true},
+		{`helm upgrade app ./chart`, true},
+		{`kubectl apply -f k8s/`, true},
+		{`goreleaser release --clean`, true},
+		{`curl -X POST https://ci.example.com/v1/deploy`, true},
+		{`ssh deploy@host "./deploy.sh"`, true},
+		{`make container-publish`, true},
+		{`task xray-publish`, true},
+		{`npm run build-and-deploy`, true},
+		// Not deployments (the release FP scan classes):
+		{`# build for deploy`, false},
+		{`composer validate --no-check-publish`, false},
+		{`docker-compose -f deploy/docker-compose.yml up`, false},
+		{`emacs -batch -q -l publish.el -f org-publish`, false},
+		{`goreleaser release --clean --snapshot`, false},
+		{`$GORELEASER_IMAGE release --skip publish --snapshot`, false},
+		{`python manage.py check --deploy --fail-level WARNING`, false},
+		{`dotnet publish -c Release -o out`, false},
+		{`pytest tests/deploy/test_foo.py`, false},
+	} {
+		t.Run(tc.line, func(t *testing.T) {
+			if got := lineDeploys(tc.line); got != tc.want {
+				t.Errorf("lineDeploys(%q) = %v, want %v", tc.line, got, tc.want)
+			}
+		})
+	}
+}
