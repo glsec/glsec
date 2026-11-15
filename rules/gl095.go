@@ -27,9 +27,13 @@ func (r *gl095) ID() string { return "GL095" }
 
 var (
 	// gl095MetaHostRe matches the cloud instance metadata endpoint: the AWS/Azure
-	// link-local address or the GCP metadata hostname. Only the exact metadata IP
+	// link-local address or the GCP metadata hostname. The host is bounded by
+	// non-host characters on both sides, so it matches the real endpoint in a URL
+	// but not a lookalike domain that merely contains it (metadata.google.internal.evil.com)
+	// and not a longer number such as 169.254.169.2544. Only the exact metadata IP
 	// is matched, so an unrelated 169.254.x.x link-local service does not.
-	gl095MetaHostRe = mustCompilePrefiltered(`169\.254\.169\.254|metadata\.google\.internal`)
+	gl095MetaHostRe = mustCompilePrefiltered(
+		`(?:^|[^0-9A-Za-z._-])(?:169\.254\.169\.254|metadata\.google\.internal)(?:[^0-9A-Za-z._-]|$)`)
 	// gl095CloudCredRe matches the credential path of a metadata request: the AWS
 	// role-credential and IMDSv2-token paths, the GCP service-account token, and
 	// the Azure OAuth2 token. Reaching one of these retrieves the runner's cloud
