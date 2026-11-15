@@ -82,6 +82,7 @@ User-controlled inputs and unversioned component references that allow malicious
 | [GL083](rules/GL083.md) | `error`/`warn` | Reverse shell, backdoor or credential exfiltration in `script:` — connects the runner back to an attacker-controlled host, or sends a credential file, minted token, or the job environment to one |
 | [GL093](rules/GL093.md) | `error` | Interpreter runs a file with a non-script extension (`node fonts/x.ttf`) — an executable payload disguised behind a data/asset/document extension (the PolinRider technique) |
 | [GL094](rules/GL094.md) | `error` | SSH private key read and staged for exfiltration — piped into an encoder, archived, or copied off (`cat ~/.ssh/id_rsa \| base64`); a bare read is not flagged |
+| [GL095](rules/GL095.md) | `error`/`warn` | Script reads the runner's own cloud or cluster identity — the instance metadata credential path (IMDS) or the Kubernetes service-account token; prefer a scoped OIDC token (`id_tokens:`) |
 | [GL084](rules/GL084.md) | `error`/`warn` | CI variable interpolation in an `include:` target — the included configuration is picked at pipeline start |
 | [GL085](rules/GL085.md) | `error`/`warn` | AI coding agent (Claude Code, Codex, Gemini CLI, Copilot CLI) run with approvals disabled, or with user-controlled text in its prompt |
 
