@@ -241,7 +241,6 @@ var prefilterTable = map[string]prefilterLits{
 	"/dev/(?:tcp|udp)/": {anyOf: []string{"/dev/tcp/", "/dev/udp/"}},
 	"/proc/(?:\\d+|self|\\*|\\$\\{?\\w+\\}?|\\$\\([^)]*\\))/(?:environ|mem)\\b":                                {anyOf: []string{"/proc/"}},
 	"/proc/(?:\\d+|self|\\*|\\$\\{?\\w+\\}?|\\$\\([^)]*\\))/mem\\b":                                            {anyOf: []string{"/proc/"}},
-	"/var/run/secrets/kubernetes\\.io/serviceaccount/token":                                                    {anyOf: []string{"/var/run/secrets/kubernetes.io/serviceaccount/token"}},
 	":\\$\\{?(CI_COMMIT_REF_NAME|CI_COMMIT_REF_SLUG|CI_COMMIT_BRANCH|CI_MERGE_REQUEST_SOURCE_BRANCH_NAME)\\}?": {anyOf: []string{":$CI_COMMIT_REF_NAME", ":$CI_COMMIT_REF_SLUG", ":$CI_COMMIT_BRANCH", ":$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME", ":${CI_COMMIT_REF_NAME", ":${CI_COMMIT_REF_SLUG", ":${CI_COMMIT_BRANCH", ":${CI_MERGE_REQUEST_SOURCE_BRANCH_NAME"}},
 	":\\S":                                       {anyOf: []string{":"}},
 	"<\\s*\\(\\s*(?:curl|wget)\\b":               {anyOf: []string{"curl", "wget"}},

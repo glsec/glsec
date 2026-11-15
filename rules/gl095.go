@@ -25,17 +25,18 @@ var GL095 = &gl095{}
 
 func (r *gl095) ID() string { return "GL095" }
 
-var (
-	// gl095CloudCredRe matches the credential path of a metadata request: the AWS
-	// role-credential and IMDSv2-token paths, the GCP service-account token, and
-	// the Azure OAuth2 token. Reaching one of these retrieves the runner's cloud
-	// identity, not just host facts.
-	gl095CloudCredRe = mustCompilePrefiltered(
-		`iam/security-credentials|latest/api/token|service-accounts/[^"'\s]*token|identity/oauth2/token`)
-	// gl095K8sTokenRe matches a read of the runner pod's Kubernetes service-account
-	// token, i.e. its cluster identity.
-	gl095K8sTokenRe = mustCompilePrefiltered(`/var/run/secrets/kubernetes\.io/serviceaccount/token`)
-)
+// gl095CloudCredRe matches the credential path of a metadata request: the AWS
+// role-credential and IMDSv2-token paths, the GCP service-account token, and the
+// Azure OAuth2 token. Reaching one of these retrieves the runner's cloud
+// identity, not just host facts. The pattern holds only URL paths and no host
+// literal, so it is not an unanchored host regexp.
+var gl095CloudCredRe = mustCompilePrefiltered(
+	`iam/security-credentials|latest/api/token|service-accounts/[^"'\s]*token|identity/oauth2/token`)
+
+// gl095K8sTokenPath is the runner pod's Kubernetes service-account token, i.e.
+// its cluster identity. Matched as a literal string, so the `kubernetes.io`
+// authority is not an unanchored host regexp.
+const gl095K8sTokenPath = "/var/run/secrets/kubernetes.io/serviceaccount/token"
 
 // gl095MetaHosts are the cloud instance metadata endpoints: the AWS/Azure
 // link-local address and the GCP metadata hostname. Matched by a plain string
@@ -142,8 +143,8 @@ func gl095Assess(v string) (finding.Severity, string, string) {
 			continue
 		}
 		t := cmd.text
-		if m := gl095K8sTokenRe.FindString(t); m != "" {
-			return finding.Error, gl095MsgK8s, m
+		if strings.Contains(t, gl095K8sTokenPath) {
+			return finding.Error, gl095MsgK8s, gl095K8sTokenPath
 		}
 		if m := gl095CloudCredRe.FindString(t); m != "" {
 			return finding.Error, gl095MsgCred, m
