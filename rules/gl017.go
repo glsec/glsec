@@ -97,6 +97,15 @@ func lineDeploys(raw string) bool {
 			if ansibleLocalOnly(w) {
 				lower = strings.Replace(lower, strings.ToLower(cmd.text), "", 1)
 			}
+		case "fastlane":
+			// fastlane lanes are user-defined, so a bare `fastlane` is not a
+			// deploy by itself. Drop it only when the lane is a known build/test
+			// action (fastlane test, scan, build_app, update_fastlane). A known
+			// store action (deliver, supply, pilot, upload_to_*) or any other
+			// lane name (ios, a custom deploy lane) stays a deploy signal.
+			if fastlaneNonDeploy(w) {
+				lower = strings.Replace(lower, strings.ToLower(cmd.text), "", 1)
+			}
 		}
 	}
 	if deployCmdRe.MatchString(lower) {
@@ -129,6 +138,49 @@ func ansibleLocalOnly(w []string) bool {
 		}
 	}
 	return false
+}
+
+// fastlaneDeployActions are built-in fastlane actions/lanes that ship to a store
+// or distribution channel; any of them keeps the invocation a deploy signal.
+var fastlaneDeployActions = map[string]bool{
+	"deliver": true, "supply": true, "pilot": true, "match": true,
+	"appstore": true, "playstore": true, "deploy": true, "release": true,
+	"pod_push": true, "push_to_git_remote": true,
+	"upload_to_app_store": true, "upload_to_play_store": true,
+	"upload_to_testflight": true, "set_github_release": true,
+}
+
+// fastlaneNonDeployActions are built-in fastlane actions/lanes that only build,
+// test or maintain tooling locally and ship nothing.
+var fastlaneNonDeployActions = map[string]bool{
+	"test": true, "tests": true, "unit_test": true, "unit_tests": true,
+	"lint": true, "build": true, "scan": true, "run_tests": true,
+	"build_app": true, "gym": true, "snapshot": true, "screengrab": true,
+	"update_fastlane": true,
+}
+
+// fastlaneNonDeploy reports whether a `fastlane` invocation runs only a known
+// build/test lane and so deploys nothing. A known store action anywhere on the
+// line keeps it a deploy; otherwise the operative lane (the last positional
+// token, after an optional ios/android/mac platform) must be a known non-deploy
+// action. Any unknown lane name is left as a deploy signal.
+func fastlaneNonDeploy(w []string) bool {
+	var pos []string
+	for _, a := range w[1:] {
+		if strings.HasPrefix(a, "-") {
+			continue
+		}
+		pos = append(pos, strings.ToLower(a))
+	}
+	if len(pos) == 0 {
+		return false
+	}
+	for _, p := range pos {
+		if fastlaneDeployActions[p] {
+			return false
+		}
+	}
+	return fastlaneNonDeployActions[pos[len(pos)-1]]
 }
 
 // skipsPublish reports whether a release command opts out of publishing.

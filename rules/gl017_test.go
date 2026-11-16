@@ -42,6 +42,14 @@ EOF`, 1},
 		{`ansible-playbook site.yml --list-hosts`, 0},
 		{`ansible-playbook -i hosts site.yml`, 1},
 		{`ansible-playbook -i hosts site.yml --check`, 1},
+		{`fastlane test`, 0},
+		{`fastlane ios test`, 0},
+		{`fastlane update_fastlane`, 0},
+		{`fastlane scan`, 0},
+		{`fastlane playstore`, 1},
+		{`fastlane deliver`, 1},
+		{`fastlane ios release`, 1},
+		{`fastlane ios`, 1},
 	} {
 		t.Run(tc.command, func(t *testing.T) {
 			f := findings017(t, fmt.Sprintf("deploy-example:\n  stage: deploy\n  script:\n    - %s\n", strconv.Quote(tc.command)))
