@@ -25,9 +25,15 @@ jobs:
           REPO: ${{ github.repository }}
           SHA: ${{ github.sha }}
         run: |
+          # Filter by head_sha only and test the run state in jq. The API's
+          # &status=completed filter is eventually consistent and can lag badly
+          # for a just-completed run, which is exactly when a release tags and
+          # runs, so it transiently reported no CI run and blocked the release
+          # even though CI had passed. The head_sha-only list is immediately
+          # consistent; "pending" keeps the gate waiting until the run finishes.
           conclusion=$(gh api \
-            "repos/$REPO/actions/workflows/ci.yml/runs?head_sha=$SHA&status=completed" \
-            --jq '.workflow_runs[0].conclusion // "none"')
+            "repos/$REPO/actions/workflows/ci.yml/runs?head_sha=$SHA" \
+            --jq '(.workflow_runs[0] // {}) | if .status == "completed" then (.conclusion // "none") else "pending" end')
           echo "CI conclusion for $SHA: $conclusion"
           if [ "$conclusion" != "success" ]; then
             echo "::error::Release blocked: CI for $SHA concluded '$conclusion', expected 'success'. Wait for CI to finish, then re-run this workflow."
