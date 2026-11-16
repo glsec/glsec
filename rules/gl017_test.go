@@ -37,6 +37,11 @@ func TestGL017_DeployScriptCommandsOnly(t *testing.T) {
 		{`ssh user@host bash -s <<EOF
 kubectl apply -f k8s/
 EOF`, 1},
+		{`ansible-playbook -i hosts site.yml --syntax-check`, 0},
+		{`ansible-playbook site.yml --list-tasks`, 0},
+		{`ansible-playbook site.yml --list-hosts`, 0},
+		{`ansible-playbook -i hosts site.yml`, 1},
+		{`ansible-playbook -i hosts site.yml --check`, 1},
 	} {
 		t.Run(tc.command, func(t *testing.T) {
 			f := findings017(t, fmt.Sprintf("deploy-example:\n  stage: deploy\n  script:\n    - %s\n", strconv.Quote(tc.command)))
