@@ -89,6 +89,14 @@ func lineDeploys(raw string) bool {
 			if len(w) >= 2 && strings.EqualFold(w[1], "publish") {
 				lower = strings.Replace(lower, strings.ToLower(cmd.text), "", 1)
 			}
+		case "ansible-playbook":
+			// --syntax-check parses the play locally and --list-tasks/
+			// --list-hosts/--list-tags only enumerate it; none connects to a
+			// host or changes state, so they deploy nothing. Check mode
+			// (--check/-C) still connects with credentials, so it is left in.
+			if ansibleLocalOnly(w) {
+				lower = strings.Replace(lower, strings.ToLower(cmd.text), "", 1)
+			}
 		}
 	}
 	if deployCmdRe.MatchString(lower) {
@@ -103,6 +111,20 @@ func lineDeploys(raw string) bool {
 	}
 	for _, cmd := range shellCommands(code) {
 		if !cmd.piped && runsDeployScript(cmd) {
+			return true
+		}
+	}
+	return false
+}
+
+// ansibleLocalOnly reports whether an ansible-playbook invocation only parses or
+// enumerates the play locally (--syntax-check, --list-tasks/--list-hosts/
+// --list-tags) and so connects to no host and deploys nothing. Check mode
+// (--check/-C) still connects with credentials and is deliberately not listed.
+func ansibleLocalOnly(w []string) bool {
+	for _, a := range w[1:] {
+		switch strings.ToLower(a) {
+		case "--syntax-check", "--list-tasks", "--list-hosts", "--list-tags":
 			return true
 		}
 	}
