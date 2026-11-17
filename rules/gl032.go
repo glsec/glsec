@@ -196,6 +196,10 @@ func printedKeyVars(cmd string) (private, credential, public bool) {
 		case strings.Contains(name, "PASSWORD") || strings.Contains(name, "PASSWD") ||
 			strings.Contains(name, "PASSPHRASE"):
 			credential = true
+		case strings.HasSuffix(name, "_API_KEY") || strings.HasSuffix(name, "_ACCESS_KEY"):
+			// An API credential is not private-key material simply because its
+			// identifier contains KEY. GL021 covers credentials printed to logs.
+			// Actual SSH key destinations are detected separately by keyFileWrite.
 		default:
 			private = true
 		}

@@ -59,6 +59,27 @@ func TestGL032(t *testing.T) {
 			wantHits: 0,
 		},
 		{
+			name: "API key written to Android properties is not SSH private key material",
+			yaml: `build:
+  script:
+    - echo "CMC_API_KEY=$CMC_API_KEY" >> local.properties`,
+			wantHits: 0,
+		},
+		{
+			name: "access key written to config is not private key material",
+			yaml: `build:
+  script:
+    - echo "$CLOUD_ACCESS_KEY" > service.properties`,
+			wantHits: 0,
+		},
+		{
+			name: "API-named variable still flagged when written to SSH identity file",
+			yaml: `deploy:
+  script:
+    - echo "$VENDOR_API_KEY" > ~/.ssh/id_ed25519`,
+			wantHits: 1,
+		},
+		{
 			name: "echo to .ssh/ path with key content",
 			yaml: `before_script:
   - echo "$ID_RSA" > ~/.ssh/id_rsa
