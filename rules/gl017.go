@@ -108,6 +108,15 @@ func lineDeploys(raw string) bool {
 			if fastlaneNonDeploy(w) {
 				lower = strings.Replace(lower, strings.ToLower(cmd.text), "", 1)
 			}
+		default:
+			// a package manager installing packages: deploy-tool names in its
+			// argument list (rsync, openssh-client, ansible, terraform, vercel…)
+			// are packages being installed, not commands being run, so they do
+			// not deploy. `apt-get install rsync && rsync -av host:` keeps the
+			// real rsync, which is a separate shell command.
+			if isPackageInstall(w) {
+				lower = strings.Replace(lower, strings.ToLower(cmd.text), "", 1)
+			}
 		}
 	}
 	if deployCmdRe.MatchString(lower) {
@@ -183,6 +192,37 @@ func fastlaneNonDeploy(w []string) bool {
 		}
 	}
 	return fastlaneNonDeployActions[pos[len(pos)-1]]
+}
+
+// pkgInstallers are package managers whose install subcommand takes package
+// names as arguments.
+var pkgInstallers = map[string]bool{
+	"apt-get": true, "apt": true, "aptitude": true, "apk": true,
+	"yum": true, "dnf": true, "microdnf": true, "zypper": true,
+	"pip": true, "pip3": true, "pipx": true, "brew": true, "gem": true,
+	"npm": true, "yarn": true, "pnpm": true,
+}
+
+// isPackageInstall reports whether the command installs packages, so its
+// positional arguments are package names rather than commands to run. It keys
+// off the program plus its install subcommand (install/add/i/in), so
+// `apt-get install rsync`, `apk add openssh-client`, `pip install ansible` and
+// `gem install fastlane` are installs, while `npm run deploy` is not.
+func isPackageInstall(w []string) bool {
+	if len(w) < 2 || !pkgInstallers[strings.ToLower(commandName(w))] {
+		return false
+	}
+	for _, a := range w[1:] {
+		if strings.HasPrefix(a, "-") {
+			continue
+		}
+		switch strings.ToLower(a) {
+		case "install", "add", "i", "in":
+			return true
+		}
+		return false
+	}
+	return false
 }
 
 // stripExecWrapper removes a leading `bundle exec` / `bundler exec` (optionally
