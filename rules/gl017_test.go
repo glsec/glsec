@@ -50,6 +50,13 @@ EOF`, 1},
 		{`fastlane deliver`, 1},
 		{`fastlane ios release`, 1},
 		{`fastlane ios`, 1},
+		{`bundle exec fastlane test`, 0},
+		{`bundle exec fastlane tests`, 0},
+		{`bundler exec fastlane build`, 0},
+		{`bundle exec fastlane ios test`, 0},
+		{`bundle _2.4.1_ exec fastlane scan`, 0},
+		{`bundle exec fastlane deliver`, 1},
+		{`bundle exec fastlane ios release`, 1},
 	} {
 		t.Run(tc.command, func(t *testing.T) {
 			f := findings017(t, fmt.Sprintf("deploy-example:\n  stage: deploy\n  script:\n    - %s\n", strconv.Quote(tc.command)))
