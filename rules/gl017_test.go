@@ -57,6 +57,14 @@ EOF`, 1},
 		{`bundle _2.4.1_ exec fastlane scan`, 0},
 		{`bundle exec fastlane deliver`, 1},
 		{`bundle exec fastlane ios release`, 1},
+		{`apt-get install -y rsync`, 0},
+		{`apk add --no-cache openssh-client rsync`, 0},
+		{`pip install ansible`, 0},
+		{`gem install fastlane`, 0},
+		{`npm install -g vercel`, 0},
+		{`yarn add netlify-cli`, 0},
+		{`rsync -av ./ user@host:/srv`, 1},
+		{`apt-get install -y rsync && rsync -av ./ user@host:/srv`, 1},
 	} {
 		t.Run(tc.command, func(t *testing.T) {
 			f := findings017(t, fmt.Sprintf("deploy-example:\n  stage: deploy\n  script:\n    - %s\n", strconv.Quote(tc.command)))
