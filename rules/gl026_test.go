@@ -94,6 +94,35 @@ build:
 	}
 }
 
+func TestGL026_MirrorOnlyJobsDoNotRequirePinnedSources(t *testing.T) {
+	for _, tc := range []struct {
+		name, script string
+	}{
+		{"bare mirror", "git clone --bare https://$SOURCE repo\n    - cd repo && git push --mirror https://$TARGET"},
+		{"force migration", "git clone https://${SOURCE} clone\n    - cd clone && git push --force https://${TARGET}"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			yaml := "sync:\n  script:\n    - " + tc.script + "\n"
+			if f := findings026(t, yaml); len(f) != 0 {
+				t.Fatalf("mirror-only job should not flag GL026, got %+v", f)
+			}
+		})
+	}
+}
+
+func TestGL026_MirrorAfterBuildStillRequiresPin(t *testing.T) {
+	f := findings026(t, `
+build:
+  script:
+    - git clone https://example.com/third-party.git repo
+    - cd repo && make build
+    - git push --mirror https://example.com/destination.git
+`)
+	if len(f) != 1 {
+		t.Fatalf("a build from an unpinned clone must still flag GL026, got %+v", f)
+	}
+}
+
 func TestGL026_CloneBareWithSHACheckout_NoFinding(t *testing.T) {
 	f := findings026(t, `
 build:

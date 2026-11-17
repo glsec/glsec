@@ -136,6 +136,11 @@ func (r *gl026) Check(doc *yaml.Node, file string) []finding.Finding {
 		if len(lines) == 0 {
 			return
 		}
+		// A mirror-only job transfers refs without running cloned code. Its
+		// moving source is intentional, so requiring a pin is misleading.
+		if isMirrorOnlyJob(lines) {
+			return
+		}
 		all := make([]gl026Facts, len(lines))
 		// A bare `git clone` paired with `git checkout <sha>` is the safe pattern.
 		hasSHACheckout, fetchedSHA, cloned := false, false, false
@@ -181,6 +186,40 @@ func (r *gl026) Check(doc *yaml.Node, file string) []finding.Finding {
 	})
 
 	return findings
+}
+
+// isMirrorOnlyJob restricts this exemption to Git operations (and directory
+// changes). A build/test command in the same job preserves GL026 findings.
+func isMirrorOnlyJob(lines []*yaml.Node) bool {
+	cloned, pushed := false, false
+	for _, line := range lines {
+		for _, cmd := range shellCommands(line.Value) {
+			words := commandWords(cmd.text)
+			switch commandName(words) {
+			case "", "cd":
+				continue
+			case "git":
+				args, _ := gitArgs(words)
+				if len(args) == 0 {
+					return false
+				}
+				switch args[0] {
+				case "clone":
+					cloned = true
+				case "push":
+					pushed = pushed || containsWord(args, "--mirror") || containsWord(args, "--force") ||
+						(containsWord(args, "--all") && containsWord(args, "--tags"))
+				case "config", "remote", "fetch", "checkout":
+					// Ref-management commands, not code execution.
+				default:
+					return false
+				}
+			default:
+				return false
+			}
+		}
+	}
+	return cloned && pushed
 }
 
 // gl026Facts is what one script item says on its own.
