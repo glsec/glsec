@@ -78,7 +78,9 @@ func lineDeploys(raw string) bool {
 		if cmd.piped {
 			continue
 		}
-		w := commandWords(cmd.text)
+		// `bundle exec fastlane test` is a fastlane invocation; classify by the
+		// wrapped command, not the wrapper, so the lane logic below can see it.
+		w := stripExecWrapper(commandWords(cmd.text))
 		switch commandName(w) {
 		case "echo", "printf":
 			lower = strings.Replace(lower, strings.ToLower(cmd.text), "", 1)
@@ -181,6 +183,28 @@ func fastlaneNonDeploy(w []string) bool {
 		}
 	}
 	return fastlaneNonDeployActions[pos[len(pos)-1]]
+}
+
+// stripExecWrapper removes a leading `bundle exec` / `bundler exec` (optionally
+// a pinned-version token, `bundle _2.4.1_ exec`) so the wrapped command is
+// classified by its own name — `bundle exec fastlane deploy` is a fastlane run,
+// not a `bundle` run. Returns w unchanged when there is no such wrapper.
+func stripExecWrapper(w []string) []string {
+	if len(w) < 3 {
+		return w
+	}
+	n := strings.ToLower(w[0])
+	if n != "bundle" && n != "bundler" {
+		return w
+	}
+	i := 1
+	if strings.HasPrefix(w[i], "_") && strings.HasSuffix(w[i], "_") {
+		i++
+	}
+	if i+1 < len(w) && strings.EqualFold(w[i], "exec") {
+		return w[i+1:]
+	}
+	return w
 }
 
 // skipsPublish reports whether a release command opts out of publishing.
