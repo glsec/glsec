@@ -155,6 +155,12 @@ func (r *gl016) checkVariablesHTTP(node *yaml.Node, file string) []finding.Findi
 	}
 	var findings []finding.Finding
 	for i := 0; i+1 < len(node.Content); i += 2 {
+		name := strings.ToUpper(node.Content[i].Value)
+		// An HTTP proxy address does not mean HTTPS traffic is downloaded
+		// over HTTP: HTTPS requests tunnel through a proxy with CONNECT.
+		if name == "HTTP_PROXY" || name == "HTTPS_PROXY" || name == "ALL_PROXY" || strings.HasSuffix(name, "_PROXY") {
+			continue
+		}
 		val := node.Content[i+1]
 		var scalar *yaml.Node
 		switch val.Kind {

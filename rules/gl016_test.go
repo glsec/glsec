@@ -44,6 +44,26 @@ include:
 	}
 }
 
+func TestGL016_ProxyVariablesDoNotImplyHTTPDownloads(t *testing.T) {
+	f := findings016(t, `
+variables:
+  http_proxy: "http://cache.example:3128"
+  HTTPS_PROXY: "http://cache.example:3128"
+  BUILD_PROXY: "http://cache.example:3128"
+  DOWNLOAD_URL: "http://downloads.example.com/tool"
+build:
+  variables:
+    ALL_PROXY:
+      value: "http://cache.example:3128"
+  script:
+    - curl http://downloads.example.com/tool -o tool
+`)
+	// The ordinary download URL and the actual curl download must still flag.
+	if len(f) != 2 {
+		t.Fatalf("expected 2 real HTTP findings, got %d: %+v", len(f), f)
+	}
+}
+
 func TestGL016_IncludeRemoteHTTPS_NoFinding(t *testing.T) {
 	f := findings016(t, `
 include:
