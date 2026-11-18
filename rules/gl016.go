@@ -155,6 +155,9 @@ func (r *gl016) checkVariablesHTTP(node *yaml.Node, file string) []finding.Findi
 	}
 	var findings []finding.Finding
 	for i := 0; i+1 < len(node.Content); i += 2 {
+		if isProxyVariable(node.Content[i].Value) {
+			continue
+		}
 		val := node.Content[i+1]
 		var scalar *yaml.Node
 		switch val.Kind {
@@ -253,6 +256,11 @@ func (r *gl016) scriptLineFinding(item *yaml.Node, file string) []finding.Findin
 			if !cmd.piped && discardsResponse(cmd.text) {
 				continue
 			}
+			// An upload or POST sends data; unless its response is piped on
+			// (to a shell, say), it is not a download (#1440).
+			if !cmd.piped && sendsData(withoutWrapper(commandWords(cmd.text))) {
+				msgs = uploadHTTPMessages
+			}
 		default:
 			url, msgs = toolHTTPURL(cmd.text)
 		}
@@ -286,6 +294,10 @@ var (
 	downloadHTTPMessages = [2]string{
 		"script downloads over HTTP — a MITM attacker can serve malicious content",
 		"script downloads over HTTP from a private/internal host — consider HTTPS",
+	}
+	uploadHTTPMessages = [2]string{
+		"script sends data over HTTP — a MITM attacker can read or modify what it sends",
+		"script sends data over HTTP to a private/internal host — consider HTTPS",
 	}
 	helmRepoHTTPMessages = [2]string{
 		"helm repo add uses HTTP — a MITM attacker can serve tampered charts (arbitrary Kubernetes manifests and images)",
@@ -497,4 +509,12 @@ func hostOf(rawURL string) string {
 		return ""
 	}
 	return u.Hostname()
+}
+
+// isProxyVariable reports a variable that sets a proxy address, such as
+// http_proxy, HTTPS_PROXY or ALL_PROXY. An http:// scheme there is the normal
+// way to address a proxy: HTTPS traffic is still tunnelled end to end through
+// it with CONNECT, so it is not plaintext traffic to the target (#1440).
+func isProxyVariable(name string) bool {
+	return strings.HasSuffix(strings.ToLower(name), "_proxy")
 }
