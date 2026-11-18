@@ -138,13 +138,20 @@ func (r *gl026) Check(doc *yaml.Node, file string) []finding.Finding {
 		}
 		all := make([]gl026Facts, len(lines))
 		// A bare `git clone` paired with `git checkout <sha>` is the safe pattern.
-		hasSHACheckout, fetchedSHA, cloned := false, false, false
+		hasSHACheckout, fetchedSHA, cloned, mirror := false, false, false, false
 		for i, l := range lines {
 			all[i] = facts.get(l, func() gl026Facts { return gl026Line(l, file) })
 			hasSHACheckout = hasSHACheckout || all[i].shaCheckout
 			fetchedSHA = fetchedSHA || all[i].shaFetch
+			mirror = mirror || all[i].mirrorPush
 		}
 		for i, l := range lines {
+			// A mirror or migration job copies the moving source on purpose;
+			// pinning its clone to a SHA would defeat it (#1441).
+			if mirror && all[i].thirdPartyClone {
+				cloned = true
+				continue
+			}
 			for _, f := range all[i].findings {
 				f.Job = name.Value
 				findings = append(findings, f)
@@ -191,6 +198,7 @@ type gl026Facts struct {
 	bareClone       bool              // git clone without --branch
 	cloneAt         int               // byte offset of the git clone in the item
 	thirdPartyClone bool              // git clone of a repository other than the project's own
+	mirrorPush      bool              // git push that mirrors to another remote (mirrorsToRemote)
 	checkouts       []finding.Finding // git checkout <mutable ref>, without Job; reported only after a third-party clone
 	findings        []finding.Finding // the findings that don't depend on the job, without Job
 }
@@ -202,6 +210,7 @@ func gl026Line(l *yaml.Node, file string) (lf gl026Facts) {
 	if strings.Contains(line, "git") {
 		for _, cmd := range shellCommands(line) {
 			words := commandWords(cmd.text)
+			lf.mirrorPush = lf.mirrorPush || mirrorsToRemote(words)
 			if pinsCommit(words) {
 				lf.shaCheckout = true
 				if args, _ := gitArgs(words); args[0] == "fetch" {
@@ -259,4 +268,33 @@ func gl026Line(l *yaml.Node, file string) (lf gl026Facts) {
 		}
 	}
 	return lf
+}
+
+// mirrorsToRemote reports a git push that copies a repository wholesale to
+// another remote: git push --mirror, or git push --force/--all/--tags to a
+// remote other than origin (a URL, a variable or another remote name). A job
+// that does this is a mirror or migration job, not a build checkout (#1441).
+// A forced push back to origin, or a plain push, is not.
+func mirrorsToRemote(words []string) bool {
+	args, _ := gitArgs(words)
+	if len(args) == 0 || args[0] != "push" {
+		return false
+	}
+	wholesale, target := false, ""
+	for i := 1; i < len(args); i++ {
+		a := strings.Trim(args[i], `"'`)
+		switch {
+		case a == "--mirror":
+			return true
+		case a == "--force" || a == "-f" || a == "--all" || a == "--tags" ||
+			strings.HasPrefix(a, "--force-with-lease"):
+			wholesale = true
+		case a == "-o" || a == "--push-option" || a == "--receive-pack" || a == "--exec":
+			i++ // the option's value, not the remote
+		case strings.HasPrefix(a, "-"):
+		case target == "":
+			target = a
+		}
+	}
+	return wholesale && target != "" && target != "origin"
 }
