@@ -823,3 +823,25 @@ func TestGL016_UploadsAreNotDownloads(t *testing.T) {
 		})
 	}
 }
+
+// A single script line that both downloads and sends data over HTTP gets both
+// findings — the download curl and the data-sending curl are separate commands
+// and each is reported on its own; neither is a false positive (#1440).
+func TestGL016_MixedDownloadAndUploadLine(t *testing.T) {
+	f := findings016(t, "deploy:\n  script:\n    - curl -o tool http://dl.example.com/tool; curl -F f=@out http://up.example.com/upload\n")
+	if len(f) != 2 {
+		t.Fatalf("got %d findings, want 2 (one download, one send): %+v", len(f), f)
+	}
+	var down, send bool
+	for _, x := range f {
+		if strings.HasPrefix(x.Message, "script downloads over HTTP") {
+			down = true
+		}
+		if strings.HasPrefix(x.Message, "script sends data over HTTP") {
+			send = true
+		}
+	}
+	if !down || !send {
+		t.Errorf("want one download and one send finding, got %+v", f)
+	}
+}
