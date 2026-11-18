@@ -340,3 +340,48 @@ func TestPinsCommit(t *testing.T) {
 		}
 	}
 }
+
+// A mirror or migration job copies the moving source to another remote on
+// purpose, so its clone is not an unpinned build checkout (#1441).
+func TestGL026_MirrorJobs(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		script string
+		want   int
+	}{
+		{"push --mirror after a bare clone", `
+    - git clone --bare https://$SOURCE repo
+    - cd repo && git push --mirror https://$TARGET`, 0},
+		{"push --force to another URL", `
+    - git clone https://${SOURCE} clone
+    - cd clone && git push --force https://${TARGET}`, 0},
+		{"push --all to a named remote on one line", `
+    - git clone https://github.com/org/src.git && cd src && git remote add dest "$DEST" && git push --all dest`, 0},
+		{"mutable --branch clone in a mirror job", `
+    - git clone --branch main https://github.com/org/src.git
+    - cd src && git push --force-with-lease "$TARGET_URL" main`, 0},
+		{"push option value is not the remote", `
+    - git clone https://github.com/org/src.git
+    - cd src && git push -o ci.skip --force origin main`, 1},
+		{"plain build checkout still flagged", `
+    - git clone https://github.com/org/tools.git
+    - make -C tools`, 1},
+		{"plain push to another remote is not a mirror", `
+    - git clone https://github.com/org/tools.git
+    - cd tools && make && git push https://$TARGET HEAD:release`, 1},
+		{"forced push back to origin is not a mirror", `
+    - git clone https://github.com/org/tools.git
+    - cd tools && make && git push --force origin HEAD:release`, 1},
+		{"a mirror job still reports a later mutable checkout", `
+    - git clone https://github.com/org/src.git
+    - cd src && git checkout develop
+    - git push --mirror https://$TARGET`, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := findings026(t, "job:\n  script:"+tc.script+"\n")
+			if len(f) != tc.want {
+				t.Fatalf("got %d findings, want %d: %+v", len(f), tc.want, f)
+			}
+		})
+	}
+}
