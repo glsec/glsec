@@ -5,6 +5,7 @@ package rules
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -762,5 +763,85 @@ job:
 `)
 	if len(f) != 0 {
 		t.Errorf("expected no findings, got %v", f)
+	}
+}
+
+// A proxy address uses http:// by convention; HTTPS still tunnels end to end
+// through it, so proxy variables are not plaintext endpoints (#1440).
+func TestGL016_ProxyVariables(t *testing.T) {
+	f := findings016(t, `
+variables:
+  http_proxy: "http://cache.example:3128"
+  HTTPS_PROXY: "http://cache.example:3128"
+  ALL_PROXY: http://cache.example:3128
+  PIP_PROXY:
+    value: "http://cache.example:3128"
+build:
+  variables:
+    https_proxy: "http://proxy.example.com:8080"
+  script:
+    - make
+`)
+	if len(f) != 0 {
+		t.Fatalf("expected no findings for proxy variables, got %+v", f)
+	}
+	f = findings016(t, `
+variables:
+  PROXY_DOCS: "http://docs.example.com"
+  DOWNLOAD_URL: "http://example.com/tool"
+`)
+	if len(f) != 2 {
+		t.Fatalf("other variables must stay reported: got %d findings, want 2: %+v", len(f), f)
+	}
+}
+
+// An upload or POST sends data rather than fetching it, so it gets wording
+// about data sent, not "downloads … serve malicious content" (#1440).
+func TestGL016_UploadsAreNotDownloads(t *testing.T) {
+	for _, tc := range []struct {
+		line, want string
+		sev        finding.Severity
+	}{
+		{`curl -F file=@./artifact http://repo.example.com/upload`, "script sends data over HTTP — a MITM attacker can read or modify what it sends", finding.Warn},
+		{`curl -X POST -d @payload http://deploy.example.com/hook`, "script sends data over HTTP", finding.Warn},
+		{`curl --upload-file build.tgz http://repo.example.com/b.tgz`, "script sends data over HTTP", finding.Warn},
+		{`curl -XPUT http://api.example.com/item`, "script sends data over HTTP", finding.Warn},
+		{`curl -X POST -d @.info http://10.16.20.22:8080/deploy`, "script sends data over HTTP to a private/internal host", finding.Info},
+		// still downloads: a GET, or a POST whose response is run
+		{`curl -X GET -o tool http://example.com/tool`, "script downloads over HTTP", finding.Warn},
+		{`curl -d x=1 http://example.com/install | sh`, "script downloads over HTTP", finding.Warn},
+		{`wget http://example.com/tool`, "script downloads over HTTP", finding.Warn},
+	} {
+		t.Run(tc.line, func(t *testing.T) {
+			f := findings016(t, "job:\n  script:\n    - "+tc.line+"\n")
+			if len(f) != 1 {
+				t.Fatalf("got %d findings, want 1: %+v", len(f), f)
+			}
+			if !strings.HasPrefix(f[0].Message, tc.want) || f[0].Severity != tc.sev {
+				t.Errorf("got %s %q, want %s %q…", f[0].Severity, f[0].Message, tc.sev, tc.want)
+			}
+		})
+	}
+}
+
+// A single script line that both downloads and sends data over HTTP gets both
+// findings — the download curl and the data-sending curl are separate commands
+// and each is reported on its own; neither is a false positive (#1440).
+func TestGL016_MixedDownloadAndUploadLine(t *testing.T) {
+	f := findings016(t, "deploy:\n  script:\n    - curl -o tool http://dl.example.com/tool; curl -F f=@out http://up.example.com/upload\n")
+	if len(f) != 2 {
+		t.Fatalf("got %d findings, want 2 (one download, one send): %+v", len(f), f)
+	}
+	var down, send bool
+	for _, x := range f {
+		if strings.HasPrefix(x.Message, "script downloads over HTTP") {
+			down = true
+		}
+		if strings.HasPrefix(x.Message, "script sends data over HTTP") {
+			send = true
+		}
+	}
+	if !down || !send {
+		t.Errorf("want one download and one send finding, got %+v", f)
 	}
 }
