@@ -33,7 +33,7 @@ var (
 	// git fetches remote content just like curl/wget, so the same HTTP check applies.
 	gitFetchHTTPRe = mustCompilePrefiltered(`\bgit\b[^|]*\b(?:clone|fetch|pull|remote\s+add|submodule\s+add)\b[^|]*\bhttp://`)
 	privateRanges  []*net.IPNet
-	internalTLDs   = []string{".local", ".internal", ".corp", ".lan"}
+	internalLabels = []string{"local", "internal", "corp", "lan"}
 )
 
 func init() {
@@ -482,10 +482,17 @@ func isPrivateOrInternal(host string) bool {
 	if host != "" && !strings.Contains(host, ".") {
 		return true
 	}
-	lower := strings.ToLower(host)
-	for _, tld := range internalTLDs {
-		if strings.HasSuffix(lower, tld) {
-			return true
+	// An internal marker as a dot-delimited label other than the first — a
+	// suffix (example.internal) or an interior label (svc.internal.example.com,
+	// foo.corp.acme.com). The first label is skipped on purpose: a public
+	// domain can legitimately be named internal.example.com or corp.acme.io,
+	// so only a marker that sits under another label counts as internal (#1440).
+	labels := strings.Split(strings.ToLower(host), ".")
+	for i := 1; i < len(labels); i++ {
+		for _, m := range internalLabels {
+			if labels[i] == m {
+				return true
+			}
 		}
 	}
 	return false

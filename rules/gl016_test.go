@@ -845,3 +845,39 @@ func TestGL016_MixedDownloadAndUploadLine(t *testing.T) {
 		t.Errorf("want one download and one send finding, got %+v", f)
 	}
 }
+
+// An internal marker (internal/corp/local/lan) as a dot-delimited label other
+// than the first makes a host private/internal — a suffix or an interior label.
+// The first label is not a marker position, so a public domain named
+// internal.example.com stays public (#1440).
+func TestGL016_InternalHostClassification(t *testing.T) {
+	for _, tc := range []struct {
+		host string
+		sev  finding.Severity
+	}{
+		{"svc.internal.example.com", finding.Info}, // interior label
+		{"foo.corp.acme.com", finding.Info},        // interior label
+		{"api.lan.example.net", finding.Info},      // interior label
+		{"build.local", finding.Info},              // suffix (regression)
+		{"host.internal", finding.Info},            // suffix (regression)
+		{"internal.example.com", finding.Warn},     // first label — public
+		{"corp.acme.io", finding.Warn},             // first label — public
+		{"mycorp.com", finding.Warn},               // substring, not a label
+		{"mail.google.com", finding.Warn},          // plain public
+	} {
+		t.Run(tc.host, func(t *testing.T) {
+			f := findings016(t, "job:\n  script:\n    - curl -o x http://"+tc.host+"/tool\n")
+			if len(f) != 1 {
+				t.Fatalf("got %d findings, want 1: %+v", len(f), f)
+			}
+			if f[0].Severity != tc.sev {
+				t.Errorf("%s: got %s %q, want %s", tc.host, f[0].Severity, f[0].Message, tc.sev)
+			}
+			wantInternal := tc.sev == finding.Info
+			isInternal := strings.Contains(f[0].Message, "private/internal host")
+			if isInternal != wantInternal {
+				t.Errorf("%s: message %q, wantInternal=%v", tc.host, f[0].Message, wantInternal)
+			}
+		})
+	}
+}
