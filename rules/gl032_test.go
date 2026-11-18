@@ -198,6 +198,29 @@ func TestGL032_CredentialWording(t *testing.T) {
 		{"alias only is not flagged", `j:
   script:
     - echo "keyAlias=$ANDROID_KEY_ALIAS" > key.properties`, ""},
+		// #1442: an API or access key is a secret but not a private key.
+		{"API key into local.properties", `j:
+  script:
+    - echo "CMC_API_KEY=$CMC_API_KEY" >> local.properties`, "API or access key written via echo"},
+		{"access key", `j:
+  script:
+    - echo "$AWS_SECRET_ACCESS_KEY" > .aws-secret`, "API or access key written via echo"},
+		{"private key named like an API key keeps key wording", `j:
+  script:
+    - echo "$GITHUB_APP_PRIVATE_KEY_API" > app.pem`, "private key written via echo"},
+		// #1442: key material that isn't going to SSH gets no ssh-add advice.
+		{"service-account key file", `j:
+  script:
+    - echo "$GCP_SERVICE_KEY" > sa.json`, "use a file-type variable instead"},
+		{"SSH key file keeps the ssh-add advice", `j:
+  script:
+    - echo "$DEPLOY_KEY" > ~/.ssh/id_ed25519`, "ssh-add - <<<"},
+		{"ssh-add pipe keeps the ssh-add advice", `j:
+  script:
+    - echo "$SSH_KEY" | ssh-add -`, "ssh-add - <<<"},
+		{"ssh-add substitution keeps the ssh-add advice", `j:
+  script:
+    - ssh-add <(echo "$SSH_KEY")`, "ssh-add - <<<"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			doc, err := parser.Parse([]byte(tc.yaml), "test.yml")

@@ -59,8 +59,13 @@ func checkSSHKeyEcho(node *yaml.Node, file, job string) []finding.Finding {
 		}
 		for _, echo := range sshKeyEchoLines(item.Value) {
 			msg := "private key written via echo — its value appears in the job log when debug tracing (set -x / CI_DEBUG_TRACE) is active; use a file-type variable or a here-string instead, e.g. ssh-add - <<< \"$KEY\""
-			if echo.credential {
+			switch echo.kind {
+			case keyCredential:
 				msg = "key credential (passphrase/keystore password) written via echo — its value appears in the job log when debug tracing (set -x / CI_DEBUG_TRACE) is active; use a masked or file-type variable instead"
+			case keyAPIToken:
+				msg = "API or access key written via echo — its value appears in the job log when debug tracing (set -x / CI_DEBUG_TRACE) is active; use a masked or file-type variable instead"
+			case keyMaterialNoSSH:
+				msg = "private key written via echo — its value appears in the job log when debug tracing (set -x / CI_DEBUG_TRACE) is active; use a file-type variable instead"
 			}
 			f := finding.Finding{
 				RuleID:   "GL032",
@@ -79,12 +84,48 @@ func checkSSHKeyEcho(node *yaml.Node, file, job string) []finding.Finding {
 	return findings
 }
 
-// keyEcho locates a flagged echo/printf and records whether the leaked value
-// is a key credential (passphrase/keystore password) rather than key material,
-// so the finding can word it accurately.
+// keyEchoKind says what a flagged echo/printf leaks, so the finding can word
+// it accurately.
+type keyEchoKind int
+
+const (
+	// keyMaterialSSH is private key material going to SSH (ssh-add or a key
+	// file under .ssh/), where a here-string into ssh-add is the fix.
+	keyMaterialSSH keyEchoKind = iota
+	// keyMaterialNoSSH is private key material written somewhere else, such
+	// as a service-account JSON file, where ssh-add is no remedy (#1442).
+	keyMaterialNoSSH
+	// keyCredential is a passphrase or keystore password (#1107).
+	keyCredential
+	// keyAPIToken is an API or access key: a secret, but not a private key
+	// (#1442).
+	keyAPIToken
+)
+
+// keyEcho locates a flagged echo/printf and records what it leaks.
 type keyEcho struct {
-	line       int
-	credential bool
+	line int
+	kind keyEchoKind
+}
+
+// echoKind picks the wording for a flagged command: key material outranks a
+// credential, which outranks an API or access key.
+func echoKind(material, credential, sshTarget bool) keyEchoKind {
+	switch {
+	case material && sshTarget:
+		return keyMaterialSSH
+	case material:
+		return keyMaterialNoSSH
+	case credential:
+		return keyCredential
+	}
+	return keyAPIToken
+}
+
+// sshTarget reports a command that hands what it reads to SSH: ssh-add, or a
+// path under an .ssh/ directory. It only words a finding already made.
+func sshTarget(cmd string) bool {
+	return strings.Contains(cmd, "ssh-add") || strings.Contains(cmd, ".ssh/")
 }
 
 // sshKeyEchoLines returns the pipelines that echo/print private key material or
@@ -107,13 +148,13 @@ func sshKeyEchoLines(script string) []keyEcho {
 		if name != "echo" && name != "printf" {
 			// echo inside a substitution: ssh-add <(echo "$KEY"), $(echo …).
 			if m := substEchoRe.FindStringSubmatch(maskSingleQuoted(first.text)); m != nil {
-				if private, credential, _ := printedKeyVars(m[1]); (private || credential) && tracedFromParent(first) {
-					echoes = append(echoes, keyEcho{first.line, !private && credential})
+				if private, credential, token, _ := printedKeyVars(m[1]); (private || credential || token) && tracedFromParent(first) {
+					echoes = append(echoes, keyEcho{first.line, echoKind(private, credential, sshTarget(first.text))})
 				}
 			}
 			continue
 		}
-		private, credential, public := printedKeyVars(maskSingleQuoted(first.text))
+		private, credential, token, public := printedKeyVars(maskSingleQuoted(first.text))
 		joined := strings.Join(pipeline, " | ")
 		m := sshRedirectRe.FindStringSubmatch(joined)
 		keyFile := m != nil && !sshNonKeyTargets[m[1]] && !strings.HasSuffix(m[1], ".pub")
@@ -139,11 +180,12 @@ func sshKeyEchoLines(script string) []keyEcho {
 		// '\n' >> ~/.ssh/id_ed25519 writes no key material.
 		expands := strings.Contains(maskSingleQuoted(first.text), "$")
 		keyFileWrite := keyFile && !public && expands
-		if ((private || credential) && written || keyFileWrite) && tracedFromParent(first) {
+		if ((private || credential || token) && written || keyFileWrite) && tracedFromParent(first) {
 			// A key-file write and a key-material variable are key material; a
-			// passphrase/password with no key material gets credential wording.
+			// passphrase/password or an API/access key with no key material
+			// gets its own wording.
 			material := private || keyFileWrite
-			echoes = append(echoes, keyEcho{first.line, !material && credential})
+			echoes = append(echoes, keyEcho{first.line, echoKind(material, credential, keyFile || sshTarget(joined))})
 		}
 	}
 	// A double-quoted sh -c script is seen twice, in the parent and as its
@@ -162,8 +204,8 @@ func tracedFromParent(cmd shellCommand) bool {
 	if cmd.parent == "" {
 		return true
 	}
-	private, credential, _ := printedKeyVars(maskSingleQuoted(cmd.parent))
-	return private || credential || xtraceOnRe.MatchString(cmd.parent)
+	private, credential, token, _ := printedKeyVars(maskSingleQuoted(cmd.parent))
+	return private || credential || token || xtraceOnRe.MatchString(cmd.parent)
 }
 
 // encodesToStdout reports a byte encoder (base64, base32, xxd) running in its
@@ -181,11 +223,12 @@ func encodesToStdout(words []string) bool {
 
 // printedKeyVars classifies the key-named variables a print command outputs:
 // key material (private), a key credential such as a passphrase or keystore
-// password (credential), and clearly non-secret names — public keys, host keys
-// and key aliases (public). An alias names a key, it isn't one, so it is not a
-// secret; a passphrase or keystore password is a secret but not a private key,
-// so it gets its own wording (#1107).
-func printedKeyVars(cmd string) (private, credential, public bool) {
+// password (credential), an API or access key (token), and clearly non-secret
+// names — public keys, host keys and key aliases (public). An alias names a
+// key, it isn't one, so it is not a secret; a passphrase, keystore password,
+// API key or access key is a secret but not a private key, so each gets its own
+// wording (#1107, #1442).
+func printedKeyVars(cmd string) (private, credential, token, public bool) {
 	for _, m := range keyVarRe.FindAllStringSubmatch(cmd, -1) {
 		name := strings.ToUpper(m[1])
 		switch {
@@ -196,9 +239,14 @@ func printedKeyVars(cmd string) (private, credential, public bool) {
 		case strings.Contains(name, "PASSWORD") || strings.Contains(name, "PASSWD") ||
 			strings.Contains(name, "PASSPHRASE"):
 			credential = true
+		case strings.Contains(name, "PRIVATE"):
+			private = true // GITHUB_APP_PRIVATE_KEY_API is key material
+		case strings.Contains(name, "API_KEY") || strings.Contains(name, "APIKEY") ||
+			strings.Contains(name, "ACCESS_KEY"):
+			token = true
 		default:
 			private = true
 		}
 	}
-	return private, credential, public
+	return private, credential, token, public
 }
