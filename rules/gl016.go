@@ -168,12 +168,11 @@ func (r *gl016) checkVariablesHTTP(node *yaml.Node, file string) []finding.Findi
 			continue
 		}
 		var rawURL, scheme string
-		switch {
-		case strings.Contains(scalar.Value, "http://"):
-			rawURL, scheme = scalar.Value, "HTTP"
-		case gitURLRe.MatchString(scalar.Value):
-			rawURL, scheme = gitURLRe.FindString(scalar.Value), "the plaintext git:// transport"
-		default:
+		if u := httpURLIn(scalar.Value); u != "" {
+			rawURL, scheme = u, "HTTP"
+		} else if m := gitURLRe.FindString(scalar.Value); m != "" {
+			rawURL, scheme = m, "the plaintext git:// transport"
+		} else {
 			continue
 		}
 		host := hostOf(rawURL)
@@ -334,6 +333,30 @@ func hostInCIDR(host, cidr string) bool {
 		return false
 	}
 	return network.Contains(ip)
+}
+
+// httpURLIn returns the first http:// URL embedded in s, or "" if none.
+// The value may be a plain URL or a shell expansion such as
+// ${VAR:-http://host:port}, where the surrounding shell/quote syntax must be
+// trimmed before the URL is parsed by hostOf.
+func httpURLIn(s string) string {
+	lower := strings.ToLower(s)
+	i := strings.Index(lower, "http://")
+	if i < 0 {
+		return ""
+	}
+	rest := lower[i:]
+	end := strings.IndexFunc(rest, func(r rune) bool {
+		switch r {
+		case ' ', '\t', '\n', '\r', '"', '\'', '`', '}', ')', ',':
+			return true
+		}
+		return false
+	})
+	if end >= 0 {
+		rest = rest[:end]
+	}
+	return rest
 }
 
 func hostOf(rawURL string) string {

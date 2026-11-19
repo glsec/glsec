@@ -428,6 +428,40 @@ build:
 	}
 }
 
+func TestGL016_VariableDefaultHostClassification(t *testing.T) {
+	cases := []struct {
+		name string
+		val  string
+		want finding.Severity // empty means no finding (ignored)
+	}{
+		{"plain loopback ignored", `"http://localhost:3000"`, ""},
+		{"plain private info", `"http://10.0.0.5:8080"`, finding.Info},
+		{"plain internal info", `"http://svc.internal:8080"`, finding.Info},
+		{"plain public warn", `"http://evil.example.com"`, finding.Warn},
+		{"default loopback ignored", `${B:-http://localhost:3000}`, ""},
+		{"default private info", `${C:-http://10.0.0.5:8080}`, finding.Info},
+		{"default internal info", `${D:-http://svc.internal:8080}`, finding.Info},
+		{"default public warn", `${E:-http://evil.example.com}`, finding.Warn},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := findings016(t, "variables:\n  V: "+tc.val+"\nbuild:\n  script: [echo hi]\n")
+			if tc.want == "" {
+				if len(f) != 0 {
+					t.Fatalf("expected no finding, got %d: %+v", len(f), f)
+				}
+				return
+			}
+			if len(f) != 1 {
+				t.Fatalf("expected 1 finding, got %d: %+v", len(f), f)
+			}
+			if f[0].Severity != tc.want {
+				t.Errorf("expected severity %q, got %q", tc.want, f[0].Severity)
+			}
+		})
+	}
+}
+
 func TestGL016_LineNumber(t *testing.T) {
 	f := findings016(t, `
 include:
