@@ -151,6 +151,19 @@
     - {step: "A job downloads a script and pipes it into a shell.", rules: [GL011]}
     - {step: "The altered script sends the job's environment out.", reason: not-static}
 
+- id: GhostAction
+  kind: campaign
+  product: GitHub Actions
+  summary: "Hijacked accounts added a job that sent the pipeline's CI secrets to an attacker-controlled host."
+  coverage: partial
+  rules:
+    - {rule: GL097, severity: error}
+  reason: not-static
+  note: "glsec reports the planted exfiltration, a secret sent to an untrusted destination, not the account takeover that commits it."
+  steps:
+    - {step: "A hijacked developer account adds a job to the pipeline.", reason: not-static}
+    - {step: "The job sends the pipeline's CI secrets to an attacker-controlled host.", rules: [GL097]}
+
 - id: Shai-Hulud
   kind: campaign
   product: npm
