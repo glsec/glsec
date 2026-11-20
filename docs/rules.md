@@ -84,6 +84,7 @@ User-controlled inputs and unversioned component references that allow malicious
 | [GL094](rules/GL094.md) | `error` | SSH private key read and staged for exfiltration — piped into an encoder, archived, or copied off (`cat ~/.ssh/id_rsa \| base64`); a bare read is not flagged |
 | [GL095](rules/GL095.md) | `error`/`warn` | Script reads the runner's own cloud or cluster identity — the instance metadata credential path (IMDS) or the Kubernetes service-account token; prefer a scoped OIDC token (`id_tokens:`) |
 | [GL096](rules/GL096.md) | `error` | Script connects to a cryptocurrency mining pool — a `stratum+tcp://`/`ssl`/`tls` URL or a known pool host; building, cloning or imaging a miner is not reported |
+| [GL097](rules/GL097.md) | `error` | Secret-like variable sent to an untrusted destination — a `curl`/`wget`/`nc` to a public bare IP or a webhook catcher/tunnel host (`webhook.site`, `*.ngrok.io`, …) with a `$*_TOKEN`/`$*_SECRET`/… in the same pipeline; publishing to a named service or a private IP is not flagged |
 | [GL084](rules/GL084.md) | `error`/`warn` | CI variable interpolation in an `include:` target — the included configuration is picked at pipeline start |
 | [GL085](rules/GL085.md) | `error`/`warn` | AI coding agent (Claude Code, Codex, Gemini CLI, Copilot CLI) run with approvals disabled, or with user-controlled text in its prompt |
 
