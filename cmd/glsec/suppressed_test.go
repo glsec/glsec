@@ -130,3 +130,26 @@ func TestRun_SuppressedCached(t *testing.T) {
 		}
 	}
 }
+
+// Doc examples that use inline glsec:ignore directives must actually suppress
+// the documented finding without --no-ignores, and report it with --no-ignores.
+func TestRun_DocExampleSuppressions(t *testing.T) {
+	// Matches the inline suppression example in docs/rules/GL082.md.
+	const gl082Suppressed = `include:
+  - template: Jobs/SAST.gitlab-ci.yml
+
+variables:
+  SAST_DISABLED: "true"  # glsec:ignore GL082 -- no supported language here, SAST runs in the monorepo pipeline
+`
+	files := map[string]string{".gitlab-ci.yml": gl082Suppressed}
+
+	code, out, stderr := runCLI(t, files, "--no-cache", "--only", "GL082")
+	if code != 0 || !strings.Contains(out, "1 finding suppressed (1 inline)") {
+		t.Fatalf("without --no-ignores: exit %d, out:\n%s\nstderr:\n%s", code, out, stderr)
+	}
+
+	code, out, stderr = runCLI(t, files, "--no-cache", "--no-ignores", "--only", "GL082")
+	if code != 0 || !strings.Contains(out, "warn[GL082]") || strings.Contains(out, "suppressed") {
+		t.Fatalf("with --no-ignores: exit %d, out:\n%s\nstderr:\n%s", code, out, stderr)
+	}
+}

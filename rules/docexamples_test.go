@@ -26,6 +26,7 @@ type docExample struct {
 // heading are not checked: they illustrate notes, partial snippets or
 // configuration files.
 func docExamples(doc string) []docExample {
+	doc = strings.ReplaceAll(doc, "\r\n", "\n")
 	var out []docExample
 	var section string
 	lines := strings.Split(doc, "\n")
@@ -60,6 +61,13 @@ func docExamples(doc string) []docExample {
 	return out
 }
 
+// noDocExamples lists rules whose docs intentionally have no executable YAML
+// block under Trigger example(s) / Safe alternative(s).
+var noDocExamples = map[string]string{
+	"GL075": "opt-in rule requiring allowed_include_sources in .glsec.yml",
+	"GL078": "raw-byte Unicode control character rule; trigger example is a text block",
+}
+
 // TestDocExamples checks that every trigger example in docs/rules makes its
 // rule fire and no safe alternative does (#696). An example glsec rejects as a
 // pipeline file fails too, since nobody could try it.
@@ -73,7 +81,13 @@ func TestDocExamples(t *testing.T) {
 		}
 		examples := docExamples(string(data))
 		if len(examples) == 0 {
+			if _, ok := noDocExamples[id]; !ok {
+				t.Errorf("docs/rules/%s.md has no executable YAML example under Trigger example(s) or Safe alternative(s)", id)
+			}
 			continue
+		}
+		if reason, ok := noDocExamples[id]; ok {
+			t.Errorf("docs/rules/%s.md now has %d example(s); remove it from noDocExamples (%s)", id, len(examples), reason)
 		}
 		t.Run(id, func(t *testing.T) {
 			sawTrigger := false
@@ -97,11 +111,16 @@ func TestDocExamples(t *testing.T) {
 						t.Errorf("docs/rules/%s.md:%d: example trips %s: %s", id, ex.line+f.Line, s.ID(), f.Message)
 					}
 				}
-				// Inline suppressions are applied by the CLI, not by Check.
+				n := len(Check(r, doc, ".gitlab-ci.yml"))
+				// Inline suppressions are applied by the CLI, not by Check;
+				// verify the underlying rule still fires on the unsuppressed YAML
+				// (CLI suppression is verified in cmd/glsec).
 				if strings.Contains(ex.src, "glsec:ignore "+id) {
+					if n == 0 {
+						t.Errorf("docs/rules/%s.md:%d: glsec:ignore example produces no %s finding even without suppression", id, ex.line, id)
+					}
 					continue
 				}
-				n := len(Check(r, doc, ".gitlab-ci.yml"))
 				switch {
 				case ex.trigger && n == 0:
 					t.Errorf("docs/rules/%s.md:%d: trigger example produces no %s finding", id, ex.line, id)
@@ -113,5 +132,19 @@ func TestDocExamples(t *testing.T) {
 				t.Errorf("docs/rules/%s.md has safe alternatives but no YAML trigger example", id)
 			}
 		})
+	}
+}
+
+func TestDocExamples_CRLF(t *testing.T) {
+	doc := "## Trigger example\r\n\r\n```yaml\r\njob:\r\n  script: echo hi\r\n```\r\n\r\n## Safe alternative\r\n\r\n```yml\r\njob:\r\n  script: echo safe\r\n```\r\n"
+	got := docExamples(doc)
+	if len(got) != 2 {
+		t.Fatalf("got %d examples, want 2: %+v", len(got), got)
+	}
+	if !got[0].trigger || got[0].src != "job:\n  script: echo hi\n" {
+		t.Errorf("unexpected trigger example: %+v", got[0])
+	}
+	if got[1].trigger || got[1].src != "job:\n  script: echo safe\n" {
+		t.Errorf("unexpected safe example: %+v", got[1])
 	}
 }

@@ -138,3 +138,84 @@ func TestRun_RecursivePatternsInConfig(t *testing.T) {
 		t.Errorf("exit %d, want 1 with ci/pipeline.yml scanned:\n%s", code, stderr)
 	}
 }
+
+// TestConfigSchema_GitLabVersionDivergence exercises representative
+// gitlab-version values against both schema/glsec.schema.json and the CLI
+// parser, pinning the intended divergence where the JSON schema accepts
+// positive numbers < 1 (such as 0.5) that internal/version rejects.
+func TestConfigSchema_GitLabVersionDivergence(t *testing.T) {
+	raw, err := os.ReadFile(configSchemaPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Properties map[string]struct {
+			AnyOf []struct {
+				Type             string   `json:"type"`
+				Pattern          string   `json:"pattern"`
+				ExclusiveMinimum *float64 `json:"exclusiveMinimum"`
+			} `json:"anyOf"`
+		} `json:"properties"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	gvSchema := doc.Properties["gitlab-version"]
+	if len(gvSchema.AnyOf) == 0 {
+		t.Fatal("schema missing gitlab-version anyOf")
+	}
+
+	matchesSchema := func(val any) bool {
+		for _, branch := range gvSchema.AnyOf {
+			switch branch.Type {
+			case "string":
+				s, ok := val.(string)
+				if !ok {
+					continue
+				}
+				if branch.Pattern == "" || regexp.MustCompile(branch.Pattern).MatchString(s) {
+					return true
+				}
+			case "number":
+				n, ok := val.(float64)
+				if !ok {
+					continue
+				}
+				if branch.ExclusiveMinimum == nil || n > *branch.ExclusiveMinimum {
+					return true
+				}
+			}
+		}
+		return false
+	}
+
+	for _, tc := range []struct {
+		name       string
+		yamlVal    string
+		jsonVal    any
+		wantSchema bool
+		wantExit   int
+	}{
+		{"quoted major.minor", `"17.4"`, "17.4", true, 0},
+		{"numeric major.minor", `17.4`, 17.4, true, 0},
+		{"quoted major", `"17"`, "17", true, 0},
+		{"numeric major", `17`, float64(17), true, 0},
+		{"numeric < 1 (pinned divergence)", `0.5`, 0.5, true, 2},
+		{"quoted < 1", `"0.5"`, "0.5", false, 2},
+		{"negative number", `-1`, float64(-1), false, 2},
+		{"non-version string", `"abc"`, "abc", false, 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := matchesSchema(tc.jsonVal); got != tc.wantSchema {
+				t.Errorf("schema match(%v) = %v, want %v", tc.jsonVal, got, tc.wantSchema)
+			}
+			code, _, stderr := runCLI(t, map[string]string{
+				"ci.yml":     cleanPipeline,
+				".glsec.yml": "gitlab-version: " + tc.yamlVal + "\n",
+			}, "ci.yml")
+			if code != tc.wantExit {
+				t.Errorf("CLI exit = %d, want %d; stderr:\n%s", code, tc.wantExit, stderr)
+			}
+		})
+	}
+}
