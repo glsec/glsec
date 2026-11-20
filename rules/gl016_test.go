@@ -881,3 +881,87 @@ func TestGL016_InternalHostClassification(t *testing.T) {
 		})
 	}
 }
+func TestGL016_VariableHTTPShellDefault(t *testing.T) {
+	cases := []struct {
+		name     string
+		yaml     string
+		findings int
+		severity finding.Severity
+	}{
+		{
+			name: "plain localhost ignored",
+			yaml: `
+variables:
+  A: "http://localhost:3000"
+build:
+  script: [echo hi]
+`,
+			findings: 0,
+		},
+		{
+			name: "shell default localhost ignored",
+			yaml: `
+variables:
+  B: ${B:-http://localhost:3000}
+build:
+  script: [echo hi]
+`,
+			findings: 0,
+		},
+		{
+			name: "shell default private ip info",
+			yaml: `
+variables:
+  C: ${C:-http://10.0.0.5:8080}
+build:
+  script: [echo hi]
+`,
+			findings: 1,
+			severity: finding.Info,
+		},
+		{
+			name: "shell default internal info",
+			yaml: `
+variables:
+  D: ${D:-http://svc.internal:8080}
+build:
+  script: [echo hi]
+`,
+			findings: 1,
+			severity: finding.Info,
+		},
+		{
+			name: "shell default public warn",
+			yaml: `
+variables:
+  E: ${E:-http://evil.example.com}
+build:
+  script: [echo hi]
+`,
+			findings: 1,
+			severity: finding.Warn,
+		},
+		{
+			name: "plain public warn control",
+			yaml: `
+variables:
+  F: "http://evil.example.com"
+build:
+  script: [echo hi]
+`,
+			findings: 1,
+			severity: finding.Warn,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := findings016(t, tc.yaml)
+			if len(f) != tc.findings {
+				t.Fatalf("expected %d findings, got %d", tc.findings, len(f))
+			}
+			if tc.findings > 0 && f[0].Severity != tc.severity {
+				t.Errorf("expected %s, got %s", tc.severity, f[0].Severity)
+			}
+		})
+	}
+}
