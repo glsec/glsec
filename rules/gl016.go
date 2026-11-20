@@ -173,8 +173,11 @@ func (r *gl016) checkVariablesHTTP(node *yaml.Node, file string) []finding.Findi
 		}
 		var rawURL, scheme string
 		switch {
-		case strings.Contains(scalar.Value, "http://"):
-			rawURL, scheme = scalar.Value, "HTTP"
+		case containsHTTPFold(scalar.Value):
+			rawURL, scheme = extractHTTPURL(scalar.Value), "HTTP"
+			if rawURL == "" {
+				rawURL = scalar.Value
+			}
 		case gitURLRe.MatchString(scalar.Value):
 			rawURL, scheme = gitURLRe.FindString(scalar.Value), "the plaintext git:// transport"
 		default:
@@ -511,7 +514,11 @@ func hostInCIDR(host, cidr string) bool {
 }
 
 func hostOf(rawURL string) string {
-	u, err := url.Parse(rawURL)
+	s := rawURL
+	if u := extractHTTPURL(s); u != "" {
+		s = u
+	}
+	u, err := url.Parse(s)
 	if err != nil {
 		return ""
 	}
@@ -524,4 +531,33 @@ func hostOf(rawURL string) string {
 // it with CONNECT, so it is not plaintext traffic to the target (#1440).
 func isProxyVariable(name string) bool {
 	return strings.HasSuffix(strings.ToLower(name), "_proxy")
+}
+
+// extractHTTPURL returns the http:// URL embedded in s, starting at the first
+// case-insensitive "http://" and trimmed of trailing shell/quote
+// metacharacters. It returns "" when s contains no http:// scheme.
+func extractHTTPURL(s string) string {
+	idx := -1
+	for i := 0; i+len("http://") <= len(s); i++ {
+		if strings.EqualFold(s[i:i+len("http://")], "http://") {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return ""
+	}
+	s = s[idx:]
+	end := len(s)
+	for end > 0 {
+		c := s[end-1]
+		if c == ' ' || c == '\t' || c == '\n' || c == '\r' ||
+			c == '"' || c == '\'' || c == '`' || c == '}' || c == ')' ||
+			c == ',' || c == ']' {
+			end--
+		} else {
+			break
+		}
+	}
+	return s[:end]
 }
