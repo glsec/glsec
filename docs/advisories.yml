@@ -176,3 +176,18 @@
   steps:
     - {step: "A job that publishes also runs dependency install scripts.", rules: [GL090]}
     - {step: "A malicious install script steals the token and publishes.", reason: not-static}
+
+- id: wfx-loot
+  kind: campaign
+  product: GitHub Actions
+  summary: "Hijacked accounts planted a job that sent the pipeline's CI secrets out, and an install hook that runs on publish."
+  coverage: partial
+  rules:
+    - {rule: GL097, severity: error}
+    - {rule: GL090, severity: warn}
+  reason: not-static
+  note: "glsec reports the planted exfiltration and the install hook in a publishing job, not the account takeover that commits them."
+  steps:
+    - {step: "A hijacked developer account adds a job to the pipeline.", reason: not-static}
+    - {step: "The job sends the pipeline's CI secrets to an attacker-controlled host.", rules: [GL097]}
+    - {step: "A publishing job runs a planted dependency install hook.", rules: [GL090]}
