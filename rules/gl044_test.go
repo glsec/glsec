@@ -105,7 +105,8 @@ test:
 	}
 }
 
-func TestGL044_MRTriggerBranchNameNoFinding(t *testing.T) {
+func TestGL044_MRTriggerBranchNameNotCheckedOutNoFinding(t *testing.T) {
+	// The source branch name is referenced but not checked out, so nothing runs.
 	f := findings044(t, `
 test:
   rules:
@@ -114,7 +115,100 @@ test:
     - echo "Branch is $CI_MERGE_REQUEST_SOURCE_BRANCH_NAME"
 `)
 	if len(f) != 0 {
-		t.Fatalf("expected no findings for branch name only (not SHA), got %d", len(f))
+		t.Fatalf("expected no findings for branch name only (not checked out), got %d", len(f))
+	}
+}
+
+func TestGL044_BranchNameCheckout(t *testing.T) {
+	for _, line := range []string{
+		`git checkout "$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME"`,
+		`git checkout origin/${CI_MERGE_REQUEST_SOURCE_BRANCH_NAME}`,
+		`git switch --detach ${CI_MERGE_REQUEST_SOURCE_BRANCH_NAME}`,
+		`git reset --hard "$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME"`,
+	} {
+		f := findings044(t, `
+test:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  script:
+    - `+line+`
+    - make build
+`)
+		if len(f) != 1 {
+			t.Errorf("%s: got %d findings, want 1", line, len(f))
+		}
+	}
+}
+
+func TestGL044_BranchNameFetchThenFetchHead(t *testing.T) {
+	f := findings044(t, `
+test:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  before_script:
+    - git fetch --prune origin "$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME"
+    - git checkout --quiet -f FETCH_HEAD
+  script:
+    - go test ./...
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding for NAME fetch + checkout FETCH_HEAD, got %d: %v", len(f), f)
+	}
+}
+
+func TestGL044_TargetBranchNotFlagged(t *testing.T) {
+	// The target branch is not attacker-controlled: fetching it repoints
+	// FETCH_HEAD, and a checkout of the target must not be reported.
+	f := findings044(t, `
+test:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  script:
+    - git fetch origin "$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"
+    - git checkout "$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"
+    - git checkout FETCH_HEAD
+`)
+	if len(f) != 0 {
+		t.Fatalf("expected no findings for target-branch checkout, got %d: %v", len(f), f)
+	}
+}
+
+func TestGL044_SameProjectGuardNoFinding(t *testing.T) {
+	// Confined to same-project MRs (not forks), so the source is not
+	// attacker-controlled — even though it checks out the source branch.
+	for _, guard := range []string{
+		`$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH == $CI_MERGE_REQUEST_PROJECT_PATH`,
+		`$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_SOURCE_PROJECT_ID == $CI_PROJECT_ID`,
+	} {
+		f := findings044(t, `
+auto-format:
+  rules:
+    - if: '`+guard+`'
+  script:
+    - git checkout "$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME"
+    - make format
+`)
+		if len(f) != 0 {
+			t.Errorf("guard %q: got %d findings, want 0", guard, len(f))
+		}
+	}
+}
+
+func TestGL044_SameProjectGuardOnNeverRuleStillFlagged(t *testing.T) {
+	// A `when: never` rule carrying the guard excludes same-project MRs and
+	// leaves forks reachable — the dangerous inverse — so it must still fire.
+	f := findings044(t, `
+test:
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_PROJECT_PATH == $CI_MERGE_REQUEST_PROJECT_PATH'
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+  script:
+    - git checkout "$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME"
+    - make build
+`)
+	if len(f) != 1 {
+		t.Fatalf("expected 1 finding (never-rule guard does not make it safe), got %d: %v", len(f), f)
 	}
 }
 
