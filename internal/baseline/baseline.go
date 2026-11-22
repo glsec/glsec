@@ -62,7 +62,7 @@ func Load(path string) (*Baseline, error) {
 	if strings.HasPrefix(strings.TrimSpace(string(data)), "{") {
 		return loadJSON(data)
 	}
-	return loadIgnore(data), nil
+	return loadIgnore(data)
 }
 
 func loadJSON(data []byte) (*Baseline, error) {
@@ -77,34 +77,28 @@ func loadJSON(data []byte) (*Baseline, error) {
 	return b, nil
 }
 
-func loadIgnore(data []byte) *Baseline {
+func loadIgnore(data []byte) (*Baseline, error) {
 	b := &Baseline{counts: make(map[string]int), expired: make(map[string]bool)}
 	now := time.Now()
 	scanner := bufio.NewScanner(strings.NewReader(string(data)))
 	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
+		// Parse each line through suppress.ParseIgnoreLine so the baseline
+		// honours exactly the lines the scan suppressor does (#1460).
+		entry, ok := suppress.ParseIgnoreLine(scanner.Text())
+		if !ok {
 			continue
 		}
-		// format: <file>:<line> <ruleID> [exp:YYYY-MM-DD], split on any
-		// whitespace like suppress.LoadIgnoreFile, so both read a line alike.
-		fields := strings.Fields(line)
-		if len(fields) < 2 {
-			continue
-		}
-		loc, rule := fields[0], fields[1]
-		colon := strings.LastIndex(loc, ":")
-		if colon < 0 {
-			continue
-		}
-		k := key(rule, loc[:colon], "")
-		if (suppress.Entry{Expiry: suppress.IgnoreExpiry(fields)}).Expired(now) {
+		k := key(entry.RuleID, entry.File, "")
+		if (suppress.Entry{Expiry: entry.Expiry}).Expired(now) {
 			b.expired[k] = true
 			continue
 		}
 		b.counts[k]++
 	}
-	return b
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	return b, nil
 }
 
 func key(rule, file, message string) string {

@@ -186,6 +186,42 @@ func IgnoreExpiry(fields []string) string {
 	return expiry
 }
 
+// IgnoreLine is one parsed .glsec-ignore entry.
+type IgnoreLine struct {
+	File   string
+	Line   int
+	RuleID string
+	Expiry string // empty when no exp: token is present
+}
+
+// ParseIgnoreLine parses a single .glsec-ignore line into its fields. ok is
+// false for a blank line, a comment, or a malformed entry — one with fewer than
+// two fields, a location with no colon, or a line number that is not a positive
+// integer. Both the scan suppressor (LoadIgnoreFile) and the baseline reader use
+// it, so a line that one honours the other honours too.
+//
+// Line format: <file>:<line> <ruleID> [exp:YYYY-MM-DD]
+func ParseIgnoreLine(raw string) (IgnoreLine, bool) {
+	line := strings.TrimSpace(raw)
+	if line == "" || strings.HasPrefix(line, "#") {
+		return IgnoreLine{}, false
+	}
+	fields := strings.Fields(line)
+	if len(fields) < 2 {
+		return IgnoreLine{}, false
+	}
+	loc, ruleID := fields[0], fields[1]
+	lastColon := strings.LastIndex(loc, ":")
+	if lastColon < 0 {
+		return IgnoreLine{}, false
+	}
+	lineNum, err := strconv.Atoi(loc[lastColon+1:])
+	if err != nil || lineNum < 1 {
+		return IgnoreLine{}, false
+	}
+	return IgnoreLine{File: loc[:lastColon], Line: lineNum, RuleID: ruleID, Expiry: IgnoreExpiry(fields)}, true
+}
+
 // LoadIgnoreFile reads a .glsec-ignore file and returns suppressions for the
 // given target file. Entries for other files are silently skipped.
 // A missing file is not an error: it returns an empty map and a nil error, so
@@ -209,29 +245,11 @@ func LoadIgnoreFile(ignorePath, targetFile string) (Map, error) {
 
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
+		entry, ok := ParseIgnoreLine(scanner.Text())
+		if !ok || entry.File != targetFile {
 			continue
 		}
-		fields := strings.Fields(line)
-		if len(fields) < 2 {
-			continue
-		}
-		loc, ruleID := fields[0], fields[1]
-		expiry := IgnoreExpiry(fields)
-		lastColon := strings.LastIndex(loc, ":")
-		if lastColon < 0 {
-			continue
-		}
-		filePath := loc[:lastColon]
-		lineNum, err := strconv.Atoi(loc[lastColon+1:])
-		if err != nil || lineNum < 1 {
-			continue
-		}
-		if filePath != targetFile {
-			continue
-		}
-		m.set(lineNum, ruleID, Entry{Expiry: expiry, Source: finding.SourceIgnoreFile})
+		m.set(entry.Line, entry.RuleID, Entry{Expiry: entry.Expiry, Source: finding.SourceIgnoreFile})
 	}
 	if err := scanner.Err(); err != nil {
 		return m, err

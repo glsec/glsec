@@ -13,6 +13,44 @@ import (
 	"time"
 )
 
+func TestParseIgnoreLine(t *testing.T) {
+	for _, tc := range []struct {
+		raw    string
+		ok     bool
+		file   string
+		line   int
+		rule   string
+		expiry string
+	}{
+		{raw: "ci.yml:3 GL001", ok: true, file: "ci.yml", line: 3, rule: "GL001"},
+		{raw: "  ci.yml:5 \t GL003  exp:2999-01-01 ", ok: true, file: "ci.yml", line: 5, rule: "GL003", expiry: "2999-01-01"},
+		{raw: "ci.yml:10 GL004 trailing words", ok: true, file: "ci.yml", line: 10, rule: "GL004"},
+		{raw: `c:\ci.yml:9 GL012`, ok: true, file: `c:\ci.yml`, line: 9, rule: "GL012"},
+		{raw: "# comment", ok: false},
+		{raw: "", ok: false},
+		{raw: "   ", ok: false},
+		{raw: "ci.yml:7", ok: false},         // one field
+		{raw: "GL005", ok: false},            // one field, no colon
+		{raw: "ci.yml GL006", ok: false},     // no colon
+		{raw: "ci.yml:0 GL007", ok: false},   // zero
+		{raw: "ci.yml:abc GL008", ok: false}, // non-numeric
+		{raw: "ci.yml:-2 GL009", ok: false},  // negative
+		{raw: "ci.yml: GL010", ok: false},    // empty line number
+	} {
+		got, ok := ParseIgnoreLine(tc.raw)
+		if ok != tc.ok {
+			t.Errorf("ParseIgnoreLine(%q) ok = %v, want %v", tc.raw, ok, tc.ok)
+			continue
+		}
+		if !ok {
+			continue
+		}
+		if got.File != tc.file || got.Line != tc.line || got.RuleID != tc.rule || got.Expiry != tc.expiry {
+			t.Errorf("ParseIgnoreLine(%q) = %+v, want {File:%q Line:%d RuleID:%q Expiry:%q}", tc.raw, got, tc.file, tc.line, tc.rule, tc.expiry)
+		}
+	}
+}
+
 func TestLoadIgnoreFile_MalformedLines(t *testing.T) {
 	content := `# comment
 ci.yml:3 GL001
