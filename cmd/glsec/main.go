@@ -550,6 +550,7 @@ func scanRoot(file string, opt scanOptions) (findings []finding.Finding, suppres
 			_, _ = fmt.Fprintf(opt.stderr, "warning: %s\n", msg)
 		}
 		allDocs = files.collect(doc, false)
+		files.flushFailures()
 	} else if len(parser.LocalIncludePaths(doc.Root)) > 0 || len(parser.ChildPipelinePaths(doc.Root)) > 0 {
 		_, _ = fmt.Fprintf(opt.stderr, "note: %s: local includes and child pipelines are not read; name the file with --stdin-filename to resolve them\n", file)
 	}
@@ -936,9 +937,25 @@ type pipelineFiles struct {
 	children map[string]bool
 	// skipped holds the paths already reported as outside rootDir.
 	skipped map[string]bool
+	// failures holds files that could not be read, keyed by absolute path,
+	// recorded as they are first seen. The disposition is reported once, after
+	// the whole pipeline is collected, at the strongest obligation any
+	// reference carried: a file referenced both conditionally and mandatorily
+	// must fail --strict regardless of which reference comes first (#1458).
+	failures     map[string]*readFailure
+	failureOrder []string
 	// unread reports a file that could not be read. optional says the
 	// pipeline can be valid without it (#1167).
 	unread func(kind, path string, err error, optional bool)
+}
+
+// readFailure records a file glsec could not read and the strongest obligation
+// seen across its references; mandatory is true once any non-optional reference
+// to it is seen.
+type readFailure struct {
+	kind, path string
+	err        error
+	mandatory  bool
 }
 
 func newPipelineFiles(w io.Writer, rootDir string, excludePaths []string, file string, root *parser.Document) *pipelineFiles {
@@ -948,6 +965,7 @@ func newPipelineFiles(w io.Writer, rootDir string, excludePaths []string, file s
 		members:  map[*parser.Document]map[string]*parser.Document{},
 		children: map[string]bool{},
 		skipped:  map[string]bool{},
+		failures: map[string]*readFailure{},
 	}
 	if abs, err := filepath.Abs(file); err == nil {
 		p.children[abs] = true
@@ -968,16 +986,46 @@ func (p *pipelineFiles) read(kind, path, abs string, optional bool) *parser.Docu
 			err = validate.Mapping(path, parsed)
 		}
 		if err != nil {
-			p.unread(kind, path, err, optional)
+			p.recordFailure(kind, path, abs, err, optional)
 			parsed = nil
 		}
 		p.parsed[abs], doc = parsed, parsed
+	} else if doc == nil && !optional {
+		// A later mandatory reference to a file first seen through an
+		// optional one strengthens its obligation (#1458).
+		p.recordFailure(kind, path, abs, nil, optional)
 	}
 	if doc == nil {
 		return nil
 	}
 	own := *doc
 	return &own
+}
+
+// recordFailure notes that abs could not be read, keeping the first error seen
+// and raising the obligation to mandatory as soon as any non-optional reference
+// to it appears. flushFailures reports each one once the pipeline is collected.
+func (p *pipelineFiles) recordFailure(kind, path, abs string, err error, optional bool) {
+	f, ok := p.failures[abs]
+	if !ok {
+		f = &readFailure{kind: kind, path: path, err: err}
+		p.failures[abs] = f
+		p.failureOrder = append(p.failureOrder, abs)
+	}
+	if !optional {
+		f.mandatory = true
+	}
+}
+
+// flushFailures reports every unreadable file once, in first-seen order, at the
+// strongest obligation any reference carried. A file referenced both
+// conditionally and mandatorily is reported as mandatory, so --strict fails it
+// whatever the reference order (#1458).
+func (p *pipelineFiles) flushFailures() {
+	for _, abs := range p.failureOrder {
+		f := p.failures[abs]
+		p.unread(f.kind, f.path, f.err, !f.mandatory)
+	}
 }
 
 // collect recursively collects all pipeline documents (main + children)
@@ -1006,6 +1054,13 @@ func (p *pipelineFiles) collect(doc *parser.Document, optional bool) []*parser.D
 				// Included again: GitLab merges it again, so its place can change.
 				if known != nil && known.IncludedBy == pipeline {
 					doc.Includes = append(doc.Includes, known)
+				} else if known == nil && !optional {
+					// The earlier include of this file failed to read; a
+					// mandatory reference now strengthens its obligation so
+					// --strict fails it whatever the order (#1458).
+					if _, failed := p.failures[abs]; failed {
+						p.recordFailure(kind, childPath, abs, nil, optional)
+					}
 				}
 				return
 			}
