@@ -119,8 +119,13 @@ func TestRun_StrictMandatoryIncludeMaskedByConditional(t *testing.T) {
 			if len(report.Errors) != 1 || !strings.HasSuffix(filepath.ToSlash(report.Errors[0].File), "missing.yml") {
 				t.Fatalf("want exactly one error for missing.yml, got %s", out)
 			}
-			if n := strings.Count(stderr, "no such file or directory"); n != 1 {
+			// Reported once, at the error severity: the OS wording of the
+			// read error varies, so key on the stable "include <file>" prefix.
+			if n := strings.Count(stderr, "include missing.yml"); n != 1 {
 				t.Fatalf("want the failure reported once, got %d:\n%s", n, stderr)
+			}
+			if strings.Contains(stderr, "warning: include missing.yml") {
+				t.Fatalf("want an error, not a warning:\n%s", stderr)
 			}
 		})
 	}
