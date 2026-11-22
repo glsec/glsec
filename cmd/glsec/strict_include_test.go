@@ -89,6 +89,55 @@ func TestRun_StrictUnreadablePipelineFile(t *testing.T) {
 	}
 }
 
+// A file referenced both mandatorily and conditionally is reported at the
+// mandatory obligation, so --strict fails it whatever the reference order
+// (#1458). The disposition is reported once, not once per reference.
+func TestRun_StrictMandatoryIncludeMaskedByConditional(t *testing.T) {
+	const mandatory = "  - local: /missing.yml\n"
+	const conditional = "  - local: /missing.yml\n    rules:\n      - if: '$CI_COMMIT_BRANCH == \"main\"'\n"
+	for _, tc := range []struct {
+		name    string
+		include string
+	}{
+		{"conditional first", conditional + mandatory},
+		{"mandatory first", mandatory + conditional},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			files := map[string]string{
+				".gitlab-ci.yml": "include:\n" + tc.include + strictRootJob,
+			}
+			code, out, stderr := runCLI(t, files, "--strict", "--no-cache", "--format", "json", ".gitlab-ci.yml")
+			if code != 2 {
+				t.Fatalf("exit %d, want 2; stderr:\n%s", code, stderr)
+			}
+			var report struct {
+				Errors []struct{ File, Error string } `json:"errors"`
+			}
+			if err := json.Unmarshal([]byte(out), &report); err != nil {
+				t.Fatalf("%v in %s", err, out)
+			}
+			if len(report.Errors) != 1 || !strings.HasSuffix(filepath.ToSlash(report.Errors[0].File), "missing.yml") {
+				t.Fatalf("want exactly one error for missing.yml, got %s", out)
+			}
+			if n := strings.Count(stderr, "no such file or directory"); n != 1 {
+				t.Fatalf("want the failure reported once, got %d:\n%s", n, stderr)
+			}
+		})
+	}
+}
+
+// A file referenced only conditionally stays a warning: GitLab's pipeline is
+// valid without it (#1458, counterpart to #1167).
+func TestRun_StrictConditionalIncludeOnlyWarns(t *testing.T) {
+	files := map[string]string{
+		".gitlab-ci.yml": "include:\n  - local: /missing.yml\n    rules:\n      - if: '$CI_COMMIT_BRANCH == \"main\"'\n" + strictRootJob,
+	}
+	code, _, stderr := runCLI(t, files, "--strict", "--no-cache", "--only", "GL001", ".gitlab-ci.yml")
+	if code != 0 || !strings.Contains(stderr, "warning: ") || !strings.Contains(stderr, "missing.yml") {
+		t.Fatalf("exit %d, want 0 and a warning naming missing.yml; stderr:\n%s", code, stderr)
+	}
+}
+
 func TestRun_StrictUnreadableFileInSARIF(t *testing.T) {
 	files := map[string]string{".gitlab-ci.yml": "include: missing.yml\n" + strictRootJob}
 	code, out, stderr := runCLI(t, files, "--strict", "--no-cache", "--format", "sarif", ".gitlab-ci.yml")
