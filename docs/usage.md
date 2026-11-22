@@ -116,7 +116,7 @@ A file named `-` reads the pipeline from stdin, with the same size limit as a fi
 
 `--generate-ignore` rewrites only the entries the run could have reported: those for a file it scanned and a rule that ran. Entries for other pipeline files, and for rules left out with `--only`, `--skip` or `.glsec.yml`, stay as they are, and so do comments and an entry's `exp:` date when the finding is still there. `glsec --generate-ignore --only GL001 .gitlab-ci.yml` refreshes the GL001 entries and keeps the rest. If the scan reports an error, glsec exits 2 and leaves the baseline unchanged; it does not create one when none exists.
 
-Flags that contradict each other aren't resolved silently. `--generate-ignore` writes a new baseline and can't be combined with `--new-only` or `--baseline`, which diff against one; `--no-ignores` reports every finding and can't be combined with them either, since they leave out the baselined ones. Both stop glsec with exit 2. Where a flag only has no effect, glsec warns and runs as it would without it: `--format` with `--generate-ignore`, which prints no report; `--strict` with `--no-exit-codes`, also when they come from `.glsec.yml`; and files or other flags with `--clear-cache`, which only empties the cache.
+Flags that contradict each other aren't resolved silently. `--generate-ignore` writes a new baseline and can't be combined with `--new-only` or `--baseline`, which diff against one; `--no-ignores` reports every finding and can't be combined with them either, since they leave out the baselined ones. Both stop glsec with exit 2. Where a flag only has no effect, glsec warns and runs as it would without it: `--format` with `--generate-ignore`, which prints no report; `--strict` with `--no-exit-codes`, which drops the exit-1 strict would raise for warn findings, though an unreadable include is still a scan error (exit 2), also when they come from `.glsec.yml`; and files or other flags with `--clear-cache`, which only empties the cache.
 
 ## Report templates
 
@@ -156,11 +156,11 @@ On exit 2 after the scan started, the machine-readable reports still list the fi
 
 glsec reads only regular files of up to 64 MB as pipelines: a FIFO, a device, a directory or a larger file is an exit 2 for the file named on the command line, and a child pipeline file like that is skipped with a warning (an error under `--strict`, see [Reusable configuration](#reusable-configuration)).
 
-Use `--strict` to treat `warn` findings as hard failures (exit 1). Use `--no-exit-codes` to always exit 0 regardless of findings (advisory/informational mode). Some settings can also be set in [`.glsec.yml`](#configuration-file); [`glsec.example.yml`](glsec.example.yml) lists them all:
+Use `--strict` to treat `warn` findings as hard failures (exit 1). Use `--no-exit-codes` to exit 0 regardless of findings (advisory/informational mode); a scan or policy error still exits 2. Some settings can also be set in [`.glsec.yml`](#configuration-file); [`glsec.example.yml`](glsec.example.yml) lists them all:
 
 ```yaml
 strict: true        # warn findings cause exit 1
-no-exit-codes: true # never exit 1 (overrides strict, with a warning)
+no-exit-codes: true # findings never cause exit 1 (overrides strict's exit 1, with a warning); scan errors still exit 2
 
 # Optional container-image policies (GL065 and GL001):
 allowed_registries: []       # empty permits any registry

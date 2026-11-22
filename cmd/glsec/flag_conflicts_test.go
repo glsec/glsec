@@ -42,14 +42,14 @@ func TestRun_FlagsWithoutEffectWarn(t *testing.T) {
 
 	t.Run("--strict --no-exit-codes", func(t *testing.T) {
 		code, _, stderr := runCLI(t, files, "--strict", "--no-exit-codes", "warn.yml")
-		if code != 0 || !strings.Contains(stderr, "warning: strict has no effect with no-exit-codes") {
+		if code != 0 || !strings.Contains(stderr, "warning: no-exit-codes suppresses the findings exit code") {
 			t.Errorf("exit %d, want 0 with the warning:\n%s", code, stderr)
 		}
 	})
 	t.Run("strict and no-exit-codes in .glsec.yml", func(t *testing.T) {
 		f := map[string]string{"warn.yml": warnPipeline, ".glsec.yml": "strict: true\nno-exit-codes: true\n"}
 		code, _, stderr := runCLI(t, f, "warn.yml")
-		if code != 0 || !strings.Contains(stderr, "warning: strict has no effect with no-exit-codes") {
+		if code != 0 || !strings.Contains(stderr, "warning: no-exit-codes suppresses the findings exit code") {
 			t.Errorf("exit %d, want 0 with the warning:\n%s", code, stderr)
 		}
 	})

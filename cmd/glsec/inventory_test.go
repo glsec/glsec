@@ -81,3 +81,31 @@ func TestRunInventory_Errors(t *testing.T) {
 		t.Errorf("broken YAML: exit %d, want 2", code)
 	}
 }
+
+// YAML that is not a top-level mapping is not a pipeline: inventory rejects it
+// with exit 2 for both formats, as a scan does, instead of returning an empty
+// result and exit 0 (#1459).
+func TestRunInventory_NotAPipeline(t *testing.T) {
+	for _, body := range []string{"- a\n- b\n", "just text\n"} {
+		for _, format := range []string{"jobs", "cyclonedx"} {
+			files := map[string]string{".gitlab-ci.yml": body}
+			code, _, stderr := runCLI(t, files, "inventory", "--format", format)
+			if code != 2 || !strings.Contains(stderr, "expected a top-level mapping") {
+				t.Errorf("format %s on %q: exit %d, want 2 with a mapping error:\n%s", format, body, code, stderr)
+			}
+		}
+	}
+}
+
+// An empty-but-valid pipeline and an includes-only file are mappings, so
+// inventory still accepts them (#1459).
+func TestRunInventory_EmptyAndIncludesOnlyAccepted(t *testing.T) {
+	for _, body := range []string{"{}\n", "include:\n  - local: /ci/x.yml\n"} {
+		for _, format := range []string{"jobs", "cyclonedx"} {
+			files := map[string]string{".gitlab-ci.yml": body}
+			if code, _, stderr := runCLI(t, files, "inventory", "--format", format); code != 0 {
+				t.Errorf("format %s on %q: exit %d, want 0:\n%s", format, body, code, stderr)
+			}
+		}
+	}
+}
