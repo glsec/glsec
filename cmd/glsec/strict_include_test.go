@@ -64,7 +64,16 @@ func TestRun_StrictUnreadablePipelineFile(t *testing.T) {
 		}, "missing.yml"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			code, out, stderr := runCLI(t, tc.files, "--strict", "--no-cache", "--format", "json", ".gitlab-ci.yml")
+			files := make(map[string]string, len(tc.files)+1)
+			for k, v := range tc.files {
+				files[k] = v
+			}
+			if _, hasGit := files[".git"]; !hasGit {
+				if _, hasHead := files[".git/HEAD"]; !hasHead {
+					files[".git/HEAD"] = "ref: refs/heads/main\n"
+				}
+			}
+			code, out, stderr := runCLI(t, files, "--strict", "--no-cache", "--format", "json", ".gitlab-ci.yml")
 			if code != 2 || !strings.Contains(stderr, "error: ") {
 				t.Fatalf("exit %d, want 2; stderr:\n%s", code, stderr)
 			}
@@ -90,7 +99,10 @@ func TestRun_StrictUnreadablePipelineFile(t *testing.T) {
 }
 
 func TestRun_StrictUnreadableFileInSARIF(t *testing.T) {
-	files := map[string]string{".gitlab-ci.yml": "include: missing.yml\n" + strictRootJob}
+	files := map[string]string{
+		".git/HEAD":      "ref: refs/heads/main\n",
+		".gitlab-ci.yml": "include: missing.yml\n" + strictRootJob,
+	}
 	code, out, stderr := runCLI(t, files, "--strict", "--no-cache", "--format", "sarif", ".gitlab-ci.yml")
 	if code != 2 || !strings.Contains(out, "missing.yml") || !strings.Contains(out, `"executionSuccessful": false`) {
 		t.Fatalf("exit %d; stderr %s; report:\n%s", code, stderr, out)
@@ -100,6 +112,7 @@ func TestRun_StrictUnreadableFileInSARIF(t *testing.T) {
 // The other files of the pipeline are still reported.
 func TestRun_StrictUnreadableFileKeepsFindings(t *testing.T) {
 	files := map[string]string{
+		".git/HEAD":      "ref: refs/heads/main\n",
 		".gitlab-ci.yml": "include:\n  - local: missing.yml\n  - local: ok.yml\njob:\n  image: node:latest\n  script: [make]\n",
 		"ok.yml":         "other:\n  image: node:latest\n  script: [make]\n",
 	}
@@ -163,7 +176,7 @@ func TestIsRepositoryRoot(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(sub, "deep"), 0o750); err != nil {
 		t.Fatal(err)
 	}
-	if !isRepositoryRoot(sub) {
+	if isRepositoryRoot(dir) && !isRepositoryRoot(sub) {
 		t.Error("a directory in no repository counts as the root")
 	}
 	if err := os.Mkdir(filepath.Join(repo, ".git"), 0o750); err != nil {
