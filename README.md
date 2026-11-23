@@ -56,7 +56,7 @@ It adds a `glsec` job that runs in the `test` stage (set the `stage` input to ch
 | [gitlab-ci-lint](https://docs.gitlab.com/api/lint/) | GitLab CI syntax only (requires API access) |
 | **glsec** | GitLab CI security — works offline, no API key needed |
 
-- **96 rules** across the [OWASP Top 10 CI/CD Security Risks](#rules), each mapped to CWE: mutable images, secrets in variables, script injection, token exfiltration, unrestricted OIDC tokens, untrusted includes and more.
+- **97 rules** across the [OWASP Top 10 CI/CD Security Risks](#rules), each mapped to CWE: mutable images, secrets in variables, script injection, token exfiltration, unrestricted OIDC tokens, untrusted includes and more.
 - **Findings where you review code**: GitLab Code Quality reports in merge requests, JUnit, SARIF for GitHub Code Scanning, JSON.
 - **Adoptable on existing pipelines**: a baseline file and `--new-only` report only what a change introduces; suppressions carry a reason and an expiry date.
 - **Trustworthy releases**: signed, with SLSA provenance and reproducible builds ([details](#verifying-a-release)).
