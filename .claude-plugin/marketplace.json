@@ -10,8 +10,8 @@
       "source": {
         "source": "github",
         "repo": "glsec/glsec",
-        "ref": "v1.28.0",
-        "sha": "3f563667e756060fd84560572ef9fcf0925dce58"
+        "ref": "v1.29.0",
+        "sha": "287c9a85e1d7af6698c207a2ab455d69de4e7ea6"
       },
       "description": "Static security scanner for GitLab CI/CD pipelines"
     }
