@@ -86,6 +86,7 @@ default.hooks
 default.hooks.pre_get_sources_script
 default.id_tokens
 default.id_tokens.*.aud
+default.id_tokens.*.target_audience
 default.identity
 default.image
 default.image.docker
@@ -265,6 +266,7 @@ job.hooks
 job.hooks.pre_get_sources_script
 job.id_tokens
 job.id_tokens.*.aud
+job.id_tokens.*.target_audience
 job.identity
 job.image
 job.image.docker
