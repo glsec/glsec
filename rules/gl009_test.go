@@ -156,3 +156,64 @@ deploy:
 		t.Error("expected non-zero line number")
 	}
 }
+
+func TestGL009_TokenExchange_NoFinding(t *testing.T) {
+	f := findings009(t, `
+publish:
+  id_tokens:
+    EXCHANGE_TOKEN:
+      aud: https://gitlab.com/api/v4/token_exchange
+      target_audience: gitlab-artifact-registry
+    EXCHANGE_SELF_MANAGED:
+      aud: https://gitlab.example.com/api/v4/token_exchange
+      target_audience: gitlab-artifact-registry
+  script: [./publish.sh]
+`)
+	if len(f) != 0 {
+		t.Errorf("expected no finding for a target_audience token exchange, got %d", len(f))
+	}
+}
+
+func TestGL009_TokenExchange_StillReported(t *testing.T) {
+	cases := map[string]string{ //nolint:gosec // G101: YAML fixtures, no credentials
+		"exchange endpoint without target_audience": `
+publish:
+  id_tokens:
+    T:
+      aud: https://gitlab.com/api/v4/token_exchange
+  script: [./publish.sh]
+`,
+		"other path without target_audience": `
+publish:
+  id_tokens:
+    T:
+      aud: https://gitlab.example.com/some/other/path
+  script: [./publish.sh]
+`,
+		"empty target_audience": `
+publish:
+  id_tokens:
+    T:
+      aud: https://gitlab.com
+      target_audience: ""
+  script: [./publish.sh]
+`,
+		"target_audience on a sibling token only": `
+publish:
+  id_tokens:
+    EXCHANGE:
+      aud: https://gitlab.com/api/v4/token_exchange
+      target_audience: gitlab-artifact-registry
+    CLOUD:
+      aud: https://gitlab.com
+  script: [./publish.sh]
+`,
+	}
+	for name, y := range cases {
+		t.Run(name, func(t *testing.T) {
+			if f := findings009(t, y); len(f) != 1 {
+				t.Errorf("expected 1 finding, got %d", len(f))
+			}
+		})
+	}
+}

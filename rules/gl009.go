@@ -34,7 +34,7 @@ func (r *gl009) Check(doc *yaml.Node, file string) []finding.Finding {
 				continue
 			}
 			audNode := parser.FindKey(tokenDef, "aud")
-			if audNode == nil {
+			if audNode == nil || isTokenExchange(tokenDef) {
 				continue
 			}
 			for _, f := range checkAudNode(audNode, file) {
@@ -45,6 +45,15 @@ func (r *gl009) Check(doc *yaml.Node, file string) []finding.Finding {
 	})
 
 	return findings
+}
+
+// isTokenExchange reports whether the token sets target_audience (GitLab
+// 19.7+). GitLab then requires aud to be its own token exchange endpoint and
+// target_audience scopes the exchanged credential, so there is no external
+// relying party that could accept the token from another project.
+func isTokenExchange(tokenDef *yaml.Node) bool {
+	ta := parser.FindKey(tokenDef, "target_audience")
+	return ta != nil && ta.Kind == yaml.ScalarNode && ta.Value != ""
 }
 
 func checkAudNode(node *yaml.Node, file string) []finding.Finding {
