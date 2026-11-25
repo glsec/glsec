@@ -456,8 +456,10 @@ func workflowRestrictsToProtected(mapping *yaml.Node) bool {
 	}
 	sawProtected := false
 	for _, item := range rules.Content {
-		if item.Kind != yaml.MappingNode {
-			continue
+		// An entry glsec can't read, such as a !reference into an included
+		// file, may admit anything (#1492).
+		if item.Kind != yaml.MappingNode || parser.IsReference(item) {
+			return false
 		}
 		if ruleExcludes(item) {
 			continue

@@ -204,19 +204,72 @@ ship-it:
 	}
 }
 
+// Only a workflow that admits protected refs only keeps an unguarded job off
+// other branches. One that admits every push, or GitLab's recommended switch
+// between branch and merge request pipelines, doesn't (#1492).
 func TestGL080_WorkflowRulesSuppress(t *testing.T) {
-	f := findings080(t, `
-workflow:
-  rules:
-    - if: '$CI_PIPELINE_SOURCE == "push"'
+	job := "deploy-prod:\n  stage: deploy\n  script:\n    - kubectl apply -f k8s/\n"
+	for name, tc := range map[string]struct {
+		workflow string
+		want     int
+	}{
+		"push":                 {"workflow:\n  rules:\n    - if: '$CI_PIPELINE_SOURCE == \"push\"'\n", 1},
+		"any branch":           {"workflow:\n  rules:\n    - if: $CI_COMMIT_BRANCH\n", 1},
+		"branch/MR switch":     {"workflow:\n  rules:\n    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\"\n    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS\n      when: never\n    - if: $CI_COMMIT_BRANCH\n", 1},
+		"default branch":       {"workflow:\n  rules:\n    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH\n", 0},
+		"default branch, tag":  {"workflow:\n  rules:\n    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH\n    - if: $CI_COMMIT_TAG\n", 0},
+		"protected":            {"workflow:\n  rules:\n    - if: $CI_COMMIT_REF_PROTECTED == \"true\"\n", 0},
+		"unresolved reference": {"workflow:\n  rules:\n    - if: $CI_COMMIT_TAG\n    - !reference [.included, rules]\n", 1},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if f := findings080(t, tc.workflow+job); len(f) != tc.want {
+				t.Errorf("got %d findings, want %d: %v", len(f), tc.want, f)
+			}
+		})
+	}
+}
 
-deploy-prod:
-  stage: deploy
-  script:
-    - ./deploy.sh
-`)
-	if len(f) != 0 {
-		t.Errorf("expected no finding when workflow:rules restricts the source, got %d", len(f))
+// A push or publish that ships nothing another branch depends on is not a
+// deploy: an image pushed under a tag made from the run, or a dry run
+// (#1492). latest, fixed tags and versions still are.
+func TestGL080_EphemeralPushAndDryRun(t *testing.T) {
+	for _, tc := range []struct {
+		name, script string
+		vars         string
+		want         int
+	}{
+		{"push ref slug", "docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG", "", 0},
+		{"push short sha braced", "docker push ${CI_REGISTRY_IMAGE}/app:${CI_COMMIT_SHORT_SHA}", "", 0},
+		{"push pipeline id with podman", "podman push $CI_REGISTRY_IMAGE/dev:${CI_PIPELINE_ID}-perl", "", 0},
+		{"push via job variable", "docker push $IMAGE_TAG", "  variables:\n    IMAGE_TAG: $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA\n", 0},
+		{"image push subcommand", "docker image push $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA", "", 0},
+		{"buildah push", "buildah push $CI_REGISTRY_IMAGE:$CI_JOB_ID", "", 0},
+		{"kubectl dry run", "kubectl apply --dry-run=client -f k8s/", "", 0},
+		{"npm publish dry run", "npm publish --dry-run", "", 0},
+		{"dart pub publish -n", "dart pub publish -n", "", 0},
+		// Still sensitive.
+		{"push latest", "docker push $CI_REGISTRY_IMAGE:latest", "", 1},
+		{"push without tag", "docker push $CI_REGISTRY_IMAGE", "", 1},
+		{"push version", "docker push $CI_REGISTRY_IMAGE:1.2.3", "", 1},
+		{"push tag from tag pipeline", "docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_TAG", "", 1},
+		{"push all tags", "docker push --all-tags $CI_REGISTRY_IMAGE", "", 1},
+		{"push unresolved variable", "docker push $IMAGE", "", 1},
+		{"push via variable to latest", "docker push $IMAGE", "  variables:\n    IMAGE: $CI_REGISTRY_IMAGE:latest\n", 1},
+		{"ephemeral push, then latest", "docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA && docker push $CI_REGISTRY_IMAGE:latest", "", 1},
+		{"kubectl dry run none", "kubectl apply --dry-run=none -f k8s/", "", 1},
+		{"kubectl apply", "kubectl apply -f k8s/", "", 1},
+		{"npm publish", "npm publish", "", 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			y := "ship:\n  stage: build\n" + tc.vars + "  script:\n    - " + fmt.Sprintf("%q", tc.script) + "\n"
+			if f := findings080(t, y); len(f) != tc.want {
+				t.Errorf("got %d findings, want %d: %v\n%s", len(f), tc.want, f, y)
+			}
+		})
+	}
+	// A file-level variable resolves too.
+	if f := findings080(t, "variables:\n  IMG: $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG\nship:\n  script:\n    - docker push $IMG\n"); len(f) != 0 {
+		t.Errorf("global variable: got %v, want none", f)
 	}
 }
 
