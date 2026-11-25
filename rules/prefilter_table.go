@@ -303,6 +303,7 @@ var prefilterTable = map[string]prefilterLits{
 	"\\$\\{?CI_PIPELINE_SOURCE\\}?\\s*==\\s*[\"']push[\"']|[\"']push[\"']\\s*==\\s*\\$\\{?CI_PIPELINE_SOURCE\\b": {anyOf: []string{"$CI_PIPELINE_SOURCE", "${CI_PIPELINE_SOURCE"}},
 	"\\$\\{?[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|APIKEY|API_KEY|_KEY)[A-Z0-9_]*\\}?":             {anyOf: []string{"TOKEN", "SECRET", "PASSWORD", "PASSWD", "CREDENTIAL", "APIKEY", "_KEY"}},
 	"\\$\\{?[A-Za-z_]": {anyOf: []string{"$"}},
+	"\\$\\{[A-Za-z_][A-Za-z0-9_]*\\}|\\$[A-Za-z_][A-Za-z0-9_]*":                                      {anyOf: []string{"$"}},
 	"\\.(?i:ttf|otf|woff2?|eot|png|jpe?g|gif|ico|bmp|svg|webp|pdf|csv|tsv|dat|bin|log|md|txt|lock)":  {anyOf: []string{".ttf", ".otf", ".woff", ".eot", ".png", ".jpg", ".jpeg", ".gif", ".ico", ".bmp", ".svg", ".webp", ".pdf", ".csv", ".tsv", ".dat", ".bin", ".log", ".md", ".txt", ".lock"}, fold: true},
 	"\\.(?i:ttf|otf|woff2?|eot|png|jpe?g|gif|ico|bmp|svg|webp|pdf|csv|tsv|dat|bin|log|md|txt|lock)$": {anyOf: []string{".ttf", ".otf", ".woff", ".eot", ".png", ".jpg", ".jpeg", ".gif", ".ico", ".bmp", ".svg", ".webp", ".pdf", ".csv", ".tsv", ".dat", ".bin", ".log", ".md", ".txt", ".lock"}, fold: true},
 	"\\S[=<>]=?\\d":       {anyOf: []string{"<", "=", ">"}},

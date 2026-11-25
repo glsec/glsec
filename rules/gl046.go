@@ -36,6 +36,7 @@ func (r *gl046) Check(doc *yaml.Node, file string) []finding.Finding {
 
 	in := NewInheritance(doc)
 	protectedOnly := newRefScope(mapping).protectedOnly
+	aliases := newUserAliases(doc)
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
 		if !protectedOnly && !strings.HasPrefix(name.Value, ".") {
 			if eff := in.Effective(job); !registryCacheProtectedOnly(eff) {
@@ -58,7 +59,8 @@ func (r *gl046) Check(doc *yaml.Node, file string) []finding.Finding {
 		// name can still steer, under unprotect: true, lets an unprotected
 		// pipeline pre-fill the slot this protected job reads (#1105, #1003).
 		if gl046ProtectedOnly(job) {
-			for _, f := range checkCacheNode(cache, file, "") {
+			expand := func(s string) (string, []string) { return aliases.expand(s, name.Value) }
+			for _, f := range checkCacheNode(cache, file, "", expand) {
 				f.Job = name.Value
 				findings = append(findings, f)
 			}
@@ -104,10 +106,11 @@ func checkCacheUnprotect(node *yaml.Node, file, job string, severity finding.Sev
 	return findings
 }
 
-func checkCacheNode(node *yaml.Node, file, job string) []finding.Finding {
+// expand resolves variables that reference a user-controlled one (#1504).
+func checkCacheNode(node *yaml.Node, file, job string, expand func(string) (string, []string)) []finding.Finding {
 	var findings []finding.Finding
 	for _, entry := range cacheEntries(node) {
-		findings = append(findings, checkCacheMapping(entry, file, job)...)
+		findings = append(findings, checkCacheMapping(entry, file, job, expand)...)
 	}
 	return findings
 }
@@ -131,7 +134,7 @@ func cacheEntries(node *yaml.Node) []*yaml.Node {
 	return entries
 }
 
-func checkCacheMapping(node *yaml.Node, file, job string) []finding.Finding {
+func checkCacheMapping(node *yaml.Node, file, job string, expand func(string) (string, []string)) []finding.Finding {
 	// Only under unprotect: true do protected and unprotected caches share a
 	// namespace; without it a steerable key can't cross the boundary, so the
 	// key is flagged only together with unprotect: true (#1105).
@@ -145,14 +148,19 @@ func checkCacheMapping(node *yaml.Node, file, job string) []finding.Finding {
 
 	switch keyNode.Kind {
 	case yaml.ScalarNode:
-		if m := cacheKeyVarRe.FindStringSubmatch(keyNode.Value); m != nil {
+		key, used := expand(keyNode.Value)
+		if m := cacheKeyVarRe.FindStringSubmatch(key); m != nil {
+			note := ""
+			if used != nil && !mentionsVar(keyNode.Value, m[1]) {
+				note = aliasNote(used)
+			}
 			return []finding.Finding{{
 				RuleID:   "GL046",
 				Severity: finding.Warn,
 				Job:      job,
 				Message: fmt.Sprintf(
-					"cache key contains user-controlled variable $%s — an attacker can craft a branch name to collide with the cache key of a protected pipeline and inject malicious build artefacts",
-					m[1],
+					"cache key contains user-controlled variable $%s — an attacker can craft a branch name to collide with the cache key of a protected pipeline and inject malicious build artefacts%s",
+					m[1], note,
 				),
 				File: file,
 				Line: keyNode.Line,
@@ -162,7 +170,8 @@ func checkCacheMapping(node *yaml.Node, file, job string) []finding.Finding {
 	case yaml.MappingNode:
 		prefixNode := parser.FindKey(keyNode, "prefix")
 		if prefixNode != nil && prefixNode.Kind == yaml.ScalarNode {
-			if m := cacheKeyVarRe.FindStringSubmatch(prefixNode.Value); m != nil {
+			prefix, _ := expand(prefixNode.Value)
+			if m := cacheKeyVarRe.FindStringSubmatch(prefix); m != nil {
 				return []finding.Finding{{
 					RuleID:   "GL046",
 					Severity: finding.Warn,

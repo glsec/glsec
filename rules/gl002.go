@@ -78,9 +78,30 @@ var evalArgRe = mustCompilePrefiltered(
 
 func (r *gl002) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
+	aliases := newUserAliases(doc)
 	EachScriptLine(doc, file, func(line *yaml.Node, file, job string) {
-		for _, f := range checkScriptLine(line, file) {
+		direct := checkScriptLine(line, file)
+		for _, f := range direct {
 			f.Job = job
+			findings = append(findings, f)
+		}
+		// A variable whose value references a user-controlled one is
+		// user-controlled too (#1504). Only warnings and errors are reported
+		// through it, not the info on unquoted ref names.
+		cp, used := aliases.expandedLine(line, job)
+		if cp == nil {
+			return
+		}
+		seen := map[string]bool{}
+		for _, f := range direct {
+			seen[fmt.Sprint(f.Line, f.Message)] = true
+		}
+		for _, f := range checkScriptLine(cp, file) {
+			if f.Severity == finding.Info || seen[fmt.Sprint(f.Line, f.Message)] {
+				continue
+			}
+			f.Job = job
+			f.Message += aliasNote(used)
 			findings = append(findings, f)
 		}
 	})
