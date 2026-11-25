@@ -44,6 +44,7 @@ func (r *gl015) Check(doc *yaml.Node, file string) []finding.Finding {
 		protectedOnly[name.Value] = gl046ProtectedOnly(in.Effective(job))
 	})
 
+	aliases := newUserAliases(doc)
 	EachScriptLine(doc, file, func(item *yaml.Node, file, job string) {
 		if protectedOnly[job] {
 			return
@@ -51,7 +52,10 @@ func (r *gl015) Check(doc *yaml.Node, file string) []finding.Finding {
 		if !dockerCmdRe.MatchString(item.Value) {
 			return
 		}
-		for _, cmd := range shellCommands(item.Value) {
+		// An image name held in a variable that references a user-controlled
+		// one is user-controlled too (#1504).
+		text, used := aliases.expand(item.Value, job)
+		for _, cmd := range shellCommands(text) {
 			varName := ""
 			for _, t := range writtenImageRefs(commandWords(cmd.text)) {
 				// The name from the group: ${NAME//x/y} or ${NAME:-d} has no } right after it (#977).
@@ -76,6 +80,9 @@ func (r *gl015) Check(doc *yaml.Node, file string) []finding.Finding {
 			}
 			if cmd.line == 0 {
 				f.Col = item.Column
+			}
+			if used != nil && !mentionsVar(item.Value, varName) {
+				f.Message += aliasNote(used)
 			}
 			findings = append(findings, f)
 		}

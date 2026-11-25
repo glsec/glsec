@@ -38,21 +38,29 @@ func (r *gl025) Check(doc *yaml.Node, file string) []finding.Finding {
 	// An item shared by several jobs through an anchor is checked once (#766).
 	seen := map[*yaml.Node]bool{}
 
+	aliases := newUserAliases(doc)
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
 		for _, l := range CollectJobScriptLines(job) {
 			if seen[l] {
 				continue
 			}
 			seen[l] = true
-			m, at := userVarInRequest(l.Value)
+			// A variable that references a user-controlled one is
+			// user-controlled too (#1504).
+			text, used := aliases.expand(l.Value, name.Value)
+			m, at := userVarInRequest(text)
 			if m == "" {
 				continue
+			}
+			note := ""
+			if used != nil && !strings.Contains(l.Value, strings.Trim(m, "${}")) {
+				note = aliasNote(used)
 			}
 			f := finding.Finding{
 				RuleID:   "GL025",
 				Severity: finding.Warn,
 				Job:      name.Value,
-				Message:  "curl/wget request includes user-controlled variable " + m + " — whoever names the branch or writes the commit or merge request controls part of the URL or request body",
+				Message:  "curl/wget request includes user-controlled variable " + m + " — whoever names the branch or writes the commit or merge request controls part of the URL or request body" + note,
 				File:     file,
 				Line:     parser.ScalarContentLine(l, at),
 			}
