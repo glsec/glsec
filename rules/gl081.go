@@ -12,11 +12,29 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-type gl081 struct{}
+type gl081 struct {
+	restricted map[string]bool
+}
 
 var GL081 = &gl081{}
 
 func (r *gl081) ID() string { return "GL081" }
+
+// SetRestrictedAudiences configures the id_tokens audiences the project
+// restricts on the cloud side (restricted_oidc_audiences). A job whose tokens
+// only use such audiences is reported as info: minting them on any branch or
+// merge request is by design, but what they can read still is (#1484).
+func (r *gl081) SetRestrictedAudiences(auds []string) {
+	r.restricted = nil
+	for _, a := range auds {
+		if a != "" {
+			if r.restricted == nil {
+				r.restricted = map[string]bool{}
+			}
+			r.restricted[a] = true
+		}
+	}
+}
 
 func (r *gl081) Check(doc *yaml.Node, file string) []finding.Finding {
 	mapping := parser.Unwrap(doc)
@@ -53,7 +71,7 @@ func (r *gl081) Check(doc *yaml.Node, file string) []finding.Finding {
 		// only: merge_requests) lets any MR mint the token, even one that is
 		// otherwise an "effective" restriction on some other ref.
 		if jobAdmitsMR(job) {
-			findings = append(findings, gl081Finding(name, file, cred, gl081ReasonAdmits))
+			findings = append(findings, r.finding(name, job, file, cred, gl081ReasonAdmits))
 			return
 		}
 
@@ -62,7 +80,7 @@ func (r *gl081) Check(doc *yaml.Node, file string) []finding.Finding {
 		// effective guard (restricted to a protected ref, tag, or branch) is
 		// accepted.
 		if jobGuardState(job) != guardEffective {
-			findings = append(findings, gl081Finding(name, file, cred, gl081ReasonUnguarded))
+			findings = append(findings, r.finding(name, job, file, cred, gl081ReasonUnguarded))
 		}
 	})
 	return findings
@@ -100,40 +118,121 @@ const (
 	gl081ReasonUnguarded
 )
 
-func gl081Finding(name *yaml.Node, file string, cred gl081Credential, reason gl081Reason) finding.Finding {
-	return finding.Finding{
+func (r *gl081) finding(name, job *yaml.Node, file string, cred gl081Credential, reason gl081Reason) finding.Finding {
+	f := finding.Finding{
 		RuleID:   "GL081",
 		Severity: finding.Warn,
 		Job:      name.Value,
-		Message:  gl081Message(name.Value, cred, reason),
 		File:     file,
 		Line:     name.Line,
 		Col:      name.Column,
 	}
+	if cred == credIdentity {
+		f.Message = gl081IdentityMessage(name.Value, reason)
+		return f
+	}
+	open, restricted := r.tokens(job)
+	if len(open) == 0 && len(restricted) > 0 {
+		f.Severity = finding.Info
+		f.Message = gl081RestrictedMessage(name.Value, restricted, reason)
+		return f
+	}
+	if len(open) == 0 {
+		open = restricted
+	}
+	f.Message = gl081TokenMessage(name.Value, open, reason)
+	return f
 }
 
-func gl081Message(job string, cred gl081Credential, reason gl081Reason) string {
-	if cred == credIdentity {
-		if reason == gl081ReasonAdmits {
-			return fmt.Sprintf(
-				"job %q gets Google Cloud credentials through identity: and its guard admits merge_request_event — any merge request can use them; restrict the job to protected refs and add the attribute condition assertion.ref_protected == \"true\" to the workload identity provider",
-				job,
-			)
-		}
-		return fmt.Sprintf(
-			"job %q gets Google Cloud credentials through identity: with no guard restricting $CI_PIPELINE_SOURCE or the ref — any branch or merge request can use them; add a rules:if that restricts to protected refs and the attribute condition assertion.ref_protected == \"true\" to the workload identity provider",
-			job,
-		)
+// tokens splits the job's id_tokens into those with an audience the project
+// hasn't declared restricted and those whose every aud: is declared. An aud:
+// built from a variable, or a token without one, can't be matched and counts
+// as not declared.
+func (r *gl081) tokens(job *yaml.Node) (open, restricted []string) {
+	t := parser.FindKey(job, "id_tokens")
+	if t == nil || t.Kind != yaml.MappingNode {
+		return nil, nil
 	}
+	for i := 0; i+1 < len(t.Content); i += 2 {
+		name := t.Content[i].Value
+		if r.declared(t.Content[i+1]) {
+			restricted = append(restricted, name)
+		} else {
+			open = append(open, name)
+		}
+	}
+	return open, restricted
+}
+
+func (r *gl081) declared(tokenDef *yaml.Node) bool {
+	if len(r.restricted) == 0 || tokenDef.Kind != yaml.MappingNode {
+		return false
+	}
+	aud := parser.FindKey(tokenDef, "aud")
+	if aud == nil {
+		return false
+	}
+	values := []*yaml.Node{aud}
+	if aud.Kind == yaml.SequenceNode {
+		values = aud.Content
+	}
+	if len(values) == 0 {
+		return false
+	}
+	for _, v := range values {
+		if v.Kind != yaml.ScalarNode || strings.Contains(v.Value, "$") || !r.restricted[v.Value] {
+			return false
+		}
+	}
+	return true
+}
+
+// tokenList names the tokens a finding is about: "token X" or "tokens X, Y".
+func tokenList(names []string) string {
+	if len(names) == 1 {
+		return "token " + names[0]
+	}
+	return "tokens " + strings.Join(names, ", ")
+}
+
+func gl081IdentityMessage(job string, reason gl081Reason) string {
 	if reason == gl081ReasonAdmits {
 		return fmt.Sprintf(
-			"job %q issues an OIDC id_tokens: credential and its guard admits merge_request_event — any merge request can mint a cloud-federating token; restrict the job to protected refs and condition the cloud trust policy on the ref_protected claim",
+			"job %q gets Google Cloud credentials through identity: and its guard admits merge_request_event — any merge request can use them; restrict the job to protected refs and add the attribute condition assertion.ref_protected == \"true\" to the workload identity provider",
 			job,
 		)
 	}
 	return fmt.Sprintf(
-		"job %q issues an OIDC id_tokens: credential with no guard restricting $CI_PIPELINE_SOURCE or the ref — any branch or merge request can mint a cloud-federating token; add a rules:if that restricts to protected refs and condition the cloud trust policy on the ref_protected claim",
+		"job %q gets Google Cloud credentials through identity: with no guard restricting $CI_PIPELINE_SOURCE or the ref — any branch or merge request can use them; add a rules:if that restricts to protected refs and the attribute condition assertion.ref_protected == \"true\" to the workload identity provider",
 		job,
+	)
+}
+
+func gl081TokenMessage(job string, tokens []string, reason gl081Reason) string {
+	if reason == gl081ReasonAdmits {
+		return fmt.Sprintf(
+			"job %q issues OIDC %s (id_tokens:) and its guard admits merge_request_event — any merge request can mint a cloud-federating token; restrict the job to protected refs and condition the cloud trust policy on the ref_protected claim",
+			job, tokenList(tokens),
+		)
+	}
+	return fmt.Sprintf(
+		"job %q issues OIDC %s (id_tokens:) with no guard restricting $CI_PIPELINE_SOURCE or the ref — any branch or merge request can mint a cloud-federating token; add a rules:if that restricts to protected refs and condition the cloud trust policy on the ref_protected claim",
+		job, tokenList(tokens),
+	)
+}
+
+func gl081RestrictedMessage(job string, tokens []string, reason gl081Reason) string {
+	where := "with no guard restricting $CI_PIPELINE_SOURCE or the ref"
+	if reason == gl081ReasonAdmits {
+		where = "and its guard admits merge_request_event"
+	}
+	it := "it"
+	if len(tokens) > 1 {
+		it = "them"
+	}
+	return fmt.Sprintf(
+		"job %q issues OIDC %s (id_tokens:) %s, but every audience is listed in restricted_oidc_audiences — any branch or merge request can mint %s by design; make sure the cloud side grants %s no more than read access, and that what %s reads (such as Terraform state) holds no secrets",
+		job, tokenList(tokens), where, it, it, it,
 	)
 }
 

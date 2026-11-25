@@ -40,6 +40,11 @@ allowed_include_sources:
   - my-group/ci-templates
   - gitlab.com/components
 
+# id_tokens audiences restricted on the cloud side (e.g. a read-only pool for
+# merge requests): GL081 reports their jobs as info instead of warn.
+restricted_oidc_audiences:
+  - https://idp.example.org/read-pool
+
 shellcheck:
   enabled: true
   # path: /opt/bin/shellcheck # only in a file passed with --config
