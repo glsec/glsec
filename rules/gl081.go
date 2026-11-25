@@ -36,7 +36,23 @@ func (r *gl081) SetRestrictedAudiences(auds []string) {
 	}
 }
 
+// CheckDocument reads the file in its pipeline context (#1502): a child
+// pipeline or included file that only protected refs reach has no job that
+// runs on an unprotected branch, and in a child pipeline started on any ref,
+// if: $CI_PIPELINE_SOURCE == "parent_pipeline" restricts nothing.
+func (r *gl081) CheckDocument(doc *parser.Document, file string) []finding.Finding {
+	ctx := contextOf(doc)
+	if ctx.protected {
+		return nil
+	}
+	return r.check(doc.Root, file, ctx)
+}
+
 func (r *gl081) Check(doc *yaml.Node, file string) []finding.Finding {
+	return r.check(doc, file, docContext{})
+}
+
+func (r *gl081) check(doc *yaml.Node, file string, ctx docContext) []finding.Finding {
 	mapping := parser.Unwrap(doc)
 
 	// A top-level workflow:rules that confines the pipeline to protected refs
@@ -45,7 +61,7 @@ func (r *gl081) Check(doc *yaml.Node, file string) []finding.Finding {
 	// file. Note this is stricter than GL080's workflowRestrictsSource: a
 	// workflow that merely carries an if: but still admits merge_request_event
 	// does not protect the token and must not suppress here.
-	scope := newRefScope(mapping)
+	scope := ctx.scope(mapping)
 	if scope.protectedOnly {
 		return nil
 	}

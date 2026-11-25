@@ -59,6 +59,8 @@ func shorthandInclude(value *yaml.Node) *yaml.Node {
 type LocalInclude struct {
 	Path        string
 	Conditional bool
+	// Rules is the entry's rules:, or nil (#1502).
+	Rules *yaml.Node
 }
 
 // LocalIncludePaths returns the paths of LocalIncludes.
@@ -89,7 +91,8 @@ func LocalIncludes(doc *yaml.Node) []LocalInclude {
 		if strings.Contains(local.Value, "$") {
 			continue
 		}
-		includes = append(includes, LocalInclude{Path: local.Value, Conditional: FindKey(item, "rules") != nil})
+		rules := FindKey(item, "rules")
+		includes = append(includes, LocalInclude{Path: local.Value, Conditional: rules != nil, Rules: rules})
 	}
 	return includes
 }

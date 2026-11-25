@@ -42,6 +42,8 @@ type ChildPipeline struct {
 	// Locked reports that the trigger job also sets resource_group, so GitLab
 	// holds that lock until the child pipeline finishes (#1483).
 	Locked bool
+	// Job is the trigger job (#1502).
+	Job *yaml.Node
 }
 
 // ChildPipelines returns the child pipelines the trigger jobs of doc start,
@@ -65,7 +67,7 @@ func ChildPipelines(doc *yaml.Node) []ChildPipeline {
 		}
 		for _, item := range items {
 			if p := localIncludePath(item); p != "" {
-				children = append(children, ChildPipeline{Path: p, Waits: waits, Locked: locked})
+				children = append(children, ChildPipeline{Path: p, Waits: waits, Locked: locked, Job: job})
 			}
 		}
 	})

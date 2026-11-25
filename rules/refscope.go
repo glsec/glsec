@@ -23,6 +23,36 @@ type refScope struct {
 	protectedOnly bool
 	// mrPipelines: merge request pipelines can run.
 	mrPipelines bool
+	// childOpen: the file is a child pipeline that a trigger job starts on
+	// any ref, so if: $CI_PIPELINE_SOURCE == "parent_pipeline" restricts
+	// nothing (#1502).
+	childOpen bool
+}
+
+// docContext is what a pipeline file's place in the pipeline adds to its
+// own configuration (#1502).
+type docContext struct {
+	// protected: every trigger job or include: entry that brings the file in
+	// runs on protected refs only.
+	protected bool
+	// child: the file is a child pipeline, or a file one includes.
+	child bool
+}
+
+func contextOf(doc *parser.Document) docContext {
+	c := docContext{protected: doc.ProtectedByParent, child: doc.Child}
+	if p := doc.IncludedBy; p != nil {
+		c.protected = c.protected || p.ProtectedByParent
+		c.child = c.child || p.Child
+	}
+	return c
+}
+
+// scope returns the file's refScope with its context applied.
+func (c docContext) scope(mapping *yaml.Node) refScope {
+	s := newRefScope(mapping)
+	s.childOpen = c.child && !c.protected
+	return s
 }
 
 func newRefScope(mapping *yaml.Node) refScope {
@@ -39,7 +69,7 @@ func (s refScope) openEntry(rules *yaml.Node) (*yaml.Node, string) {
 	if s.protectedOnly {
 		return nil, ""
 	}
-	return unrestrictedRuleEntry(rules, s.mrPipelines, false)
+	return unrestrictedRuleEntry(rules, s.mrPipelines, false, s.childOpen)
 }
 
 // fallbackEntry is openEntry narrowed to entries without if: (#1498): a
@@ -50,7 +80,7 @@ func (s refScope) fallbackEntry(rules *yaml.Node) (*yaml.Node, string) {
 	if s.protectedOnly {
 		return nil, ""
 	}
-	return unrestrictedRuleEntry(rules, s.mrPipelines, true)
+	return unrestrictedRuleEntry(rules, s.mrPipelines, true, s.childOpen)
 }
 
 type guardState int
@@ -71,7 +101,7 @@ const (
 // it. Other if: conditions (a pipeline source such as schedule or web, a
 // project's own variable) depend on settings the file doesn't show and are
 // left alone, as are rules glsec can't read (!reference).
-func unrestrictedRuleEntry(rules *yaml.Node, mrPipelines, withoutIfOnly bool) (*yaml.Node, string) {
+func unrestrictedRuleEntry(rules *yaml.Node, mrPipelines, withoutIfOnly, childOpen bool) (*yaml.Node, string) {
 	if rules == nil || rules.Kind != yaml.SequenceNode || parser.IsReference(rules) {
 		return nil, ""
 	}
@@ -96,10 +126,15 @@ func unrestrictedRuleEntry(rules *yaml.Node, mrPipelines, withoutIfOnly bool) (*
 		if ifNode == nil {
 			return item, ruleEntryWithoutIf(item)
 		}
+		expr := trimOuterParens(strings.TrimSpace(ifNode.Value))
+		// In a child pipeline that a trigger job starts on any ref, the
+		// pipeline source is always parent_pipeline (#1502).
+		if childOpen && parentPipelineOnlyRe.MatchString(expr) {
+			return item, fmt.Sprintf("if: %s is true in every child pipeline, and the trigger job starts this one on any branch", ifNode.Value)
+		}
 		if withoutIfOnly {
 			continue
 		}
-		expr := trimOuterParens(strings.TrimSpace(ifNode.Value))
 		switch {
 		case branchPresenceRe.MatchString(expr):
 			return item, fmt.Sprintf("if: %s only checks that a branch is set", ifNode.Value)
@@ -123,6 +158,9 @@ func ruleEntryWithoutIf(item *yaml.Node) string {
 }
 
 var (
+	// parentPipelineOnlyRe matches an if: that only tests that the pipeline
+	// is a child pipeline.
+	parentPipelineOnlyRe = mustCompilePrefiltered(`^\$\{?CI_PIPELINE_SOURCE\}?\s*==\s*["']parent_pipeline["']$`)
 	// branchPresenceRe matches an if: that only tests that the pipeline has a
 	// branch or ref name, which every branch does.
 	branchPresenceRe = mustCompilePrefiltered(`^\$\{?CI_COMMIT_(?:BRANCH|REF_NAME)\}?(?:\s*!=\s*(?:null|""|''))?$`)
@@ -571,4 +609,39 @@ func workflowRestrictsSource(mapping *yaml.Node) bool {
 		}
 	}
 	return false
+}
+
+// RunsOnProtectedRefsOnly reports whether a job of the pipeline file doc runs
+// on protected refs only: the file's workflow:rules admit protected refs only,
+// or the job's own only:/rules: do, with extends: merged in (#1502).
+func RunsOnProtectedRefsOnly(doc, job *yaml.Node) bool {
+	if newRefScope(parser.Unwrap(doc)).protectedOnly {
+		return true
+	}
+	return jobProtectedOnly(NewInheritance(doc).Effective(job))
+}
+
+// IncludeRulesProtectedOnly reports whether an include: entry's rules: admit
+// protected refs only: every entry that includes the file has an if: that
+// restricts to the default branch, a named branch, a tag or a protected ref
+// (#1502). An entry without if: (exists:, changes:) includes it anywhere.
+func IncludeRulesProtectedOnly(rules *yaml.Node) bool {
+	if rules == nil || rules.Kind != yaml.SequenceNode || parser.IsReference(rules) {
+		return false
+	}
+	admitting := 0
+	for _, item := range rules.Content {
+		if item.Kind != yaml.MappingNode || parser.IsReference(item) {
+			return false
+		}
+		if ruleExcludes(item) {
+			continue
+		}
+		cond := parser.FindKey(item, "if")
+		if cond == nil || cond.Kind != yaml.ScalarNode || !ifRestrictsToProtected(cond.Value) {
+			return false
+		}
+		admitting++
+	}
+	return admitting > 0
 }

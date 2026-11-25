@@ -24,6 +24,16 @@ var workflowSourceVarRe = mustCompilePrefiltered(
 	`\$\{?(CI_PIPELINE_SOURCE|CI_COMMIT_BRANCH|CI_COMMIT_REF_NAME|CI_COMMIT_REF_SLUG|CI_COMMIT_TAG|CI_MERGE_REQUEST_(?:IID|ID|EVENT_TYPE|SOURCE_BRANCH_NAME|TARGET_BRANCH_NAME)|CI_DEFAULT_BRANCH)\b`,
 )
 
+// CheckDocument skips a child pipeline and the files it includes (#1502):
+// its pipeline source is always parent_pipeline, so it can't run for a push
+// or merge request event of its own, and its trigger jobs decide where it runs.
+func (r *gl053) CheckDocument(doc *parser.Document, file string) []finding.Finding {
+	if contextOf(doc).child {
+		return nil
+	}
+	return r.Check(doc.Root, file)
+}
+
 func (r *gl053) Check(doc *yaml.Node, file string) []finding.Finding {
 	mapping := parser.Unwrap(doc)
 	if mapping.Kind != yaml.MappingNode {

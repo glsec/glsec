@@ -23,9 +23,25 @@ func (r *gl013) ID() string { return "GL013" }
 // matching the name-keyword semantics (which also include staging).
 var prodTiers = []string{"production", "staging"}
 
+// CheckDocument reads the file in its pipeline context (#1502): a child
+// pipeline or included file that only protected refs reach has no job that
+// runs on an unprotected branch, and in a child pipeline started on any ref,
+// if: $CI_PIPELINE_SOURCE == "parent_pipeline" restricts nothing.
+func (r *gl013) CheckDocument(doc *parser.Document, file string) []finding.Finding {
+	ctx := contextOf(doc)
+	if ctx.protected {
+		return nil
+	}
+	return r.check(doc.Root, file, ctx)
+}
+
 func (r *gl013) Check(doc *yaml.Node, file string) []finding.Finding {
+	return r.check(doc, file, docContext{})
+}
+
+func (r *gl013) check(doc *yaml.Node, file string, ctx docContext) []finding.Finding {
 	// A workflow that only runs on protected refs keeps every branch out.
-	scope := newRefScope(parser.Unwrap(doc))
+	scope := ctx.scope(parser.Unwrap(doc))
 	if scope.protectedOnly {
 		return nil
 	}

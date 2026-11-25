@@ -552,6 +552,7 @@ func scanRoot(file string, opt scanOptions) (findings []finding.Finding, suppres
 		}
 		allDocs = files.collect(doc, false)
 		files.resolveParentLocks()
+		files.resolveParentProtection()
 		files.flushFailures()
 	} else if len(parser.LocalIncludePaths(doc.Root)) > 0 || len(parser.ChildPipelinePaths(doc.Root)) > 0 {
 		_, _ = fmt.Fprintf(opt.stderr, "note: %s: local includes and child pipelines are not read; name the file with --stdin-filename to resolve them\n", file)
@@ -943,6 +944,9 @@ type pipelineFiles struct {
 	// trigger jobs that start it, for resolveParentLocks (#1483).
 	childDocs map[string]*parser.Document
 	triggers  map[string][]triggerEdge
+	// includeEdges holds the include: entries that pull each included file
+	// into its pipeline, for resolveParentProtection (#1502).
+	includeEdges map[*parser.Document][]triggerEdge
 	// failures holds files that could not be read, keyed by absolute path,
 	// recorded as they are first seen. The disposition is reported once, after
 	// the whole pipeline is collected, at the strongest obligation any
@@ -960,6 +964,10 @@ type pipelineFiles struct {
 type triggerEdge struct {
 	parent        *parser.Document
 	waits, locked bool
+	// from is the file the trigger job or include: entry is in, protected
+	// whether it runs on protected refs only (#1502).
+	from      *parser.Document
+	protected bool
 }
 
 // readFailure records a file glsec could not read and the strongest obligation
@@ -981,6 +989,8 @@ func newPipelineFiles(w io.Writer, rootDir string, excludePaths []string, file s
 		failures:  map[string]*readFailure{},
 		childDocs: map[string]*parser.Document{},
 		triggers:  map[string][]triggerEdge{},
+
+		includeEdges: map[*parser.Document][]triggerEdge{},
 	}
 	if abs, err := filepath.Abs(file); err == nil {
 		p.children[abs] = true
@@ -1069,6 +1079,7 @@ func (p *pipelineFiles) collect(doc *parser.Document, optional bool) []*parser.D
 				// Included again: GitLab merges it again, so its place can change.
 				if known != nil && known.IncludedBy == pipeline {
 					doc.Includes = append(doc.Includes, known)
+					p.includeEdges[known] = append(p.includeEdges[known], trigger)
 				} else if known == nil && !optional {
 					// The earlier include of this file failed to read; a
 					// mandatory reference now strengthens its obligation so
@@ -1105,14 +1116,17 @@ func (p *pipelineFiles) collect(doc *parser.Document, optional bool) []*parser.D
 			p.members[pipeline][abs] = childDoc
 			childDoc.IncludedBy = pipeline
 			doc.Includes = append(doc.Includes, childDoc)
+			p.includeEdges[childDoc] = append(p.includeEdges[childDoc], trigger)
 		} else {
 			p.members[childDoc] = map[string]*parser.Document{abs: childDoc}
 			p.childDocs[abs] = childDoc
+			childDoc.Child = true
 		}
 		all = append(all, p.collect(childDoc, optional)...)
 	}
 	for _, child := range parser.ChildPipelines(doc.Root) {
-		follow("child pipeline", child.Path, false, optional, triggerEdge{pipeline, child.Waits, child.Locked})
+		protected := rules.RunsOnProtectedRefsOnly(doc.Root, child.Job) || rules.RunsOnProtectedRefsOnly(pipeline.Root, child.Job)
+		follow("child pipeline", child.Path, false, optional, triggerEdge{pipeline, child.Waits, child.Locked, doc, protected})
 	}
 	// Files pulled in with include: local are part of this pipeline (#810).
 	for _, include := range parser.LocalIncludes(doc.Root) {
@@ -1120,14 +1134,52 @@ func (p *pipelineFiles) collect(doc *parser.Document, optional bool) []*parser.D
 		conditional := optional || include.Conditional
 		re := parser.IncludeGlob(pattern)
 		if re == nil {
-			follow("include", pattern, true, conditional, triggerEdge{})
+			follow("include", pattern, true, conditional, triggerEdge{from: doc, protected: rules.IncludeRulesProtectedOnly(include.Rules)})
 			continue
 		}
 		for _, path := range globIncludes(p.w, p.rootDir, pattern, re) {
-			follow("include", path, true, conditional, triggerEdge{})
+			follow("include", path, true, conditional, triggerEdge{from: doc, protected: rules.IncludeRulesProtectedOnly(include.Rules)})
 		}
 	}
 	return all
+}
+
+// resolveParentProtection marks the child pipelines and included files that
+// run on protected refs only because of where they are started or pulled in
+// (#1502): every trigger job that starts the child, or every include: entry
+// that pulls the file in, runs on protected refs only, or sits in a file that
+// is itself protected that way. One edge without that leaves the file
+// unprotected, and the root pipeline is never protected by a parent.
+func (p *pipelineFiles) resolveParentProtection() {
+	edgeProtected := func(t triggerEdge) bool {
+		return t.protected || t.from != nil && (t.from.ProtectedByParent || t.from.IncludedBy != nil && t.from.IncludedBy.ProtectedByParent)
+	}
+	allProtected := func(edges []triggerEdge) bool {
+		if len(edges) == 0 {
+			return false
+		}
+		for _, t := range edges {
+			if !edgeProtected(t) {
+				return false
+			}
+		}
+		return true
+	}
+	for changed := true; changed; {
+		changed = false
+		for abs, child := range p.childDocs {
+			if !child.ProtectedByParent && allProtected(p.triggers[abs]) {
+				child.ProtectedByParent = true
+				changed = true
+			}
+		}
+		for doc, edges := range p.includeEdges {
+			if !doc.ProtectedByParent && allProtected(edges) {
+				doc.ProtectedByParent = true
+				changed = true
+			}
+		}
+	}
 }
 
 // resolveParentLocks marks the child pipelines that run entirely under a

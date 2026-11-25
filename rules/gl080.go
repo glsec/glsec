@@ -18,14 +18,30 @@ var GL080 = &gl080{}
 
 func (r *gl080) ID() string { return "GL080" }
 
+// CheckDocument reads the file in its pipeline context (#1502): a child
+// pipeline or included file that only protected refs reach has no job that
+// runs on an unprotected branch, and in a child pipeline started on any ref,
+// if: $CI_PIPELINE_SOURCE == "parent_pipeline" restricts nothing.
+func (r *gl080) CheckDocument(doc *parser.Document, file string) []finding.Finding {
+	ctx := contextOf(doc)
+	if ctx.protected {
+		return nil
+	}
+	return r.check(doc.Root, file, ctx)
+}
+
 func (r *gl080) Check(doc *yaml.Node, file string) []finding.Finding {
+	return r.check(doc, file, docContext{})
+}
+
+func (r *gl080) check(doc *yaml.Node, file string, ctx docContext) []finding.Finding {
 	mapping := parser.Unwrap(doc)
 
 	// A workflow:rules that admits protected refs only keeps every job off
 	// unprotected branches. Any other workflow, such as GitLab's recommended
 	// switch between branch and merge request pipelines, still runs an
 	// unguarded job on every branch (#1492).
-	scope := newRefScope(mapping)
+	scope := ctx.scope(mapping)
 	if scope.protectedOnly {
 		return nil
 	}
@@ -72,11 +88,11 @@ func (r *gl080) Check(doc *yaml.Node, file string) []finding.Finding {
 			// - when: manual fallback or changes: alone, restricts nothing:
 			// GitLab runs the job by the first entry that matches (#1498).
 			entry, _ := scope.fallbackEntry(parser.FindKey(job, "rules"))
-			if entry == nil || !gl080Sensitive(in, name.Value, own, job, vars) {
+			if entry == nil || gl013OwnsOpen(job) || !gl080Sensitive(in, name.Value, own, job, vars) {
 				return
 			}
 			msg = fmt.Sprintf(
-				"sensitive job %q has a rules: entry without if: (%s) that matches on every branch — GitLab runs the job by the first entry that matches, so any branch can run it, also a fork's merge request a maintainer runs here; restrict that entry to protected refs or drop it",
+				"sensitive job %q has a rules: entry %s that matches on every branch — GitLab runs the job by the first entry that matches, so any branch can run it, also a fork's merge request a maintainer runs here; restrict that entry to protected refs or drop it",
 				name.Value, gl080EntryLabel(entry),
 			)
 		default:
@@ -304,6 +320,16 @@ func jobManualOnly(job *yaml.Node) bool {
 // gl013Owns reports whether GL013 already flags this job (a production-like
 // environment or the main Pages site, with no rules:/only: restriction), so
 // GL080 can defer to it.
+// gl013OwnsOpen reports a production deploy whose open rules: entry GL013
+// reports (#1490), so GL080 doesn't report the same entry again.
+func gl013OwnsOpen(job *yaml.Node) bool {
+	env := parser.FindKey(job, "environment")
+	if env == nil {
+		return false
+	}
+	return isProductionOnly(extractEnvName(env), extractDeploymentTier(env)) && deploysToEnvironment(env)
+}
+
 func gl013Owns(name string, job *yaml.Node) bool {
 	if !hasExecutionRestriction(job) && publishesMainPages(name, parser.FindKey(job, "pages")) {
 		return true
@@ -474,13 +500,16 @@ func ephemeralEnvironment(env *yaml.Node) bool {
 
 // gl080EntryLabel names a rules: entry without if: by what it has instead.
 func gl080EntryLabel(entry *yaml.Node) string {
+	if cond := parser.FindKey(entry, "if"); cond != nil && cond.Kind == yaml.ScalarNode {
+		return "(if: " + cond.Value + ", true in every child pipeline the trigger job starts on any branch)"
+	}
 	for _, key := range []string{"changes", "exists"} {
 		if parser.FindKey(entry, key) != nil {
-			return key + ":"
+			return "without if: (" + key + ":)"
 		}
 	}
 	if w := parser.FindKey(entry, "when"); w != nil && w.Kind == yaml.ScalarNode {
-		return "when: " + w.Value
+		return "without if: (when: " + w.Value + ")"
 	}
-	return "no condition"
+	return "without if: (no condition)"
 }

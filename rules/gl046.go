@@ -39,7 +39,7 @@ func (r *gl046) Check(doc *yaml.Node, file string) []finding.Finding {
 	aliases := newUserAliases(doc)
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
 		if !protectedOnly && !strings.HasPrefix(name.Value, ".") {
-			if eff := in.Effective(job); !registryCacheProtectedOnly(eff) {
+			if eff := in.Effective(job); !jobProtectedOnly(eff) {
 				findings = append(findings, checkRegistryBuildCache(name.Value, eff, file)...)
 			}
 		}
