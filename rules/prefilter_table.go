@@ -501,6 +501,7 @@ var prefilterTable = map[string]prefilterLits{
 	"^\\$\\{?([A-Za-z_][A-Za-z0-9_]*)\\}?$":                                                                                         {anyOf: []string{"$"}},
 	"^\\$\\{?(\\w+)\\}?\\s*(==|!=)\\s*[\"']([^\"']*)[\"']$":                                                                         {anyOf: []string{"==", "!="}},
 	"^\\$\\{?CI_COMMIT_(?:BRANCH|REF_NAME)\\}?(?:\\s*!=\\s*(?:null|\"\"|''))?$":                                                     {anyOf: []string{"$CI_COMMIT_BRANCH", "$CI_COMMIT_REF_NAME", "${CI_COMMIT_BRANCH", "${CI_COMMIT_REF_NAME"}},
+	"^\\$\\{?CI_COMMIT_REF_SLUG\\}?\\s*==\\s*[\"'][a-z0-9-]+[\"']$":                                                                 {anyOf: []string{"$CI_COMMIT_REF_SLUG", "${CI_COMMIT_REF_SLUG"}},
 	"^\\$\\{?CI_COMMIT_SHA\\}?$":                                                                                                    {anyOf: []string{"$CI_COMMIT_SHA", "${CI_COMMIT_SHA"}},
 	"^\\$\\{?CI_PIPELINE_SOURCE\\}?\\s*==\\s*[\"']parent_pipeline[\"']$":                                                            {anyOf: []string{"$CI_PIPELINE_SOURCE", "${CI_PIPELINE_SOURCE"}},
 	"^\\$\\{?CI_PROJECT_DIR\\}?/":                                                                                                   {anyOf: []string{"$CI_PROJECT_DIR/", "$CI_PROJECT_DIR}/", "${CI_PROJECT_DIR/", "${CI_PROJECT_DIR}/"}},

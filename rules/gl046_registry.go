@@ -18,14 +18,43 @@ import (
 // that every pipeline with registry access reads and writes: a branch can
 // push cache entries that a protected build then reuses as layers. The caller
 // skips jobs that run on protected refs only.
-func checkRegistryBuildCache(name string, job *yaml.Node, file string) []finding.Finding {
+func checkRegistryBuildCache(name string, job, globalVars *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
+	// Variables the cache reference may go through: the file's and the job's
+	// variables:, then shell assignments earlier in the script. Built on the
+	// first cache write only.
+	var vars map[string]string
+	var assigned [][2]string
+	resolve := func(s string) string {
+		if !strings.Contains(s, "$") {
+			return s
+		}
+		if vars == nil {
+			vars = literalVariables(globalVars)
+			for k, v := range literalVariables(parser.FindKey(job, "variables")) {
+				vars[k] = v
+			}
+		}
+		for _, a := range assigned {
+			vars[a[0]] = a[1]
+		}
+		assigned = assigned[:0]
+		return expandVars(s, vars, "", 0)
+	}
 	for _, line := range CollectJobScriptLines(job) {
-		if !strings.Contains(line.Value, "cache") {
+		hasCache := strings.Contains(line.Value, "cache")
+		if !hasCache && !strings.Contains(line.Value, "=") {
 			continue
 		}
 		for _, cmd := range shellCommands(line.Value) {
-			ref := registryCacheWrite(commandWords(cmd.text))
+			if m := shellAssignRe.FindStringSubmatch(cmd.text); m != nil {
+				assigned = append(assigned, [2]string{m[1], strings.Trim(strings.TrimSpace(m[2]), `"'`)})
+				continue
+			}
+			if !hasCache {
+				continue
+			}
+			ref := registryCacheWrite(commandWords(cmd.text), resolve)
 			if ref == "" {
 				continue
 			}
@@ -46,9 +75,10 @@ func checkRegistryBuildCache(name string, job *yaml.Node, file string) []finding
 // registryCacheWrite returns the cache reference a build command writes to the
 // registry, or "" when it writes none, writes a per-run reference, or only
 // reads one (--cache-from). Covered: Kaniko --cache (to --cache-repo, by
-// default <destination>/cache), docker buildx build / docker build with
-// --cache-to type=registry, and buildctl --export-cache type=registry.
-func registryCacheWrite(words []string) string {
+// default the first --destination's repository plus /cache), docker buildx
+// build / docker build with --cache-to type=registry, and buildctl
+// --export-cache type=registry. resolve expands variables in a reference.
+func registryCacheWrite(words []string, resolve func(string) string) string {
 	words = stripExecWrapper(words)
 	if len(words) == 0 {
 		return ""
@@ -57,7 +87,7 @@ func registryCacheWrite(words []string) string {
 	var ref string
 	switch {
 	case name == "executor" || strings.HasSuffix(words[0], "/kaniko/executor"):
-		cache, repo := false, ""
+		cache, repo, dest := false, "", ""
 		for i := 1; i < len(words); i++ {
 			switch w := words[i]; {
 			case w == "--cache" || w == "--cache=true":
@@ -67,13 +97,24 @@ func registryCacheWrite(words []string) string {
 				repo = words[i]
 			case strings.HasPrefix(w, "--cache-repo="):
 				repo = strings.TrimPrefix(w, "--cache-repo=")
+			case (w == "--destination" || w == "-d") && i+1 < len(words) && dest == "":
+				i++
+				dest = words[i]
+			case strings.HasPrefix(w, "--destination=") && dest == "":
+				dest = strings.TrimPrefix(w, "--destination=")
 			}
 		}
 		if !cache {
 			return ""
 		}
 		if repo == "" {
-			repo = "<destination>/cache"
+			// Kaniko derives the cache repository from the destination's,
+			// without its tag.
+			if dest == "" {
+				repo = "<destination>/cache"
+			} else {
+				repo = imageRepository(resolve(strings.Trim(dest, `"'`))) + "/cache"
+			}
 		}
 		ref = "kaniko --cache-repo " + repo
 	case name == "docker" || name == "buildctl":
@@ -101,12 +142,24 @@ func registryCacheWrite(words []string) string {
 	if ref == "" {
 		return ""
 	}
+	expanded := resolve(ref)
 	for _, v := range perRunTagVars {
-		if strings.Contains(ref, "$"+v) || strings.Contains(ref, "${"+v+"}") {
+		if strings.Contains(expanded, "$"+v) || strings.Contains(expanded, "${"+v+"}") {
 			return ""
 		}
 	}
 	return ref
+}
+
+// imageRepository returns an image reference without its tag or digest.
+func imageRepository(image string) string {
+	if i := strings.Index(image, "@"); i >= 0 {
+		image = image[:i]
+	}
+	if i := strings.LastIndex(image, ":"); i > strings.LastIndex(image, "/") {
+		image = image[:i]
+	}
+	return image
 }
 
 // registryCacheRef returns the ref= of a type=registry cache export.
@@ -126,6 +179,12 @@ func registryCacheRef(spec string) string {
 	}
 	return ref
 }
+
+// slugEqualityRe matches a test of the ref slug against a branch name. Only a
+// branch whose name slugs to it runs the job; another branch with that slug,
+// such as Master, needs push access, which already lets its pipeline write
+// to the registry with the job token.
+var slugEqualityRe = mustCompilePrefiltered(`^\$\{?CI_COMMIT_REF_SLUG\}?\s*==\s*["'][a-z0-9-]+["']$`)
 
 // jobProtectedOnly reports a job that runs on protected refs only,
 // evaluated as GL013 and GL081 do (#1494): only: lists nothing but main,
@@ -158,7 +217,7 @@ func jobProtectedOnly(job *yaml.Node) bool {
 			continue
 		}
 		cond := parser.FindKey(item, "if")
-		if cond == nil || !ifRestrictsToProtected(cond.Value) {
+		if cond == nil || !ifRestrictsToProtected(cond.Value) && !slugEqualityRe.MatchString(strings.TrimSpace(cond.Value)) {
 			return false
 		}
 		running++

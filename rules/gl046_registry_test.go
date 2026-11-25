@@ -39,6 +39,16 @@ build:
 		{"any-branch rules", "build:\n  rules:\n    - if: $CI_COMMIT_BRANCH\n  script:\n    - " + kaniko + " --cache\n", 1},
 		{"template only", ".build:\n  script:\n    - " + kaniko + " --cache\n", 0},
 		{"through extends", ".build:\n  script:\n    - " + kaniko + " --cache\nbuild:\n  extends: .build\n", 1},
+		{"kaniko default repo per branch", "build:\n  script:\n    - /kaniko/executor --destination $CI_REGISTRY_IMAGE/app-$CI_COMMIT_REF_SLUG:latest --cache\n", 0},
+		{"kaniko default repo per branch through variables", "variables:\n  IMG: $CI_REGISTRY_IMAGE/app-$CI_COMMIT_REF_SLUG\nbuild:\n  script:\n    - /kaniko/executor --destination $IMG:latest --cache=true\n", 0},
+		{"kaniko default repo, per-run tag only", "build:\n  script:\n    - /kaniko/executor --destination=$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG --cache\n", 1},
+		{"kaniko default repo, per-run tag through variables", "variables:\n  IMG: $CI_REGISTRY_IMAGE/frontend:build-$CI_PIPELINE_IID\nbuild:\n  script:\n    - /kaniko/executor --destination \"$IMG\" --cache\n", 1},
+		{"per-run ref through variables", "variables:\n  IMAGE: ${CI_REGISTRY_IMAGE}:dev-${CI_COMMIT_SHORT_SHA}\nbuild:\n  script:\n    - docker buildx build --cache-to=type=registry,ref=${IMAGE}-cache --push .\n", 0},
+		{"per-run ref through a job variable", "build:\n  variables:\n    CACHE: $CI_REGISTRY_IMAGE/cache:$CI_COMMIT_REF_SLUG\n  script:\n    - docker buildx build --cache-to type=registry,ref=$CACHE .\n", 0},
+		{"per-run ref through a shell assignment", "build:\n  script:\n    - CACHE_IMAGE=\"$CI_REGISTRY_IMAGE/cache:$CI_COMMIT_REF_SLUG\"\n    - docker buildx build --cache-to \"type=registry,ref=$CACHE_IMAGE\" .\n", 0},
+		{"fixed ref through variables", "variables:\n  CACHE: $CI_REGISTRY_IMAGE:buildcache\nbuild:\n  script:\n    - docker buildx build --cache-to type=registry,ref=$CACHE .\n", 1},
+		{"ref slug equality", "build:\n  rules:\n    - if: $CI_COMMIT_REF_SLUG == \"master\"\n  script:\n    - " + kaniko + " --cache\n", 0},
+		{"ref slug inequality", "build:\n  rules:\n    - if: $CI_COMMIT_REF_SLUG != \"master\"\n  script:\n    - " + kaniko + " --cache\n", 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var got int

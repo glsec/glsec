@@ -40,7 +40,7 @@ func (r *gl046) Check(doc *yaml.Node, file string) []finding.Finding {
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
 		if !protectedOnly && !strings.HasPrefix(name.Value, ".") {
 			if eff := in.Effective(job); !jobProtectedOnly(eff) {
-				findings = append(findings, checkRegistryBuildCache(name.Value, eff, file)...)
+				findings = append(findings, checkRegistryBuildCache(name.Value, eff, parser.FindKey(mapping, "variables"), file)...)
 			}
 		}
 		if !in.Has(job, "cache") {
