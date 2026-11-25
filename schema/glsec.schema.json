@@ -61,6 +61,11 @@
       "type": "array",
       "items": { "type": "string" }
     },
+    "restricted_oidc_audiences": {
+      "description": "id_tokens audiences the cloud side restricts, such as a read-only identity pool merge request pipelines may use. GL081 reports a job as info instead of warn when every aud: of its tokens is on the list. Exact matches only; an aud: built from a variable never matches.",
+      "type": "array",
+      "items": { "type": "string" }
+    },
     "shellcheck": {
       "description": "ShellCheck integration: lint the shell in script:, before_script:, after_script:, hooks:pre_get_sources_script: and run: steps.",
       "type": "object",

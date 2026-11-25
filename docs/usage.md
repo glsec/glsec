@@ -169,6 +169,9 @@ require_image_digest: false  # true also warns on version tags without a digest
 # Optional include policy (GL003 and GL041):
 require_include_sha: false   # true also warns on version tags, for project includes and components
 
+# Optional OIDC policy (GL081):
+restricted_oidc_audiences: [] # id_tokens audiences restricted on the cloud side (read-only pools) are reported as info
+
 exclude_paths:
   - legacy/.gitlab-ci.yml
   - infra/old-pipelines/**

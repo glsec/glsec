@@ -296,6 +296,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	rules.GL041.SetRequireIncludeSHA(cfg.RequireIncludeSHA)
 	rules.GL065.SetAllowedRegistries(cfg.AllowedRegistries)
 	rules.GL075.SetAllowedIncludeSources(cfg.AllowedIncludeSources)
+	rules.GL081.SetRestrictedAudiences(cfg.RestrictedOIDCAudiences)
 
 	// --gitlab-version flag overrides the config file value.
 	gitlabVersionStr := cfg.GitLabVersion

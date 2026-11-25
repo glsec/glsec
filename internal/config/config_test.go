@@ -66,6 +66,16 @@ func TestRequireIncludeSHA(t *testing.T) {
 	}
 }
 
+func TestRestrictedOIDCAudiences(t *testing.T) {
+	if len(Default().RestrictedOIDCAudiences) != 0 {
+		t.Fatal("restricted audiences must be opt-in")
+	}
+	got := parseStr(t, "restricted_oidc_audiences: [https://idp.example.org/read-pool, ro]").RestrictedOIDCAudiences
+	if len(got) != 2 || got[0] != "https://idp.example.org/read-pool" || got[1] != "ro" {
+		t.Errorf("got %v", got)
+	}
+}
+
 func TestLoad_MissingDefaultFile(t *testing.T) {
 	dir := t.TempDir()
 	orig, _ := os.Getwd()

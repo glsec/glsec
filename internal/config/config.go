@@ -85,6 +85,11 @@ type Config struct {
 	// flags any include:project / include:component / include:remote whose source
 	// is not on the list. Empty disables the check.
 	AllowedIncludeSources []string `yaml:"allowed_include_sources"`
+	// RestrictedOIDCAudiences lists id_tokens audiences the project restricts
+	// on the cloud side, such as a read-only identity pool that merge request
+	// pipelines may use. GL081 reports a token whose every aud: is on the list
+	// as info instead of a warning (#1484). Exact matches only.
+	RestrictedOIDCAudiences []string `yaml:"restricted_oidc_audiences"`
 	// ShellCheck holds optional ShellCheck integration settings.
 	ShellCheck ShellCheckConfig `yaml:"shellcheck"`
 	// RequireIgnoreReason makes an inline `# glsec:ignore` without a `-- reason`
