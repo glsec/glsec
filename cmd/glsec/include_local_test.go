@@ -154,7 +154,7 @@ func TestIncludeLocal_Excluded(t *testing.T) {
 func TestIncludeLocal_PipelineContext(t *testing.T) {
 	t.Run("workflow and default of the root", func(t *testing.T) {
 		got, _ := scanIncludes(t, map[string]string{
-			".gitlab-ci.yml": "workflow:\n  rules:\n    - if: $CI_PIPELINE_SOURCE == \"push\"\ndefault:\n  image: node:latest\n  tags: [docker]\ninclude: ci/deploy.yml\n",
+			".gitlab-ci.yml": "workflow:\n  rules:\n    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH\ndefault:\n  image: node:latest\n  tags: [docker]\ninclude: ci/deploy.yml\n",
 			"ci/deploy.yml":  "deploy:\n  stage: deploy\n  resource_group: prod\n  script: [./deploy.sh]\n",
 		})
 		for _, rule := range []string{"GL080", "GL017", "GL001"} {

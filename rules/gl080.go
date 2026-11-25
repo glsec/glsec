@@ -21,15 +21,15 @@ func (r *gl080) ID() string { return "GL080" }
 func (r *gl080) Check(doc *yaml.Node, file string) []finding.Finding {
 	mapping := parser.Unwrap(doc)
 
-	// A restricting top-level workflow:rules gates every job's pipeline source,
-	// so no job needs its own guard. Suppress conservatively: any workflow:rules
-	// carrying an if: condition is treated as restricting the source. It does
-	// not change which jobs run only in merge request pipelines (#1142).
-	wfRestricts := workflowRestrictsSource(mapping)
-	mrPipelines := !wfRestricts || workflowAdmitsMR(mapping)
-	if wfRestricts && !mrPipelines {
+	// A workflow:rules that admits protected refs only keeps every job off
+	// unprotected branches. Any other workflow, such as GitLab's recommended
+	// switch between branch and merge request pipelines, still runs an
+	// unguarded job on every branch (#1492).
+	scope := newRefScope(mapping)
+	if scope.protectedOnly {
 		return nil
 	}
+	vars := parser.FindKey(mapping, "variables")
 
 	in := NewInheritance(doc)
 	var findings []finding.Finding
@@ -53,16 +53,16 @@ func (r *gl080) Check(doc *yaml.Node, file string) []finding.Finding {
 		state := jobGuardState(job)
 		msg := ""
 		switch {
-		case state != guardEffective && !wfRestricts:
+		case state != guardEffective:
 			// An unguarded job is reported only when it really deploys: an
 			// environment, a deploy/publish/infra-apply command, or a
 			// deploy-named job that uses a credential (#1371). A deploy-sounding
 			// name alone is not enough.
-			if !gl080Sensitive(in, name.Value, own, job) {
+			if !gl080Sensitive(in, name.Value, own, job, vars) {
 				return
 			}
 			msg = gl080Message(name.Value, state, jobManualOnly(job))
-		case state == guardEffective && mrPipelines && gl080MROnlyProduction(in, name.Value, own, job):
+		case state == guardEffective && scope.mrPipelines && gl080MROnlyProduction(in, name.Value, own, job):
 			msg = fmt.Sprintf(
 				"sensitive job %q runs only in merge request pipelines — it deploys or publishes the MR's source commit before anyone merged it, and to work there its credentials can't be protected variables, so every branch can read them; restrict the job to the protected branch ($CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH) or to tags",
 				name.Value,
@@ -171,7 +171,7 @@ var gl080NotDeployKeywords = []string{
 //     (a secret-named variable), so a custom deploy (`./deploy.sh "$TOKEN"`)
 //     glsec can't read as a command still counts, while a `publish-docs` or
 //     `release-notes` job with no credential does not.
-func gl080Sensitive(in *Inheritance, name string, own, job *yaml.Node) bool {
+func gl080Sensitive(in *Inheritance, name string, own, job, globalVars *yaml.Node) bool {
 	if env := parser.FindKey(job, "environment"); env != nil && !envActionStop(env) && extractEnvName(env) != "" {
 		return true
 	}
@@ -181,7 +181,7 @@ func gl080Sensitive(in *Inheritance, name string, own, job *yaml.Node) bool {
 	if name == "pages" || parser.FindKey(job, "pages") != nil {
 		return true
 	}
-	if jobScriptDeploys(in, own) {
+	if gl080ScriptDeploys(job, globalVars) {
 		return true
 	}
 	hay := strings.ToLower(name) + " " + jobStageName(job)
@@ -304,4 +304,134 @@ func gl013Owns(name string, job *yaml.Node) bool {
 	tier := extractDeploymentTier(env)
 	prod := (envName != "" && isProdEnv(envName)) || isProdTier(tier)
 	return prod && !hasExecutionRestriction(job)
+}
+
+// gl080ScriptDeploys is jobScriptDeploys without the commands that ship
+// nothing another branch depends on (#1492): a container image pushed under a
+// tag made from the branch, commit, pipeline, job or merge request, and a
+// publish or apply in dry-run mode. A push of latest, a fixed tag or a
+// version still counts, since any branch can overwrite what others pull.
+func gl080ScriptDeploys(job, globalVars *yaml.Node) bool {
+	jobVars := parser.FindKey(job, "variables")
+	for _, line := range CollectJobScriptLines(job) {
+		if !lineDeploys(line.Value) {
+			continue
+		}
+		rest := line.Value
+		for _, cmd := range shellCommands(blankShellComments(line.Value)) {
+			words := stripExecWrapper(commandWords(cmd.text))
+			if dryRun(words) || ephemeralImagePush(words, jobVars, globalVars) {
+				rest = strings.Replace(rest, cmd.text, "", 1)
+			}
+		}
+		if lineDeploys(rest) {
+			return true
+		}
+	}
+	return false
+}
+
+// perRunTagVars name a branch, commit, pipeline, job or merge request; an
+// image tag built from one is new for each of them.
+var perRunTagVars = []string{
+	"CI_COMMIT_REF_SLUG", "CI_COMMIT_REF_NAME", "CI_COMMIT_BRANCH",
+	"CI_COMMIT_SHA", "CI_COMMIT_SHORT_SHA", "CI_PIPELINE_ID", "CI_PIPELINE_IID",
+	"CI_JOB_ID", "CI_MERGE_REQUEST_IID",
+}
+
+// ephemeralImagePush reports a docker, podman, buildah or nerdctl push of one
+// image whose tag names the run (perRunTagVars). An image given as a single
+// variable is resolved once through the job's and the file's variables:.
+func ephemeralImagePush(words []string, jobVars, globalVars *yaml.Node) bool {
+	switch commandName(words) {
+	case "docker", "podman", "buildah", "nerdctl":
+	default:
+		return false
+	}
+	i := 1
+	if i < len(words) && words[i] == "image" {
+		i++
+	}
+	if i >= len(words) || words[i] != "push" {
+		return false
+	}
+	image := ""
+	for _, w := range words[i+1:] {
+		if w == "--all-tags" || w == "-a" {
+			return false
+		}
+		if !strings.HasPrefix(w, "-") {
+			image = w
+			break
+		}
+	}
+	if image == "" {
+		return false
+	}
+	if name, ok := soleVariable(image); ok {
+		image = variableValue(name, jobVars, globalVars)
+	}
+	tag := imageTag(image)
+	for _, v := range perRunTagVars {
+		if strings.Contains(tag, "$"+v) || strings.Contains(tag, "${"+v+"}") {
+			return true
+		}
+	}
+	return false
+}
+
+// soleVariable reports whether s is exactly one variable reference, $NAME or
+// ${NAME}, and returns its name.
+func soleVariable(s string) (string, bool) {
+	name := strings.TrimPrefix(s, "$")
+	if name == s {
+		return "", false
+	}
+	if strings.HasPrefix(name, "{") && strings.HasSuffix(name, "}") {
+		name = name[1 : len(name)-1]
+	}
+	for _, c := range name {
+		if c != '_' && (c < 'A' || c > 'Z') && (c < 'a' || c > 'z') && (c < '0' || c > '9') {
+			return "", false
+		}
+	}
+	return name, name != ""
+}
+
+func variableValue(name string, scopes ...*yaml.Node) string {
+	for _, vars := range scopes {
+		if vars == nil || vars.Kind != yaml.MappingNode {
+			continue
+		}
+		v := parser.FindKey(vars, name)
+		if v == nil {
+			continue
+		}
+		if v.Kind == yaml.MappingNode {
+			v = parser.FindKey(v, "value")
+		}
+		if v != nil && v.Kind == yaml.ScalarNode {
+			return v.Value
+		}
+	}
+	return ""
+}
+
+// dryRun reports a command run in dry-run mode, which changes nothing:
+// --dry-run (kubectl's --dry-run=none is a real run) or dart's pub publish -n.
+func dryRun(words []string) bool {
+	pub := false
+	for i, w := range words {
+		switch {
+		case w == "--dry-run":
+			return true
+		case strings.HasPrefix(w, "--dry-run="):
+			return strings.TrimPrefix(w, "--dry-run=") != "none"
+		case w == "pub" && i+1 < len(words) && words[i+1] == "publish":
+			pub = true
+		case pub && w == "-n":
+			return true
+		}
+	}
+	return false
 }
