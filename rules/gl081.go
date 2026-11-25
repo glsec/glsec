@@ -45,7 +45,8 @@ func (r *gl081) Check(doc *yaml.Node, file string) []finding.Finding {
 	// file. Note this is stricter than GL080's workflowRestrictsSource: a
 	// workflow that merely carries an if: but still admits merge_request_event
 	// does not protect the token and must not suppress here.
-	if workflowRestrictsToProtected(mapping) {
+	scope := newRefScope(mapping)
+	if scope.protectedOnly {
 		return nil
 	}
 
@@ -71,7 +72,7 @@ func (r *gl081) Check(doc *yaml.Node, file string) []finding.Finding {
 		// only: merge_requests) lets any MR mint the token, even one that is
 		// otherwise an "effective" restriction on some other ref.
 		if jobAdmitsMR(job) {
-			findings = append(findings, r.finding(name, job, file, cred, gl081ReasonAdmits))
+			findings = append(findings, r.finding(name, job, file, cred, gl081ReasonAdmits, ""))
 			return
 		}
 
@@ -80,7 +81,14 @@ func (r *gl081) Check(doc *yaml.Node, file string) []finding.Finding {
 		// effective guard (restricted to a protected ref, tag, or branch) is
 		// accepted.
 		if jobGuardState(job) != guardEffective {
-			findings = append(findings, r.finding(name, job, file, cred, gl081ReasonUnguarded))
+			findings = append(findings, r.finding(name, job, file, cred, gl081ReasonUnguarded, ""))
+			return
+		}
+		// A guard is no restriction when one of its rules: entries matches
+		// on any branch: GitLab runs the job by the first entry that matches
+		// (#1491).
+		if entry, why := scope.openEntry(parser.FindKey(job, "rules")); entry != nil {
+			findings = append(findings, r.finding(name, job, file, cred, gl081ReasonOpenEntry, why))
 		}
 	})
 	return findings
@@ -116,9 +124,12 @@ type gl081Reason int
 const (
 	gl081ReasonAdmits gl081Reason = iota
 	gl081ReasonUnguarded
+	// gl081ReasonOpenEntry: a rules: entry that runs the job matches on any
+	// branch; the finding carries which entry and why.
+	gl081ReasonOpenEntry
 )
 
-func (r *gl081) finding(name, job *yaml.Node, file string, cred gl081Credential, reason gl081Reason) finding.Finding {
+func (r *gl081) finding(name, job *yaml.Node, file string, cred gl081Credential, reason gl081Reason, entry string) finding.Finding {
 	f := finding.Finding{
 		RuleID:   "GL081",
 		Severity: finding.Warn,
@@ -128,19 +139,19 @@ func (r *gl081) finding(name, job *yaml.Node, file string, cred gl081Credential,
 		Col:      name.Column,
 	}
 	if cred == credIdentity {
-		f.Message = gl081IdentityMessage(name.Value, reason)
+		f.Message = gl081IdentityMessage(name.Value, reason, entry)
 		return f
 	}
 	open, restricted := r.tokens(job)
 	if len(open) == 0 && len(restricted) > 0 {
 		f.Severity = finding.Info
-		f.Message = gl081RestrictedMessage(name.Value, restricted, reason)
+		f.Message = gl081RestrictedMessage(name.Value, restricted, reason, entry)
 		return f
 	}
 	if len(open) == 0 {
 		open = restricted
 	}
-	f.Message = gl081TokenMessage(name.Value, open, reason)
+	f.Message = gl081TokenMessage(name.Value, open, reason, entry)
 	return f
 }
 
@@ -195,7 +206,13 @@ func tokenList(names []string) string {
 	return "tokens " + strings.Join(names, ", ")
 }
 
-func gl081IdentityMessage(job string, reason gl081Reason) string {
+func gl081IdentityMessage(job string, reason gl081Reason, entry string) string {
+	if reason == gl081ReasonOpenEntry {
+		return fmt.Sprintf(
+			"job %q gets Google Cloud credentials through identity:, but its rules: entry %s — any branch can use them; restrict every rules: entry that runs the job to protected refs and add the attribute condition assertion.ref_protected == \"true\" to the workload identity provider",
+			job, entry,
+		)
+	}
 	if reason == gl081ReasonAdmits {
 		return fmt.Sprintf(
 			"job %q gets Google Cloud credentials through identity: and its guard admits merge_request_event — any merge request can use them; restrict the job to protected refs and add the attribute condition assertion.ref_protected == \"true\" to the workload identity provider",
@@ -208,7 +225,13 @@ func gl081IdentityMessage(job string, reason gl081Reason) string {
 	)
 }
 
-func gl081TokenMessage(job string, tokens []string, reason gl081Reason) string {
+func gl081TokenMessage(job string, tokens []string, reason gl081Reason, entry string) string {
+	if reason == gl081ReasonOpenEntry {
+		return fmt.Sprintf(
+			"job %q issues OIDC %s (id_tokens:), but its rules: entry %s — any branch can mint a cloud-federating token; restrict every rules: entry that runs the job to protected refs and condition the cloud trust policy on the ref_protected claim",
+			job, tokenList(tokens), entry,
+		)
+	}
 	if reason == gl081ReasonAdmits {
 		return fmt.Sprintf(
 			"job %q issues OIDC %s (id_tokens:) and its guard admits merge_request_event — any merge request can mint a cloud-federating token; restrict the job to protected refs and condition the cloud trust policy on the ref_protected claim",
@@ -221,10 +244,13 @@ func gl081TokenMessage(job string, tokens []string, reason gl081Reason) string {
 	)
 }
 
-func gl081RestrictedMessage(job string, tokens []string, reason gl081Reason) string {
+func gl081RestrictedMessage(job string, tokens []string, reason gl081Reason, entry string) string {
 	where := "with no guard restricting $CI_PIPELINE_SOURCE or the ref"
-	if reason == gl081ReasonAdmits {
+	switch reason {
+	case gl081ReasonAdmits:
 		where = "and its guard admits merge_request_event"
+	case gl081ReasonOpenEntry:
+		where = "and its rules: entry " + entry
 	}
 	it := "it"
 	if len(tokens) > 1 {
