@@ -172,11 +172,19 @@ var (
 )
 
 // excludesUnprotected reports whether a when: never condition keeps every
-// unprotected ref out: one of its || alternatives does.
+// unprotected ref out: one of its || alternatives does, and an && alternative
+// does when each of its operands does.
 func excludesUnprotected(expr string) bool {
 	alts := splitTopLevel(trimOuterParens(strings.TrimSpace(expr)), "||")
 	for _, alt := range alts {
-		if unprotectedExclusionRe.MatchString(trimOuterParens(alt)) {
+		all := true
+		for _, op := range splitTopLevel(trimOuterParens(strings.TrimSpace(alt)), "&&") {
+			if !unprotectedExclusionRe.MatchString(trimOuterParens(strings.TrimSpace(op))) {
+				all = false
+				break
+			}
+		}
+		if all {
 			return true
 		}
 	}
@@ -517,10 +525,16 @@ func workflowRestrictsToProtected(mapping *yaml.Node) bool {
 		if item.Kind != yaml.MappingNode || parser.IsReference(item) {
 			return false
 		}
+		ifNode := parser.FindKey(item, "if")
 		if ruleExcludes(item) {
+			// GitLab stops at the first match, so a when: never entry that is
+			// true on every unprotected ref keeps them out of all the entries
+			// after it.
+			if ifNode != nil && ifNode.Kind == yaml.ScalarNode && excludesUnprotected(ifNode.Value) {
+				return true
+			}
 			continue
 		}
-		ifNode := parser.FindKey(item, "if")
 		if ifNode == nil || ifNode.Kind != yaml.ScalarNode {
 			return false // an unconditional allow admits every source
 		}

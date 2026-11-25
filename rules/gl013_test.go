@@ -369,6 +369,8 @@ deploy:
 		"workflow:\n  rules:\n    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH\n",
 		"workflow:\n  rules:\n    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH\n    - if: $CI_COMMIT_TAG\n",
 		"workflow:\n  rules:\n    - if: $CI_COMMIT_REF_PROTECTED == \"true\"\n",
+		"workflow:\n  rules:\n    - if: $CI_COMMIT_REF_PROTECTED != \"true\"\n      when: never\n    - if: $CI_COMMIT_BRANCH\n",
+		"workflow:\n  rules:\n    - if: $CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH && $CI_COMMIT_TAG == null\n      when: never\n    - when: always\n",
 	}
 	for _, wf := range quiet {
 		if f := findings013(t, wf+jobs); len(f) != 0 {
@@ -379,6 +381,8 @@ deploy:
 		"workflow:\n  rules:\n    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\"\n    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH\n",
 		"workflow:\n  rules:\n    - if: $CI_COMMIT_BRANCH\n",
 		"workflow:\n  rules:\n    - when: always\n",
+		"workflow:\n  rules:\n    - if: $CI_PIPELINE_SOURCE == \"schedule\"\n      when: never\n    - if: $CI_COMMIT_BRANCH\n",
+		"workflow:\n  rules:\n    - if: $CI_COMMIT_BRANCH\n    - if: $CI_COMMIT_REF_PROTECTED != \"true\"\n      when: never\n",
 	}
 	for _, wf := range loud {
 		if f := findings013(t, wf+jobs); len(f) != 2 {
