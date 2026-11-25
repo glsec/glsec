@@ -505,11 +505,14 @@ func workflowAdmitsMR(mapping *yaml.Node) bool {
 // jobGuardState classifies a job's execution guard. only:/except: (legacy) and
 // any rules item carrying an if:/changes:/exists: condition count as effective.
 func jobGuardState(job *yaml.Node) guardState {
-	if parser.FindKey(job, "only") != nil || parser.FindKey(job, "except") != nil {
+	if only := parser.FindKey(job, "only"); only != nil && !isNullNode(only) {
+		return guardEffective
+	}
+	if except := parser.FindKey(job, "except"); except != nil && !isNullNode(except) {
 		return guardEffective
 	}
 	rules := parser.FindKey(job, "rules")
-	if rules == nil {
+	if rules == nil || isNullNode(rules) {
 		return guardAbsent
 	}
 	// A !reference that points into an included file can't be read here: the

@@ -126,7 +126,9 @@ func eachIncludeItem(doc *yaml.Node, fn func(item *yaml.Node, job string)) {
 // earlier ones), else from default:, else from the top-level
 // before_script:/after_script:. Jobs in included files are not followed.
 func (in *Inheritance) Key(job *yaml.Node, key string) *yaml.Node {
-	if v := in.extendedKey(job, key, 0, map[*yaml.Node]bool{}); v != nil {
+	// A null value removes what extends: would give the job, but GitLab
+	// still fills the key from default: (#1503).
+	if v := in.extendedKey(job, key, 0, map[*yaml.Node]bool{}); v != nil && !isNullNode(v) {
 		return v
 	}
 	if in.Inherits(job, "default", key) {
@@ -147,16 +149,34 @@ func (in *Inheritance) extendedKey(job *yaml.Node, key string, depth int, seen m
 		return nil
 	}
 	seen[job] = true
-	if v := parser.FindKey(job, key); v != nil {
-		return v
+	own := parser.FindKey(job, key)
+	if own != nil && own.Kind != yaml.MappingNode {
+		return own
 	}
 	ext := parser.FindKey(job, "extends")
 	if ext == nil || depth >= maxExtendsDepth {
-		return nil
+		return own
 	}
 	parents := []*yaml.Node{ext}
 	if ext.Kind == yaml.SequenceNode {
 		parents = ext.Content
+	}
+	if own != nil {
+		// GitLab deep-merges a mapping with the same key's mappings along the
+		// chain, later extends: entries winning (#1503).
+		var base *yaml.Node
+		for _, p := range parents {
+			if p.Kind != yaml.ScalarNode {
+				continue
+			}
+			if v := in.extendedKey(in.jobs[p.Value], key, depth+1, seen); v != nil && v.Kind == yaml.MappingNode {
+				base = mergeMappings(base, v)
+			}
+		}
+		if base == nil {
+			return own
+		}
+		return mergeMappings(base, own)
 	}
 	for i := len(parents) - 1; i >= 0; i-- {
 		if parents[i].Kind != yaml.ScalarNode {
@@ -184,6 +204,10 @@ func (in *Inheritance) chain(job *yaml.Node, key string, depth int, seen map[*ya
 	}
 	seen[job] = true
 	if v := parser.FindKey(job, key); v != nil {
+		// null removes the key: nothing further up the chain applies (#1503).
+		if isNullNode(v) {
+			return
+		}
 		*out = append(*out, v)
 	}
 	ext := parser.FindKey(job, "extends")
@@ -219,7 +243,7 @@ func (in *Inheritance) effective(job *yaml.Node, depth int) *yaml.Node {
 	}
 	ext := parser.FindKey(job, "extends")
 	if ext == nil {
-		return job
+		return withoutNulls(job)
 	}
 	parents := []*yaml.Node{ext}
 	if ext.Kind == yaml.SequenceNode {
@@ -280,11 +304,47 @@ func mergeMappings(base, over *yaml.Node) *yaml.Node {
 			j += 2
 		}
 		if j+1 < n {
+			if isNullNode(v) {
+				out.Content = append(out.Content[:j], out.Content[j+2:]...)
+				n -= 2
+				continue
+			}
 			out.Content[j] = k
 			out.Content[j+1] = mergeMappings(out.Content[j+1], v)
 			continue
 		}
-		out.Content = append(out.Content, k, v)
+		if !isNullNode(v) {
+			out.Content = append(out.Content, k, v)
+		}
+	}
+	return out
+}
+
+// isNullNode reports a null value: `key:` with nothing after it, `null` or
+// `~`. In a job, GitLab treats it as the key not being set, and through
+// extends: it removes what the job would inherit (#1503).
+func isNullNode(n *yaml.Node) bool {
+	return n != nil && n.Kind == yaml.ScalarNode && n.ShortTag() == "!!null"
+}
+
+// withoutNulls returns the mapping without its null-valued keys, or the
+// mapping itself when it has none.
+func withoutNulls(m *yaml.Node) *yaml.Node {
+	has := false
+	for i := 1; i < len(m.Content); i += 2 {
+		if isNullNode(m.Content[i]) {
+			has = true
+			break
+		}
+	}
+	if !has {
+		return m
+	}
+	out := &yaml.Node{Kind: m.Kind, Tag: m.Tag, Line: m.Line, Column: m.Column, Style: m.Style}
+	for i := 0; i+1 < len(m.Content); i += 2 {
+		if !isNullNode(m.Content[i+1]) {
+			out.Content = append(out.Content, m.Content[i], m.Content[i+1])
+		}
 	}
 	return out
 }

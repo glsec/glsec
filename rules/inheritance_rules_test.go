@@ -371,3 +371,153 @@ plain:
 		t.Error("a job without extends: is returned as is")
 	}
 }
+
+// A null value removes what a job inherits through extends:, but default:
+// still applies; mappings such as environment: are deep-merged along the
+// chain (#1503). Each case matches GitLab's merged_yaml / dry-run lint.
+func TestInheritanceNullAndDeepMerge(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		r    interface {
+			Check(doc *yaml.Node, file string) []finding.Finding
+		}
+		yaml string
+		want int
+	}{
+		{"rules null drops the template's guard", GL013, `
+.prod:
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  environment: production
+deploy:
+  extends: .prod
+  rules: null
+  script: [./deploy.sh]
+`, 1},
+		{"rules with only comments is no rule", GL013, `
+deploy:
+  environment: production
+  script: [./deploy.sh]
+  rules:
+    # - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+`, 1},
+		{"template guard still applies without null", GL013, `
+.prod:
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+deploy:
+  extends: .prod
+  environment: production
+  script: [./deploy.sh]
+`, 0},
+		{"environment map merged with the template's name", GL013, `
+.prod:
+  environment:
+    name: production
+deploy:
+  extends: .prod
+  environment:
+    url: https://example.com
+  script: [./deploy.sh]
+`, 1},
+		{"environment action from the template is merged", GL017, `
+.build:
+  environment:
+    action: prepare
+build_staging:
+  extends: .build
+  stage: deploy
+  environment:
+    name: staging
+  script: [make]
+`, 0},
+		{"empty environment is no environment", GL017, `
+test:
+  stage: test
+  environment:
+  script: [make test]
+`, 0},
+		{"tags null removes the template's tags", GL017, `
+.runner:
+  tags: [trusted]
+deploy:
+  extends: .runner
+  tags: null
+  stage: deploy
+  environment: production
+  script: [./deploy.sh]
+`, 1},
+		{"tags null keeps default tags", GL017, `
+default:
+  tags: [trusted]
+deploy:
+  tags: null
+  stage: deploy
+  environment: production
+  script: [./deploy.sh]
+`, 0},
+		{"image null is no image of its own", GL001, `
+default:
+  image: alpine:3.20
+job:
+  image: null
+  script: [echo]
+`, 0},
+		{"artifacts null stops the chain", GL005, `
+.base:
+  artifacts:
+    paths: [dist/]
+    expire_in: 1 day
+job:
+  extends: .base
+  artifacts: null
+  script: [make]
+`, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			doc, err := parser.Parse([]byte(tc.yaml), "test.yml")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := tc.r.Check(doc.Root, "test.yml"); len(got) != tc.want {
+				t.Fatalf("expected %d findings, got %d: %v", tc.want, len(got), got)
+			}
+		})
+	}
+}
+
+func TestInheritanceKeyNull(t *testing.T) {
+	doc, err := parser.Parse([]byte(`
+default:
+  before_script: [echo default]
+.a:
+  variables: {A: "1"}
+  environment: {name: production, url: https://a}
+job:
+  extends: .a
+  before_script: null
+  variables: null
+  environment: {url: https://job}
+`), "test.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	in := NewInheritance(doc.Root)
+	job := parser.FindKey(parser.Unwrap(doc.Root), "job")
+	if v := in.Key(job, "before_script"); v == nil || v.Kind != yaml.SequenceNode {
+		t.Fatalf("before_script: null must fall back to default:, got %v", v)
+	}
+	if v := in.Key(job, "variables"); v != nil {
+		t.Fatalf("variables: null must remove the template's variables, got %v", v)
+	}
+	env := in.Key(job, "environment")
+	if name := parser.FindKey(env, "name"); name == nil || name.Value != "production" {
+		t.Fatalf("environment must keep the template's name, got %v", env)
+	}
+	if url := parser.FindKey(env, "url"); url == nil || url.Value != "https://job" {
+		t.Fatalf("the job's url must win, got %v", env)
+	}
+	if got := jobGuardState(in.Effective(job)); got != guardAbsent {
+		t.Fatalf("no rules expected, got %v", got)
+	}
+}
