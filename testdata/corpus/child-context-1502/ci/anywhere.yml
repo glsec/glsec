@@ -1,0 +1,3 @@
+publish-any:
+  script:
+    - docker push "$CI_REGISTRY_IMAGE:edge"

@@ -127,11 +127,11 @@ func registryCacheRef(spec string) string {
 	return ref
 }
 
-// registryCacheProtectedOnly reports a job that runs on protected refs only,
+// jobProtectedOnly reports a job that runs on protected refs only,
 // evaluated as GL013 and GL081 do (#1494): only: lists nothing but main,
 // master or tags, or every rules entry that can run the job has an if: that
 // restricts to the default branch, a named branch, a tag or a protected ref.
-func registryCacheProtectedOnly(job *yaml.Node) bool {
+func jobProtectedOnly(job *yaml.Node) bool {
 	if gl046ProtectedOnly(job) {
 		return true
 	}

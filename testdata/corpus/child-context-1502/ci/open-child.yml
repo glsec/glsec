@@ -1,0 +1,11 @@
+deploy-prod:
+  environment: production
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "parent_pipeline"
+  script:
+    - ./deploy.sh
+push-image:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "parent_pipeline"
+  script:
+    - docker push "$CI_REGISTRY_IMAGE:latest"

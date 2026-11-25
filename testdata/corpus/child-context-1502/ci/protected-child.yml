@@ -1,0 +1,4 @@
+deploy:
+  environment: $ENVIRONMENT
+  script:
+    - ./deploy.sh

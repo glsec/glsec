@@ -4,6 +4,7 @@
 package rules
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/glsec/glsec/internal/parser"
@@ -33,4 +34,26 @@ func TestNewRefScope(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestIncludeRulesProtectedOnly(t *testing.T) {
+	for rules, want := range map[string]bool{
+		"- if: $CI_COMMIT_TAG\n":                                              true,
+		"- if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH\n":                     true,
+		"- if: $CI_COMMIT_TAG =~ /^v/\n- if: $CI_COMMIT_BRANCH == \"main\"\n": true,
+		"- if: $CI_COMMIT_TAG\n- when: always\n":                              false,
+		"- exists: [Dockerfile]\n":                                            false,
+		"- if: $CI_COMMIT_BRANCH\n":                                           false,
+		"- if: $CI_PIPELINE_SOURCE == \"merge_request_event\"\n":              false,
+		"- if: $SKIP == \"1\"\n  when: never\n- if: $CI_COMMIT_TAG\n":         true,
+	} {
+		doc := parseDoc(t, "rules:\n"+indent(rules))
+		if got := IncludeRulesProtectedOnly(parser.FindKey(parser.Unwrap(doc), "rules")); got != want {
+			t.Errorf("rules\n%s: got %v, want %v", rules, got, want)
+		}
+	}
+}
+
+func indent(s string) string {
+	return "  " + strings.ReplaceAll(strings.TrimSuffix(s, "\n"), "\n", "\n  ") + "\n"
 }

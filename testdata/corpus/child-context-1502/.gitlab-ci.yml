@@ -1,0 +1,20 @@
+include:
+  - local: ci/release.yml
+    rules:
+      - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
+  - local: ci/anywhere.yml
+    rules:
+      - exists: [Dockerfile]
+
+deploy-tags:
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v.*$/
+      when: manual
+  trigger:
+    include: ci/protected-child.yml
+    strategy: mirror
+
+deploy-any:
+  trigger:
+    include: ci/open-child.yml
+    strategy: mirror

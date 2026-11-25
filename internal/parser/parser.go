@@ -38,6 +38,15 @@ type Document struct {
 	// holds a resource_group lock until the child finishes (resource_group
 	// plus trigger:strategy), so all of its jobs run under that lock (#1483).
 	LockedByParent bool
+	// Child is set on a child pipeline, a file started by a trigger job's
+	// trigger: include: (#1502). Its pipeline source is always
+	// parent_pipeline.
+	Child bool
+	// ProtectedByParent is set when every trigger job that starts this child
+	// pipeline, or every include: entry that pulls this file in through
+	// rules:, runs on protected refs only, directly or because the file it is
+	// in is protected that way (#1502).
+	ProtectedByParent bool
 	// contextFiles are the other files WithContext took nodes from.
 	contextFiles []contextFile
 	// Includes lists the files this file pulls in with `include: local`, in
