@@ -71,6 +71,7 @@ func (r *gl005) Check(doc *yaml.Node, file string) []finding.Finding {
 	}
 
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
+		findings = append(findings, checkPagesPublish(name.Value, job, file)...)
 		// Paths are checked where they are written, templates included.
 		if own := parser.FindKey(job, "artifacts"); own != nil {
 			var plans []string
