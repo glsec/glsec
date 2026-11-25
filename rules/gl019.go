@@ -17,6 +17,16 @@ var GL019 = &gl019{}
 
 func (r *gl019) ID() string { return "GL019" }
 
+// CheckDocument skips a child pipeline that runs entirely under the
+// resource_group lock of the trigger jobs starting it, and the files it
+// includes (#1483). GitLab holds that lock until the child finishes.
+func (r *gl019) CheckDocument(doc *parser.Document, file string) []finding.Finding {
+	if doc.LockedByParent || doc.IncludedBy != nil && doc.IncludedBy.LockedByParent {
+		return nil
+	}
+	return r.Check(doc.Root, file)
+}
+
 func (r *gl019) Check(doc *yaml.Node, file string) []finding.Finding {
 	var findings []finding.Finding
 	in := NewInheritance(doc)

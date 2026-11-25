@@ -34,6 +34,10 @@ type Document struct {
 	// in with `include: local` (#810): the pipeline's root document. The file
 	// is a fragment of that pipeline, like a component template.
 	IncludedBy *Document
+	// LockedByParent is set on a child pipeline every trigger job of which
+	// holds a resource_group lock until the child finishes (resource_group
+	// plus trigger:strategy), so all of its jobs run under that lock (#1483).
+	LockedByParent bool
 	// contextFiles are the other files WithContext took nodes from.
 	contextFiles []contextFile
 	// Includes lists the files this file pulls in with `include: local`, in

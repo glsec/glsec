@@ -550,6 +550,7 @@ func scanRoot(file string, opt scanOptions) (findings []finding.Finding, suppres
 			_, _ = fmt.Fprintf(opt.stderr, "warning: %s\n", msg)
 		}
 		allDocs = files.collect(doc, false)
+		files.resolveParentLocks()
 		files.flushFailures()
 	} else if len(parser.LocalIncludePaths(doc.Root)) > 0 || len(parser.ChildPipelinePaths(doc.Root)) > 0 {
 		_, _ = fmt.Fprintf(opt.stderr, "note: %s: local includes and child pipelines are not read; name the file with --stdin-filename to resolve them\n", file)
@@ -937,6 +938,10 @@ type pipelineFiles struct {
 	children map[string]bool
 	// skipped holds the paths already reported as outside rootDir.
 	skipped map[string]bool
+	// childDocs holds each child pipeline by absolute path, and triggers the
+	// trigger jobs that start it, for resolveParentLocks (#1483).
+	childDocs map[string]*parser.Document
+	triggers  map[string][]triggerEdge
 	// failures holds files that could not be read, keyed by absolute path,
 	// recorded as they are first seen. The disposition is reported once, after
 	// the whole pipeline is collected, at the strongest obligation any
@@ -947,6 +952,13 @@ type pipelineFiles struct {
 	// unread reports a file that could not be read. optional says the
 	// pipeline can be valid without it (#1167).
 	unread func(kind, path string, err error, optional bool)
+}
+
+// triggerEdge is a trigger job that starts a child pipeline: the pipeline
+// it belongs to and whether it holds or waits on a lock (#1483).
+type triggerEdge struct {
+	parent        *parser.Document
+	waits, locked bool
 }
 
 // readFailure records a file glsec could not read and the strongest obligation
@@ -961,11 +973,13 @@ type readFailure struct {
 func newPipelineFiles(w io.Writer, rootDir string, excludePaths []string, file string, root *parser.Document) *pipelineFiles {
 	p := &pipelineFiles{
 		w: w, rootDir: rootDir, excludePaths: excludePaths,
-		parsed:   map[string]*parser.Document{},
-		members:  map[*parser.Document]map[string]*parser.Document{},
-		children: map[string]bool{},
-		skipped:  map[string]bool{},
-		failures: map[string]*readFailure{},
+		parsed:    map[string]*parser.Document{},
+		members:   map[*parser.Document]map[string]*parser.Document{},
+		children:  map[string]bool{},
+		skipped:   map[string]bool{},
+		failures:  map[string]*readFailure{},
+		childDocs: map[string]*parser.Document{},
+		triggers:  map[string][]triggerEdge{},
 	}
 	if abs, err := filepath.Abs(file); err == nil {
 		p.children[abs] = true
@@ -1040,7 +1054,7 @@ func (p *pipelineFiles) collect(doc *parser.Document, optional bool) []*parser.D
 	if doc.IncludedBy != nil {
 		pipeline = doc.IncludedBy
 	}
-	follow := func(kind, path string, included, optional bool) {
+	follow := func(kind, path string, included, optional bool, trigger triggerEdge) {
 		childPath := filepath.Join(p.rootDir, strings.TrimPrefix(path, "/"))
 		if matchesExclude(childPath, p.excludePaths) {
 			return
@@ -1066,6 +1080,7 @@ func (p *pipelineFiles) collect(doc *parser.Document, optional bool) []*parser.D
 			}
 			p.members[pipeline][abs] = nil
 		} else {
+			p.triggers[abs] = append(p.triggers[abs], trigger)
 			if p.children[abs] {
 				return
 			}
@@ -1091,11 +1106,12 @@ func (p *pipelineFiles) collect(doc *parser.Document, optional bool) []*parser.D
 			doc.Includes = append(doc.Includes, childDoc)
 		} else {
 			p.members[childDoc] = map[string]*parser.Document{abs: childDoc}
+			p.childDocs[abs] = childDoc
 		}
 		all = append(all, p.collect(childDoc, optional)...)
 	}
-	for _, child := range parser.ChildPipelinePaths(doc.Root) {
-		follow("child pipeline", child, false, optional)
+	for _, child := range parser.ChildPipelines(doc.Root) {
+		follow("child pipeline", child.Path, false, optional, triggerEdge{pipeline, child.Waits, child.Locked})
 	}
 	// Files pulled in with include: local are part of this pipeline (#810).
 	for _, include := range parser.LocalIncludes(doc.Root) {
@@ -1103,14 +1119,42 @@ func (p *pipelineFiles) collect(doc *parser.Document, optional bool) []*parser.D
 		conditional := optional || include.Conditional
 		re := parser.IncludeGlob(pattern)
 		if re == nil {
-			follow("include", pattern, true, conditional)
+			follow("include", pattern, true, conditional, triggerEdge{})
 			continue
 		}
 		for _, path := range globIncludes(p.w, p.rootDir, pattern, re) {
-			follow("include", path, true, conditional)
+			follow("include", path, true, conditional, triggerEdge{})
 		}
 	}
 	return all
+}
+
+// resolveParentLocks marks the child pipelines that run entirely under a
+// resource_group lock (#1483). A child is locked when every trigger job that
+// starts it either holds a lock until it finishes (resource_group plus
+// trigger:strategy) or waits on it (trigger:strategy) from a pipeline that is
+// itself locked. One trigger without a lock leaves the child unlocked, and the
+// root pipeline is never locked, so a child scanned on its own isn't either.
+func (p *pipelineFiles) resolveParentLocks() {
+	for changed := true; changed; {
+		changed = false
+		for abs, child := range p.childDocs {
+			if child.LockedByParent {
+				continue
+			}
+			locked := len(p.triggers[abs]) > 0
+			for _, t := range p.triggers[abs] {
+				if !t.locked && (!t.waits || !t.parent.LockedByParent) {
+					locked = false
+					break
+				}
+			}
+			if locked {
+				child.LockedByParent = true
+				changed = true
+			}
+		}
+	}
 }
 
 // withPipelineContext gives each file of a pipeline the configuration of the
