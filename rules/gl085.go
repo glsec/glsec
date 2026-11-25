@@ -162,7 +162,16 @@ func agentJobOnMR(mapping *yaml.Node, job string, workflowMR bool) bool {
 	if jobHasMRTrigger(node) {
 		return true
 	}
-	return workflowMR && jobGuardState(node) == guardAbsent
+	if !workflowMR {
+		return false
+	}
+	if jobGuardState(node) == guardAbsent {
+		return true
+	}
+	// An entry without if: (a when: fallback, changes: or exists: alone) also
+	// matches merge request pipelines (#1498).
+	entry, _ := newRefScope(mapping).fallbackEntry(parser.FindKey(node, "rules"))
+	return entry != nil
 }
 
 // workflowAllowsMR reports whether workflow:rules let merge request pipelines run.

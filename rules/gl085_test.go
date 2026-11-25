@@ -144,3 +144,28 @@ review:
 		t.Errorf("expected one finding on line 8, the agent call, got %+v", f)
 	}
 }
+
+// A rules entry without if: also matches merge request pipelines when the
+// workflow admits them (#1498).
+func TestGL085_FallbackEntryRunsOnMR(t *testing.T) {
+	src := `workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+review:
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - when: manual
+  script:
+    - claude -p "review" --dangerously-skip-permissions
+`
+	var errs int
+	for _, f := range checkRule(t, GL085, src) {
+		if f.Severity == "error" {
+			errs++
+		}
+	}
+	if errs != 1 {
+		t.Fatalf("expected the job to count as running on MR pipelines, got %v", checkRule(t, GL085, src))
+	}
+}
