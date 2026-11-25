@@ -31,7 +31,7 @@ var sensitivePatterns = []string{
 	"*password*", "*passwd*",
 	"*.token",
 	"kubeconfig", "*.kubeconfig",
-	"*.tfstate", "*.tfvars",
+	"*.tfstate", "*.tfstate.backup", "*.tfvars",
 	// Package manager and registry config files that hold auth tokens:
 	// npm/Yarn, PyPI uploads, netrc logins, and docker login (#1133).
 	".npmrc", ".yarnrc.yml", ".pypirc",
@@ -63,7 +63,7 @@ func (r *gl005) Check(doc *yaml.Node, file string) []finding.Finding {
 
 	if def := parser.FindKey(mapping, "default"); def != nil {
 		if artifactsNode := parser.FindKey(def, "artifacts"); artifactsNode != nil {
-			findings = append(findings, checkArtifactPaths(doc, nil, artifactsNode, file, nil)...)
+			findings = append(findings, checkArtifactPaths(doc, nil, artifactsNode, file, nil, nil)...)
 			if _, e := parser.FindKeyNode(artifactsNode, "expire_in"); e == nil {
 				findings = append(findings, missingExpireIn(artifactsNode, file))
 			}
@@ -73,7 +73,11 @@ func (r *gl005) Check(doc *yaml.Node, file string) []finding.Finding {
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
 		// Paths are checked where they are written, templates included.
 		if own := parser.FindKey(job, "artifacts"); own != nil {
-			for _, f := range checkArtifactPaths(doc, in, own, file, unredactedScanReports(in, job)) {
+			var plans []string
+			if !artifactsRestricted(in, job) {
+				plans = savedPlans(in, job)
+			}
+			for _, f := range checkArtifactPaths(doc, in, own, file, unredactedScanReports(in, job), plans) {
 				f.Job = name.Value
 				findings = append(findings, f)
 			}
@@ -101,8 +105,9 @@ func (r *gl005) Check(doc *yaml.Node, file string) []finding.Finding {
 }
 
 // in is nil for the artifacts block under default:. reports are the files the
-// job's script writes as unredacted secret scanner reports.
-func checkArtifactPaths(doc *yaml.Node, in *Inheritance, node *yaml.Node, file string, reports []string) []finding.Finding {
+// job's script writes as unredacted secret scanner reports, plans the saved
+// Terraform plans it writes.
+func checkArtifactPaths(doc *yaml.Node, in *Inheritance, node *yaml.Node, file string, reports, plans []string) []finding.Finding {
 	var findings []finding.Finding
 
 	for _, section := range []string{"paths", "exclude"} {
@@ -125,6 +130,15 @@ func checkArtifactPaths(doc *yaml.Node, in *Inheritance, node *yaml.Node, file s
 						RuleID:   "GL005",
 						Severity: finding.Error,
 						Message:  fmt.Sprintf("artifact path %q uploads the gitleaks report %q, which holds every secret the scan found in plain text — add --redact to the gitleaks command, or don't keep the report as an artifact", item.Value, report),
+						File:     file,
+						Line:     item.Line,
+						Col:      item.Column,
+					})
+				} else if plan := uploadedPlan(item.Value, plans); plan != "" {
+					found = append(found, finding.Finding{
+						RuleID:   "GL005",
+						Severity: finding.Error,
+						Message:  fmt.Sprintf("artifact path %q uploads the saved Terraform plan %q, which holds sensitive values in plain text that the printed plan redacts — set artifacts:access: developer (or none) and keep expire_in short", item.Value, plan),
 						File:     file,
 						Line:     item.Line,
 						Col:      item.Column,
@@ -189,6 +203,97 @@ func uploadedReport(entry string, reports []string) string {
 		}
 	}
 	return ""
+}
+
+// planTools write a saved plan with `plan -out=<file>`: Terraform, OpenTofu
+// and Terragrunt, which passes the flag on (also under run-all or run --).
+var planTools = map[string]bool{"terraform": true, "tofu": true, "terragrunt": true}
+
+// savedPlans returns the files the job's script saves a Terraform plan to.
+// The plan file name is whatever -out names, so it is read from the command
+// rather than matched against a name table (#1485).
+func savedPlans(in *Inheritance, job *yaml.Node) []string {
+	var plans []string
+	for _, line := range CollectJobScriptLines(in.Effective(job)) {
+		if !strings.Contains(line.Value, "plan") || !strings.Contains(line.Value, "-out") {
+			continue
+		}
+		for _, cmd := range shellCommands(line.Value) {
+			words := commandWords(cmd.text)
+			if !planTools[commandName(words)] {
+				continue
+			}
+			isPlan, out := false, ""
+			for i := 1; i < len(words); i++ {
+				w := strings.TrimPrefix(words[i], "-")
+				switch {
+				case words[i] == "plan":
+					isPlan = true
+				case w == "-out" || w == "out":
+					if i+1 < len(words) {
+						i++
+						out = words[i]
+					}
+				case strings.HasPrefix(w, "out="), strings.HasPrefix(w, "-out="):
+					out = w[strings.Index(w, "=")+1:]
+				}
+			}
+			if isPlan && out != "" {
+				plans = append(plans, artifactPath(out))
+			}
+		}
+	}
+	return plans
+}
+
+// uploadedPlan returns the plan an artifacts:paths entry uploads. The job
+// usually runs the plan in a subdirectory (cd, -chdir) that the entry names
+// and -out doesn't, so the entry's last segment is matched against the
+// plan's file name; a directory or glob that holds the plan path as written
+// counts too. A bare * matches every name and says nothing about the plan.
+func uploadedPlan(entry string, plans []string) string {
+	if report := uploadedReport(entry, plans); report != "" {
+		return report
+	}
+	base := path.Base(unbracedVars(artifactPath(entry)))
+	if strings.Trim(base, "*") == "" {
+		return ""
+	}
+	for _, plan := range plans {
+		name := path.Base(unbracedVars(plan))
+		if ok, _ := path.Match(base, name); ok || base == name {
+			return plan
+		}
+	}
+	return ""
+}
+
+var braceStripper = strings.NewReplacer("${", "$", "}", "")
+
+// unbracedVars writes ${VAR} as $VAR, so both spellings of a variable compare
+// equal.
+func unbracedVars(s string) string {
+	return braceStripper.Replace(s)
+}
+
+// artifactsRestricted reports whether the job's artifacts can only be
+// downloaded by developers or above (or by nobody): artifacts:access
+// developer, maintainer or none, or the older public: false. The setting may
+// come from a template through extends:, where artifacts: is deep-merged.
+func artifactsRestricted(in *Inheritance, job *yaml.Node) bool {
+	for _, a := range in.Chain(job, "artifacts") {
+		if v := parser.FindKey(a, "access"); v != nil && v.Kind == yaml.ScalarNode {
+			switch strings.ToLower(v.Value) {
+			case "developer", "maintainer", "none":
+				return true
+			}
+			return false
+		}
+		if v := parser.FindKey(a, "public"); v != nil && v.Kind == yaml.ScalarNode {
+			return !parser.IsTrue(v)
+		}
+	}
+	return false
 }
 
 func missingExpireIn(node *yaml.Node, file string) finding.Finding {

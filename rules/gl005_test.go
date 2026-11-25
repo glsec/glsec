@@ -847,3 +847,106 @@ func TestGL005_OwnGitleaksUnderGitLabReportName(t *testing.T) {
 		t.Fatalf("got %v, want the unredacted report finding", f)
 	}
 }
+
+// A saved Terraform plan holds the values the printed plan redacts; uploading
+// it is reported whatever -out names it, unless artifacts:access keeps it from
+// guests (#1485).
+func TestGL005_SavedPlan(t *testing.T) {
+	job := func(cmd, artifacts string) string {
+		return "plan:\n  script:\n    - " + fmt.Sprintf("%q", cmd) + "\n  artifacts:\n    expire_in: 1 day\n" + artifacts
+	}
+	paths := func(p string) string { return "    paths: [" + p + "]\n" }
+	plan := func(f []finding.Finding) int {
+		n := 0
+		for _, x := range f {
+			if strings.Contains(x.Message, "Terraform plan") {
+				n++
+			}
+		}
+		return n
+	}
+	for name, tc := range map[string]struct {
+		cmd, artifacts string
+		want           int
+	}{
+		"out=":               {"terraform plan -out=tfplan", paths("tfplan"), 1},
+		"out separate":       {"terraform plan -out planfile", paths("planfile"), 1},
+		"double dash":        {"terraform plan --out=plan.out", paths("plan.out"), 1},
+		"quoted":             {`terraform plan -out "planfile" -input=false`, paths("planfile"), 1},
+		"tofu":               {"tofu plan -out=plan.out", paths("plan.out"), 1},
+		"terragrunt":         {"terragrunt plan -out=tfplan", paths("tfplan"), 1},
+		"terragrunt run-all": {"terragrunt run-all plan -out=tfplan", paths("tfplan"), 1},
+		"destroy plan":       {"terraform plan -destroy -out=destroy.tfplan", paths("destroy.tfplan"), 1},
+		"chdir":              {`terraform -chdir="$TF_DIR" plan -out=tfplan`, paths("$TF_DIR/tfplan"), 1},
+		"subdirectory":       {"cd terraform && terraform plan -out=tfplan", paths("terraform/tfplan"), 1},
+		"variable dir":       {"terraform plan -out=tfplan", paths(`"${TF_ROOT}/tfplan"`), 1},
+		"variable name":      {`terraform plan -out="${PLAN}"`, paths("$TF_ROOT/$PLAN"), 1},
+		"glob":               {"terraform plan -out=core.tfplan", paths(`"*.tfplan"`), 1},
+		"directory holds it": {"terraform plan -out=plans/tfplan", paths("plans/"), 1},
+		"after a wrapper":    {"time terraform plan -no-color -out=plan.tfplan", paths("plan.tfplan"), 1},
+		"access all":         {"terraform plan -out=tfplan", "    access: all\n" + paths("tfplan"), 1},
+		"public true":        {"terraform plan -out=tfplan", "    public: true\n" + paths("tfplan"), 1},
+		"also a text plan":   {"terraform plan -out=tfplan", paths("tfplan, tfplan.txt"), 1},
+		// Still silent.
+		"access developer":    {"terraform plan -out=tfplan", "    access: developer\n" + paths("tfplan"), 0},
+		"access maintainer":   {"terraform plan -out=tfplan", "    access: maintainer\n" + paths("tfplan"), 0},
+		"access none":         {"terraform plan -out=tfplan", "    access: none\n" + paths("tfplan"), 0},
+		"public false":        {"terraform plan -out=tfplan", "    public: false\n" + paths("tfplan"), 0},
+		"only the text plan":  {"terraform plan -out=tfplan", paths("tfplan.txt"), 0},
+		"encrypted copy":      {"terraform plan -out=tfplan", paths("tfplan.enc"), 0},
+		"not uploaded":        {"terraform plan -out=tfplan", paths("dist/"), 0},
+		"no -out":             {"terraform plan", paths("tfplan"), 0},
+		"apply, not plan":     {"terraform apply -auto-approve tfplan", paths("tfplan"), 0},
+		"other tool":          {"helm diff upgrade -out=tfplan", paths("tfplan"), 0},
+		"only printed":        {`echo "terraform plan -out=tfplan"`, paths("tfplan"), 0},
+		"bare star directory": {"terraform plan -out=tfplan", paths(`"dist/*"`), 0},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := plan(findings005(t, job(tc.cmd, tc.artifacts))); got != tc.want {
+				t.Errorf("got %d plan findings, want %d\n%s", got, tc.want, job(tc.cmd, tc.artifacts))
+			}
+		})
+	}
+}
+
+// The plan command and the access setting can both come from a template; the
+// job's own access: overrides the template's.
+func TestGL005_SavedPlanInherited(t *testing.T) {
+	plan := `.tf:
+  script:
+    - terraform plan -out=tfplan
+  artifacts:
+    access: developer
+`
+	if f := findings005(t, plan+`plan:
+  extends: .tf
+  artifacts:
+    expire_in: 1 day
+    paths: [tfplan]
+`); len(f) != 0 {
+		t.Errorf("access from the template: got %v, want none", f)
+	}
+	f := findings005(t, plan+`plan:
+  extends: .tf
+  artifacts:
+    access: all
+    expire_in: 1 day
+    paths: [tfplan]
+`)
+	if len(f) != 1 || f[0].Job != "plan" || !strings.Contains(f[0].Message, "Terraform plan") {
+		t.Errorf("job overrides access: got %v, want the plan finding in job plan", f)
+	}
+}
+
+// *.tfstate.backup holds the previous state, with the same secrets as *.tfstate.
+func TestGL005_StateBackup(t *testing.T) {
+	f := findings005(t, `apply:
+  script: [terraform apply -auto-approve]
+  artifacts:
+    expire_in: 1 day
+    paths: [terraform.tfstate.backup]
+`)
+	if len(f) != 1 || !strings.Contains(f[0].Message, `"*.tfstate.backup"`) {
+		t.Errorf("got %v, want the *.tfstate.backup pattern finding", f)
+	}
+}
