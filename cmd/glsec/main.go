@@ -1155,15 +1155,12 @@ func (p *pipelineFiles) resolveParentProtection() {
 		return t.protected || t.from != nil && (t.from.ProtectedByParent || t.from.IncludedBy != nil && t.from.IncludedBy.ProtectedByParent)
 	}
 	allProtected := func(edges []triggerEdge) bool {
-		if len(edges) == 0 {
-			return false
-		}
 		for _, t := range edges {
 			if !edgeProtected(t) {
 				return false
 			}
 		}
-		return true
+		return len(edges) > 0
 	}
 	for changed := true; changed; {
 		changed = false
