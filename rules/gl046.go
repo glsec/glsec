@@ -35,7 +35,13 @@ func (r *gl046) Check(doc *yaml.Node, file string) []finding.Finding {
 	}
 
 	in := NewInheritance(doc)
+	protectedOnly := newRefScope(mapping).protectedOnly
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
+		if !protectedOnly && !strings.HasPrefix(name.Value, ".") {
+			if eff := in.Effective(job); !registryCacheProtectedOnly(eff) {
+				findings = append(findings, checkRegistryBuildCache(name.Value, eff, file)...)
+			}
+		}
 		if !in.Has(job, "cache") {
 			return
 		}
