@@ -12,7 +12,7 @@ Secrets hardcoded, leaked through logs, or forwarded to unintended consumers.
 
 | ID | Severity | Description |
 |----|----------|-------------|
-| [GL005](rules/GL005.md) | `error`/`warn` | Sensitive files, whole-directory uploads or `.git` in artifacts |
+| [GL005](rules/GL005.md) | `error`/`warn` | Sensitive files, whole-directory uploads or `.git` in artifacts or a published Pages site |
 | [GL027](rules/GL027.md) | `warn`  | Secret-like variable with a value committed in the pipeline file (long form, pre-fills the Run pipeline form) |
 | [GL004](rules/GL004.md) | `warn`  | `CI_JOB_TOKEN` forwarded to a non-GitLab host |
 | [GL006](rules/GL006.md) | `error` | Hardcoded secret in `variables:` block |
