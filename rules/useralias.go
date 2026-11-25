@@ -18,6 +18,27 @@ var aliasSourceVars = append([]string{"CI_COMMIT_REF_SLUG"}, userControlledVars.
 
 var aliasSourceRe = mustCompilePrefiltered(`\$\{?(` + strings.Join(aliasSourceVars, "|") + `)\b`)
 
+// escapedAt reports whether the $ at s[i] is escaped: GitLab reads $$ as a
+// literal $, pairing from the left, so an odd run of $ before it escapes it.
+func escapedAt(s string, i int) bool {
+	n := 0
+	for j := i - 1; j >= 0 && s[j] == '$'; j-- {
+		n++
+	}
+	return n%2 == 1
+}
+
+// sourceRef returns the first unescaped reference to a user-controlled
+// variable in s, or "".
+func sourceRef(s string) string {
+	for _, l := range aliasSourceRe.FindAllStringIndex(s, -1) {
+		if !escapedAt(s, l[0]) {
+			return s[l[0]:l[1]]
+		}
+	}
+	return ""
+}
+
 // aliasRefRe matches a $NAME or ${NAME} reference.
 var aliasRefRe = mustCompilePrefiltered(`\$\{[A-Za-z_][A-Za-z0-9_]*\}|\$[A-Za-z_][A-Za-z0-9_]*`)
 
@@ -32,7 +53,7 @@ func replaceRefs(s string, fn func(ref string) string) string {
 	last := 0
 	for _, l := range locs {
 		// $$ is GitLab's escape for a literal $.
-		if l[0] > 0 && s[l[0]-1] == '$' {
+		if escapedAt(s, l[0]) {
 			continue
 		}
 		b.WriteString(s[last:l[0]])
@@ -84,7 +105,7 @@ func anyVariableReferencesSource(mapping *yaml.Node) bool {
 			if v.Kind == yaml.MappingNode {
 				v = parser.FindKey(v, "value")
 			}
-			if v != nil && v.Kind == yaml.ScalarNode && strings.Contains(v.Value, "$") && aliasSourceRe.MatchString(v.Value) {
+			if v != nil && v.Kind == yaml.ScalarNode && strings.Contains(v.Value, "$") && sourceRef(v.Value) != "" {
 				return true
 			}
 		}
@@ -157,7 +178,7 @@ func (a *userAliases) forJob(job string) map[string]string {
 		if !strings.Contains(vars[name], "$") {
 			continue
 		}
-		if v := expandVars(vars[name], vars, name, 0); aliasSourceRe.MatchString(v) {
+		if v := expandVars(vars[name], vars, name, 0); sourceRef(v) != "" {
 			out[name] = v
 		}
 	}
@@ -202,7 +223,7 @@ func (a *userAliases) expand(text, job string) (string, []string) {
 		}
 		seen[name] = true
 		if strings.ContainsAny(v, "\"'\n#\\") {
-			return aliasSourceRe.FindString(v)
+			return sourceRef(v)
 		}
 		return v
 	})

@@ -86,8 +86,9 @@ func (r *gl002) Check(doc *yaml.Node, file string) []finding.Finding {
 			findings = append(findings, f)
 		}
 		// A variable whose value references a user-controlled one is
-		// user-controlled too (#1504). Only warnings and errors are reported
-		// through it, not the info on unquoted ref names.
+		// user-controlled too (#1504). Only code passed to eval, sh -c or an
+		// interpreter is reported through it; unquoted use of such a variable
+		// mostly ends in a redirect target or a deliberate word split.
 		cp, used := aliases.expandedLine(line, job)
 		if cp == nil {
 			return
@@ -96,7 +97,7 @@ func (r *gl002) Check(doc *yaml.Node, file string) []finding.Finding {
 		for _, f := range direct {
 			seen[fmt.Sprint(f.Line, f.Message)] = true
 		}
-		for _, f := range checkScriptLine(cp, file) {
+		for _, f := range checkEvaluatedArgs(cp, file, maskShellQuotes(blankHeredocBodies(cp.Value)), map[string]bool{}) {
 			if f.Severity == finding.Info || seen[fmt.Sprint(f.Line, f.Message)] {
 				continue
 			}

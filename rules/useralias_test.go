@@ -59,6 +59,29 @@ build:
   script:
     - eval "echo $$BRANCH"
 `, 0},
+		{"GL002 escaped source in the value is literal", GL002, `
+variables:
+  TAG: $$CI_COMMIT_TAG
+  DEF: $${CI_COMMIT_TAG:-dev}
+build:
+  script:
+    - sh -c "echo $TAG $DEF"
+`, 0},
+		{"GL002 odd dollar run still expands", GL002, `
+variables:
+  TAG: $$$CI_COMMIT_TAG
+build:
+  script:
+    - sh -c "echo $TAG"
+`, 1},
+		{"GL002 unquoted free text through an alias", GL002, `
+variables:
+  OUT: dist-${CI_COMMIT_TAG_MESSAGE}.tar.xz
+build:
+  script:
+    - make dist | xz > ${OUT}
+    - echo ${OUT}
+`, 0},
 		{"GL002 job variable overrides the global alias", GL002, `
 variables:
   BRANCH: $CI_COMMIT_REF_NAME
