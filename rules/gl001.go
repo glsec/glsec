@@ -328,6 +328,10 @@ func matrixValues(job *yaml.Node, name string) (values []string, complete bool) 
 func imageRef(node *yaml.Node) (ref string, line, col int) {
 	switch node.Kind {
 	case yaml.ScalarNode:
+		// image: null means no image of its own; default: applies (#1503).
+		if isNullNode(node) {
+			return "", 0, 0
+		}
 		return node.Value, node.Line, node.Column
 	case yaml.MappingNode:
 		_, val := parser.FindKeyNode(node, "name")

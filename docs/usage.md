@@ -306,6 +306,13 @@ glsec's script rules read `before_script:`, `script:`, `after_script:`, `hooks:p
 
 glsec resolves YAML anchors, aliases and merge keys (`&anchor` / `*alias` / `<<: *anchor`) and GitLab [`!reference` tags](https://docs.gitlab.com/ci/yaml/yaml_optimization/#reference-tags) that point within the same file. Content pulled in either way is analysed as if it were inlined into the job that uses it, so issues hidden in shared `.template` blocks are caught. A finding in an anchor that several jobs share is reported once, at the anchor. References that resolve into `include:`d files are not yet expanded.
 
+[`extends:`](https://docs.gitlab.com/ci/yaml/yaml_optimization/#merge-details) is merged the way GitLab merges it:
+
+- Mappings merge at any depth, so a job's `environment: {url: …}` keeps a template's `name: production`.
+- Lists and scalars are replaced.
+- Of several templates, the later one wins.
+- A key set to `null` (`rules: null`, or `rules:` with nothing but comments under it) removes what the job would inherit through `extends:`. A key in `default:` still applies, as in GitLab.
+
 Local files are scanned along with the pipeline that uses them: the files a top-level `include:` pulls in with `local:` (or the string shorthand), and local child pipelines, every `trigger: include:` entry that names a local file (a path, `local:`, as a list or a single entry). Both are followed recursively, with paths taken from the repository root as GitLab does. The root is the directory of the pipeline file you scan. `include: local` paths may use GitLab's wildcards (`ci/*.yml`, `ci/**.yml`); a path built from a variable or an input can't be resolved without the pipeline and is skipped, and an entry's `rules:` don't matter, since the file may be included. Remote, `artifact:`, `project:`, `template:` and `component:` includes are not fetched. A path that leads outside the root, through `..` or a symbolic link, is skipped with a warning; GitLab rejects such includes too.
 
 A local include or child pipeline file that is missing, doesn't parse, has no top-level mapping or is too large only produces a warning. With `--strict` it is an error instead: glsec exits 2 and lists the file with the [other scan errors](#exit-codes), because part of the pipeline went unchecked. The findings of the other files are still reported. It stays a warning under `--strict` in these cases:
