@@ -142,32 +142,6 @@ func publishesToTestRegistry(vars *yaml.Node) bool {
 	return false
 }
 
-// workflowAdmitsMR reports whether workflow:rules, which
-// workflowRestrictsSource found, can let a merge request pipeline run: a rule
-// without if:, or one that tests a merge request or neither the branch, the
-// tag nor the pipeline source.
-func workflowAdmitsMR(mapping *yaml.Node) bool {
-	rules := parser.FindKey(parser.FindKey(mapping, "workflow"), "rules")
-	for _, item := range rules.Content {
-		if item.Kind != yaml.MappingNode {
-			return true
-		}
-		if ruleExcludes(item) {
-			continue
-		}
-		ifNode := parser.FindKey(item, "if")
-		if ifNode == nil || ifNode.Kind != yaml.ScalarNode {
-			return true
-		}
-		e := ifNode.Value
-		if strings.Contains(e, "merge_request") || strings.Contains(e, "CI_MERGE_REQUEST_") ||
-			!branchOrTagRe.MatchString(e) && !strings.Contains(e, "CI_PIPELINE_SOURCE") {
-			return true
-		}
-	}
-	return false
-}
-
 // gl080DeployKeywords are the narrow set of job/stage name fragments that
 // reliably indicate a deployment or external publish. Broader terms used
 // elsewhere (push, upload, dist, ship, migrate) matched too many build/cache
@@ -267,14 +241,6 @@ func envActionStop(env *yaml.Node) bool {
 	return false
 }
 
-type guardState int
-
-const (
-	guardAbsent      guardState = iota // no rules:/only:/except: at all
-	guardIneffective                   // rules: present but no if:/changes:/exists: condition
-	guardEffective                     // has a real restriction
-)
-
 func gl080Message(job string, state guardState, manual bool) string {
 	// when: manual is the job's only gate. It is not a pipeline-source
 	// restriction: the job is still created on every source, and a maintainer
@@ -323,37 +289,6 @@ func jobManualOnly(job *yaml.Node) bool {
 	return false
 }
 
-// jobGuardState classifies a job's execution guard. only:/except: (legacy) and
-// any rules item carrying an if:/changes:/exists: condition count as effective.
-func jobGuardState(job *yaml.Node) guardState {
-	if parser.FindKey(job, "only") != nil || parser.FindKey(job, "except") != nil {
-		return guardEffective
-	}
-	rules := parser.FindKey(job, "rules")
-	if rules == nil {
-		return guardAbsent
-	}
-	// A !reference that points into an included file can't be read here: the
-	// rules it stands for are unknown, so they count as a guard (#979).
-	if rules.Kind != yaml.SequenceNode || parser.IsReference(rules) {
-		return guardEffective
-	}
-	for _, item := range rules.Content {
-		if parser.IsReference(item) {
-			return guardEffective
-		}
-		if item.Kind != yaml.MappingNode {
-			continue
-		}
-		if parser.FindKey(item, "if") != nil ||
-			parser.FindKey(item, "changes") != nil ||
-			parser.FindKey(item, "exists") != nil {
-			return guardEffective
-		}
-	}
-	return guardIneffective
-}
-
 // gl013Owns reports whether GL013 already flags this job (a production-like
 // environment or the main Pages site, with no rules:/only: restriction), so
 // GL080 can defer to it.
@@ -369,23 +304,4 @@ func gl013Owns(name string, job *yaml.Node) bool {
 	tier := extractDeploymentTier(env)
 	prod := (envName != "" && isProdEnv(envName)) || isProdTier(tier)
 	return prod && !hasExecutionRestriction(job)
-}
-
-// workflowRestrictsSource reports whether top-level workflow:rules carries any
-// if: condition — treated as restricting which pipeline sources run at all.
-func workflowRestrictsSource(mapping *yaml.Node) bool {
-	wf := parser.FindKey(mapping, "workflow")
-	if wf == nil {
-		return false
-	}
-	rules := parser.FindKey(wf, "rules")
-	if rules == nil || rules.Kind != yaml.SequenceNode {
-		return false
-	}
-	for _, item := range rules.Content {
-		if item.Kind == yaml.MappingNode && parser.FindKey(item, "if") != nil {
-			return true
-		}
-	}
-	return false
 }
