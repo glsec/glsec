@@ -31,6 +31,8 @@ func (r *gl013) Check(doc *yaml.Node, file string) []finding.Finding {
 
 	var findings []finding.Finding
 	in := NewInheritance(doc)
+	mapping := parser.Unwrap(doc)
+	mrPipelines := !workflowRestrictsSource(mapping) || workflowAdmitsMR(mapping)
 
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
 		// Hidden jobs are templates GitLab never runs; the jobs extending them
@@ -42,8 +44,17 @@ func (r *gl013) Check(doc *yaml.Node, file string) []finding.Finding {
 		// source commit before it is merged, so its rules are no branch
 		// restriction (#1135).
 		mrOnly := runsOnlyInMRPipelines(in, job)
+		// Rules that let some entry run the job on any ref are no branch
+		// restriction either (#1486).
+		var open *yaml.Node
+		var openWhy string
 		if !mrOnly && (in.Key(job, "rules") != nil || in.Key(job, "only") != nil) {
-			return
+			if in.Key(job, "only") != nil || in.Key(job, "except") != nil {
+				return
+			}
+			if open, openWhy = unrestrictedRuleEntry(in.Key(job, "rules"), mrPipelines); open == nil {
+				return
+			}
 		}
 		// A base in another file, or the included job this one overrides,
 		// may carry the guard.
@@ -61,6 +72,21 @@ func (r *gl013) Check(doc *yaml.Node, file string) []finding.Finding {
 			tier = extractDeploymentTier(envNode)
 		}
 		byName := envName != "" && isProdEnv(envName)
+		if open != nil {
+			// As for MR-only deploys, staging is often a preview per branch.
+			if isProductionOnly(envName, tier) && deploysToEnvironment(envNode) {
+				findings = append(findings, finding.Finding{
+					RuleID:   "GL013",
+					Severity: finding.Warn,
+					Job:      name.Value,
+					Message:  gl013OpenRuleMessage(name.Value, envName, tier, openWhy),
+					File:     file,
+					Line:     open.Line,
+					Col:      open.Column,
+				})
+			}
+			return
+		}
 		if mrOnly {
 			// Staging often is a preview per MR; only production counts.
 			if isProductionOnly(envName, tier) && deploysToEnvironment(envNode) {
@@ -156,6 +182,94 @@ func gl013MRMessage(job, envName, tier string) string {
 		"job %q deploys to %s but runs only in merge request pipelines — they build the MR's source commit before anyone merged it; restrict the job to the protected branch ($CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH) or to tags",
 		job, target,
 	)
+}
+
+func gl013OpenRuleMessage(job, envName, tier, why string) string {
+	target := fmt.Sprintf("%q", envName)
+	if envName == "" {
+		target = "deployment_tier: " + tier
+	}
+	return fmt.Sprintf(
+		"job %q deploys to %s, but its rules: entry %s — any branch can run this deployment; restrict every rules: entry that runs the job to the protected branch ($CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH) or to tags, or exclude unprotected refs first (- if: $CI_COMMIT_REF_PROTECTED != \"true\" with when: never)",
+		job, target, why,
+	)
+}
+
+// unrestrictedRuleEntry returns the first rules: entry that can run the job
+// on any ref, and why (#1486). GitLab runs the job by the first entry that
+// matches, so one such entry is enough, whatever the others restrict. An
+// entry counts when it has no if: (changes:, exists: or when: alone), when
+// its if: only tests that a branch is set, or when it admits merge request
+// pipelines, which build the MR's unmerged source commit. An earlier when:
+// never entry that keeps unprotected refs out restricts every entry after
+// it. Other if: conditions (a pipeline source such as schedule or web, a
+// project's own variable) depend on settings the file doesn't show and are
+// left alone, as are rules glsec can't read (!reference).
+func unrestrictedRuleEntry(rules *yaml.Node, mrPipelines bool) (*yaml.Node, string) {
+	if rules == nil || rules.Kind != yaml.SequenceNode || parser.IsReference(rules) {
+		return nil, ""
+	}
+	for _, item := range rules.Content {
+		if parser.IsReference(item) || item.Kind != yaml.MappingNode {
+			return nil, ""
+		}
+		ifNode := parser.FindKey(item, "if")
+		if ifNode != nil && ifNode.Kind != yaml.ScalarNode {
+			return nil, ""
+		}
+		if ruleExcludes(item) {
+			if ifNode == nil || excludesUnprotected(ifNode.Value) {
+				return nil, ""
+			}
+			continue
+		}
+		if ifNode == nil {
+			return item, ruleEntryWithoutIf(item)
+		}
+		expr := trimOuterParens(strings.TrimSpace(ifNode.Value))
+		switch {
+		case branchPresenceRe.MatchString(expr):
+			return item, fmt.Sprintf("if: %s only checks that a branch is set", ifNode.Value)
+		case mrPipelines && ifAdmitsMR(expr) && !ifRestrictsToProtected(expr):
+			return item, fmt.Sprintf("if: %s admits merge request pipelines, which deploy the MR's source commit before anyone merged it", ifNode.Value)
+		}
+	}
+	return nil, ""
+}
+
+func ruleEntryWithoutIf(item *yaml.Node) string {
+	for _, key := range []string{"changes", "exists"} {
+		if parser.FindKey(item, key) != nil {
+			return "with " + key + ": and no if: matches on every branch"
+		}
+	}
+	if w := parser.FindKey(item, "when"); w != nil && w.Kind == yaml.ScalarNode {
+		return fmt.Sprintf("when: %s has no if: and matches on every branch", w.Value)
+	}
+	return "has no if: and matches on every branch"
+}
+
+var (
+	// branchPresenceRe matches an if: that only tests that the pipeline has a
+	// branch or ref name, which every branch does.
+	branchPresenceRe = mustCompilePrefiltered(`^\$\{?CI_COMMIT_(?:BRANCH|REF_NAME)\}?(?:\s*!=\s*(?:null|""|''))?$`)
+	// unprotectedExclusionRe matches a when: never condition that is true on
+	// every unprotected ref: not protected, not the default or a named branch,
+	// no tag, or a branch or tag that doesn't match a pattern (an unset
+	// variable matches no pattern, so merge request pipelines are out too).
+	unprotectedExclusionRe = mustCompilePrefiltered(`^(?:\$\{?CI_COMMIT_REF_PROTECTED\}?\s*(?:!=\s*["']true["']|==\s*["']false["'])|\$\{?CI_COMMIT_(?:BRANCH|REF_NAME)\}?\s*!=\s*(?:\$\{?CI_DEFAULT_BRANCH\}?|["'][^"']+["'])|\$\{?CI_DEFAULT_BRANCH\}?\s*!=\s*\$\{?CI_COMMIT_(?:BRANCH|REF_NAME)\}?|\$\{?CI_COMMIT_TAG\}?\s*==\s*(?:null|""|'')|\$\{?CI_COMMIT_(?:BRANCH|REF_NAME|TAG)\}?\s*!~\s*/.*/[a-z]*)$`)
+)
+
+// excludesUnprotected reports whether a when: never condition keeps every
+// unprotected ref out: one of its || alternatives does.
+func excludesUnprotected(expr string) bool {
+	alts := splitTopLevel(trimOuterParens(strings.TrimSpace(expr)), "||")
+	for _, alt := range alts {
+		if unprotectedExclusionRe.MatchString(trimOuterParens(alt)) {
+			return true
+		}
+	}
+	return false
 }
 
 // isProductionOnly reports a production environment by name (production,

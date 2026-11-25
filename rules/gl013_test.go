@@ -497,15 +497,12 @@ func TestGL013_MergeRequestOnlyProdDeploy(t *testing.T) {
 		{"stop action", "rules:\n    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\"", "{name: production, action: stop}", 0},
 		{"prepare action", "rules:\n    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\"", "{name: production, action: prepare}", 0},
 		{"default branch", "rules:\n    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH", "production", 0},
-		{"MR or default branch", "rules:\n    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\" || $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH", "production", 0},
-		{"MR rule, then branch rule", "rules:\n    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\"\n      when: manual\n    - if: $CI_COMMIT_BRANCH == \"main\"", "production", 0},
 		{"never MR rule, then branch rule", "rules:\n    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\"\n      when: never\n    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH", "production", 0},
 		{"MR and branch", "rules:\n    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\" && $CI_COMMIT_BRANCH == \"main\"", "production", 0},
 		{"tag pipeline", "rules:\n    - if: $CI_COMMIT_TAG", "production", 0},
 		{"not MR", "rules:\n    - if: $CI_PIPELINE_SOURCE != \"merge_request_event\"", "production", 0},
 		{"MR variable is null", "rules:\n    - if: $CI_MERGE_REQUEST_IID == null", "production", 0},
 		{"labels not matched", "rules:\n    - if: $CI_MERGE_REQUEST_LABELS !~ /skip/", "production", 0},
-		{"rule without if", "rules:\n    - changes: [deploy/**]", "production", 0},
 		{"only branches", "only:\n    - main", "production", 0},
 		{"only MR and main", "only:\n    - merge_requests\n    - main", "production", 0},
 	} {
@@ -519,5 +516,104 @@ func TestGL013_MergeRequestOnlyProdDeploy(t *testing.T) {
 				t.Errorf("message: %s", f[0].Message)
 			}
 		})
+	}
+}
+
+// A rules: entry that lets any branch run a production deploy is no branch
+// restriction: GitLab runs the job by the first entry that matches (#1486).
+func TestGL013_UnrestrictedRuleEntry(t *testing.T) {
+	for _, tc := range []struct {
+		name, rules, env string
+		want             int
+		why              string
+	}{
+		{"changes only", "- changes: [deploy/**/*]", "production", 1, "with changes: and no if:"},
+		{"exists only", "- exists: [deploy.yml]", "production", 1, "with exists: and no if:"},
+		{"when manual alone", "- when: manual", "production", 1, "when: manual has no if:"},
+		{"manual fallback after main", "- if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH\n    - when: manual", "production", 1, "when: manual has no if:"},
+		{"branch presence", "- if: $CI_COMMIT_BRANCH\n      changes: [deploy/**/*]", "production", 1, "only checks that a branch is set"},
+		{"ref name presence", "- if: '$CI_COMMIT_REF_NAME != null'", "production", 1, "only checks that a branch is set"},
+		{"MR rule, then branch rule", "- if: $CI_PIPELINE_SOURCE == \"merge_request_event\"\n      when: manual\n    - if: $CI_COMMIT_BRANCH == \"main\"", "production", 1, "admits merge request pipelines"},
+		{"MR or default branch", "- if: $CI_PIPELINE_SOURCE == \"merge_request_event\" || $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH", "production", 1, "admits merge request pipelines"},
+		{"branch rule, then MR rule", "- if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH\n    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\"\n      when: manual", "production", 1, "admits merge request pipelines"},
+		{"tier production", "- when: manual", "{name: eu, deployment_tier: production}", 1, "when: manual"},
+		{"unrelated never first", "- if: $CI_COMMIT_MESSAGE =~ /skip-deploy/\n      when: never\n    - when: manual", "production", 1, "when: manual"},
+		// Still silent.
+		{"all restrict", "- if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH\n    - if: $CI_COMMIT_TAG", "production", 0, ""},
+		{"restricting if with changes", "- if: $CI_COMMIT_BRANCH == \"main\"\n      changes: [deploy/**/*]", "production", 0, ""},
+		{"protected excluded first", "- if: $CI_COMMIT_REF_PROTECTED != \"true\"\n      when: never\n    - changes: [deploy/**/*]", "production", 0, ""},
+		{"not default branch excluded", "- if: $CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH\n      when: never\n    - when: manual", "production", 0, ""},
+		{"no tag excluded", "- if: $CI_COMMIT_TAG == null\n      when: never\n    - when: on_success", "production", 0, ""},
+		{"tag pattern excluded", "- if: '$CI_COMMIT_TAG !~ /^v[0-9]+/'\n      when: never\n    - when: on_success", "production", 0, ""},
+		{"branch pattern excluded", "- if: $CI_COMMIT_BRANCH !~ /^release-/\n      when: never\n    - when: manual", "production", 0, ""},
+		{"exclusion in an or", "- if: $CI_PIPELINE_SOURCE == \"schedule\" || $CI_COMMIT_BRANCH != \"main\"\n      when: never\n    - when: manual", "production", 0, ""},
+		{"never fallback", "- if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH\n    - when: never", "production", 0, ""},
+		{"schedule source", "- if: $CI_PIPELINE_SOURCE == \"schedule\"", "production", 0, ""},
+		{"web source", "- if: $CI_PIPELINE_SOURCE == \"web\"\n      when: manual", "production", 0, ""},
+		{"own variable", "- if: $PIPELINE_TYPE == \"release\"", "production", 0, ""},
+		{"staging", "- when: manual", "staging", 0, ""},
+		{"review app", "- changes: [deploy/**/*]", "review/$CI_COMMIT_REF_SLUG", 0, ""},
+		{"stop action", "- when: manual", "{name: production, action: stop}", 0, ""},
+		{"resolved reference, then fallback", "- !reference [.rules, deploy]\n    - when: manual", "production", 1, "when: manual"},
+		{"unresolved reference first", "- !reference [.elsewhere, rules]\n    - when: manual", "production", 0, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			y := ".rules:\n  deploy: [{if: $CI_COMMIT_TAG}]\ndeploy_prod:\n  rules:\n    " + tc.rules + "\n  environment: " + tc.env + "\n  script: [./deploy.sh]\n"
+			f := findings013(t, y)
+			if len(f) != tc.want {
+				t.Fatalf("got %d findings, want %d: %+v\n%s", len(f), tc.want, f, y)
+			}
+			if tc.want == 1 && (!strings.Contains(f[0].Message, tc.why) || !strings.Contains(f[0].Message, "any branch can run this deployment")) {
+				t.Errorf("message %q doesn't say %q", f[0].Message, tc.why)
+			}
+		})
+	}
+}
+
+// MR-admitting entries only count when the workflow lets merge request
+// pipelines run; a workflow that confines the pipeline to protected refs
+// still suppresses the file.
+func TestGL013_UnrestrictedRuleEntryWorkflow(t *testing.T) {
+	job := `deploy:
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      when: manual
+  environment: production
+  script: [./deploy.sh]
+`
+	if f := findings013(t, "workflow:\n  rules:\n    - if: $CI_COMMIT_BRANCH\n"+job); len(f) != 0 {
+		t.Errorf("branch-only workflow: got %v, want none", f)
+	}
+	if f := findings013(t, "workflow:\n  rules:\n    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\"\n    - if: $CI_COMMIT_BRANCH\n"+job); len(f) != 1 {
+		t.Errorf("MR workflow: got %v, want one finding", f)
+	}
+	if f := findings013(t, "workflow:\n  rules:\n    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH\n"+strings.Replace(job, "    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\"\n      when: manual\n", "    - when: manual\n", 1)); len(f) != 0 {
+		t.Errorf("protected workflow: got %v, want none", f)
+	}
+}
+
+// The issue's two examples (#1486), and the rules inherited from a template.
+func TestGL013_UnrestrictedRuleEntryIssueExamples(t *testing.T) {
+	wf := "workflow:\n  rules:\n    - if: '$CI_PIPELINE_SOURCE == \"merge_request_event\"'\n    - if: '$CI_COMMIT_BRANCH'\n"
+	deploy := "deploy:\n  tags: [secure]\n  resource_group: prod\n  environment: production\n  script: [kubectl apply -f k8s/]\n  rules:\n"
+	for name, rules := range map[string]string{
+		"changes only":    "    - changes: [deploy/**/*]\n",
+		"branch presence": "    - if: $CI_COMMIT_BRANCH\n      changes: [deploy/**/*]\n",
+	} {
+		if f := findings013(t, wf+deploy+rules); len(f) != 1 || f[0].Line != 11 {
+			t.Errorf("%s: got %v, want one finding at the rules entry (line 11)", name, f)
+		}
+	}
+	f := findings013(t, `.deploy:
+  rules:
+    - when: manual
+deploy:
+  extends: .deploy
+  environment: production
+  script: [./deploy.sh]
+`)
+	if len(f) != 1 || f[0].Job != "deploy" || f[0].Line != 3 {
+		t.Errorf("inherited rules: got %v, want one finding in job deploy at line 3", f)
 	}
 }
