@@ -172,7 +172,7 @@ var gl080NotDeployKeywords = []string{
 //     glsec can't read as a command still counts, while a `publish-docs` or
 //     `release-notes` job with no credential does not.
 func gl080Sensitive(in *Inheritance, name string, own, job, globalVars *yaml.Node) bool {
-	if env := parser.FindKey(job, "environment"); env != nil && !envActionStop(env) && extractEnvName(env) != "" {
+	if env := parser.FindKey(job, "environment"); env != nil && !envActionStop(env) && extractEnvName(env) != "" && !ephemeralEnvironment(env) {
 		return true
 	}
 	// A GitLab Pages job publishes a site — a deployment. The main-site case is
@@ -430,6 +430,30 @@ func dryRun(words []string) bool {
 		case w == "pub" && i+1 < len(words) && words[i+1] == "publish":
 			pub = true
 		case pub && w == "-n":
+			return true
+		}
+	}
+	return false
+}
+
+// ephemeralEnvironment reports an environment that on its own says nothing
+// about a deploy another branch depends on (#1497): one whose tier is
+// development or testing (deployment_tier:, else GitLab's guess from the
+// name), or whose name is made per branch, commit, pipeline or merge request
+// (review/$CI_COMMIT_REF_SLUG). A per-run name GitLab guesses as production
+// (prod/$CI_COMMIT_REF_SLUG) still counts. The job stays sensitive through
+// its script or a deploy name with a credential.
+func ephemeralEnvironment(env *yaml.Node) bool {
+	tier, _ := envTier(env)
+	switch tier {
+	case "development", "testing":
+		return true
+	case "production":
+		return false
+	}
+	name := extractEnvName(env)
+	for _, v := range perRunTagVars {
+		if strings.Contains(name, "$"+v) || strings.Contains(name, "${"+v+"}") {
 			return true
 		}
 	}

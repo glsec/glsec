@@ -195,12 +195,53 @@ func TestGL080_EnvironmentMakesSensitive(t *testing.T) {
 ship-it:
   stage: build
   environment:
-    name: review/$CI_COMMIT_REF_SLUG
+    name: edge-cluster
   script:
     - ./ship.sh
 `)
 	if len(f) != 1 {
 		t.Fatalf("expected 1 finding for an environment job with no guard, got %d", len(f))
+	}
+}
+
+// A development or testing environment, or one made per branch, commit or
+// merge request, is not a deploy signal on its own; a per-run name GitLab
+// guesses as production still is. A real deploy command keeps the job
+// sensitive whatever its environment (#1497).
+func TestGL080_EphemeralEnvironment(t *testing.T) {
+	for _, tc := range []struct {
+		name, env, script string
+		want              int
+	}{
+		{"review app per branch", "review/$CI_COMMIT_REF_SLUG", "make docs", 0},
+		{"braced per-MR name", "mr-${CI_MERGE_REQUEST_IID}", "make docs", 0},
+		{"guessed development", "dev", "env | sort", 0},
+		{"guessed testing", "qa", "make test", 0},
+		{"other tier", "edge-cluster", "make", 1},
+		{"dev environment with a real deploy", "dev", "kubectl apply -f k8s/", 1},
+		{"review app with a fixed image push", "review/$CI_COMMIT_REF_SLUG", "docker push registry.example.com/app:latest", 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := findings080(t, "job:\n  stage: build\n  environment:\n    name: "+tc.env+"\n  script:\n    - "+tc.script+"\n")
+			if len(f) != tc.want {
+				t.Fatalf("expected %d findings, got %d: %v", tc.want, len(f), f)
+			}
+		})
+	}
+	for env, want := range map[string]bool{
+		"review/$CI_COMMIT_REF_SLUG":       true,
+		"{name: dev}":                      true,
+		"{name: prod/$CI_COMMIT_REF_SLUG}": false,
+		"{name: review/$CI_COMMIT_REF_SLUG, deployment_tier: production}": false,
+		"{name: edge, deployment_tier: development}":                      true,
+		"staging":                        false,
+		"{name: staging/$CI_COMMIT_SHA}": true,
+		"production":                     false,
+	} {
+		doc := parseDoc(t, "environment: "+env+"\n")
+		if got := ephemeralEnvironment(parser.FindKey(parser.Unwrap(doc), "environment")); got != want {
+			t.Errorf("ephemeralEnvironment(%s) = %v, want %v", env, got, want)
+		}
 	}
 }
 
