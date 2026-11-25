@@ -51,22 +51,58 @@ const maxAliasDepth = 5
 // variables (#1504). GitLab expands those values recursively before the job
 // runs, so BRANCH: $CI_COMMIT_REF_NAME makes $BRANCH user-controlled too.
 type userAliases struct {
-	in     *Inheritance
-	global map[string]string
-	jobs   map[string]*yaml.Node
-	cache  map[string]map[string]string
+	doc     *yaml.Node
+	mapping *yaml.Node
+	in      *Inheritance
+	global  map[string]string
+	cache   map[string]map[string]string
+	// none is set when no variables: value in the file references a
+	// user-controlled variable: every alias chain ends in one, so there is
+	// nothing to resolve. Most files take this path, which allocates little.
+	none bool
 }
 
 func newUserAliases(doc *yaml.Node) *userAliases {
 	mapping := parser.Unwrap(doc)
-	a := &userAliases{
-		in:    NewInheritance(doc),
-		jobs:  map[string]*yaml.Node{},
-		cache: map[string]map[string]string{},
-	}
-	a.global = literalVariables(parser.FindKey(mapping, "variables"))
-	parser.EachJob(doc, func(name, job *yaml.Node) { a.jobs[name.Value] = job })
+	a := &userAliases{doc: doc, mapping: mapping, none: !anyVariableReferencesSource(mapping)}
 	return a
+}
+
+// anyVariableReferencesSource reports whether a variables: block at the top
+// level or in a job (templates included) has a value with a user-controlled
+// variable in it.
+func anyVariableReferencesSource(mapping *yaml.Node) bool {
+	if mapping == nil || mapping.Kind != yaml.MappingNode {
+		return false
+	}
+	check := func(vars *yaml.Node) bool {
+		if vars == nil || vars.Kind != yaml.MappingNode {
+			return false
+		}
+		for i := 1; i < len(vars.Content); i += 2 {
+			v := vars.Content[i]
+			if v.Kind == yaml.MappingNode {
+				v = parser.FindKey(v, "value")
+			}
+			if v != nil && v.Kind == yaml.ScalarNode && strings.Contains(v.Value, "$") && aliasSourceRe.MatchString(v.Value) {
+				return true
+			}
+		}
+		return false
+	}
+	for i := 0; i+1 < len(mapping.Content); i += 2 {
+		k, v := mapping.Content[i], mapping.Content[i+1]
+		if k.Value == "variables" {
+			if check(v) {
+				return true
+			}
+			continue
+		}
+		if v.Kind == yaml.MappingNode && check(parser.FindKey(v, "variables")) {
+			return true
+		}
+	}
+	return false
 }
 
 // literalVariables returns a variables: block's values as text. A value with
@@ -102,17 +138,25 @@ func (a *userAliases) forJob(job string) map[string]string {
 	if m, ok := a.cache[job]; ok {
 		return m
 	}
+	if a.cache == nil {
+		a.cache = map[string]map[string]string{}
+		a.in = NewInheritance(a.doc)
+		a.global = literalVariables(parser.FindKey(a.mapping, "variables"))
+	}
 	vars := map[string]string{}
 	for k, v := range a.global {
 		vars[k] = v
 	}
-	if node := a.jobs[job]; node != nil {
+	if node := parser.FindKey(a.mapping, job); node != nil && node.Kind == yaml.MappingNode {
 		for k, v := range literalVariables(parser.FindKey(a.in.Effective(node), "variables")) {
 			vars[k] = v
 		}
 	}
 	out := map[string]string{}
 	for name := range vars {
+		if !strings.Contains(vars[name], "$") {
+			continue
+		}
 		if v := expandVars(vars[name], vars, name, 0); aliasSourceRe.MatchString(v) {
 			out[name] = v
 		}
@@ -142,8 +186,11 @@ func expandVars(value string, vars map[string]string, self string, depth int) st
 // the user-controlled variable it references only, so the script's quoting
 // is left as it was.
 func (a *userAliases) expand(text, job string) (string, []string) {
+	if a.none || !strings.Contains(text, "$") {
+		return text, nil
+	}
 	aliases := a.forJob(job)
-	if len(aliases) == 0 || !strings.Contains(text, "$") {
+	if len(aliases) == 0 {
 		return text, nil
 	}
 	seen := map[string]bool{}
