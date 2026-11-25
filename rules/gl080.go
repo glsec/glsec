@@ -67,6 +67,18 @@ func (r *gl080) Check(doc *yaml.Node, file string) []finding.Finding {
 				"sensitive job %q runs only in merge request pipelines — it deploys or publishes the MR's source commit before anyone merged it, and to work there its credentials can't be protected variables, so every branch can read them; restrict the job to the protected branch ($CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH) or to tags",
 				name.Value,
 			)
+		case state == guardEffective:
+			// A guard with an entry that matches on every branch, such as a
+			// - when: manual fallback or changes: alone, restricts nothing:
+			// GitLab runs the job by the first entry that matches (#1498).
+			entry, _ := scope.fallbackEntry(parser.FindKey(job, "rules"))
+			if entry == nil || !gl080Sensitive(in, name.Value, own, job, vars) {
+				return
+			}
+			msg = fmt.Sprintf(
+				"sensitive job %q has a rules: entry without if: (%s) that matches on every branch — GitLab runs the job by the first entry that matches, so any branch can run it, also a fork's merge request a maintainer runs here; restrict that entry to protected refs or drop it",
+				name.Value, gl080EntryLabel(entry),
+			)
 		default:
 			return
 		}
@@ -458,4 +470,17 @@ func ephemeralEnvironment(env *yaml.Node) bool {
 		}
 	}
 	return false
+}
+
+// gl080EntryLabel names a rules: entry without if: by what it has instead.
+func gl080EntryLabel(entry *yaml.Node) string {
+	for _, key := range []string{"changes", "exists"} {
+		if parser.FindKey(entry, key) != nil {
+			return key + ":"
+		}
+	}
+	if w := parser.FindKey(entry, "when"); w != nil && w.Kind == yaml.ScalarNode {
+		return "when: " + w.Value
+	}
+	return "no condition"
 }

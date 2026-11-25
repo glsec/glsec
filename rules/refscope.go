@@ -39,7 +39,18 @@ func (s refScope) openEntry(rules *yaml.Node) (*yaml.Node, string) {
 	if s.protectedOnly {
 		return nil, ""
 	}
-	return unrestrictedRuleEntry(rules, s.mrPipelines)
+	return unrestrictedRuleEntry(rules, s.mrPipelines, false)
+}
+
+// fallbackEntry is openEntry narrowed to entries without if: (#1498): a
+// when: fallback such as - when: manual, or changes:/exists: alone, which is
+// also true for new branches. An if: that only tests that a branch is set, or
+// one that admits merge request pipelines, is not counted.
+func (s refScope) fallbackEntry(rules *yaml.Node) (*yaml.Node, string) {
+	if s.protectedOnly {
+		return nil, ""
+	}
+	return unrestrictedRuleEntry(rules, s.mrPipelines, true)
 }
 
 type guardState int
@@ -60,7 +71,7 @@ const (
 // it. Other if: conditions (a pipeline source such as schedule or web, a
 // project's own variable) depend on settings the file doesn't show and are
 // left alone, as are rules glsec can't read (!reference).
-func unrestrictedRuleEntry(rules *yaml.Node, mrPipelines bool) (*yaml.Node, string) {
+func unrestrictedRuleEntry(rules *yaml.Node, mrPipelines, withoutIfOnly bool) (*yaml.Node, string) {
 	if rules == nil || rules.Kind != yaml.SequenceNode || parser.IsReference(rules) {
 		return nil, ""
 	}
@@ -73,13 +84,20 @@ func unrestrictedRuleEntry(rules *yaml.Node, mrPipelines bool) (*yaml.Node, stri
 			return nil, ""
 		}
 		if ruleExcludes(item) {
-			if ifNode == nil || excludesUnprotected(ifNode.Value) {
+			// The narrow form only reports an entry without if: when nothing
+			// before it can keep a ref out: an exclusion glsec can't read,
+			// such as one on the pipeline source, may be what limits the
+			// fallback after it (#1498).
+			if ifNode == nil || excludesUnprotected(ifNode.Value) || withoutIfOnly {
 				return nil, ""
 			}
 			continue
 		}
 		if ifNode == nil {
 			return item, ruleEntryWithoutIf(item)
+		}
+		if withoutIfOnly {
+			continue
 		}
 		expr := trimOuterParens(strings.TrimSpace(ifNode.Value))
 		switch {

@@ -149,7 +149,9 @@ deploy:
 	}
 }
 
-func TestGL080_ChangesRule_NoFinding(t *testing.T) {
+// changes: alone is true for every new branch and in pipelines without a push
+// event, so it is no restriction (#1498; it counted as one since #381).
+func TestGL080_ChangesRule(t *testing.T) {
 	f := findings080(t, `
 deploy:
   stage: deploy
@@ -159,8 +161,8 @@ deploy:
   script:
     - ./deploy.sh
 `)
-	if len(f) != 0 {
-		t.Errorf("expected no finding for a rules:changes condition, got %d", len(f))
+	if len(f) != 1 {
+		t.Errorf("expected 1 finding for a rules:changes-only entry, got %d", len(f))
 	}
 }
 
@@ -740,5 +742,55 @@ deploy-prod:
 	}
 	if f := findings080(t, fmt.Sprintf(src, "<<: *always\n  "+guard)); len(f) != 0 {
 		t.Errorf("guard below the <<: stays: got %v", f)
+	}
+}
+
+// A guard with an entry that has no if: restricts nothing: GitLab runs the job
+// by the first entry that matches. Only entries without if: count; an if:
+// that tests a branch is set, or admits merge requests, is not reported
+// here (#1498).
+func TestGL080_FallbackEntry(t *testing.T) {
+	push := "  script:\n    - docker push \"$CI_REGISTRY_IMAGE:latest\"\n"
+	for _, tc := range []struct {
+		name, rules string
+		want        int
+	}{
+		{"manual fallback", "    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH\n    - when: manual\n", 1},
+		{"on_success fallback", "    - if: $CI_COMMIT_TAG\n    - when: on_success\n", 1},
+		{"changes only", "    - changes: [Dockerfile]\n", 1},
+		{"exists only", "    - exists: [Dockerfile]\n", 1},
+		{"never fallback", "    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH\n    - when: never\n", 0},
+		{"protected only", "    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH\n", 0},
+		{"branch presence is not counted", "    - if: $CI_COMMIT_BRANCH\n", 0},
+		{"merge request entry is not counted", "    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\"\n", 0},
+		{"exclusion before the fallback", "    - if: $CI_COMMIT_REF_PROTECTED != \"true\"\n      when: never\n    - when: manual\n", 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := findings080(t, "deploy-image:\n"+push+"  rules:\n"+tc.rules)
+			if len(f) != tc.want {
+				t.Fatalf("expected %d findings, got %d: %v", tc.want, len(f), f)
+			}
+		})
+	}
+	if f := findings080(t, "build:\n  script:\n    - make\n  rules:\n    - changes: [src/**/*]\n"); len(f) != 0 {
+		t.Fatalf("a job that isn't sensitive must not be reported, got %v", f)
+	}
+	if f := findings080(t, "workflow:\n  rules:\n    - if: $CI_COMMIT_TAG\ndeploy-image:\n"+push+"  rules:\n    - when: manual\n"); len(f) != 0 {
+		t.Fatalf("a protected-only workflow silences the file, got %v", f)
+	}
+}
+
+func TestGL080_FallbackAfterExclusion(t *testing.T) {
+	f := findings080(t, `
+deploy-image:
+  script:
+    - docker push "$CI_REGISTRY_IMAGE:latest"
+  rules:
+    - if: $CI_PIPELINE_SOURCE != "pipeline" && $MERGE_SYNC_TRIGGER != "1"
+      when: never
+    - when: on_success
+`)
+	if len(f) != 0 {
+		t.Fatalf("a fallback after an exclusion glsec can't read must not be reported, got %v", f)
 	}
 }
