@@ -22,6 +22,27 @@ create-pages:
   pages:
     publish: .
 `, 1},
+		{"publish dot after rm -rf .git", `
+create-pages:
+  script:
+    - rm -rf .git
+  pages:
+    publish: .
+`, 0},
+		{"publish CI_PROJECT_DIR after rm of its .git", `
+pages:
+  script:
+    - rm -rf "$CI_PROJECT_DIR/.git" ./.gitlab-ci.yml
+  pages:
+    publish: $CI_PROJECT_DIR
+`, 0},
+		{"publish dot, rm of another .git", `
+pages:
+  script:
+    - rm -rf vendor/.git
+  pages:
+    publish: .
+`, 1},
 		{"publish CI_PROJECT_DIR", `
 pages:
   script: [echo]
