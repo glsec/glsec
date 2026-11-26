@@ -1147,3 +1147,58 @@ seed:
 		t.Errorf("registry push next to a service: got %d findings, want 1", len(f))
 	}
 }
+
+// A deploy word in a directory name is no command, and a grep test of the
+// tag's format that exits on every other ref guards the rest (#1527).
+func TestGL080_Issue1527(t *testing.T) {
+	cred := "  variables:\n    NPM_TOKEN: $NPM_TOKEN\n"
+	push := "    - docker login -u u -p \"$REG_PASSWORD\" registry.example.com\n    - docker push registry.example.com/x:$CI_COMMIT_TAG\n"
+	for _, tc := range []struct {
+		name, yaml string
+		want       int
+	}{
+		{"cd into a Deploy directory", "t:\n" + cred + "  script:\n    - cd \"desafio/Deploy de uma app\"\n    - npm test\n", 0},
+		{"pushd into deploy", "t:\n" + cred + "  script:\n    - pushd deploy/tests && npm test\n", 0},
+		{"cd then a deploy script", "t:\n" + cred + "  script:\n    - cd deploy && ./deploy.sh\n", 1},
+		{"cd then a real push", "t:\n  script:\n    - cd deploy\n    - docker push registry.example.com/x:latest\n", 1},
+		{"grep -v exit guard", "pub:\n  script:\n    - if echo \"$CI_COMMIT_TAG\" | grep -vqE '^[0-9]+\\.[0-9]+\\.[0-9]+$'; then exit 1; fi\n" + push, 0},
+		{"grep -vqEo as found", "pub:\n  script:\n    - if echo \"$CI_COMMIT_TAG\" | grep -vqEo '^v?[0-9]+\\.[0-9]+'; then exit 1; fi\n" + push, 0},
+		{"grep || exit", "pub:\n  script:\n    - echo \"$CI_COMMIT_TAG\" | grep -qE '^v[0-9]+' || exit 0\n" + push, 0},
+		{"negated grep exit", "pub:\n  script:\n    - if ! echo \"$CI_COMMIT_TAG\" | grep -qE '^v[0-9]+'; then exit 0; fi\n" + push, 0},
+		{"push in grep if", "pub:\n  script:\n    - if echo \"${CI_COMMIT_TAG}\" | grep -q '^v[0-9]'; then docker push registry.example.com/x:latest; fi\n", 0},
+		{"pattern matches empty", "pub:\n  script:\n    - if echo \"$CI_COMMIT_TAG\" | grep -vqE '^[0-9]*$'; then exit 1; fi\n" + push, 1},
+		{"grep without -v exits on tags", "pub:\n  script:\n    - if echo \"$CI_COMMIT_TAG\" | grep -qE '^v[0-9]+'; then exit 1; fi\n" + push, 1},
+		{"grep on the branch", "pub:\n  script:\n    - if echo \"$CI_COMMIT_BRANCH\" | grep -vq '^main$'; then exit 0; fi\n" + push, 1},
+		{"variable in the pattern", "pub:\n  script:\n    - if echo \"$CI_COMMIT_TAG\" | grep -vqE \"^$PREFIX[0-9]+\"; then exit 1; fi\n" + push, 1},
+		{"unknown grep flag", "pub:\n  script:\n    - if echo \"$CI_COMMIT_TAG\" | grep -vqF '1.0'; then exit 1; fi\n" + push, 1},
+		{"echo -n gives grep no line", "pub:\n  script:\n    - if echo -n \"$CI_COMMIT_TAG\" | grep -vqE '^v'; then exit 1; fi\n" + push, 1},
+		{"guard after the push", "pub:\n  script:\n" + push + "    - if echo \"$CI_COMMIT_TAG\" | grep -vqE '^v'; then exit 1; fi\n", 1},
+		{"grep guard in a subshell", "pub:\n  script:\n    - (echo \"$CI_COMMIT_TAG\" | grep -qE '^v' || exit 0)\n" + push, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if f := findings080(t, tc.yaml); len(f) != tc.want {
+				t.Fatalf("expected %d findings, got %+v", tc.want, f)
+			}
+		})
+	}
+}
+
+func TestGrepRefTest(t *testing.T) {
+	for cond, want := range map[string]int{
+		`echo "$CI_COMMIT_TAG" | grep -vqE '^v[0-9]'`:   -1,
+		`echo "$CI_COMMIT_TAG" | grep -qE '^v[0-9]'`:    1,
+		`echo $CI_COMMIT_TAG | grep -q -e 'v'`:          1,
+		`echo "$CI_COMMIT_TAG" | grep -qix 'v1'`:        1,
+		`echo "$CI_COMMIT_TAG" | grep -vqE '^(v[0-9]'`:  0,
+		`echo "$CI_COMMIT_TAG | grep -q 'v'`:            0,
+		`echo "$PUSH" | grep -q 'v'`:                    1,
+		`echo "$OTHER" | grep -q 'v'`:                   0,
+		`echo "$CI_COMMIT_TAG" | grep -q "^v[0-9]+$"`:   1,
+		`echo "$CI_COMMIT_TAG" | grep -v -v -q '^v'`:    1,
+		`echo "$CI_COMMIT_TAG" | grep -qE '^v' | wc -l`: 0,
+	} {
+		if got := refTest(cond, map[string]bool{"PUSH": true}); got != want {
+			t.Errorf("refTest(%q) = %d, want %d", cond, got, want)
+		}
+	}
+}

@@ -4,6 +4,8 @@
 package rules
 
 import (
+	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/glsec/glsec/internal/parser"
@@ -19,14 +21,18 @@ import (
 var (
 	// shellIfRe matches one if/then[/else]/fi block whose condition is a test.
 	// Nested blocks are not followed: the outer match ends at the first fi.
-	shellIfRe = mustCompilePrefiltered(`(?s)\bif\s+(!?\s*(?:\[\[?|test\b)[^;\n]*?)\s*(?:;|\n)\s*then\b(.*?)(?:\belse\b(.*?))?\bfi\b`)
+	shellIfRe = mustCompilePrefiltered(`(?s)\bif\s+(!?\s*(?:\[\[?|test\b|echo\b)[^;\n]*?)\s*(?:;|\n)\s*then\b(.*?)(?:\belse\b(.*?))?\bfi\b`)
 	// shellAndRe matches a test followed by && and the command it guards.
 	shellAndRe = mustCompilePrefiltered(`((?:\[\[?|\btest\b)[^;\n&|]*?(?:\]\]?|$|\s))\s*&&\s*([^;\n|&]+)`)
 	// shellExitGuardRe matches a test that ends the script: [ … ] || exit, or
 	// [ … ] && exit, alone in its command.
 	shellExitGuardRe = mustCompilePrefiltered(`((?:\[\[?|\btest\b)[^;\n&|]*?(?:\]\]?|\s))\s*(\|\||&&)\s*exit\b`)
+	// shellGrepExitRe matches echo "$VAR" | grep … || exit, or the && form.
+	shellGrepExitRe = mustCompilePrefiltered(`(\becho\s[^;\n|&]*\|\s*grep\s[^;\n|&]*?)\s*(\|\||&&)\s*exit\b`)
+	// grepTestRe splits echo "$VAR" | grep [-flags] 'pattern'.
+	grepTestRe = mustCompilePrefiltered(`^echo\s+("?)\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?("?)\s*\|\s*grep\s+((?:-[A-Za-z]+\s+)*)(?:-e\s+)?(?:'([^']*)'|"([^"]*)")\s*$`)
 	// shellIfExitRe matches if <test>; then exit …; fi.
-	shellIfExitRe = mustCompilePrefiltered(`(?s)\bif\s+(!?\s*(?:\[\[?|test\b)[^;\n]*?)\s*(?:;|\n)\s*then\s+exit\b[^;\n]*\s*(?:;|\n)\s*fi\b`)
+	shellIfExitRe = mustCompilePrefiltered(`(?s)\bif\s+(!?\s*(?:\[\[?|test\b|echo\b)[^;\n]*?)\s*(?:;|\n)\s*then\s+exit\b[^;\n]*\s*(?:;|\n)\s*fi\b`)
 )
 
 // refTest reports what a shell test says about the ref: +1 when it is true
@@ -54,6 +60,8 @@ func refTest(cond string, flags map[string]bool) int {
 		c = strings.TrimSuffix(strings.TrimSpace(strings.TrimPrefix(c, "[")), "]")
 	case strings.HasPrefix(c, "test"):
 		c = strings.TrimPrefix(c, "test")
+	case strings.HasPrefix(c, "echo"):
+		return grepRefTest(c, sign, flags)
 	default:
 		return 0
 	}
@@ -150,6 +158,54 @@ func refTestFields(f []string, sign int, flags map[string]bool) int {
 	return 0
 }
 
+// grepRefTest reads echo "$CI_COMMIT_TAG" | grep -qE 'pattern' (#1527).
+// Outside a tag pipeline the variable is empty, echo prints one empty line,
+// and grep selects it only if the pattern matches the empty string (with -v,
+// only if it doesn't). The test is then false on every other ref (+1) or true
+// on every other ref (-1). Only CI_COMMIT_TAG and protected-only flags are
+// read: a branch name is never empty.
+func grepRefTest(c string, sign int, flags map[string]bool) int {
+	m := grepTestRe.FindStringSubmatch(c)
+	if m == nil || m[1] != m[3] || m[2] != "CI_COMMIT_TAG" && !flags[m[2]] {
+		return 0
+	}
+	invert, whole, fold := false, false, false
+	for _, opt := range strings.Fields(m[4]) {
+		for _, o := range opt[1:] {
+			switch o {
+			case 'v':
+				invert = !invert
+			case 'x':
+				whole = true
+			case 'i':
+				fold = true
+			case 'q', 'E', 'o', 's', 'P', 'e':
+			default:
+				return 0
+			}
+		}
+	}
+	pattern := m[5] + m[6]
+	// Inside double quotes the shell expands a variable first.
+	if strings.Contains(strings.TrimSuffix(m[6], "$"), "$") {
+		return 0
+	}
+	if whole {
+		pattern = "^(?:" + pattern + ")$"
+	}
+	if fold {
+		pattern = "(?i)" + pattern
+	}
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return 0
+	}
+	if re.MatchString("") != invert {
+		return -sign
+	}
+	return sign
+}
+
 // blankGuardedSteps returns text with the commands that only run on a
 // protected or named ref replaced by spaces: the then-branch of an if whose
 // test is true only there, the else-branch of one whose test is true
@@ -212,7 +268,12 @@ func exitGuardAt(text string, flags map[string]bool) int {
 			break
 		}
 	}
-	for _, m := range shellExitGuardRe.FindAllStringSubmatchIndex(code, -1) {
+	guards := shellExitGuardRe.FindAllStringSubmatchIndex(code, -1)
+	if strings.Contains(code, "grep") {
+		guards = append(guards, shellGrepExitRe.FindAllStringSubmatchIndex(code, -1)...)
+		sort.Slice(guards, func(i, j int) bool { return guards[i][0] < guards[j][0] })
+	}
+	for _, m := range guards {
 		if at >= 0 && m[0] > at {
 			break
 		}
