@@ -633,20 +633,16 @@ func dryRun(words []string) bool {
 	return false
 }
 
-// ephemeralEnvironment reports an environment that on its own says nothing
+// ephemeralEnvironmentIn reports an environment that on its own says nothing
 // about a deploy another branch depends on (#1497): one whose tier is
 // development or testing (deployment_tier:, else GitLab's guess from the
 // name), or whose name is made per branch, commit, pipeline or merge request
 // (review/$CI_COMMIT_REF_SLUG). A per-run name GitLab guesses as production
 // (prod/$CI_COMMIT_REF_SLUG) still counts. The job stays sensitive through
 // its script or a deploy name with a credential.
-func ephemeralEnvironment(env *yaml.Node) bool {
-	return ephemeralEnvironmentIn(env, nil, nil)
-}
-
-// ephemeralEnvironmentIn is ephemeralEnvironment with the name expanded
-// through the job's and the file's variables: (ENV_NAME: review/$CI_COMMIT_REF_SLUG,
-// also set by the matching rules: entry).
+// The name is expanded through the job's and the file's variables:
+// (ENV_NAME: review/$CI_COMMIT_REF_SLUG, also set by the matching rules:
+// entry).
 func ephemeralEnvironmentIn(env, jobVars, globalVars *yaml.Node) bool {
 	name := extractEnvName(env)
 	tier, explicit := envTier(env)

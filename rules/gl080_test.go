@@ -241,8 +241,8 @@ func TestGL080_EphemeralEnvironment(t *testing.T) {
 		"production":                     false,
 	} {
 		doc := parseDoc(t, "environment: "+env+"\n")
-		if got := ephemeralEnvironment(parser.FindKey(parser.Unwrap(doc), "environment")); got != want {
-			t.Errorf("ephemeralEnvironment(%s) = %v, want %v", env, got, want)
+		if got := ephemeralEnvironmentIn(parser.FindKey(parser.Unwrap(doc), "environment"), nil, nil); got != want {
+			t.Errorf("ephemeralEnvironmentIn(%s) = %v, want %v", env, got, want)
 		}
 	}
 }
