@@ -45,10 +45,11 @@ func checkPagesPublish(name string, job *yaml.Node, file string) []finding.Findi
 	}
 	var findings []finding.Finding
 	pub := pagesPublish(job)
+	lines := CollectJobScriptLines(job)
 	if pub != nil && pub.Kind == yaml.ScalarNode && pub.ShortTag() != "!!null" {
 		var msg string
 		switch {
-		case isWholeProjectArtifactPath(pub.Value) && !uploadsWholeDir(job):
+		case isWholeProjectArtifactPath(pub.Value) && !uploadsWholeDir(job) && !removesGitFrom(lines, pub.Value):
 			msg = fmt.Sprintf("Pages publish path %q is the whole working directory — GitLab Pages serves it as the site, with .git (history and Git configuration), the CI configuration and every file the job generated; publish a build directory such as public", pub.Value)
 		case strings.Contains("/"+strings.TrimPrefix(pub.Value, "./")+"/", "/.git/"):
 			msg = fmt.Sprintf("Pages publish path %q includes a .git directory — GitLab Pages serves the repository history and Git configuration", pub.Value)
@@ -64,7 +65,6 @@ func checkPagesPublish(name string, job *yaml.Node, file string) []finding.Findi
 	if pub != nil && pub.Kind == yaml.ScalarNode && pub.ShortTag() != "!!null" {
 		dir = pub.Value
 	}
-	lines := CollectJobScriptLines(job)
 	if removesGitFrom(lines, dir) {
 		return findings
 	}
@@ -179,10 +179,13 @@ func excludesDotGit(pattern string) bool {
 	return ok && err == nil
 }
 
-// removesGitFrom reports a script that deletes dir/.git after copying, as in
-// rm -rf public/.git.
+// removesGitFrom reports a script that deletes dir/.git, as in rm -rf
+// public/.git, or .git itself when dir is the working directory.
 func removesGitFrom(lines []*yaml.Node, dir string) bool {
 	want := cleanDir(dir) + "/.git"
+	if isWholeProjectArtifactPath(dir) {
+		want = ".git"
+	}
 	for _, line := range lines {
 		if !strings.Contains(line.Value, ".git") {
 			continue
