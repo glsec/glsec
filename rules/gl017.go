@@ -459,10 +459,34 @@ func envActionStops(env *yaml.Node) bool {
 	return envAction(env) == "stop"
 }
 
-// envDevTier reports an environment that declares itself a review or test
+// jobEnvTier is envTier for a job's environment, with a guessed name first
+// expanded through the job's variables: (also from extends:) and the file's
+// (#1528): GitLab expands the name before it guesses the tier.
+func (in *Inheritance) jobEnvTier(job, env *yaml.Node) (tier string, explicit bool) {
+	tier, explicit = envTier(env)
+	name := extractEnvName(env)
+	if explicit || !strings.Contains(name, "$") {
+		return tier, explicit
+	}
+	vars := literalVariables(parser.FindKey(in.mapping, "variables"))
+	for k, v := range literalVariables(parser.FindKey(in.Effective(job), "variables")) {
+		vars[k] = v
+	}
+	if expanded := expandVars(name, vars, "", 0); expanded != name {
+		// A variable the file doesn't set is unknown here: its name
+		// ($NAMESPACE_dev) is not part of the environment's name.
+		expanded = anyVarRefRe.ReplaceAllStringFunc(expanded, func(string) string { return "" })
+		tier, _ = envTier(&yaml.Node{Kind: yaml.ScalarNode, Value: expanded})
+	}
+	return tier, false
+}
+
+var anyVarRefRe = mustCompilePrefiltered(`\$\{?[A-Za-z_][A-Za-z0-9_]*\}?`)
+
+// jobEnvDevTier reports an environment that declares itself a review or test
 // target: per-branch previews, links to job artifacts.
-func envDevTier(env *yaml.Node) bool {
-	t, _ := envTier(env)
+func (in *Inheritance) jobEnvDevTier(job, env *yaml.Node) bool {
+	t, _ := in.jobEnvTier(job, env)
 	return t == "development" || t == "testing"
 }
 
@@ -579,7 +603,7 @@ func isSensitiveJob(in *Inheritance, job *yaml.Node, devTierDeploys bool) bool {
 		if t, explicit := envTier(env); !devTierDeploys && (envActionNoDeploy(env) || explicit && (t == "development" || t == "testing")) {
 			return false
 		}
-		if !envActionNoDeploy(env) && (devTierDeploys || !envDevTier(env)) {
+		if !envActionNoDeploy(env) && (devTierDeploys || !in.jobEnvDevTier(job, env)) {
 			return true
 		}
 	}
