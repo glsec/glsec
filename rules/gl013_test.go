@@ -484,7 +484,6 @@ func TestGL013_MergeRequestOnlyProdDeploy(t *testing.T) {
 		{"merge_request_event alone", "rules:\n    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\"", "production", 1},
 		{"single quotes, reversed", "rules:\n    - if: \"'merge_request_event' == $CI_PIPELINE_SOURCE\"", "production", 1},
 		{"target protected", "rules:\n    - if: $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED == \"true\"", "production", 1},
-		{"source protected", "rules:\n    - if: $CI_MERGE_REQUEST_SOURCE_BRANCH_PROTECTED == \"true\"", "production", 1},
 		{"labels gate", "rules:\n    - if: $CI_MERGE_REQUEST_LABELS =~ /deploy/", "production", 1},
 		{"target default branch", "rules:\n    - if: $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH", "production", 1},
 		{"MR iid presence, manual", "rules:\n    - if: $CI_MERGE_REQUEST_IID\n      when: manual", "production", 1},
@@ -502,6 +501,19 @@ func TestGL013_MergeRequestOnlyProdDeploy(t *testing.T) {
 		{"prepare action", "rules:\n    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\"", "{name: production, action: prepare}", 0},
 		{"default branch", "rules:\n    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH", "production", 0},
 		{"never MR rule, then branch rule", "rules:\n    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\"\n      when: never\n    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH", "production", 0},
+		// A protected source branch of the project itself (#1543): only who may
+		// push to it reaches the job. The protection test alone is decided by
+		// a fork's settings in a fork MR, and an approval or a merge train
+		// doesn't protect the MR ref, so those stay reported.
+		{"source protected", "rules:\n    - if: $CI_MERGE_REQUEST_SOURCE_BRANCH_PROTECTED == \"true\"", "production", 1},
+		{"MR event and protected source", "rules:\n    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\" && $CI_MERGE_REQUEST_SOURCE_BRANCH_PROTECTED == 'true'", "production", 1},
+		{"protected source in the project", "rules:\n    - if: $CI_MERGE_REQUEST_SOURCE_BRANCH_PROTECTED == \"true\" && $CI_MERGE_REQUEST_SOURCE_PROJECT_ID == $CI_PROJECT_ID", "production", 0},
+		{"protected source, project path reversed", "rules:\n    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\" && $CI_PROJECT_PATH == $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH && $CI_MERGE_REQUEST_SOURCE_BRANCH_PROTECTED == \"true\"", "production", 0},
+		{"protected source, ID against path", "rules:\n    - if: $CI_MERGE_REQUEST_SOURCE_BRANCH_PROTECTED == \"true\" && $CI_MERGE_REQUEST_SOURCE_PROJECT_ID == $CI_PROJECT_PATH", "production", 1},
+		{"same project only", "rules:\n    - if: $CI_MERGE_REQUEST_SOURCE_PROJECT_ID == $CI_PROJECT_ID", "production", 1},
+		{"source not protected", "rules:\n    - if: $CI_MERGE_REQUEST_SOURCE_BRANCH_PROTECTED == \"false\"", "production", 1},
+		{"approved", "rules:\n    - if: $CI_MERGE_REQUEST_APPROVED == \"true\"", "production", 1},
+		{"merge train", "rules:\n    - if: $CI_MERGE_REQUEST_EVENT_TYPE == \"merge_train\"", "production", 1},
 		{"MR and branch", "rules:\n    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\" && $CI_COMMIT_BRANCH == \"main\"", "production", 0},
 		{"tag pipeline", "rules:\n    - if: $CI_COMMIT_TAG", "production", 0},
 		{"only branches", "only:\n    - main", "production", 0},
@@ -549,9 +561,11 @@ func TestGL013_UnrestrictedRuleEntry(t *testing.T) {
 		{"commit message", "- if: $CI_COMMIT_MESSAGE =~ /deploy/", "production", 1, "which whoever pushes writes"},
 		{"commit title and branch set", "- if: $CI_COMMIT_BRANCH && $CI_COMMIT_TITLE =~ /^release/", "production", 1, "CI_COMMIT_TITLE"},
 		{"open alternative", "- if: $CI_PIPELINE_SOURCE == \"schedule\" || $CI_COMMIT_MESSAGE =~ /deploy/", "production", 1, "CI_COMMIT_MESSAGE"},
+		{"protected source in the project or labels", "- if: ($CI_MERGE_REQUEST_SOURCE_BRANCH_PROTECTED == \"true\" && $CI_MERGE_REQUEST_SOURCE_PROJECT_ID == $CI_PROJECT_ID) || $CI_MERGE_REQUEST_LABELS =~ /deploy/", "production", 1, "merge request pipeline from any branch"},
 		// Still restricted.
 		{"not push", "- if: $CI_PIPELINE_SOURCE != \"push\" && $CI_PIPELINE_SOURCE != \"merge_request_event\"", "production", 0, ""},
 		{"commit message and main", "- if: $CI_COMMIT_MESSAGE =~ /deploy/ && $CI_COMMIT_BRANCH == \"main\"", "production", 0, ""},
+		{"MR or protected source in the project", "- if: $CI_PIPELINE_SOURCE == \"merge_request_event\" && $CI_MERGE_REQUEST_SOURCE_BRANCH_PROTECTED == \"true\" && $CI_MERGE_REQUEST_SOURCE_PROJECT_ID == $CI_PROJECT_ID", "production", 0, ""},
 		{"not schedule and own variable", "- if: $CI_PIPELINE_SOURCE != \"schedule\" && $DEPLOY == \"true\"", "production", 0, ""},
 		{"MR target, tag", "- if: $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == \"main\" && $CI_COMMIT_TAG", "production", 0, ""},
 		// Still silent.
