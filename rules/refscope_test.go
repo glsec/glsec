@@ -98,3 +98,41 @@ func TestIncludeRulesRestricted(t *testing.T) {
 		t.Error("no rules: restricts nothing")
 	}
 }
+
+func TestOpenOnAnyBranch(t *testing.T) {
+	for _, tc := range []struct {
+		expr string
+		mr   bool
+		open bool
+	}{
+		{`$CI_PIPELINE_SOURCE != "schedule"`, false, true},
+		{`$CI_PIPELINE_SOURCE != "push"`, false, false},
+		{`$CI_PIPELINE_SOURCE != "push"`, true, true},
+		{`$CI_PIPELINE_SOURCE !~ /push|merge_request_event/`, true, false},
+		{`$CI_PIPELINE_SOURCE !~ /^PUSH$/i`, false, false},
+		{`$CI_PIPELINE_SOURCE !~ /(/`, false, false},
+		{`$CI_PIPELINE_SOURCE == "push"`, false, false},
+		{`$CI_COMMIT_MESSAGE =~ /\[deploy\]/`, false, true},
+		{`$CI_COMMIT_AUTHOR == "Jane <j@example.com>"`, false, true},
+		{`$CI_COMMIT_DESCRIPTION`, false, true},
+		{`$CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main"`, false, false},
+		{`$CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main"`, true, true},
+		{`$CI_MERGE_REQUEST_IID != null`, false, false},
+		{`$CI_MERGE_REQUEST_IID == null`, false, true},
+		{`$CI_MERGE_REQUEST_IID == ""`, false, true},
+		{`$CI_MERGE_REQUEST_SOURCE_BRANCH_PROTECTED == "true"`, true, false},
+		{`$CI_MERGE_REQUEST_SOURCE_BRANCH_PROTECTED != "true"`, true, false},
+		{`$CI_MERGE_REQUEST_APPROVED == "true"`, true, false},
+		{`$CI_MERGE_REQUEST_EVENT_TYPE == "merge_train"`, true, false},
+		{`($CI_COMMIT_MESSAGE =~ /x/) && $CI_COMMIT_BRANCH`, false, true},
+		{`$CI_COMMIT_MESSAGE =~ /x/ && $CI_COMMIT_REF_PROTECTED == "true"`, false, false},
+		{`$CI_COMMIT_MESSAGE =~ /x/ && ($A || $B)`, false, false},
+		{`$DEPLOY == "true" || $CI_PIPELINE_SOURCE != "schedule"`, false, true},
+		{`$CI_COMMIT_BRANCH`, false, true},
+		{`$CI_COMMIT_MESSAGE =~ /x/ || ($CI_COMMIT_BRANCH`, false, false},
+	} {
+		if got := openOnAnyBranch(tc.expr, tc.mr) != ""; got != tc.open {
+			t.Errorf("openOnAnyBranch(%q, mr=%v) = %v, want %v", tc.expr, tc.mr, got, tc.open)
+		}
+	}
+}
