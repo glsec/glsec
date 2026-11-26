@@ -40,9 +40,28 @@ func (r *gl015) Check(doc *yaml.Node, file string) []finding.Finding {
 	// which matches only default/protected-branch conditions, is the right test.
 	in := NewInheritance(doc)
 	protectedOnly := map[string]bool{}
+	extenders := map[string][]string{}
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
-		protectedOnly[name.Value] = gl046ProtectedOnly(in.Effective(job))
+		protectedOnly[name.Value] = gl015Pinned(in.Effective(job))
+		if !strings.HasPrefix(name.Value, ".") {
+			for _, base := range in.extendsAncestors(job) {
+				extenders[base] = append(extenders[base], name.Value)
+			}
+		}
 	})
+	// A hidden template never runs itself: it is as pinned as every job that
+	// extends it (#1526). One without extenders in the file is a library
+	// template and stays reported.
+	for base, jobs := range extenders {
+		if !strings.HasPrefix(base, ".") {
+			continue
+		}
+		pinned := true
+		for _, j := range jobs {
+			pinned = pinned && protectedOnly[j]
+		}
+		protectedOnly[base] = pinned
+	}
 
 	aliases := newUserAliases(doc)
 	EachScriptLine(doc, file, func(item *yaml.Node, file, job string) {
@@ -59,7 +78,9 @@ func (r *gl015) Check(doc *yaml.Node, file string) []finding.Finding {
 			varName := ""
 			for _, t := range writtenImageRefs(commandWords(cmd.text)) {
 				// The name from the group: ${NAME//x/y} or ${NAME:-d} has no } right after it (#977).
-				if m := userControlledTagRe.FindStringSubmatch(t); m != nil {
+				// A per-run value in the reference makes the tag one no other
+				// pipeline writes, so it can't overwrite a shared one (#1526).
+				if m := userControlledTagRe.FindStringSubmatch(t); m != nil && !mentionsPerRunValue(t) {
 					varName = m[1]
 					break
 				}
@@ -137,4 +158,101 @@ func writtenImageRefs(words []string) []string {
 		return positional
 	}
 	return nil
+}
+
+// perRunValueVars are predefined variables whose value is new on every run.
+var perRunValueVars = []string{"CI_COMMIT_SHA", "CI_COMMIT_SHORT_SHA", "CI_PIPELINE_ID", "CI_PIPELINE_IID", "CI_JOB_ID"}
+
+func mentionsPerRunValue(ref string) bool {
+	for _, name := range ciVarNames(ref) {
+		for _, v := range perRunValueVars {
+			if name == v {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// gl015Pinned reports a job whose ref variable can only hold names the file
+// fixes: the default branch or a protected ref (gl046ProtectedOnly), or any
+// branch named literally (#1526), through only: names or refs:, or rules: on
+// $CI_COMMIT_BRANCH == "name". A fork contributor can't pick the name then.
+// $CI_COMMIT_REF_NAME is not read for a named branch: in a merge request
+// pipeline it holds the source branch's name.
+func gl015Pinned(job *yaml.Node) bool {
+	if gl046ProtectedOnly(job) {
+		return true
+	}
+	if only := parser.FindKey(job, "only"); only != nil {
+		if only.Kind == yaml.MappingNode {
+			only = parser.FindKey(only, "refs")
+		}
+		if only == nil || only.Kind != yaml.SequenceNode || len(only.Content) == 0 {
+			return false
+		}
+		for _, item := range only.Content {
+			if !literalBranchName(item.Value) {
+				return false
+			}
+		}
+		return true
+	}
+	rules := parser.FindKey(job, "rules")
+	if rules == nil || rules.Kind != yaml.SequenceNode {
+		return false
+	}
+	running := 0
+	for _, item := range rules.Content {
+		if when := parser.FindKey(item, "when"); when != nil && when.Value == "never" {
+			continue
+		}
+		cond := parser.FindKey(item, "if")
+		if cond == nil {
+			return false
+		}
+		for _, branch := range strings.Split(cond.Value, "||") {
+			if !protectedRefCondRe.MatchString(branch) && !namedBranchCondRe.MatchString(branch) {
+				return false
+			}
+		}
+		running++
+	}
+	return running > 0
+}
+
+var namedBranchCondRe = mustCompilePrefiltered(`\$\{?CI_COMMIT_BRANCH\}?\s*==\s*(?:"[^"$]+"|'[^'$]+')`)
+
+func literalBranchName(v string) bool {
+	return v != "" && !onlyKeywords[v] && !strings.HasPrefix(v, "/") && !strings.ContainsAny(v, "$*@")
+}
+
+// extendsAncestors returns the names of the jobs job extends in this file,
+// directly or through other templates.
+func (in *Inheritance) extendsAncestors(job *yaml.Node) []string {
+	var out []string
+	seen := map[*yaml.Node]bool{}
+	var walk func(j *yaml.Node, depth int)
+	walk = func(j *yaml.Node, depth int) {
+		if j == nil || j.Kind != yaml.MappingNode || seen[j] || depth > maxExtendsDepth {
+			return
+		}
+		seen[j] = true
+		ext := parser.FindKey(j, "extends")
+		if ext == nil {
+			return
+		}
+		parents := []*yaml.Node{ext}
+		if ext.Kind == yaml.SequenceNode {
+			parents = ext.Content
+		}
+		for _, p := range parents {
+			if p.Kind == yaml.ScalarNode {
+				out = append(out, p.Value)
+				walk(in.jobs[p.Value], depth+1)
+			}
+		}
+	}
+	walk(job, 0)
+	return out
 }

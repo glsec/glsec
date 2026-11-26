@@ -185,3 +185,41 @@ func TestGL015_ProtectedRefGating(t *testing.T) {
 		})
 	}
 }
+
+// A hidden template is as pinned as the jobs extending it; a per-run value in
+// the reference makes a tag no other pipeline writes; a branch named
+// literally pins the ref variable (#1526).
+func TestGL015_Issue1526(t *testing.T) {
+	push := "  script:\n    - docker build -t $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG .\n    - docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG\n"
+	for _, tc := range []struct {
+		name, yaml string
+		want       int
+	}{
+		{"template, extender on main", ".build:\n" + push + "main:build:\n  extends: .build\n  rules:\n    - if: $CI_COMMIT_BRANCH == \"main\"\n", 0},
+		{"template, extenders on named branches", ".build:\n" + push + "dev:build:\n  extends: .build\n  rules:\n    - if: $CI_COMMIT_BRANCH == \"development\"\nmain:build:\n  extends: .build\n  rules:\n    - if: $CI_COMMIT_BRANCH == \"main\"\n", 0},
+		{"template, only refs", ".build:\n" + push + "b:\n  extends: .build\n  only:\n    refs: [develop]\n", 0},
+		{"template through a template", ".base:\n" + push + ".mid:\n  extends: .base\nb:\n  extends: .mid\n  only: [develop]\n", 0},
+		{"template, one extender unpinned", ".build:\n" + push + "a:\n  extends: .build\n  only: [main]\nb:\n  extends: .build\n", 2},
+		{"template, no extenders", ".build:\n" + push, 2},
+		{"template, extender on tags", ".build:\n" + push + "b:\n  extends: .build\n  only: [tags]\n", 2},
+		{"only named branches", "b:\n  only: [test, develop]\n" + push, 0},
+		{"only branch pattern", "b:\n  only: [/^release-.*$/]\n" + push, 2},
+		{"only branches keyword", "b:\n  only: [branches]\n" + push, 2},
+		{"rules ref name literal", "b:\n  rules:\n    - if: $CI_COMMIT_REF_NAME == \"develop\"\n" + push, 2},
+		{"rules branch literal or any", "b:\n  rules:\n    - if: $CI_COMMIT_BRANCH == \"develop\" || $CI_PIPELINE_SOURCE == \"web\"\n" + push, 2},
+		{"rules branch inequality", "b:\n  rules:\n    - if: $CI_COMMIT_BRANCH != \"develop\"\n" + push, 2},
+		{"rules fallback entry", "b:\n  rules:\n    - if: $CI_COMMIT_BRANCH == \"develop\"\n    - when: manual\n" + push, 2},
+		{"per-run suffix", "b:\n  script:\n    - docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG-$CI_COMMIT_SHORT_SHA\n", 0},
+		{"per-run iid suffix", "b:\n  script:\n    - docker push \"$CI_REGISTRY_IMAGE:${CI_COMMIT_REF_SLUG}-${CI_PIPELINE_IID}\"\n", 0},
+		{"per-run through variables", "variables:\n  TAG: $CI_COMMIT_REF_SLUG-$CI_COMMIT_SHA\nb:\n  script:\n    - docker push $CI_REGISTRY_IMAGE:$TAG\n", 0},
+		{"fixed suffix", "b:\n  script:\n    - docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG-test\n", 1},
+		{"second tag without per-run value", "b:\n  script:\n    - docker build -t app:$CI_COMMIT_REF_SLUG-$CI_COMMIT_SHA -t app:$CI_COMMIT_REF_SLUG .\n", 1},
+		{"SHA-like name is not per-run", "b:\n  script:\n    - docker push app:$CI_COMMIT_REF_SLUG-$CI_COMMIT_SHA_OVERRIDE\n", 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := checkRule(t, GL015, tc.yaml); len(got) != tc.want {
+				t.Fatalf("expected %d findings, got %+v", tc.want, got)
+			}
+		})
+	}
+}
