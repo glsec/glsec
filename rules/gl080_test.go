@@ -290,6 +290,8 @@ func TestGL080_EphemeralPushAndDryRun(t *testing.T) {
 		{"kubectl dry run", "kubectl apply --dry-run=client -f k8s/", "", 0},
 		{"npm publish dry run", "npm publish --dry-run", "", 0},
 		{"dart pub publish -n", "dart pub publish -n", "", 0},
+		{"per-run variable with a suffix", "docker push \"$IMG-debug\"", "  variables:\n    IMG: $CI_REGISTRY_IMAGE/pipeline:$CI_PIPELINE_ID\n", 0},
+		{"per-run tag through a variable chain", "docker push $IMG", "  variables:\n    TAG: dev-$CI_COMMIT_SHORT_SHA\n    IMG: $CI_REGISTRY_IMAGE:$TAG\n", 0},
 		// Still sensitive.
 		{"push latest", "docker push $CI_REGISTRY_IMAGE:latest", "", 1},
 		{"push without tag", "docker push $CI_REGISTRY_IMAGE", "", 1},
@@ -313,6 +315,40 @@ func TestGL080_EphemeralPushAndDryRun(t *testing.T) {
 	// A file-level variable resolves too.
 	if f := findings080(t, "variables:\n  IMG: $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG\nship:\n  script:\n    - docker push $IMG\n"); len(f) != 0 {
 		t.Errorf("global variable: got %v, want none", f)
+	}
+}
+
+func TestGL080_LocalCluster(t *testing.T) {
+	chartTest := `
+test-charts:
+  services: [docker:dind]
+  before_script:
+    - kind create cluster --wait 60s
+  script:
+    - helm install app charts/app
+    - helm test app
+`
+	if f := findings080(t, chartTest); len(f) != 0 {
+		t.Errorf("chart test in a kind cluster: got %v, want none", f)
+	}
+	deploy := `
+deploy-chart:
+  script:
+    - helm upgrade --install app charts/app
+`
+	if f := findings080(t, deploy); len(f) != 1 {
+		t.Errorf("helm upgrade without a local cluster: got %d findings, want 1", len(f))
+	}
+	mixed := `
+test-and-push:
+  before_script:
+    - kind create cluster
+  script:
+    - helm install app charts/app
+    - docker push $CI_REGISTRY_IMAGE:latest
+`
+	if f := findings080(t, mixed); len(f) != 1 {
+		t.Errorf("local cluster plus a latest push: got %d findings, want 1", len(f))
 	}
 }
 
