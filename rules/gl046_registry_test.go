@@ -86,3 +86,30 @@ func TestGL046_RegistryBuildCacheProtectedJobs(t *testing.T) {
 		}
 	}
 }
+
+// A colon inside ${...} doesn't start the tag (#1530).
+func TestImageRepository(t *testing.T) {
+	for in, want := range map[string]string{
+		"$CI_REGISTRY_IMAGE/app:${CI_COMMIT_SHA:0:8}": "$CI_REGISTRY_IMAGE/app",
+		"$CI_REGISTRY_IMAGE/app:${TAG:-latest}":       "$CI_REGISTRY_IMAGE/app",
+		"${REGISTRY:-r.example.com}/app":              "${REGISTRY:-r.example.com}/app",
+		"host:5000/app:1.2":                           "host:5000/app",
+		"host:5000/app":                               "host:5000/app",
+		"app@sha256:abc":                              "app",
+		"app:1@sha256:abc":                            "app",
+		"app":                                         "app",
+		"${A}:${B}":                                   "${A}",
+		"${A":                                         "${A",
+	} {
+		if got := imageRepository(in); got != want {
+			t.Errorf("imageRepository(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestGL046_KanikoDefaultRepoSubstringTag(t *testing.T) {
+	fs := checkRule(t, GL046, "build:\n  script:\n    - /kaniko/executor --destination $CI_REGISTRY_IMAGE/app:${CI_COMMIT_SHA:0:8} --cache\n")
+	if len(fs) != 1 || !strings.Contains(fs[0].Message, "$CI_REGISTRY_IMAGE/app/cache") {
+		t.Fatalf("expected one finding naming $CI_REGISTRY_IMAGE/app/cache, got %v", fs)
+	}
+}
