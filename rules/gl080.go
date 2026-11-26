@@ -404,7 +404,7 @@ func gl080ScriptDeploys(in *Inheritance, job, globalVars *yaml.Node) (deploys, d
 		rest := text
 		for _, cmd := range shellCommands(blankShellComments(text)) {
 			words := stripExecWrapper(commandWords(cmd.text))
-			if dryRun(words) || ephemeralImagePush(words, jobVars, globalVars, shellVars) || ephemeralChartPush(words, lines, jobVars, globalVars, shellVars) || local && clusterCommand(words) {
+			if dryRun(words) || ephemeralImagePush(words, jobVars, globalVars, shellVars) || ephemeralPackageUpload(words, jobVars, globalVars, shellVars) || ephemeralChartPush(words, lines, jobVars, globalVars, shellVars) || local && clusterCommand(words) {
 				rest = strings.Replace(rest, cmd.text, "", 1)
 			}
 		}
@@ -575,6 +575,22 @@ func ephemeralImagePush(words []string, jobVars, globalVars *yaml.Node, shellVar
 		}
 	}
 	return true
+}
+
+// ephemeralPackageUpload reports a curl upload to the GitLab package
+// registry (#1538) whose package name, version or file names the run, as
+// ephemeralImagePush does for an image: another branch can't write to it.
+func ephemeralPackageUpload(words []string, jobVars, globalVars *yaml.Node, shellVars map[string][]string) bool {
+	if commandName(words) != "curl" {
+		return false
+	}
+	for _, w := range words[1:] {
+		w = strings.Trim(w, `"'`)
+		if _, path, ok := strings.Cut(strings.ToLower(w), "/packages/"); ok {
+			return perRunValue(w[len(w)-len(path):], jobVars, globalVars, shellVars)
+		}
+	}
+	return false
 }
 
 // ephemeralChartPush reports a helm push or cm-push of a chart whose version

@@ -1202,3 +1202,30 @@ func TestGrepRefTest(t *testing.T) {
 		}
 	}
 }
+
+func TestGL080_Issue1538(t *testing.T) {
+	up := func(url string) string {
+		return "pub:\n  script:\n    - 'curl --header \"JOB-TOKEN: $CI_JOB_TOKEN\" --upload-file x.tgz \"" + url + "\"'\n"
+	}
+	api := "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/"
+	for _, tc := range []struct {
+		name, yaml string
+		want       int
+	}{
+		{"fixed version", up(api + "x/1.0.0/x.tgz"), 1},
+		{"version from a variable", "variables:\n  V: 1.0.0\n" + up(api+"x/$V/x.tgz"), 1},
+		{"tag version", up(api + "x/$CI_COMMIT_TAG/x.tgz"), 1},
+		{"per-branch version", up(api + "x/${CI_COMMIT_REF_SLUG}/x.tgz"), 0},
+		{"per-commit file", up(api + "x/1.0/x-$CI_COMMIT_SHORT_SHA.tgz"), 0},
+		{"per-run through variables", "variables:\n  V: 0.0.0-$CI_PIPELINE_IID\n" + up(api+"x/$V/x.tgz"), 0},
+		{"multi-line upload", "pub:\n  script:\n    - |\n      curl --header \"JOB-TOKEN: $CI_JOB_TOKEN\" \\\n        --upload-file x.tgz \\\n        \"" + api + "x/1.0.0/x.tgz\"\n", 1},
+		{"download", "pub:\n  script:\n    - curl -o x.tgz \"" + api + "x/1.0.0/x.tgz\"\n", 0},
+		{"upload elsewhere", "pub:\n  script:\n    - curl --upload-file report.xml https://hooks.example.com/r\n", 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if f := findings080(t, tc.yaml); len(f) != tc.want {
+				t.Fatalf("expected %d findings, got %+v", tc.want, f)
+			}
+		})
+	}
+}

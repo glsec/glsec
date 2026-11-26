@@ -34,8 +34,17 @@ var deployCmdRe = mustCompilePrefiltered(
 		`|kubectl\s+(?:apply|rollout|set|create|patch|replace)\b|kustomize\b|argocd\b|skaffold\s+(?:run|deploy)\b` +
 		`|aws\s+(?:s3|deploy|ecs|lambda|cloudformation|elasticbeanstalk|amplify|cloudfront)\b|gcloud\s+(?:app|run|functions|compute|container|storage)\b|az\s+(?:webapp|functionapp|aks|acr|storage)\b|flyctl?\s+deploy\b|netlify[^|;&]*deploy\b|vercel\b|railway\s+up\b` +
 		`|serverless\s+deploy\b|sls\s+deploy\b|terraform\s+apply\b|pulumi\s+up\b|ansible-playbook\b|cap\s+\S+\s+deploy\b|mina\s+deploy\b|fastlane\b` +
-		`|(?:^|[^0-9a-z_.-])(?:rsync|scp)(?:\s|$)|rclone\b|git\s+push\b`,
+		`|(?:^|[^0-9a-z_.-])(?:rsync|scp)(?:\s|$)|rclone\b|git\s+push\b` +
+		// curl --upload-file/-T to a project's GitLab package registry
+		// (#1538), in either order of flag and URL. Other upload targets
+		// (reports, webhooks, scratch buckets) are left out.
+		`|\bcurl\b[^|;&]*?(?:--upload-file|\s-[a-z]{0,5}t)\s[^|;&]*?` + gitlabPackagesURL +
+		`|\bcurl\b[^|;&]*?` + gitlabPackagesURL + `[^|;&]*?(?:--upload-file|\s-[a-z]{0,5}t)\s`,
 )
+
+// gitlabPackagesURL matches a lowercased GitLab package registry API path of
+// a project.
+const gitlabPackagesURL = `(?:/api/v4|ci_api_v4_url\}?)/projects/\S*?/packages/`
 
 // releaseCmdRe matches release tools that publish but also run in a local
 // snapshot or skip-publish mode; a match counts only when the line does not opt
