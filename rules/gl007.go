@@ -45,13 +45,16 @@ func (r *gl007) Check(doc *yaml.Node, file string) []finding.Finding {
 		findings = append(findings, checkServicesVarInjection(parser.FindKey(def, "services"), file, globalVars, nil, nil)...)
 	}
 
+	in := NewInheritance(doc)
 	parser.EachJob(doc, func(name *yaml.Node, job *yaml.Node) {
-		jobVars := parser.FindKey(job, "variables")
-		for _, f := range checkImageVarInjection(parser.FindKey(job, "image"), file, globalVars, jobVars, job) {
+		// variables: and parallel: from extends: templates apply too (#1529).
+		eff := in.Effective(job)
+		jobVars := parser.FindKey(eff, "variables")
+		for _, f := range checkImageVarInjection(parser.FindKey(job, "image"), file, globalVars, jobVars, eff) {
 			f.Job = name.Value
 			findings = append(findings, f)
 		}
-		for _, f := range checkServicesVarInjection(parser.FindKey(job, "services"), file, globalVars, jobVars, job) {
+		for _, f := range checkServicesVarInjection(parser.FindKey(job, "services"), file, globalVars, jobVars, eff) {
 			f.Job = name.Value
 			findings = append(findings, f)
 		}

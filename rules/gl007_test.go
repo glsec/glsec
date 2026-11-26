@@ -352,3 +352,72 @@ build:
 		t.Errorf("expected Error for an undefined in-file image var, got %s", f[0].Severity)
 	}
 }
+
+// variables: from an extends: template resolve the image variable (#1529).
+func TestGL007_ExtendsVariables(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		yaml string
+		sev  []finding.Severity
+	}{
+		{"template literal", `
+.commons:
+  variables:
+    BUILD_IMAGE_NAME: node:16.14.2-alpine
+.build-job:
+  extends: .commons
+  image: ${BUILD_IMAGE_NAME}
+build:
+  extends: .build-job
+  script: [npm ci]
+`, []finding.Severity{finding.Warn}},
+		{"own image, template variable", `
+.vars:
+  variables:
+    IMG: alpine:3.19
+build:
+  extends: .vars
+  image: $IMG
+  script: [x]
+`, []finding.Severity{finding.Warn}},
+		{"template variable points outside", `
+.vars:
+  variables:
+    IMG: $EXTERNAL_IMAGE
+build:
+  extends: .vars
+  image: $IMG
+  script: [x]
+`, []finding.Severity{finding.Error}},
+		{"extends a template in another file", `
+include:
+  - remote: https://example.com/t.yml
+build:
+  extends: .remote
+  image: $IMG
+  script: [x]
+`, []finding.Severity{finding.Error}},
+		{"matrix in template", `
+.m:
+  parallel:
+    matrix:
+      - IMG: [alpine:3.19, debian:12.5]
+build:
+  extends: .m
+  image: $IMG
+  script: [x]
+`, []finding.Severity{finding.Warn}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := findings007(t, tc.yaml)
+			if len(f) != len(tc.sev) {
+				t.Fatalf("expected %d findings, got %v", len(tc.sev), f)
+			}
+			for i := range f {
+				if f[i].Severity != tc.sev[i] {
+					t.Errorf("finding %d: got %s, want %s", i, f[i].Severity, tc.sev[i])
+				}
+			}
+		})
+	}
+}
