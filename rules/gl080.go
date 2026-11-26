@@ -351,20 +351,43 @@ func gl013Owns(name string, job *yaml.Node) bool {
 // version still counts, since any branch can overwrite what others pull.
 func gl080ScriptDeploys(job, globalVars *yaml.Node) bool {
 	jobVars := parser.FindKey(job, "variables")
-	for _, line := range CollectJobScriptLines(job) {
+	lines := CollectJobScriptLines(job)
+	local := createsLocalCluster(lines)
+	for _, line := range lines {
 		if !lineDeploys(line.Value) {
 			continue
 		}
 		rest := line.Value
 		for _, cmd := range shellCommands(blankShellComments(line.Value)) {
 			words := stripExecWrapper(commandWords(cmd.text))
-			if dryRun(words) || ephemeralImagePush(words, jobVars, globalVars) {
+			if dryRun(words) || ephemeralImagePush(words, jobVars, globalVars) || local && clusterCommand(words) {
 				rest = strings.Replace(rest, cmd.text, "", 1)
 			}
 		}
 		if lineDeploys(rest) {
 			return true
 		}
+	}
+	return false
+}
+
+// createsLocalCluster reports a job that starts a throwaway Kubernetes cluster
+// of its own (kind, k3d, minikube), as chart tests do: its kubectl and helm
+// commands then talk to that cluster, not to a deployment.
+func createsLocalCluster(lines []*yaml.Node) bool {
+	for _, line := range lines {
+		v := line.Value
+		if strings.Contains(v, "kind create cluster") || strings.Contains(v, "k3d cluster create") || strings.Contains(v, "minikube start") || strings.Contains(v, "ctlptl create cluster") {
+			return true
+		}
+	}
+	return false
+}
+
+func clusterCommand(words []string) bool {
+	switch commandName(words) {
+	case "kubectl", "helm":
+		return true
 	}
 	return false
 }
@@ -378,8 +401,9 @@ var perRunTagVars = []string{
 }
 
 // ephemeralImagePush reports a docker, podman, buildah or nerdctl push of one
-// image whose tag names the run (perRunTagVars). An image given as a single
-// variable is resolved once through the job's and the file's variables:.
+// image whose tag names the run (perRunTagVars). Variables in the image are
+// expanded through the job's and the file's variables:, so "$IMG-debug" with
+// IMG ending in :$CI_PIPELINE_ID counts.
 func ephemeralImagePush(words []string, jobVars, globalVars *yaml.Node) bool {
 	switch commandName(words) {
 	case "docker", "podman", "buildah", "nerdctl":
@@ -406,8 +430,12 @@ func ephemeralImagePush(words []string, jobVars, globalVars *yaml.Node) bool {
 	if image == "" {
 		return false
 	}
-	if name, ok := soleVariable(image); ok {
-		image = variableValue(name, jobVars, globalVars)
+	if strings.Contains(image, "$") {
+		vars := literalVariables(globalVars)
+		for k, v := range literalVariables(jobVars) {
+			vars[k] = v
+		}
+		image = expandVars(strings.Trim(image, `"'`), vars, "", 0)
 	}
 	tag := imageTag(image)
 	for _, v := range perRunTagVars {
@@ -416,43 +444,6 @@ func ephemeralImagePush(words []string, jobVars, globalVars *yaml.Node) bool {
 		}
 	}
 	return false
-}
-
-// soleVariable reports whether s is exactly one variable reference, $NAME or
-// ${NAME}, and returns its name.
-func soleVariable(s string) (string, bool) {
-	name := strings.TrimPrefix(s, "$")
-	if name == s {
-		return "", false
-	}
-	if strings.HasPrefix(name, "{") && strings.HasSuffix(name, "}") {
-		name = name[1 : len(name)-1]
-	}
-	for _, c := range name {
-		if c != '_' && (c < 'A' || c > 'Z') && (c < 'a' || c > 'z') && (c < '0' || c > '9') {
-			return "", false
-		}
-	}
-	return name, name != ""
-}
-
-func variableValue(name string, scopes ...*yaml.Node) string {
-	for _, vars := range scopes {
-		if vars == nil || vars.Kind != yaml.MappingNode {
-			continue
-		}
-		v := parser.FindKey(vars, name)
-		if v == nil {
-			continue
-		}
-		if v.Kind == yaml.MappingNode {
-			v = parser.FindKey(v, "value")
-		}
-		if v != nil && v.Kind == yaml.ScalarNode {
-			return v.Value
-		}
-	}
-	return ""
 }
 
 // dryRun reports a command run in dry-run mode, which changes nothing:

@@ -305,6 +305,16 @@ func TestLineDeploys(t *testing.T) {
 		{`python manage.py check --deploy --fail-level WARNING`, false},
 		{`dotnet publish -c Release -o out`, false},
 		{`pytest tests/deploy/test_foo.py`, false},
+		{`golangci-lint run ./cmd/scp-wallet/...`, false},
+		{`album deploy -h`, false},
+		{`mytool publish --help`, false},
+		{`pixi publish --target-dir pkg`, false},
+		{`pixi publish --path .`, false},
+		{`scp dist/app.tar.gz host:/srv/`, true},
+		{`/usr/bin/rsync -av dist/ host:/srv/`, true},
+		{`rsync`, true},
+		{`pixi publish --to https://prefix.dev/my-channel`, true},
+		{`pixi publish --target-channel=s3://bucket/channel`, true},
 	} {
 		t.Run(tc.line, func(t *testing.T) {
 			if got := lineDeploys(tc.line); got != tc.want {
