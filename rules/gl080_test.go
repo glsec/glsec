@@ -915,6 +915,12 @@ func TestGL080_ShellGuards(t *testing.T) {
 		{"podman push between per-run refs", fallback + `  script:
     - podman push localhost/app:$CI_COMMIT_SHA $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
 `, 0},
+		{"exit guard inside after_script", fallback + `  script:
+    - echo build
+  after_script:
+    - if [ "$CI_COMMIT_BRANCH" != main ]; then exit 0; fi
+    - docker push "$CI_REGISTRY_IMAGE:latest"
+`, 1},
 		{"exit guard that keeps main out", fallback + `  script:
     - if [ "$CI_COMMIT_BRANCH" = main ]; then exit 0; fi
     - docker push "$CI_REGISTRY_IMAGE:latest"

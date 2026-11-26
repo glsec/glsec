@@ -140,10 +140,8 @@ func blankGuardedSteps(text string) string {
 	if !strings.Contains(text, "CI_") {
 		return text
 	}
+	// blankShellComments keeps every offset.
 	code := blankShellComments(text)
-	if len(code) != len(text) {
-		return text
-	}
 	b := []byte(text)
 	blank := func(start, end int) {
 		for i := start; i < end; i++ {
@@ -187,10 +185,8 @@ func exitGuardAt(text string) int {
 	if !strings.Contains(text, "exit") || !strings.Contains(text, "CI_") {
 		return -1
 	}
+	// blankShellComments keeps every offset.
 	code := blankShellComments(text)
-	if len(code) != len(text) {
-		return -1
-	}
 	at := -1
 	for _, m := range shellIfExitRe.FindAllStringSubmatchIndex(code, -1) {
 		if refTest(code[m[2]:m[3]]) == -1 && topLevel(code, m[0]) {
@@ -216,7 +212,7 @@ func exitGuardAt(text string) int {
 // topLevel reports whether position pos of a shell script is outside quotes
 // and outside any (, {, if, case or do block.
 func topLevel(s string, pos int) bool {
-	depth := 0
+	depth, parens := 0, 0
 	var quote byte
 	word := func(i int) string {
 		j := i
@@ -238,9 +234,16 @@ func topLevel(s string, pos int) bool {
 			i++
 		case c == '\'' || c == '"':
 			quote = c
-		case c == '(' || c == '{':
+		case c == '(':
+			parens++
+		case c == ')':
+			// A case pattern's ) has no ( to close.
+			if parens > 0 {
+				parens--
+			}
+		case c == '{':
 			depth++
-		case c == ')' || c == '}':
+		case c == '}':
 			depth--
 		case c >= 'a' && c <= 'z' && (i == 0 || !isWordByte(s[i-1])):
 			w := word(i)
@@ -257,7 +260,7 @@ func topLevel(s string, pos int) bool {
 			i += len(w) - 1
 		}
 	}
-	return quote == 0 && depth == 0
+	return quote == 0 && depth == 0 && parens == 0
 }
 
 func isWordByte(c byte) bool {

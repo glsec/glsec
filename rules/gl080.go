@@ -435,27 +435,23 @@ func serviceHosts(job *yaml.Node) map[string]bool {
 	}
 	hosts := map[string]bool{"localhost": true, "127.0.0.1": true}
 	for _, s := range svc.Content {
-		image := ""
-		switch s.Kind {
-		case yaml.ScalarNode:
-			image = s.Value
-		case yaml.MappingNode:
-			if a := parser.FindKey(s, "alias"); a != nil && a.Kind == yaml.ScalarNode {
+		image := s.Value
+		if s.Kind == yaml.MappingNode {
+			if a := parser.FindKey(s, "alias"); a != nil {
 				for _, al := range strings.Split(a.Value, ",") {
 					hosts[strings.ToLower(strings.TrimSpace(al))] = true
 				}
 			}
-			if n := parser.FindKey(s, "name"); n != nil && n.Kind == yaml.ScalarNode {
+			image = ""
+			if n := parser.FindKey(s, "name"); n != nil {
 				image = n.Value
 			}
 		}
-		if image != "" {
-			repo := imageRepository(image)
-			if i := strings.LastIndexByte(repo, '/'); i >= 0 {
-				repo = repo[i+1:]
-			}
-			hosts[strings.ToLower(repo)] = true
+		repo := imageRepository(image)
+		if i := strings.LastIndexByte(repo, '/'); i >= 0 {
+			repo = repo[i+1:]
 		}
+		hosts[strings.ToLower(repo)] = true
 	}
 	return hosts
 }
