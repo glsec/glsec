@@ -573,6 +573,30 @@ deploy_prod:
   script:
     - scp build.tgz deploy@prod.example.invalid:.
 `, 1},
+		{"protected MR source (#1543)", `
+deploy_prod:
+  stage: deploy
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_SOURCE_BRANCH_PROTECTED == "true" && $CI_MERGE_REQUEST_SOURCE_PROJECT_ID == $CI_PROJECT_ID
+  script:
+    - scp build.tgz deploy@prod.example.invalid:.
+`, 0},
+		{"protected MR source, maybe a fork (#1543)", `
+deploy_prod:
+  stage: deploy
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_SOURCE_BRANCH_PROTECTED == "true"
+  script:
+    - scp build.tgz deploy@prod.example.invalid:.
+`, 1},
+		{"approved MR stays reported (#1543)", `
+deploy_prod:
+  stage: deploy
+  rules:
+    - if: $CI_MERGE_REQUEST_APPROVED == "true"
+  script:
+    - scp build.tgz deploy@prod.example.invalid:.
+`, 1},
 		{"only: merge_requests, live in the stage", `
 release:
   stage: go-live

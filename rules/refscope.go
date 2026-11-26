@@ -237,9 +237,33 @@ func runsOnlyInMRPipelines(in *Inheritance, job *yaml.Node) bool {
 	return onlyMergeRequests(in.Key(job, "only"))
 }
 
+var (
+	mrProtectedSourceRe = mustCompilePrefiltered(`^\$\{?CI_MERGE_REQUEST_SOURCE_BRANCH_PROTECTED\}?\s*==\s*["']true["']$`)
+	mrSameProjectRe     = mustCompilePrefiltered(`^\$\{?CI_MERGE_REQUEST_SOURCE_PROJECT_(ID|PATH)\}?\s*==\s*\$\{?CI_(?:MERGE_REQUEST_)?PROJECT_(ID|PATH)\}?$|^\$\{?CI_(?:MERGE_REQUEST_)?PROJECT_(ID|PATH)\}?\s*==\s*\$\{?CI_MERGE_REQUEST_SOURCE_PROJECT_(ID|PATH)\}?$`)
+)
+
+// protectedSameProjectSource reports && operands that test both that the
+// merge request's source branch is protected and that it is in the project
+// itself (#1543). Then only who may push to a protected branch of the project
+// reaches the job. The protection test alone doesn't do: in a merge request
+// from a fork, the fork's own settings decide it, and a maintainer can run
+// such a merge request's pipeline in the parent project.
+func protectedSameProjectSource(ops []string) bool {
+	protected, same := false, false
+	for _, op := range ops {
+		op = trimOuterParens(strings.TrimSpace(op))
+		protected = protected || mrProtectedSourceRe.MatchString(op)
+		if m := mrSameProjectRe.FindStringSubmatch(op); m != nil && m[1]+m[3] == m[2]+m[4] {
+			same = true
+		}
+	}
+	return protected && same
+}
+
 // ifRequiresMR reports whether a rules:if expression is true only in a merge
 // request pipeline: every || alternative requires one, and of && operands
-// one does while none tests a branch or tag.
+// one does while none tests a branch or tag, and the source branch isn't
+// required to be a protected one of the project itself.
 func ifRequiresMR(expr string) bool {
 	expr = trimOuterParens(strings.TrimSpace(expr))
 	alts := splitTopLevel(expr, "||")
@@ -255,6 +279,9 @@ func ifRequiresMR(expr string) bool {
 		return true
 	}
 	ops := splitTopLevel(expr, "&&")
+	if protectedSameProjectSource(ops) {
+		return false
+	}
 	if len(ops) > 1 {
 		requires := false
 		for _, op := range ops {
@@ -373,7 +400,8 @@ var (
 
 // ifRestrictsToProtected reports whether a rules:if expression confines the job
 // to a protected ref, tag, or a named branch: the default branch, a tag, an
-// explicit CI_COMMIT_REF_PROTECTED == "true", or an explicit branch equality.
+// explicit CI_COMMIT_REF_PROTECTED == "true", an explicit branch equality, or
+// a protected merge request source branch in the project itself (#1543).
 //
 // && binds tighter than ||, as in GitLab. Every || alternative must restrict,
 // because any one of them admits the pipeline; of && operands, one restricting
@@ -390,6 +418,9 @@ func ifRestrictsToProtected(expr string) bool {
 		return true
 	}
 	if ops := splitTopLevel(expr, "&&"); len(ops) > 1 {
+		if protectedSameProjectSource(ops) {
+			return true
+		}
 		for _, op := range ops {
 			if ifRestrictsToProtected(op) {
 				return true
