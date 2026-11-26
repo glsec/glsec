@@ -33,7 +33,7 @@ jobs:
       # compromised dependency cannot send the job's tokens elsewhere. The list
       # is what the v1.20.0 release run connected to in audit mode (#541). A
       # release that needs a new host fails here: add the host, then re-run.
-      - uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+      - uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
         with:
           egress-policy: block
           disable-telemetry: true
