@@ -566,6 +566,7 @@ func TestGL013_UnrestrictedRuleEntry(t *testing.T) {
 		{"not push", "- if: $CI_PIPELINE_SOURCE != \"push\" && $CI_PIPELINE_SOURCE != \"merge_request_event\"", "production", 0, ""},
 		{"commit message and main", "- if: $CI_COMMIT_MESSAGE =~ /deploy/ && $CI_COMMIT_BRANCH == \"main\"", "production", 0, ""},
 		{"MR or protected source in the project", "- if: $CI_PIPELINE_SOURCE == \"merge_request_event\" && $CI_MERGE_REQUEST_SOURCE_BRANCH_PROTECTED == \"true\" && $CI_MERGE_REQUEST_SOURCE_PROJECT_ID == $CI_PROJECT_ID", "production", 0, ""},
+		{"source regex excludes MR and push", "- if: $CI_PIPELINE_SOURCE !~ /^(push|merge_request_event)$/", "production", 0, ""},
 		{"not schedule and own variable", "- if: $CI_PIPELINE_SOURCE != \"schedule\" && $DEPLOY == \"true\"", "production", 0, ""},
 		{"MR target, tag", "- if: $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == \"main\" && $CI_COMMIT_TAG", "production", 0, ""},
 		// Still silent.

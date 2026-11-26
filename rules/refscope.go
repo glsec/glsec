@@ -382,10 +382,59 @@ func ruleExcludes(item *yaml.Node) bool {
 }
 
 // ifAdmitsMR reports whether a rules:if expression admits merge-request
-// pipelines. `$CI_PIPELINE_SOURCE != "merge_request_event"` matches everything
-// *except* MRs, so a != comparison is not an admission.
+// pipelines (#1542): one || alternative selects merge_request_event as the
+// pipeline source (==, or =~ with a regex that matches it) and no && operand
+// of it keeps merge requests out (!= or !~ that matches merge_request_event,
+// == or =~ on another source). Other operands are not weighed here. An
+// operand glsec can't parse that names merge_request_event counts as
+// selecting it unless it negates; an expression whose parentheses don't
+// balance falls back to that reading of the whole.
 func ifAdmitsMR(expr string) bool {
-	return strings.Contains(expr, "merge_request_event") && !strings.Contains(expr, "!=")
+	alts := splitTopLevel(trimOuterParens(strings.TrimSpace(expr)), "||")
+	if alts == nil {
+		return namesMRSource(expr)
+	}
+	for _, alt := range alts {
+		selects, excludes := false, false
+		for _, op := range splitTopLevel(trimOuterParens(alt), "&&") {
+			op = trimOuterParens(strings.TrimSpace(op))
+			if inner := splitTopLevel(op, "||"); len(inner) > 1 {
+				selects = selects || ifAdmitsMR(op)
+				continue
+			}
+			if mrSourceRe.MatchString(op) {
+				if m := ciVarTestRe.FindStringSubmatch(op); m != nil && m[2] == "=~" && !operandMatches("!~", m[3], "merge_request_event") {
+					excludes = true
+				} else {
+					selects = true
+				}
+				continue
+			}
+			if m := ciVarTestRe.FindStringSubmatch(op); m != nil && m[1] == "CI_PIPELINE_SOURCE" {
+				switch m[2] {
+				case "!=", "!~":
+					excludes = excludes || operandMatches(m[2], m[3], "merge_request_event")
+				case "==":
+					excludes = true // another source; mrSourceRe took merge_request_event
+				case "=~":
+					excludes = excludes || !operandMatches("!~", m[3], "merge_request_event")
+					selects = selects || operandMatches("!~", m[3], "merge_request_event")
+				}
+				continue
+			}
+			selects = selects || namesMRSource(op)
+		}
+		if selects && !excludes {
+			return true
+		}
+	}
+	return false
+}
+
+// namesMRSource is the plain reading of an expression glsec doesn't parse: it
+// names merge_request_event and doesn't negate.
+func namesMRSource(expr string) bool {
+	return strings.Contains(expr, "merge_request_event") && !strings.Contains(expr, "!=") && !strings.Contains(expr, "!~")
 }
 
 var (
