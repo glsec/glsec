@@ -507,6 +507,7 @@ var prefilterTable = map[string]prefilterLits{
 	"^\\$\\{?(?:CI_[A-Z_]*_SHA|CI_BUILD_REF|SHA)\\}?$":                                                                              {anyOf: []string{"BUILD_REF", "SHA"}},
 	"^\\$\\{?([A-Za-z_][A-Za-z0-9_]*)":                                                                                              {anyOf: []string{"$"}},
 	"^\\$\\{?([A-Za-z_][A-Za-z0-9_]*)\\}?$":                                                                                         {anyOf: []string{"$"}},
+	"^\\$\\{?([A-Za-z_][A-Za-z0-9_]*)\\}?(?:\\s*(==|!=|=~|!~)\\s*(null|\"[^\"]*\"|'[^']*'|/.*/[a-z]*))?$":                           {anyOf: []string{"$"}},
 	"^\\$\\{?([A-Za-z_][A-Za-z0-9_]*)\\}?(?:\\s*==\\s*(?:\"[^\"]+\"|'[^']+')|\\s*=~\\s*/.+/[a-z]*)?$":                               {anyOf: []string{"$"}},
 	"^\\$\\{?(\\w+)\\}?\\s*(==|!=)\\s*[\"']([^\"']*)[\"']$":                                                                         {anyOf: []string{"==", "!="}},
 	"^\\$\\{?CI_COMMIT_(?:BRANCH|REF_NAME)\\}?(?:\\s*!=\\s*(?:null|\"\"|''))?$":                                                     {anyOf: []string{"$CI_COMMIT_BRANCH", "$CI_COMMIT_REF_NAME", "${CI_COMMIT_BRANCH", "${CI_COMMIT_REF_NAME"}},

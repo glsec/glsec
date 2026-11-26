@@ -504,9 +504,6 @@ func TestGL013_MergeRequestOnlyProdDeploy(t *testing.T) {
 		{"never MR rule, then branch rule", "rules:\n    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\"\n      when: never\n    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH", "production", 0},
 		{"MR and branch", "rules:\n    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\" && $CI_COMMIT_BRANCH == \"main\"", "production", 0},
 		{"tag pipeline", "rules:\n    - if: $CI_COMMIT_TAG", "production", 0},
-		{"not MR", "rules:\n    - if: $CI_PIPELINE_SOURCE != \"merge_request_event\"", "production", 0},
-		{"MR variable is null", "rules:\n    - if: $CI_MERGE_REQUEST_IID == null", "production", 0},
-		{"labels not matched", "rules:\n    - if: $CI_MERGE_REQUEST_LABELS !~ /skip/", "production", 0},
 		{"only branches", "only:\n    - main", "production", 0},
 		{"only MR and main", "only:\n    - merge_requests\n    - main", "production", 0},
 	} {
@@ -542,6 +539,21 @@ func TestGL013_UnrestrictedRuleEntry(t *testing.T) {
 		{"branch rule, then MR rule", "- if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH\n    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\"\n      when: manual", "production", 1, "admits merge request pipelines"},
 		{"tier production", "- when: manual", "{name: eu, deployment_tier: production}", 1, "when: manual"},
 		{"unrelated never first", "- if: $CI_COMMIT_MESSAGE =~ /skip-deploy/\n      when: never\n    - when: manual", "production", 1, "when: manual"},
+		// Conditions true on any branch (#1539); the MR-only check stays silent on
+		// them, since push pipelines run them too.
+		{"not MR", "- if: $CI_PIPELINE_SOURCE != \"merge_request_event\"", "production", 1, "still admits push pipelines from"},
+		{"MR variable is null", "- if: $CI_MERGE_REQUEST_IID == null", "production", 1, "where CI_MERGE_REQUEST_IID is unset"},
+		{"labels not matched", "- if: $CI_MERGE_REQUEST_LABELS !~ /skip/", "production", 1, "where CI_MERGE_REQUEST_LABELS is unset"},
+		{"not schedule", "- if: $CI_PIPELINE_SOURCE != \"schedule\"", "production", 1, "push and merge request pipelines"},
+		{"source regex without push", "- if: $CI_PIPELINE_SOURCE !~ /^(schedule|web)$/", "production", 1, "push and merge request pipelines"},
+		{"commit message", "- if: $CI_COMMIT_MESSAGE =~ /deploy/", "production", 1, "which whoever pushes writes"},
+		{"commit title and branch set", "- if: $CI_COMMIT_BRANCH && $CI_COMMIT_TITLE =~ /^release/", "production", 1, "CI_COMMIT_TITLE"},
+		{"open alternative", "- if: $CI_PIPELINE_SOURCE == \"schedule\" || $CI_COMMIT_MESSAGE =~ /deploy/", "production", 1, "CI_COMMIT_MESSAGE"},
+		// Still restricted.
+		{"not push", "- if: $CI_PIPELINE_SOURCE != \"push\" && $CI_PIPELINE_SOURCE != \"merge_request_event\"", "production", 0, ""},
+		{"commit message and main", "- if: $CI_COMMIT_MESSAGE =~ /deploy/ && $CI_COMMIT_BRANCH == \"main\"", "production", 0, ""},
+		{"not schedule and own variable", "- if: $CI_PIPELINE_SOURCE != \"schedule\" && $DEPLOY == \"true\"", "production", 0, ""},
+		{"MR target, tag", "- if: $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == \"main\" && $CI_COMMIT_TAG", "production", 0, ""},
 		// Still silent.
 		{"all restrict", "- if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH\n    - if: $CI_COMMIT_TAG", "production", 0, ""},
 		{"restricting if with changes", "- if: $CI_COMMIT_BRANCH == \"main\"\n      changes: [deploy/**/*]", "production", 0, ""},

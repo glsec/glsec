@@ -10,6 +10,7 @@ package rules
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/glsec/glsec/internal/parser"
@@ -144,6 +145,9 @@ func unrestrictedRuleEntry(rules *yaml.Node, mrPipelines, withoutIfOnly, childOp
 			return item, fmt.Sprintf("if: %s only checks that a branch is set", ifNode.Value)
 		case mrPipelines && ifAdmitsMR(expr) && !ifRestrictsToProtected(expr):
 			return item, fmt.Sprintf("if: %s admits merge request pipelines, which deploy the MR's source commit before anyone merged it", ifNode.Value)
+		}
+		if why := openOnAnyBranch(expr, mrPipelines); why != "" {
+			return item, fmt.Sprintf("if: %s %s", ifNode.Value, why)
 		}
 	}
 	return nil, ""
@@ -726,4 +730,129 @@ func IncludeRulesProtectedOnly(rules *yaml.Node) bool {
 		admitting++
 	}
 	return admitting > 0
+}
+
+// ciVarTestRe splits an if: atom into variable, operator and operand; a bare
+// variable tests that it is set.
+var ciVarTestRe = mustCompilePrefiltered(`^\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?(?:\s*(==|!=|=~|!~)\s*(null|"[^"]*"|'[^']*'|/.*/[a-z]*))?$`)
+
+// openOnAnyBranch returns why an if: is true in a pipeline for any branch
+// (#1539), or "" when glsec can't tell. One || alternative whose every &&
+// operand is such a test is enough:
+//   - a branch-presence test;
+//   - a pipeline source compared with != or !~ that leaves push pipelines in
+//     (or merge request pipelines, when the workflow admits them);
+//   - a test of the commit message, title, description or author, which
+//     whoever pushes writes;
+//   - a test of a merge request variable, true in every merge request
+//     pipeline the pusher opens (when the workflow admits them), or a
+//     negative one, which the unset variable of a push pipeline passes.
+//     CI_MERGE_REQUEST_SOURCE_BRANCH_PROTECTED, _APPROVED and _EVENT_TYPE
+//     depend on someone else and are left alone.
+//
+// Any other operand, such as a source ==, a project variable or a protected
+// ref, keeps the alternative restricted.
+func openOnAnyBranch(expr string, mrPipelines bool) string {
+	for _, alt := range splitTopLevel(expr, "||") {
+		// The pipelines of an unprotected branch the alternative can still be
+		// true in.
+		kinds := pushPipeline
+		if mrPipelines {
+			kinds |= mrPipeline
+		}
+		why, open := "", true
+		for _, op := range splitTopLevel(trimOuterParens(alt), "&&") {
+			k, w, ok := openAtom(trimOuterParens(op))
+			if !ok {
+				open = false
+				break
+			}
+			kinds &= k
+			if w != "" && (why == "" || why == branchSetWhy) {
+				why = w
+			}
+		}
+		switch {
+		case !open || kinds == 0:
+		case why != "":
+			return why
+		case kinds == anyPipeline:
+			return "excludes a pipeline source but still admits push and merge request pipelines from any branch"
+		case kinds&pushPipeline != 0:
+			return "excludes a pipeline source but still admits push pipelines from any branch"
+		default:
+			return "excludes a pipeline source but still admits merge request pipelines from any branch"
+		}
+	}
+	return ""
+}
+
+const (
+	pushPipeline = 1 << iota
+	mrPipeline
+	anyPipeline = pushPipeline | mrPipeline
+)
+
+const branchSetWhy = "only checks that a branch is set"
+
+// openAtom reports whether an && operand is one openOnAnyBranch reads, the
+// pipelines it can be true in, and why it is open ("" for a pipeline source
+// test, whose reason depends on what the other operands leave).
+func openAtom(atom string) (kinds int, why string, ok bool) {
+	if branchPresenceRe.MatchString(atom) {
+		return anyPipeline, branchSetWhy, true
+	}
+	m := ciVarTestRe.FindStringSubmatch(atom)
+	if m == nil {
+		return 0, "", false
+	}
+	name, op, val := m[1], m[2], m[3]
+	// A test that the variable is unset (== null, == "") is negative too,
+	// != null a positive one.
+	unset := val == "null" || val == `""` || val == "''"
+	negative := (op == "!=" || op == "!~") && !unset || op == "==" && unset
+	switch {
+	case name == "CI_PIPELINE_SOURCE":
+		if !negative {
+			return 0, "", false
+		}
+		if !operandMatches(op, val, "push") {
+			kinds |= pushPipeline
+		}
+		if !operandMatches(op, val, "merge_request_event") {
+			kinds |= mrPipeline
+		}
+		return kinds, "", true
+	case name == "CI_COMMIT_MESSAGE" || name == "CI_COMMIT_TITLE" || name == "CI_COMMIT_DESCRIPTION" || name == "CI_COMMIT_AUTHOR":
+		return anyPipeline, "tests " + name + ", which whoever pushes writes", true
+	case strings.HasPrefix(name, "CI_MERGE_REQUEST_"):
+		switch name {
+		case "CI_MERGE_REQUEST_SOURCE_BRANCH_PROTECTED", "CI_MERGE_REQUEST_APPROVED", "CI_MERGE_REQUEST_EVENT_TYPE":
+			return 0, "", false
+		}
+		if negative {
+			return pushPipeline, "is true in a push pipeline from any branch, where " + name + " is unset", true
+		}
+		return mrPipeline, "is true in a merge request pipeline from any branch, which runs the MR's unmerged source commit", true
+	}
+	return 0, "", false
+}
+
+// operandMatches reports whether value matches the operand of a != or !~
+// test, so the test excludes it. An operand glsec can't read counts as
+// matching.
+func operandMatches(op, operand, value string) bool {
+	if op == "!=" {
+		return strings.Trim(operand, `"'`) == value
+	}
+	i := strings.LastIndex(operand, "/")
+	if !strings.HasPrefix(operand, "/") || i <= 0 {
+		return true
+	}
+	pat := operand[1:i]
+	if strings.Contains(operand[i+1:], "i") {
+		pat = "(?i)" + pat
+	}
+	re, err := regexp.Compile(pat)
+	return err != nil || re.MatchString(value)
 }
