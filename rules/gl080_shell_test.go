@@ -56,7 +56,7 @@ func TestRefTest(t *testing.T) {
 		`[ "$CI_COMMIT_BRANCH" = main ] && [ "$X" ]`:       0,
 		`grep -q x file`:                                   0,
 	} {
-		if got := refTest(cond); got != want {
+		if got := refTest(cond, nil); got != want {
 			t.Errorf("refTest(%q) = %d, want %d", cond, got, want)
 		}
 	}
@@ -81,7 +81,7 @@ func TestExitGuardAt(t *testing.T) {
 		`[ $CI_COMMIT_BRANCH = main ] || exit 0`:                              true,
 		`true || [ -n "$CI_COMMIT_TAG" ] || exit 0`:                           false,
 	} {
-		if got := exitGuardAt(text) >= 0; got != want {
+		if got := exitGuardAt(text, nil) >= 0; got != want {
 			t.Errorf("exitGuardAt(%q) >= 0 = %v, want %v", text, got, want)
 		}
 	}
@@ -124,21 +124,21 @@ func TestTopLevel(t *testing.T) {
 
 func TestExitGuardOrder(t *testing.T) {
 	text := `[ -n "$CI_COMMIT_TAG" ] || exit 0; if [ "$CI_COMMIT_BRANCH" != main ]; then exit 0; fi`
-	if got := exitGuardAt(text); got != 0 {
+	if got := exitGuardAt(text, nil); got != 0 {
 		t.Errorf("exitGuardAt(%q) = %d, want 0", text, got)
 	}
 	text = `if [ "$CI_COMMIT_BRANCH" != main ]; then exit 0; fi; [ -n "$CI_COMMIT_TAG" ] || exit 0`
-	if got := exitGuardAt(text); got != 0 {
+	if got := exitGuardAt(text, nil); got != 0 {
 		t.Errorf("exitGuardAt(%q) = %d, want 0", text, got)
 	}
-	if got := refTest(`[ -x "$CI_COMMIT_TAG" ]`); got != 0 {
+	if got := refTest(`[ -x "$CI_COMMIT_TAG" ]`, nil); got != 0 {
 		t.Errorf("refTest(-x) = %d, want 0", got)
 	}
 }
 
 func TestBlankGuardedStepsOrList(t *testing.T) {
 	text := `[ -f x ] || [ "$CI_COMMIT_BRANCH" = main ] && docker push app:latest`
-	if got := blankGuardedSteps(text); got != text {
+	if got := blankGuardedSteps(text, nil); got != text {
 		t.Errorf("blankGuardedSteps(%q) = %q, want it unchanged", text, got)
 	}
 }
@@ -229,5 +229,70 @@ func TestEphemeralEnvironmentUnresolved(t *testing.T) {
 	}
 	if !clusterCommand(commandWords("kubectl apply -f x")) || clusterCommand(commandWords("docker push x")) {
 		t.Error("clusterCommand")
+	}
+}
+
+func TestRefTestFlags(t *testing.T) {
+	flags := map[string]bool{"PUSH": true}
+	for cond, want := range map[string]int{
+		`[ -n "$PUSH" ]`:         1,
+		`[ -z "$PUSH" ]`:         -1,
+		`[ "$PUSH" = true ]`:     1,
+		`[ "$PUSH" != true ]`:    -1,
+		`[ "$PUSH" = "" ]`:       -1,
+		`[ "$PUSH" != "" ]`:      1,
+		`[ true = "$PUSH" ]`:     1,
+		`[ "$PUSH" = "$OTHER" ]`: 0,
+		`[ -n "$OTHER" ]`:        0,
+		`[[ -n $PUSH ]]`:         1,
+		`[ -n $PUSH ]`:           0,
+		`! [ -n "$PUSH" ]`:       -1,
+		`[ "$PUSH" -eq 1 ]`:      0,
+	} {
+		if got := refTest(cond, flags); got != want {
+			t.Errorf("refTest(%q) = %d, want %d", cond, got, want)
+		}
+	}
+}
+
+func TestProtectedFlags(t *testing.T) {
+	doc := parseTestYAML(t, `
+variables: {GLOBAL: x}
+stages: [a]
+writer:
+  script:
+    - echo "WRITTEN=1" >> build.env
+    - echo $NOT_ASSIGNED; XA=1
+    - echo $TWICE; TWICE=1
+job:
+  rules:
+    - if: $CI_COMMIT_TAG
+      variables: {A: "1", GLOBAL: "1", WRITTEN: "1", NOT_ASSIGNED: "1", TWICE: "1", CI_DEBUG_TRACE: "true", OWN: "1"}
+    - if: $CI_COMMIT_BRANCH
+      variables: {B: "1"}
+    - if: $CI_COMMIT_TAG
+      variables: {B: "1"}
+    - if: $CI_COMMIT_TAG
+      variables: notamap
+    - when: never
+      variables: {C: "1"}
+  variables: {OWN: x}
+  script: [echo]
+`)
+	in := NewInheritance(doc)
+	mapping := parser.Unwrap(doc)
+	job := parser.FindKey(mapping, "job")
+	got := protectedFlags(in, job, parser.FindKey(mapping, "variables"))
+	want := map[string]bool{"A": true, "NOT_ASSIGNED": true}
+	if len(got) != len(want) {
+		t.Fatalf("protectedFlags = %v, want %v", got, want)
+	}
+	for k := range want {
+		if !got[k] {
+			t.Errorf("protectedFlags = %v, want %v", got, want)
+		}
+	}
+	if protectedFlags(in, parser.FindKey(mapping, "writer"), nil) != nil {
+		t.Error("a job without rules: has no flags")
 	}
 }

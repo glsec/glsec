@@ -32,8 +32,10 @@ var (
 // refTest reports what a shell test says about the ref: +1 when it is true
 // only on a protected or named ref (the default branch, a named branch, a tag,
 // CI_COMMIT_REF_PROTECTED), -1 when it is true on every other ref, 0 when it
-// says nothing glsec can read, such as a compound test.
-func refTest(cond string) int {
+// says nothing glsec can read, such as a compound test. flags are variables
+// that only protected refs set (protectedFlags); a test that one is set reads
+// like a test of CI_COMMIT_TAG.
+func refTest(cond string, flags map[string]bool) int {
 	c := strings.TrimSpace(cond)
 	sign := 1
 	if strings.HasPrefix(c, "!") {
@@ -62,14 +64,14 @@ func refTest(cond string) int {
 			unquoted = true
 		}
 	}
-	r := refTestFields(f, sign)
+	r := refTestFields(f, sign, flags)
 	if unquoted && (len(f) == 2 || r == -1) {
 		return 0
 	}
 	return r
 }
 
-func refTestFields(f []string, sign int) int {
+func refTestFields(f []string, sign int, flags map[string]bool) int {
 	for i, w := range f {
 		w = strings.Trim(w, `"'`)
 		if strings.HasPrefix(w, "${") && strings.HasSuffix(w, "}") {
@@ -77,9 +79,12 @@ func refTestFields(f []string, sign int) int {
 		}
 		f[i] = w
 	}
+	flag := func(w string) bool {
+		return strings.HasPrefix(w, "$") && flags[w[1:]]
+	}
 	switch len(f) {
 	case 2:
-		if f[1] != "$CI_COMMIT_TAG" {
+		if f[1] != "$CI_COMMIT_TAG" && !flag(f[1]) {
 			return 0
 		}
 		switch f[0] {
@@ -98,8 +103,21 @@ func refTestFields(f []string, sign int) int {
 		default:
 			return 0
 		}
-		if b == "$CI_COMMIT_BRANCH" || b == "$CI_COMMIT_REF_PROTECTED" || b == "$CI_COMMIT_TAG" {
+		if b == "$CI_COMMIT_BRANCH" || b == "$CI_COMMIT_REF_PROTECTED" || b == "$CI_COMMIT_TAG" || flag(b) {
 			a, b = b, a
+		}
+		if flag(a) {
+			// Elsewhere the flag is empty: = "" holds there, = true doesn't.
+			if strings.Contains(b, "$") {
+				return 0
+			}
+			if b == "" {
+				eq = !eq
+			}
+			if !eq {
+				sign = -sign
+			}
+			return sign
 		}
 		// Not CI_COMMIT_REF_NAME: in a merge request pipeline it holds the
 		// source branch's name, which a fork can call main.
@@ -136,8 +154,8 @@ func refTestFields(f []string, sign int) int {
 // protected or named ref replaced by spaces: the then-branch of an if whose
 // test is true only there, the else-branch of one whose test is true
 // everywhere else, and the command after such a test and &&.
-func blankGuardedSteps(text string) string {
-	if !strings.Contains(text, "CI_") {
+func blankGuardedSteps(text string, flags map[string]bool) string {
+	if !strings.Contains(text, "CI_") && len(flags) == 0 {
 		return text
 	}
 	// blankShellComments keeps every offset.
@@ -155,7 +173,7 @@ func blankGuardedSteps(text string) string {
 		if inner := code[m[3]:m[1]]; ifKeywordRe.MatchString(inner) {
 			continue
 		}
-		switch refTest(code[m[2]:m[3]]) {
+		switch refTest(code[m[2]:m[3]], flags) {
 		case 1:
 			blank(m[4], m[5])
 		case -1:
@@ -169,7 +187,7 @@ func blankGuardedSteps(text string) string {
 		if strings.HasSuffix(strings.TrimSpace(code[:m[2]]), "||") {
 			continue
 		}
-		if refTest(code[m[2]:m[3]]) == 1 {
+		if refTest(code[m[2]:m[3]], flags) == 1 {
 			blank(m[4], m[5])
 		}
 	}
@@ -181,15 +199,15 @@ func blankGuardedSteps(text string) string {
 // exit 0; fi, [ "$CI_COMMIT_BRANCH" = main ] || exit 0, or the && form. The
 // guard must be a command of the script itself, not in a comment, a string,
 // a subshell, a function, a loop or another if.
-func exitGuardAt(text string) int {
-	if !strings.Contains(text, "exit") || !strings.Contains(text, "CI_") {
+func exitGuardAt(text string, flags map[string]bool) int {
+	if !strings.Contains(text, "exit") || !strings.Contains(text, "CI_") && len(flags) == 0 {
 		return -1
 	}
 	// blankShellComments keeps every offset.
 	code := blankShellComments(text)
 	at := -1
 	for _, m := range shellIfExitRe.FindAllStringSubmatchIndex(code, -1) {
-		if refTest(code[m[2]:m[3]]) == -1 && topLevel(code, m[0]) {
+		if refTest(code[m[2]:m[3]], flags) == -1 && topLevel(code, m[0]) {
 			at = m[0]
 			break
 		}
@@ -198,7 +216,7 @@ func exitGuardAt(text string) int {
 		if at >= 0 && m[0] > at {
 			break
 		}
-		t := refTest(code[m[2]:m[3]])
+		t := refTest(code[m[2]:m[3]], flags)
 		op := code[m[4]:m[5]]
 		if (op == "||" && t == 1 || op == "&&" && t == -1) && topLevel(code, m[0]) &&
 			!strings.HasSuffix(strings.TrimSpace(code[:m[0]]), "||") && !strings.HasSuffix(strings.TrimSpace(code[:m[0]]), "&&") {
@@ -265,6 +283,88 @@ func topLevel(s string, pos int) bool {
 
 func isWordByte(c byte) bool {
 	return c == '_' || c == '-' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9'
+}
+
+// protectedFlags returns the variables that only rules: entries restricted to
+// protected refs set (#1524), such as PUSH_TAGS: latest on the default-branch
+// entry: neither another entry nor the job's or the file's variables: set
+// them, and no script in the file assigns them or writes them to a dotenv
+// report. On every other ref they are empty, so [ -n "$PUSH_TAGS" ] || exit 0
+// guards like a ref test. A pipeline variable from a manual run can still set
+// one, but whoever starts a pipeline on their own branch can also edit the
+// YAML, which GL080 doesn't model; a fork's merge request can do neither.
+func protectedFlags(in *Inheritance, job, globalVars *yaml.Node) map[string]bool {
+	rules := parser.FindKey(job, "rules")
+	if rules == nil || rules.Kind != yaml.SequenceNode {
+		return nil
+	}
+	var flags map[string]bool
+	var unsafe []string
+	for _, item := range rules.Content {
+		v := parser.FindKey(item, "variables")
+		if v == nil || v.Kind != yaml.MappingNode {
+			continue
+		}
+		if w := parser.FindKey(item, "when"); w != nil && w.Value == "never" {
+			continue
+		}
+		cond := parser.FindKey(item, "if")
+		protected := cond != nil && cond.Kind == yaml.ScalarNode && ifRestrictsToProtected(cond.Value)
+		for i := 0; i+1 < len(v.Content); i += 2 {
+			name := v.Content[i].Value
+			if !protected || strings.HasPrefix(name, "CI_") || strings.HasPrefix(name, "GITLAB_") {
+				unsafe = append(unsafe, name)
+				continue
+			}
+			if flags == nil {
+				flags = map[string]bool{}
+			}
+			flags[name] = true
+		}
+	}
+	if flags == nil {
+		return nil
+	}
+	for _, name := range unsafe {
+		delete(flags, name)
+	}
+	for _, vars := range []*yaml.Node{parser.FindKey(job, "variables"), globalVars} {
+		for name := range literalVariables(vars) {
+			delete(flags, name)
+		}
+	}
+	for name := range flags {
+		if in.scriptAssigns(name) {
+			delete(flags, name)
+		}
+	}
+	return flags
+}
+
+// scriptAssigns reports whether a script line of any job or template in the
+// file assigns name or writes it to a file, as a dotenv report does
+// (NAME=value, export NAME=, ${NAME:=value}).
+func (in *Inheritance) scriptAssigns(name string) bool {
+	for _, job := range in.jobs {
+		if job.Kind != yaml.MappingNode {
+			continue
+		}
+		for _, line := range CollectJobScriptLines(job) {
+			v := line.Value
+			for i := strings.Index(v, name); i >= 0; {
+				end := i + len(name)
+				if (i == 0 || !isWordByte(v[i-1])) && (strings.HasPrefix(v[end:], "=") || strings.HasPrefix(v[end:], ":=")) {
+					return true
+				}
+				next := strings.Index(v[end:], name)
+				if next < 0 {
+					break
+				}
+				i = end + next
+			}
+		}
+	}
+	return false
 }
 
 // ifKeywordRe matches an if or elif keyword.
