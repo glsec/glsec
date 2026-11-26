@@ -153,10 +153,25 @@ func registryCacheWrite(words []string, resolve func(string) string) string {
 
 // imageRepository returns an image reference without its tag or digest.
 func imageRepository(image string) string {
-	if i := strings.Index(image, "@"); i >= 0 {
-		image = image[:i]
+	// ${VAR:0:8} and ${VAR:-x} hold colons that don't start a tag.
+	masked := []byte(image)
+	depth := 0
+	for i := 0; i < len(masked); i++ {
+		switch {
+		case masked[i] == '$' && i+1 < len(masked) && masked[i+1] == '{':
+			depth++
+			i++
+		case masked[i] == '}' && depth > 0:
+			depth--
+		case depth > 0:
+			masked[i] = '_'
+		}
 	}
-	if i := strings.LastIndex(image, ":"); i > strings.LastIndex(image, "/") {
+	m := string(masked)
+	if i := strings.Index(m, "@"); i >= 0 {
+		image, m = image[:i], m[:i]
+	}
+	if i := strings.LastIndex(m, ":"); i > strings.LastIndex(m, "/") {
 		image = image[:i]
 	}
 	return image
