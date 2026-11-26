@@ -81,10 +81,10 @@ func deployLikeInherited(in *Inheritance, jobName string, job *yaml.Node) bool {
 	}
 	stage := in.Key(job, "stage")
 	checkStage := stage != nil && stage.Kind == yaml.ScalarNode && hasWordPrefix(strings.ToLower(stage.Value), checkOnlyKeywords)
-	if env := in.Key(job, "environment"); env != nil && !envActionNoDeploy(env) && !envDevTier(env) {
+	if env := in.Key(job, "environment"); env != nil && !envActionNoDeploy(env) && !in.jobEnvDevTier(job, env) {
 		// An environment with neither a tier nor a name GitLab reads as
 		// production or staging doesn't make a job in a test stage a deploy.
-		if tier, _ := envTier(env); tier == "other" && checkStage {
+		if tier, _ := in.jobEnvTier(job, env); tier == "other" && checkStage {
 			return false
 		}
 		return true

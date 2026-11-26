@@ -277,3 +277,25 @@ func TestGL019_BuildOnlyInReleaseStageNoFinding(t *testing.T) {
 		})
 	}
 }
+
+// GitLab expands the environment name before it guesses the tier (#1528).
+func TestGL019_EnvironmentNameThroughVariables(t *testing.T) {
+	for _, tc := range []struct {
+		name, yaml string
+		want       int
+	}{
+		{"job variable, review app", "r:\n  variables:\n    APP_NAME: review-app-${CI_COMMIT_REF_SLUG}\n  environment:\n    name: ${APP_NAME}\n  script: [./restart.sh]\n", 0},
+		{"file variable, review app", "variables:\n  ENV: review/$CI_COMMIT_REF_SLUG\nr:\n  environment: $ENV\n  script: [./restart.sh]\n", 0},
+		{"extends variable, test env", ".v:\n  variables:\n    ENV: test\nr:\n  extends: .v\n  environment:\n    name: $ENV\n  script: [./restart.sh]\n", 0},
+		{"variable resolves to production", "r:\n  variables:\n    ENV: production\n  environment:\n    name: $ENV\n  script: [./restart.sh]\n", 1},
+		{"undefined variable", "r:\n  environment:\n    name: $DEPLOY_ENV\n  script: [./restart.sh]\n", 1},
+		{"explicit tier wins", "r:\n  variables:\n    ENV: review/x\n  environment:\n    name: $ENV\n    deployment_tier: production\n  script: [./restart.sh]\n", 1},
+		{"job variable overrides file", "variables:\n  ENV: review/x\nr:\n  variables:\n    ENV: prod\n  environment: $ENV\n  script: [./restart.sh]\n", 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := findings019(t, tc.yaml); len(got) != tc.want {
+				t.Fatalf("expected %d findings, got %+v", tc.want, got)
+			}
+		})
+	}
+}
