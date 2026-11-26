@@ -136,3 +136,30 @@ func TestOpenOnAnyBranch(t *testing.T) {
 		}
 	}
 }
+
+func TestIfAdmitsMR(t *testing.T) {
+	for expr, want := range map[string]bool{
+		`$CI_PIPELINE_SOURCE == "merge_request_event"`:                                                 true,
+		`"merge_request_event" == $CI_PIPELINE_SOURCE`:                                                 true,
+		`$CI_PIPELINE_SOURCE =~ /^(push|merge_request_event)$/`:                                        true,
+		`$CI_PIPELINE_SOURCE =~ /merge_request/`:                                                       true,
+		`$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_IID`:                        true,
+		`$CI_PIPELINE_SOURCE == "merge_request_event" || $CI_COMMIT_BRANCH == "main"`:                  true,
+		`$CI_PIPELINE_SOURCE == "merge_request_event" || $CI_PIPELINE_SOURCE != "push"`:                true,
+		`$CI_COMMIT_TAG && ($CI_PIPELINE_SOURCE == "merge_request_event" || $X)`:                       true,
+		`$CI_PIPELINE_SOURCE != "merge_request_event"`:                                                 false,
+		`$CI_PIPELINE_SOURCE !~ /^(push|merge_request_event)$/`:                                        false,
+		`$CI_PIPELINE_SOURCE !~ /merge_request_event/`:                                                 false,
+		`$CI_PIPELINE_SOURCE !~ /^schedule$/ && $CI_PIPELINE_SOURCE == "merge_request_event"`:          true,
+		`$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_PIPELINE_SOURCE != "merge_request_event"`: false,
+		`$CI_PIPELINE_SOURCE == "push" && $CI_PIPELINE_SOURCE == "merge_request_event"`:                false,
+		`$CI_PIPELINE_SOURCE == "push"`:                                                                false,
+		`$CI_COMMIT_BRANCH`:                                                                            false,
+		`$CI_PIPELINE_SOURCE == "merge_request_event" || ($CI_COMMIT_BRANCH`:                           true,
+		`$CI_PIPELINE_SOURCE != "merge_request_event" || ($CI_COMMIT_BRANCH`:                           false,
+	} {
+		if got := ifAdmitsMR(expr); got != want {
+			t.Errorf("ifAdmitsMR(%q) = %v, want %v", expr, got, want)
+		}
+	}
+}
