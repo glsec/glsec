@@ -62,7 +62,7 @@ func checkRegistryBuildCache(name string, job, globalVars *yaml.Node, file strin
 				RuleID:   "GL046",
 				Severity: finding.Warn,
 				Job:      name,
-				Message:  fmt.Sprintf("job writes a registry build cache (%s) that every branch shares — GitLab's protected-cache separation doesn't cover the registry, so an unprotected branch can push cache entries a protected build reuses as layers; write the cache only from protected refs, or use a per-branch cache reference", ref),
+				Message:  fmt.Sprintf("job writes a registry build cache (%s) that every branch shares — GitLab's protected-cache separation doesn't cover the registry, so a pipeline changed on an unprotected branch can upload layers under the cache keys a protected build looks up; write the cache only from protected refs or use a per-branch cache reference, and cover the cache tags with protected container tags", ref),
 				File:     file,
 				Line:     parser.ScalarContentLine(line, cmd.line),
 				Col:      line.Column,
