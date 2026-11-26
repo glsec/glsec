@@ -387,7 +387,7 @@ jobs:
             - ".github/**/*.md"
           YAML
       - name: Scan agent instructions, settings, the plugin package and docs
-        uses: cfgaudit/cfgaudit@8e1374248086b74eca344066633c7bae8aa019eb # v1.21.0
+        uses: cfgaudit/cfgaudit@bc33e81653518be8f51759128268067d57f69087 # v1.22.0
         with:
           plugins: .
           config: ${{ runner.temp }}/cfgaudit.yml
