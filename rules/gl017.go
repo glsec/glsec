@@ -99,6 +99,10 @@ func lineDeploys(raw string) bool {
 			}
 		case "echo", "printf":
 			lower = strings.Replace(lower, strings.ToLower(cmd.text), "", 1)
+		case "cd", "pushd":
+			// A directory name says nothing about what runs there
+			// (cd "Deploy de uma app", #1527).
+			lower = strings.Replace(lower, strings.ToLower(cmd.text), "", 1)
 		case "dotnet":
 			// `dotnet publish` builds and writes output locally; only `dotnet
 			// nuget push` ships to a registry (matched by deployCmdRe). Drop the
