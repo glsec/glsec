@@ -1253,3 +1253,39 @@ func TestGL080_Issue1538(t *testing.T) {
 		})
 	}
 }
+
+func TestGL080_Issue1546(t *testing.T) {
+	wf := "workflow:\n  rules:\n    - if: $CI_COMMIT_BRANCH\n"
+	cred := "  variables:\n    TOKEN: $DEPLOY_TOKEN\n"
+	for _, tc := range []struct {
+		name, yaml string
+		want       int
+	}{
+		{"make target starting with deploy", wf + "info:\n" + cred + "  script:\n    - make deployment-info\n", 0},
+		{"make xray-publish", wf + "t:\n" + cred + "  script:\n    - make test\n  after_script:\n    - make xray-publish\n", 0},
+		{"make deploy stays", wf + "d:\n" + cred + "  script:\n    - make deploy\n", 1},
+		{"make deploy-prod stays", wf + "d:\n" + cred + "  script:\n    - make deploy-prod\n", 1},
+		{"pre-deploy stage", wf + "pack:\n  stage: pre-deploy\n  script:\n    - npm config set //reg/:_auth $NEXUS_NPM_PASS\n    - npm pack\n", 0},
+		{"deploy stage stays", wf + "pack:\n  stage: deploy\n  script:\n    - npm config set //reg/:_auth $NEXUS_NPM_PASS\n    - npm pack\n", 1},
+		{"make deploy into kind", wf + "e2e:\n" + cred + "  before_script:\n    - kind create cluster\n  script:\n    - make deploy verify undeploy\n", 0},
+		{"make deploy without local cluster", wf + "e2e:\n" + cred + "  script:\n    - make deploy verify undeploy\n", 1},
+		{"semantic-release-cargo version", wf + "lint:\n" + cred + "  before_script:\n    - semantic-release-cargo --version\n  script:\n    - cargo clippy\n", 0},
+		{"semantic-release stays", wf + "rel:\n  script:\n    - npx semantic-release\n", 1},
+		{"workflow rules tag per branch", "workflow:\n  rules:\n    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH\n      variables: {TAG: latest}\n    - if: $CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH\n      variables: {TAG: $CI_COMMIT_REF_SLUG}\nb:\n  script:\n    - docker push $CI_REGISTRY_IMAGE:$TAG\n", 0},
+		{"workflow rules fixed tag stays", "workflow:\n  rules:\n    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH\n      variables: {TAG: latest}\n    - if: $CI_COMMIT_BRANCH\n      variables: {TAG: edge}\nb:\n  script:\n    - docker push $CI_REGISTRY_IMAGE:$TAG\n", 1},
+		{"rules tag with fixed default stays", "variables:\n  TAG: latest\nworkflow:\n  rules:\n    - if: $CI_MERGE_REQUEST_IID\n      variables: {TAG: $CI_COMMIT_REF_SLUG}\n    - if: $CI_COMMIT_BRANCH\nb:\n  script:\n    - docker push $CI_REGISTRY_IMAGE:$TAG\n", 1},
+		{"git describe version", wf + "up:\n  script:\n    - v=$(git describe --always --tags HEAD)\n    - 'curl --header \"JOB-TOKEN: $CI_JOB_TOKEN\" --upload-file f \"$CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/pkg/${v}/f\"'\n", 0},
+		{"git describe abbrev 0 stays", wf + "up:\n  script:\n    - v=$(git describe --tags --abbrev=0)\n    - 'curl --header \"JOB-TOKEN: $CI_JOB_TOKEN\" --upload-file f \"$CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/pkg/${v}/f\"'\n", 1},
+		{"scp to per-pipeline dir", wf + "rootfs:\n  script:\n    - scp -P 2222 out.tar.xz ci@host:/srv/cache/${CI_PIPELINE_ID}/\n", 0},
+		{"scp to fixed dir stays", wf + "rootfs:\n  script:\n    - scp out.tar.xz ci@host:/srv/www/\n", 1},
+		{"rsync to variable dest stays", wf + "pub:\n  script:\n    - rsync -a repo/ $DEST/\n", 1},
+		{"fdroid publish", wf + "p:\n" + cred + "  script:\n    - fdroid publish --verbose\n", 0},
+		{"fdroid deploy stays", wf + "p:\n" + cred + "  script:\n    - fdroid deploy\n", 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if f := findings080(t, tc.yaml); len(f) != tc.want {
+				t.Fatalf("expected %d findings, got %+v", tc.want, f)
+			}
+		})
+	}
+}
