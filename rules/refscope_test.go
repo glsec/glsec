@@ -78,6 +78,16 @@ func TestIncludeRulesRestricted(t *testing.T) {
 		{"- if: $SKIP\n  when: never\n", false, false},
 		{"- if: $SKIP\n  when: never\n- if: $CI_PIPELINE_SOURCE == \"schedule\"\n", false, true},
 		{"- !reference [.rules, schedule]\n", false, false},
+		{"- if: $CI_PIPELINE_SOURCE != \"schedule\"\n", false, false},
+		{"- if: $CI_COMMIT_MESSAGE =~ /(infra|all)/\n", false, false},
+		{"- if: $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == \"development\"\n", false, false},
+		{"- if: $CI_COMMIT_BRANCH == \"development\"\n- if: $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == \"development\"\n", false, false},
+		{"- if: $CI_PIPELINE_SOURCE == \"push\"\n", false, false},
+		{"- if: $CI_PIPELINE_SOURCE == \"push\" && $CI_COMMIT_BRANCH == \"main\"\n- if: $FORCE_BUILD == \"true\"\n", false, true},
+		{"- if: $CI_PIPELINE_SOURCE == \"schedule\" || $CI_COMMIT_BRANCH\n", false, false},
+		{"- if: ($CI_PIPELINE_SOURCE == \"web\")\n", false, true},
+		{"- if: $DEPLOY != \"false\"\n", false, false},
+		{"- if: $KIND =~ /daily/\n", false, true},
 	} {
 		doc := parseDoc(t, "rules:\n"+indent(tc.rules))
 		if got := IncludeRulesRestricted(parser.FindKey(parser.Unwrap(doc), "rules"), tc.child); got != tc.want {
