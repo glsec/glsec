@@ -37,13 +37,17 @@ type docContext struct {
 	protected bool
 	// child: the file is a child pipeline, or a file one includes.
 	child bool
+	// restricted: every include: entry that pulls the file in has rules:
+	// that don't let it run on an arbitrary branch (#1531).
+	restricted bool
 }
 
 func contextOf(doc *parser.Document) docContext {
-	c := docContext{protected: doc.ProtectedByParent, child: doc.Child}
+	c := docContext{protected: doc.ProtectedByParent, child: doc.Child, restricted: doc.RestrictedByInclude}
 	if p := doc.IncludedBy; p != nil {
 		c.protected = c.protected || p.ProtectedByParent
 		c.child = c.child || p.Child
+		c.restricted = c.restricted || p.RestrictedByInclude
 	}
 	return c
 }
@@ -633,6 +637,70 @@ func RunsOnProtectedRefsOnly(doc, job *yaml.Node) bool {
 		return true
 	}
 	return jobProtectedOnly(NewInheritance(doc).Effective(job))
+}
+
+// IncludeRulesRestricted reports whether an include: entry's rules: keep the
+// file off arbitrary branches and merge requests (#1531): every entry that
+// includes the file has an if: whose every || branch is restricted to
+// protected refs or requires, in one of its && parts, a pipeline source
+// other than a push or a merge request (schedule, web, api, trigger, …) or a
+// project's own variable ($KIND == "daily", $DEPLOY_DOCS). A user-controlled
+// value such as $CI_COMMIT_MESSAGE, a negation (!=) or an entry without if:
+// leaves the file open, and so do unreadable rules (!reference).
+func IncludeRulesRestricted(rules *yaml.Node, childOpen bool) bool {
+	if rules == nil || rules.Kind != yaml.SequenceNode || parser.IsReference(rules) {
+		return false
+	}
+	admitting := 0
+	for _, item := range rules.Content {
+		if item.Kind != yaml.MappingNode || parser.IsReference(item) {
+			return false
+		}
+		if ruleExcludes(item) {
+			continue
+		}
+		cond := parser.FindKey(item, "if")
+		if cond == nil || cond.Kind != yaml.ScalarNode {
+			return false
+		}
+		for _, branch := range strings.Split(trimOuterParens(strings.TrimSpace(cond.Value)), "||") {
+			if !ifRestrictsToProtected(branch) && !restrictingConjunct(branch, childOpen) {
+				return false
+			}
+		}
+		admitting++
+	}
+	return admitting > 0
+}
+
+var (
+	sourceEqualsRe   = mustCompilePrefiltered(`^\$\{?CI_PIPELINE_SOURCE\}?\s*==\s*["']([a-z_]+)["']$`)
+	projectVarTestRe = mustCompilePrefiltered(`^\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?(?:\s*==\s*(?:"[^"]+"|'[^']+')|\s*=~\s*/.+/[a-z]*)?$`)
+)
+
+// restrictingConjunct reports an && part of an if: branch that is false on an
+// arbitrary push or merge request pipeline: a pipeline source that neither
+// is, or a test that a project's own variable is set or has a value.
+func restrictingConjunct(branch string, childOpen bool) bool {
+	for _, part := range strings.Split(branch, "&&") {
+		part = trimOuterParens(strings.TrimSpace(part))
+		if m := sourceEqualsRe.FindStringSubmatch(part); m != nil {
+			switch m[1] {
+			case "push", "merge_request_event", "external_pull_request_event":
+			case "parent_pipeline":
+				if !childOpen {
+					return true
+				}
+			default:
+				return true
+			}
+			continue
+		}
+		if m := projectVarTestRe.FindStringSubmatch(part); m != nil && !strings.HasPrefix(m[1], "CI_") && !strings.HasPrefix(m[1], "GITLAB_") {
+			return true
+		}
+	}
+	return false
 }
 
 // IncludeRulesProtectedOnly reports whether an include: entry's rules: admit

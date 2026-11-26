@@ -968,6 +968,9 @@ type triggerEdge struct {
 	// whether it runs on protected refs only (#1502).
 	from      *parser.Document
 	protected bool
+	// restricted: the include: entry's rules: keep the file off arbitrary
+	// branches by a condition such as a pipeline source (#1531).
+	restricted bool
 }
 
 // readFailure records a file glsec could not read and the strongest obligation
@@ -1126,19 +1129,22 @@ func (p *pipelineFiles) collect(doc *parser.Document, optional bool) []*parser.D
 	}
 	for _, child := range parser.ChildPipelines(doc.Root) {
 		protected := rules.RunsOnProtectedRefsOnly(doc.Root, child.Job) || rules.RunsOnProtectedRefsOnly(pipeline.Root, child.Job)
-		follow("child pipeline", child.Path, false, optional, triggerEdge{pipeline, child.Waits, child.Locked, doc, protected})
+		follow("child pipeline", child.Path, false, optional, triggerEdge{pipeline, child.Waits, child.Locked, doc, protected, false})
 	}
 	// Files pulled in with include: local are part of this pipeline (#810).
+	// In a child pipeline, if: $CI_PIPELINE_SOURCE == "parent_pipeline" holds
+	// wherever the trigger job runs.
+	childOpen := doc.Child || pipeline.Child
 	for _, include := range parser.LocalIncludes(doc.Root) {
 		pattern := strings.TrimPrefix(include.Path, "/")
 		conditional := optional || include.Conditional
 		re := parser.IncludeGlob(pattern)
 		if re == nil {
-			follow("include", pattern, true, conditional, triggerEdge{from: doc, protected: rules.IncludeRulesProtectedOnly(include.Rules)})
+			follow("include", pattern, true, conditional, triggerEdge{from: doc, protected: rules.IncludeRulesProtectedOnly(include.Rules), restricted: rules.IncludeRulesRestricted(include.Rules, childOpen)})
 			continue
 		}
 		for _, path := range globIncludes(p.w, p.rootDir, pattern, re) {
-			follow("include", path, true, conditional, triggerEdge{from: doc, protected: rules.IncludeRulesProtectedOnly(include.Rules)})
+			follow("include", path, true, conditional, triggerEdge{from: doc, protected: rules.IncludeRulesProtectedOnly(include.Rules), restricted: rules.IncludeRulesRestricted(include.Rules, childOpen)})
 		}
 	}
 	return all
@@ -1149,7 +1155,9 @@ func (p *pipelineFiles) collect(doc *parser.Document, optional bool) []*parser.D
 // (#1502): every trigger job that starts the child, or every include: entry
 // that pulls the file in, runs on protected refs only, or sits in a file that
 // is itself protected that way. One edge without that leaves the file
-// unprotected, and the root pipeline is never protected by a parent.
+// unprotected, and the root pipeline is never protected by a parent. After
+// that, included files whose include: entries all restrict them through
+// rules: are marked restricted (#1531).
 func (p *pipelineFiles) resolveParentProtection() {
 	edgeProtected := func(t triggerEdge) bool {
 		return t.protected || t.from != nil && (t.from.ProtectedByParent || t.from.IncludedBy != nil && t.from.IncludedBy.ProtectedByParent)
@@ -1173,6 +1181,31 @@ func (p *pipelineFiles) resolveParentProtection() {
 		for doc, edges := range p.includeEdges {
 			if !doc.ProtectedByParent && allProtected(edges) {
 				doc.ProtectedByParent = true
+				changed = true
+			}
+		}
+	}
+	// An include edge also restricts a file through rules: on a pipeline
+	// source or a project variable (#1531); trigger jobs are not read so.
+	edgeRestricted := func(t triggerEdge) bool {
+		if edgeProtected(t) || t.restricted {
+			return true
+		}
+		f := t.from
+		return f != nil && (f.RestrictedByInclude || f.IncludedBy != nil && f.IncludedBy.RestrictedByInclude)
+	}
+	for changed := true; changed; {
+		changed = false
+		for doc, edges := range p.includeEdges {
+			if doc.RestrictedByInclude || len(edges) == 0 {
+				continue
+			}
+			all := true
+			for _, t := range edges {
+				all = all && edgeRestricted(t)
+			}
+			if all {
+				doc.RestrictedByInclude = true
 				changed = true
 			}
 		}
