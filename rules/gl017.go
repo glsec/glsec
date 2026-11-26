@@ -29,7 +29,7 @@ var deployStageKeywords = []string{"deploy", "release", "publish", "ship"}
 // `--no-check-publish` no longer read as a deployment (#1096, release FP scan).
 var deployCmdRe = mustCompilePrefiltered(
 	`(?:docker|podman|buildah|crane|skopeo|nerdctl|ko)\s+push\b` +
-		`|helm\s+(?:push|upgrade|install)\b` +
+		`|helm\s+(?:push|cm-push|upgrade|install)\b` +
 		`|twine\s+upload\b|cargo\s+publish\b|(?:npm|yarn|pnpm)\s+publish\b|gem\s+push\b|dotnet\s+nuget\s+push\b|(?:uv|flit|poetry|maturin)\s+(?:publish|upload)\b` +
 		`|kubectl\s+(?:apply|rollout|set|create|patch|replace)\b|kustomize\b|argocd\b|skaffold\s+(?:run|deploy)\b` +
 		`|aws\s+(?:s3|deploy|ecs|lambda|cloudformation|elasticbeanstalk|amplify|cloudfront)\b|gcloud\s+(?:app|run|functions|compute|container|storage)\b|az\s+(?:webapp|functionapp|aks|acr|storage)\b|flyctl?\s+deploy\b|netlify[^|;&]*deploy\b|vercel\b|railway\s+up\b` +
@@ -81,7 +81,7 @@ func lineDeploys(raw string) bool {
 		// `bundle exec fastlane test` is a fastlane invocation; classify by the
 		// wrapped command, not the wrapper, so the lane logic below can see it.
 		w := stripExecWrapper(commandWords(cmd.text))
-		if helpOnly(w) {
+		if helpOnly(w) || psWrite(w) {
 			lower = strings.Replace(lower, strings.ToLower(cmd.text), "", 1)
 			continue
 		}
@@ -148,6 +148,19 @@ func lineDeploys(raw string) bool {
 		if !cmd.piped && runsDeployScript(cmd) {
 			return true
 		}
+	}
+	return false
+}
+
+// psWrite reports a PowerShell cmdlet that only prints its arguments, as echo
+// does (Write-Output "Will run deploy command", #1524).
+func psWrite(w []string) bool {
+	if len(w) == 0 {
+		return false
+	}
+	switch strings.ToLower(w[0]) {
+	case "write-output", "write-host", "write-information", "write-verbose":
+		return true
 	}
 	return false
 }
@@ -319,6 +332,10 @@ func runsDeployScript(cmd shellCommand) bool {
 	if isDeployStem(name) {
 		return true
 	}
+	// PowerShell keeps a backslash that the POSIX word split drops.
+	if f := strings.Fields(cmd.text); strings.Contains(f[0], `\`) && isDeployStem(f[0]) {
+		return true
+	}
 	switch name {
 	case "sh", "bash", "zsh", "ash", "dash", "ksh":
 		for _, a := range w[1:] {
@@ -349,7 +366,8 @@ func runsDeployScript(cmd shellCommand) bool {
 // with any directory and extension removed.
 func isDeployStem(name string) bool {
 	name = strings.ToLower(name)
-	if i := strings.LastIndexByte(name, '/'); i >= 0 {
+	// A Windows runner's path uses backslashes (.\CICD\publish.ps1).
+	if i := strings.LastIndexAny(name, `/\`); i >= 0 {
 		name = name[i+1:]
 	}
 	if i := strings.LastIndexByte(name, '.'); i > 0 {
@@ -357,6 +375,19 @@ func isDeployStem(name string) bool {
 	}
 	for _, v := range [2]string{"deploy", "publish"} {
 		if name == v || strings.HasPrefix(name, v+"-") || strings.HasPrefix(name, v+"_") {
+			return !testsDeploy(name)
+		}
+	}
+	return false
+}
+
+// testsDeploy reports a script name that also says it tests or checks
+// (deploy-image-test, publish_check): it verifies a deploy rather than
+// running one (#1524).
+func testsDeploy(name string) bool {
+	for _, part := range strings.FieldsFunc(name, func(r rune) bool { return r == '-' || r == '_' }) {
+		switch part {
+		case "test", "tests", "check", "verify", "lint":
 			return true
 		}
 	}

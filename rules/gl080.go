@@ -209,7 +209,8 @@ func gl080Sensitive(in *Inheritance, name string, own, job, globalVars *yaml.Nod
 	if name == "pages" || parser.FindKey(job, "pages") != nil {
 		return true
 	}
-	if gl080ScriptDeploys(job, globalVars) {
+	deploys, discounted := gl080ScriptDeploys(in, job, globalVars)
+	if deploys {
 		return true
 	}
 	hay := strings.ToLower(name) + " " + jobStageName(job)
@@ -220,7 +221,10 @@ func gl080Sensitive(in *Inheritance, name string, own, job, globalVars *yaml.Nod
 	}
 	for _, kw := range gl080DeployKeywords {
 		if strings.Contains(hay, kw) {
-			return jobUsesCredential(job)
+			// A job whose every publish glsec reads ships nothing shared, and
+			// the job's own CI_ token is no secret to steal: a fork's merge
+			// request gets the fork's (#1524).
+			return jobUsesCredential(job, discounted)
 		}
 	}
 	return false
@@ -231,17 +235,20 @@ func gl080Sensitive(in *Inheritance, name string, own, job, globalVars *yaml.Nod
 // script line (`$DEPLOY_TOKEN`, `$CI_REGISTRY_PASSWORD`). It gates the
 // name-keyword path of gl080Sensitive so a deploy-named job counts only when
 // it actually has a credential to protect.
-func jobUsesCredential(job *yaml.Node) bool {
+func jobUsesCredential(job *yaml.Node, skipJobTokens bool) bool {
+	secret := func(name string) bool {
+		return isSecretName(name) && (!skipJobTokens || !strings.HasPrefix(name, "CI_"))
+	}
 	if vars := parser.FindKey(job, "variables"); vars != nil && vars.Kind == yaml.MappingNode {
 		for i := 0; i+1 < len(vars.Content); i += 2 {
-			if isSecretName(strings.ToUpper(vars.Content[i].Value)) {
+			if secret(strings.ToUpper(vars.Content[i].Value)) {
 				return true
 			}
 		}
 	}
 	for _, line := range CollectJobScriptLines(job) {
 		for _, loc := range gl021VarRefRe.FindAllStringSubmatchIndex(line.Value, -1) {
-			if isSecretName(line.Value[loc[2]:loc[3]]) {
+			if secret(line.Value[loc[2]:loc[3]]) {
 				return true
 			}
 		}
@@ -349,8 +356,11 @@ func gl013Owns(name string, job *yaml.Node) bool {
 // tag made from the branch, commit, pipeline, job or merge request, and a
 // publish or apply in dry-run mode. A push of latest, a fixed tag or a
 // version still counts, since any branch can overwrite what others pull.
-func gl080ScriptDeploys(job, globalVars *yaml.Node) bool {
+// discounted reports a deploy command that one of these exceptions or a
+// guard in the script took out.
+func gl080ScriptDeploys(in *Inheritance, job, globalVars *yaml.Node) (deploys, discounted bool) {
 	jobVars := parser.FindKey(job, "variables")
+	flags := protectedFlags(in, job, globalVars)
 	lines := CollectJobScriptLines(job)
 	local := createsLocalCluster(lines)
 	hosts := serviceHosts(job)
@@ -367,12 +377,15 @@ func gl080ScriptDeploys(job, globalVars *yaml.Node) bool {
 	var shellVars map[string][]string
 	exited := false
 	for _, line := range lines {
+		if lineDeploys(line.Value) {
+			discounted = true
+		}
 		if exited && !after[line] {
 			continue
 		}
-		text := blankGuardedSteps(line.Value)
+		text := blankGuardedSteps(line.Value, flags)
 		if !after[line] {
-			if at := exitGuardAt(line.Value); at >= 0 {
+			if at := exitGuardAt(line.Value, flags); at >= 0 {
 				// The commands before the guard still run on every ref.
 				text, exited = text[:at], true
 			}
@@ -391,15 +404,15 @@ func gl080ScriptDeploys(job, globalVars *yaml.Node) bool {
 		rest := text
 		for _, cmd := range shellCommands(blankShellComments(text)) {
 			words := stripExecWrapper(commandWords(cmd.text))
-			if dryRun(words) || ephemeralImagePush(words, jobVars, globalVars, shellVars) || local && clusterCommand(words) {
+			if dryRun(words) || ephemeralImagePush(words, jobVars, globalVars, shellVars) || ephemeralChartPush(words, lines, jobVars, globalVars, shellVars) || local && clusterCommand(words) {
 				rest = strings.Replace(rest, cmd.text, "", 1)
 			}
 		}
 		if lineDeploys(rest) && (strongDeploy(rest) || !publishesToService(job, rest, lines, hosts)) {
-			return true
+			return true, false
 		}
 	}
-	return false
+	return false, discounted
 }
 
 // stripShellKeywords drops the then/else/do keywords in front of a command.
@@ -490,7 +503,7 @@ func publishesToService(job *yaml.Node, line string, lines []*yaml.Node, hosts m
 			configured = true
 		}
 	}
-	return configured && !jobUsesCredential(job)
+	return configured && !jobUsesCredential(job, false)
 }
 
 // urlHostRe matches an http(s) URL's host.
@@ -556,44 +569,97 @@ func ephemeralImagePush(words []string, jobVars, globalVars *yaml.Node, shellVar
 	if len(images) == 0 {
 		return false
 	}
-	var vars map[string]string
 	for _, image := range images {
-		image = strings.Trim(image, `"'`)
-		candidates := []string{image}
-		if strings.Contains(image, "$") {
-			if vars == nil {
-				vars = literalVariables(globalVars)
-				for k, v := range literalVariables(jobVars) {
-					vars[k] = v
-				}
-				for k, vs := range shellVars {
-					vars[k] = vs[len(vs)-1]
-				}
-			}
-			// A variable the script assigns more than once may hold any of
-			// its values.
-			for name, vs := range shellVars {
-				if len(vs) < 2 || !mentionsVar(image, name) || len(candidates)*len(vs) > 16 {
-					continue
-				}
-				var next []string
-				for _, c := range candidates {
-					for _, v := range vs {
-						next = append(next, replaceRefs(c, func(ref string) string {
-							if strings.Trim(ref, "${}") == name {
-								return v
-							}
-							return ref
-						}))
-					}
-				}
-				candidates = next
-			}
+		if !perRunValue(image, jobVars, globalVars, shellVars) {
+			return false
 		}
-		for _, c := range candidates {
-			if !perRunImage(expandVars(c, vars, "", 0)) {
+	}
+	return true
+}
+
+// ephemeralChartPush reports a helm push or cm-push of a chart whose version
+// names the run (#1524), as ephemeralImagePush does for an image: the push
+// sets a per-run --version, or it pushes a packaged .tgz and every helm
+// package in the job sets one. Without --version, helm package takes the
+// version from Chart.yaml, which every branch shares.
+func ephemeralChartPush(words []string, lines []*yaml.Node, jobVars, globalVars *yaml.Node, shellVars map[string][]string) bool {
+	if commandName(words) != "helm" || len(words) < 3 || words[1] != "push" && words[1] != "cm-push" {
+		return false
+	}
+	if v, ok := argValue(words[2:], "--version"); ok {
+		return perRunValue(v, jobVars, globalVars, shellVars)
+	}
+	if !strings.Contains(words[2], ".tgz") {
+		return false
+	}
+	packaged := false
+	for _, line := range lines {
+		for _, cmd := range shellCommands(blankShellComments(line.Value)) {
+			w := commandWords(cmd.text)
+			if commandName(w) != "helm" || len(w) < 2 || w[1] != "package" {
+				continue
+			}
+			v, ok := argValue(w[2:], "--version")
+			if !ok || !perRunValue(v, jobVars, globalVars, shellVars) {
 				return false
 			}
+			packaged = true
+		}
+	}
+	return packaged
+}
+
+// argValue returns the value of a --flag=value or --flag value argument.
+func argValue(args []string, flag string) (string, bool) {
+	for i, a := range args {
+		if v, ok := strings.CutPrefix(a, flag+"="); ok {
+			return v, true
+		}
+		if a == flag && i+1 < len(args) {
+			return args[i+1], true
+		}
+	}
+	return "", false
+}
+
+// perRunValue reports whether value, with its variables expanded through the
+// job's and the file's variables: and the script's assignments, names the run
+// (perRunImage) whatever value the script gave each variable.
+func perRunValue(value string, jobVars, globalVars *yaml.Node, shellVars map[string][]string) bool {
+	value = strings.Trim(value, `"'`)
+	candidates := []string{value}
+	var vars map[string]string
+	if strings.Contains(value, "$") {
+		vars = literalVariables(globalVars)
+		for k, v := range literalVariables(jobVars) {
+			vars[k] = v
+		}
+		for k, vs := range shellVars {
+			vars[k] = vs[len(vs)-1]
+		}
+		// A variable the script assigns more than once may hold any of its
+		// values.
+		for name, vs := range shellVars {
+			if len(vs) < 2 || !mentionsVar(value, name) || len(candidates)*len(vs) > 16 {
+				continue
+			}
+			var next []string
+			for _, c := range candidates {
+				for _, v := range vs {
+					next = append(next, replaceRefs(c, func(ref string) string {
+						if strings.Trim(ref, "${}") == name {
+							return v
+						}
+						return ref
+					}))
+				}
+			}
+			candidates = next
+		}
+	}
+	for _, c := range candidates {
+		if !perRunImage(expandVars(c, vars, "", 0)) {
+			return false
 		}
 	}
 	return true

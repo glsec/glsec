@@ -935,6 +935,132 @@ func TestGL080_ShellGuards(t *testing.T) {
 	}
 }
 
+// #1524: a flag only protected rules: entries set, a per-run chart version,
+// a test script with deploy in its name and a PowerShell message.
+func TestGL080_Issue1524(t *testing.T) {
+	flagRules := `  rules:
+    - if: $CI_COMMIT_TAG
+      variables: {PUSH_TAGS: "$CI_COMMIT_TAG latest"}
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      variables: {PUSH_TAGS: latest}
+    - when: on_success
+`
+	push := `    - for t in $PUSH_TAGS; do docker push "$CI_REGISTRY_IMAGE:$t"; done
+`
+	helmRules := `  rules:
+    - if: $CI_COMMIT_TAG
+      variables: {HELM_VERSION: $CI_COMMIT_TAG}
+    - when: on_success
+      variables: {HELM_VERSION: 0.0.0-$CI_COMMIT_REF_SLUG}
+`
+	helmLogin := `    - helm repo add chart --username "$CI_REGISTRY_USER" --password "$CI_REGISTRY_PASSWORD" "$CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/helm/devel"
+`
+	for _, tc := range []struct {
+		name, yaml string
+		want       int
+	}{
+		{"exit when the protected-only flag is empty", "push-image:\n" + flagRules + `  script:
+    - '[ -n "$PUSH_TAGS" ] || exit 0'
+` + push, 0},
+		{"push in an if on the flag", "push-image:\n" + flagRules + `  script:
+    - if [ "$PUSH_TAGS" != "" ]; then docker push "$CI_REGISTRY_IMAGE:latest"; fi
+`, 0},
+		{"flag compared to a value", "push-image:\n" + flagRules + `  script:
+    - '[ "${PUSH_TAGS}" = latest ] && docker push "$CI_REGISTRY_IMAGE:latest"'
+`, 0},
+		{"fallback entry sets the flag too", "push-image:\n" + strings.Replace(flagRules, "    - when: on_success\n", "    - when: on_success\n      variables: {PUSH_TAGS: latest}\n", 1) + `  script:
+    - '[ -n "$PUSH_TAGS" ] || exit 0'
+` + push, 1},
+		{"job variables set the flag", "push-image:\n  variables: {PUSH_TAGS: dev}\n" + flagRules + `  script:
+    - '[ -n "$PUSH_TAGS" ] || exit 0'
+` + push, 1},
+		{"file variables set the flag", "variables: {PUSH_TAGS: dev}\npush-image:\n" + flagRules + `  script:
+    - '[ -n "$PUSH_TAGS" ] || exit 0'
+` + push, 1},
+		{"an unprotected entry sets the flag", "push-image:\n" + strings.Replace(flagRules, "$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH", "$CI_COMMIT_BRANCH", 1) + `  script:
+    - '[ -n "$PUSH_TAGS" ] || exit 0'
+` + push, 1},
+		{"the script assigns the flag", "push-image:\n" + flagRules + `  script:
+    - export PUSH_TAGS=latest
+    - '[ -n "$PUSH_TAGS" ] || exit 0'
+` + push, 1},
+		{"another job writes the flag to a dotenv report", "version:\n  script:\n    - echo \"PUSH_TAGS=latest\" >> build.env\n  artifacts: {reports: {dotenv: build.env}}\npush-image:\n" + flagRules + `  script:
+    - '[ -n "$PUSH_TAGS" ] || exit 0'
+` + push, 1},
+		{"unquoted flag test", "push-image:\n" + flagRules + `  script:
+    - '[ -n $PUSH_TAGS ] || exit 0'
+` + push, 1},
+		{"a never entry sets the flag", "push-image:\n" + strings.Replace(flagRules, "  rules:\n", "  rules:\n    - if: $CI_PIPELINE_SOURCE == \"schedule\"\n      when: never\n      variables: {PUSH_TAGS: latest}\n", 1) + `  script:
+    - '[ -n "$PUSH_TAGS" ] || exit 0'
+` + push, 0},
+		{"per-run chart version through rules:variables", "publish:\n  stage: publish\n" + helmRules + `  script:
+` + helmLogin + `    - helm package . --version="$HELM_VERSION"
+    - helm cm-push chart-*.tgz chart
+`, 0},
+		{"per-run version on the push", "publish:\n  stage: publish\n  script:\n" + helmLogin + `    - helm cm-push . chart --version 0.0.0-$CI_COMMIT_SHORT_SHA
+`, 0},
+		{"chart version from Chart.yaml", "publish:\n  stage: publish\n  script:\n" + helmLogin + `    - helm package .
+    - helm cm-push chart-*.tgz chart
+`, 1},
+		{"fixed chart version", "publish:\n  stage: publish\n  script:\n" + helmLogin + `    - helm package . --version 1.2.0
+    - helm push chart-1.2.0.tgz oci://registry.example.com/charts
+`, 1},
+		{"chart packaged in another job", "publish:\n  stage: publish\n  script:\n" + helmLogin + `    - helm cm-push chart-*.tgz chart
+`, 1},
+		{"chart directory without a version", "publish:\n  stage: publish\n  script:\n" + helmLogin + `    - helm cm-push . chart
+`, 1},
+		{"per-run chart with a project secret", "publish:\n  stage: publish\n" + helmRules + `  script:
+    - helm repo add chart --username bot --password "$CHART_REPO_PASSWORD" https://charts.example.com
+    - helm package . --version="$HELM_VERSION"
+    - helm cm-push chart-*.tgz chart
+`, 1},
+		{"per-run image with only the job's registry token", `publish:
+  stage: publish
+  script:
+    - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
+    - docker push "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHA"
+`, 0},
+		{"job token without a readable publish", `publish:
+  stage: publish
+  script:
+    - ./scripts/upload "$CI_JOB_TOKEN"
+`, 1},
+		{"test script with deploy in its name", `image-tags:
+  stage: check
+  script:
+    - jobs/deploy-image-test
+`, 0},
+		{"deploy script", `image-tags:
+  stage: check
+  script:
+    - ./deploy-staging.sh
+`, 1},
+		{"deploy script run by bash", `image-tags:
+  stage: check
+  script:
+    - bash scripts/deploy.sh
+`, 1},
+		{"PowerShell message", `build-windows:
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+    - changes: ["*.cpp"]
+  script:
+    - Write-Output "Will run deploy command"
+    - Write-Host "publish next"
+`, 0},
+		{"PowerShell message then a push", `build-windows:
+  script:
+    - Write-Output deploying; docker push "$CI_REGISTRY_IMAGE:latest"
+`, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if f := findings080(t, tc.yaml); len(f) != tc.want {
+				t.Errorf("got %d findings, want %d: %v\n%s", len(f), tc.want, f, tc.yaml)
+			}
+		})
+	}
+}
+
 func TestGL080_RulesVariablesEnvironment(t *testing.T) {
 	review := `
 render:

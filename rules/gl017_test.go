@@ -283,6 +283,14 @@ func TestLineDeploys(t *testing.T) {
 		want bool
 	}{
 		{`./deploy.sh`, true},
+		{`'.\CICD\publish_to_marketplace.ps1'`, true},
+		{`.\CICD\publish_to_marketplace.ps1`, true},
+		{`.\CICD\build.ps1`, false},
+		{`jobs/deploy-image-test`, false},
+		{`./scripts/publish_check.sh`, false},
+		{`Write-Output "Will run deploy command"`, false},
+		{`write-host "publish next"`, false},
+		{`helm cm-push chart.tgz repo`, true},
 		{`bash scripts/deploy-prod.sh`, true},
 		{`make deploy`, true},
 		{`npm run publish`, true},
