@@ -88,7 +88,7 @@ func (r *gl080) check(doc *yaml.Node, file string, ctx docContext) []finding.Fin
 			// - when: manual fallback or changes: alone, restricts nothing:
 			// GitLab runs the job by the first entry that matches (#1498).
 			entry, _ := scope.fallbackEntry(parser.FindKey(job, "rules"))
-			if entry == nil || gl013OwnsOpen(job) || !gl080Sensitive(in, name.Value, own, job, vars) {
+			if entry == nil || gl013OwnsOpen(job) || !gl080Sensitive(in, name.Value, own, withEntryVariables(job, entry), vars) {
 				return
 			}
 			msg = fmt.Sprintf(
@@ -200,7 +200,7 @@ var gl080NotDeployKeywords = []string{
 //     glsec can't read as a command still counts, while a `publish-docs` or
 //     `release-notes` job with no credential does not.
 func gl080Sensitive(in *Inheritance, name string, own, job, globalVars *yaml.Node) bool {
-	if env := parser.FindKey(job, "environment"); env != nil && !envActionStop(env) && extractEnvName(env) != "" && !ephemeralEnvironment(env) {
+	if env := parser.FindKey(job, "environment"); env != nil && !envActionStop(env) && extractEnvName(env) != "" && !ephemeralEnvironmentIn(env, parser.FindKey(job, "variables"), globalVars) {
 		return true
 	}
 	// A GitLab Pages job publishes a site — a deployment. The main-site case is
@@ -353,23 +353,148 @@ func gl080ScriptDeploys(job, globalVars *yaml.Node) bool {
 	jobVars := parser.FindKey(job, "variables")
 	lines := CollectJobScriptLines(job)
 	local := createsLocalCluster(lines)
+	hosts := serviceHosts(job)
+	// after_script runs in a shell of its own, so an exit in the script
+	// doesn't end it.
+	var after map[*yaml.Node]bool
+	if as := parser.FindKey(job, "after_script"); as != nil && as.Kind == yaml.SequenceNode {
+		after = map[*yaml.Node]bool{}
+		for _, l := range as.Content {
+			after[l] = true
+		}
+	}
+	// Each value a script variable is assigned outside a guarded step.
+	var shellVars map[string][]string
+	exited := false
 	for _, line := range lines {
-		if !lineDeploys(line.Value) {
+		if exited && !after[line] {
 			continue
 		}
-		rest := line.Value
-		for _, cmd := range shellCommands(blankShellComments(line.Value)) {
+		text := blankGuardedSteps(line.Value)
+		if !after[line] {
+			if at := exitGuardAt(line.Value); at >= 0 {
+				// The commands before the guard still run on every ref.
+				text, exited = text[:at], true
+			}
+		}
+		for _, cmd := range shellCommands(text) {
+			if m := shellAssignRe.FindStringSubmatch(stripShellKeywords(cmd.text)); m != nil {
+				if shellVars == nil {
+					shellVars = map[string][]string{}
+				}
+				shellVars[m[1]] = append(shellVars[m[1]], strings.Trim(strings.TrimSpace(m[2]), `"'`))
+			}
+		}
+		if !lineDeploys(text) {
+			continue
+		}
+		rest := text
+		for _, cmd := range shellCommands(blankShellComments(text)) {
 			words := stripExecWrapper(commandWords(cmd.text))
-			if dryRun(words) || ephemeralImagePush(words, jobVars, globalVars) || local && clusterCommand(words) {
+			if dryRun(words) || ephemeralImagePush(words, jobVars, globalVars, shellVars) || local && clusterCommand(words) {
 				rest = strings.Replace(rest, cmd.text, "", 1)
 			}
 		}
-		if lineDeploys(rest) {
+		if lineDeploys(rest) && (strongDeploy(rest) || !publishesToService(job, rest, lines, hosts)) {
 			return true
 		}
 	}
 	return false
 }
+
+// stripShellKeywords drops the then/else/do keywords in front of a command.
+func stripShellKeywords(text string) string {
+	for {
+		t := strings.TrimLeft(text, " \t")
+		cut := false
+		for _, kw := range [...]string{"then", "else", "do"} {
+			if rest, ok := strings.CutPrefix(t, kw); ok && (rest == "" || rest[0] == ' ' || rest[0] == '\t') {
+				text, cut = rest, true
+				break
+			}
+		}
+		if !cut {
+			return t
+		}
+	}
+}
+
+// strongDeploy reports a line with a deploy command glsec reads as one, not
+// only a bare deploy/publish verb or a deploy script.
+func strongDeploy(text string) bool {
+	lower := strings.ToLower(blankShellComments(text))
+	return deployCmdRe.MatchString(lower) || releaseCmdRe.MatchString(lower)
+}
+
+// serviceHosts returns the host names of the job's services: containers, or
+// nil when it has none.
+func serviceHosts(job *yaml.Node) map[string]bool {
+	svc := parser.FindKey(job, "services")
+	if svc == nil || svc.Kind != yaml.SequenceNode || len(svc.Content) == 0 {
+		return nil
+	}
+	hosts := map[string]bool{"localhost": true, "127.0.0.1": true}
+	for _, s := range svc.Content {
+		image := s.Value
+		if s.Kind == yaml.MappingNode {
+			if a := parser.FindKey(s, "alias"); a != nil {
+				for _, al := range strings.Split(a.Value, ",") {
+					hosts[strings.ToLower(strings.TrimSpace(al))] = true
+				}
+			}
+			image = ""
+			if n := parser.FindKey(s, "name"); n != nil {
+				image = n.Value
+			}
+		}
+		repo := imageRepository(image)
+		if i := strings.LastIndexByte(repo, '/'); i >= 0 {
+			repo = repo[i+1:]
+		}
+		hosts[strings.ToLower(repo)] = true
+	}
+	return hosts
+}
+
+// publishesToService reports a bare deploy verb or script that seeds one of
+// the job's own service containers: the line itself names a service URL, or
+// an earlier line points a remote, URL or registry setting at one, the job
+// carries no credential, and no URL in the job leaves its services.
+func publishesToService(job *yaml.Node, line string, lines []*yaml.Node, hosts map[string]bool) bool {
+	if hosts == nil {
+		return false
+	}
+	onService := func(text string) (any, other bool) {
+		for _, m := range urlHostRe.FindAllStringSubmatch(text, -1) {
+			if hosts[strings.ToLower(m[1])] {
+				any = true
+			} else {
+				other = true
+			}
+		}
+		return any, other
+	}
+	if any, other := onService(line); other {
+		return false
+	} else if any {
+		return true
+	}
+	configured := false
+	for _, l := range lines {
+		any, other := onService(l.Value)
+		if other {
+			return false
+		}
+		lower := strings.ReplaceAll(strings.ToLower(l.Value), "curl", "")
+		if any && (strings.Contains(lower, "remote") || strings.Contains(lower, "url") || strings.Contains(lower, "registry") || strings.Contains(lower, "endpoint")) {
+			configured = true
+		}
+	}
+	return configured && !jobUsesCredential(job)
+}
+
+// urlHostRe matches an http(s) URL's host.
+var urlHostRe = mustCompilePrefiltered(`https?://(?:[^/@\s]*@)?([A-Za-z0-9._$-]+)`)
 
 // createsLocalCluster reports a job that starts a throwaway Kubernetes cluster
 // of its own (kind, k3d, minikube), as chart tests do: its kubectl and helm
@@ -401,10 +526,10 @@ var perRunTagVars = []string{
 }
 
 // ephemeralImagePush reports a docker, podman, buildah or nerdctl push of one
-// image whose tag names the run (perRunTagVars). Variables in the image are
+// image whose tag or repository names the run (perRunTagVars). Variables in the image are
 // expanded through the job's and the file's variables:, so "$IMG-debug" with
 // IMG ending in :$CI_PIPELINE_ID counts.
-func ephemeralImagePush(words []string, jobVars, globalVars *yaml.Node) bool {
+func ephemeralImagePush(words []string, jobVars, globalVars *yaml.Node, shellVars map[string][]string) bool {
 	switch commandName(words) {
 	case "docker", "podman", "buildah", "nerdctl":
 	default:
@@ -417,29 +542,68 @@ func ephemeralImagePush(words []string, jobVars, globalVars *yaml.Node) bool {
 	if i >= len(words) || words[i] != "push" {
 		return false
 	}
-	image := ""
+	// podman and buildah push SOURCE [DESTINATION]: every operand must be per
+	// run, or the push writes a shared one.
+	var images []string
 	for _, w := range words[i+1:] {
 		if w == "--all-tags" || w == "-a" {
 			return false
 		}
 		if !strings.HasPrefix(w, "-") {
-			image = w
-			break
+			images = append(images, w)
 		}
 	}
-	if image == "" {
+	if len(images) == 0 {
 		return false
 	}
-	if strings.Contains(image, "$") {
-		vars := literalVariables(globalVars)
-		for k, v := range literalVariables(jobVars) {
-			vars[k] = v
+	var vars map[string]string
+	for _, image := range images {
+		image = strings.Trim(image, `"'`)
+		candidates := []string{image}
+		if strings.Contains(image, "$") {
+			if vars == nil {
+				vars = literalVariables(globalVars)
+				for k, v := range literalVariables(jobVars) {
+					vars[k] = v
+				}
+				for k, vs := range shellVars {
+					vars[k] = vs[len(vs)-1]
+				}
+			}
+			// A variable the script assigns more than once may hold any of
+			// its values.
+			for name, vs := range shellVars {
+				if len(vs) < 2 || !mentionsVar(image, name) || len(candidates)*len(vs) > 16 {
+					continue
+				}
+				var next []string
+				for _, c := range candidates {
+					for _, v := range vs {
+						next = append(next, replaceRefs(c, func(ref string) string {
+							if strings.Trim(ref, "${}") == name {
+								return v
+							}
+							return ref
+						}))
+					}
+				}
+				candidates = next
+			}
 		}
-		image = expandVars(strings.Trim(image, `"'`), vars, "", 0)
+		for _, c := range candidates {
+			if !perRunImage(expandVars(c, vars, "", 0)) {
+				return false
+			}
+		}
 	}
-	tag := imageTag(image)
+	return true
+}
+
+// perRunImage reports an image whose repository or tag names the run
+// ($CI_REGISTRY_IMAGE/build-$CI_COMMIT_REF_SLUG, :$CI_COMMIT_SHA).
+func perRunImage(image string) bool {
 	for _, v := range perRunTagVars {
-		if strings.Contains(tag, "$"+v) || strings.Contains(tag, "${"+v+"}") {
+		if strings.Contains(image, "$"+v) || strings.Contains(image, "${"+v+"}") {
 			return true
 		}
 	}
@@ -465,22 +629,35 @@ func dryRun(words []string) bool {
 	return false
 }
 
-// ephemeralEnvironment reports an environment that on its own says nothing
+// ephemeralEnvironmentIn reports an environment that on its own says nothing
 // about a deploy another branch depends on (#1497): one whose tier is
 // development or testing (deployment_tier:, else GitLab's guess from the
 // name), or whose name is made per branch, commit, pipeline or merge request
 // (review/$CI_COMMIT_REF_SLUG). A per-run name GitLab guesses as production
 // (prod/$CI_COMMIT_REF_SLUG) still counts. The job stays sensitive through
 // its script or a deploy name with a credential.
-func ephemeralEnvironment(env *yaml.Node) bool {
-	tier, _ := envTier(env)
+// The name is expanded through the job's and the file's variables:
+// (ENV_NAME: review/$CI_COMMIT_REF_SLUG, also set by the matching rules:
+// entry).
+func ephemeralEnvironmentIn(env, jobVars, globalVars *yaml.Node) bool {
+	name := extractEnvName(env)
+	tier, explicit := envTier(env)
+	if !explicit && strings.Contains(name, "$") && (jobVars != nil || globalVars != nil) {
+		vars := literalVariables(globalVars)
+		for k, v := range literalVariables(jobVars) {
+			vars[k] = v
+		}
+		if expanded := expandVars(name, vars, "", 0); expanded != name {
+			name = expanded
+			tier, _ = envTier(&yaml.Node{Kind: yaml.ScalarNode, Value: name})
+		}
+	}
 	switch tier {
 	case "development", "testing":
 		return true
 	case "production":
 		return false
 	}
-	name := extractEnvName(env)
 	for _, v := range perRunTagVars {
 		if strings.Contains(name, "$"+v) || strings.Contains(name, "${"+v+"}") {
 			return true

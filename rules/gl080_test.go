@@ -241,8 +241,8 @@ func TestGL080_EphemeralEnvironment(t *testing.T) {
 		"production":                     false,
 	} {
 		doc := parseDoc(t, "environment: "+env+"\n")
-		if got := ephemeralEnvironment(parser.FindKey(parser.Unwrap(doc), "environment")); got != want {
-			t.Errorf("ephemeralEnvironment(%s) = %v, want %v", env, got, want)
+		if got := ephemeralEnvironmentIn(parser.FindKey(parser.Unwrap(doc), "environment"), nil, nil); got != want {
+			t.Errorf("ephemeralEnvironmentIn(%s) = %v, want %v", env, got, want)
 		}
 	}
 }
@@ -828,5 +828,196 @@ deploy-image:
 `)
 	if len(f) != 0 {
 		t.Fatalf("a fallback after an exclusion glsec can't read must not be reported, got %v", f)
+	}
+}
+
+func TestGL080_ShellGuards(t *testing.T) {
+	fallback := "  rules:\n    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH\n    - when: manual\n"
+	for _, tc := range []struct {
+		name, job string
+		want      int
+	}{
+		{"latest push in an if on main", fallback + `  script:
+    - docker push "$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG"
+    - if [ "$CI_COMMIT_BRANCH" = "main" ]; then docker push "$CI_REGISTRY_IMAGE:latest"; fi
+`, 0},
+		{"multi-line if on the default branch", fallback + `  script:
+    - |
+      if [[ "$CI_COMMIT_BRANCH" == "$CI_DEFAULT_BRANCH" ]]; then
+        docker push "$CI_REGISTRY_IMAGE:latest"
+      fi
+`, 0},
+		{"protected test with &&", fallback + `  script:
+    - '[ "$CI_COMMIT_REF_PROTECTED" = "true" ] && docker push "$CI_REGISTRY_IMAGE:latest"'
+`, 0},
+		{"else branch of a negated test", fallback + `  script:
+    - if [ "$CI_COMMIT_BRANCH" != "main" ]; then echo skip; else docker push "$CI_REGISTRY_IMAGE:latest"; fi
+`, 0},
+		{"early exit off main", fallback + `  script:
+    - if [ "$CI_COMMIT_BRANCH" != "$CI_DEFAULT_BRANCH" ]; then exit 0; fi
+    - docker push "$CI_REGISTRY_IMAGE:latest"
+`, 0},
+		{"early exit with ||", fallback + `  script:
+    - '[ -n "$CI_COMMIT_TAG" ] || exit 0'
+    - npm publish
+`, 0},
+		{"target chosen in the shell", fallback + `  variables:
+    BRANCH_IMAGE: $CI_REGISTRY_IMAGE/build-$CI_COMMIT_REF_SLUG
+  script:
+    - if [ -n "$CI_COMMIT_TAG" ]; then TARGET=$CI_REGISTRY_IMAGE:$CI_COMMIT_TAG; else TARGET=$BRANCH_IMAGE; fi
+    - docker push "$TARGET"
+`, 0},
+		// Still reported.
+		{"latest push outside the if", fallback + `  script:
+    - if [ "$CI_COMMIT_BRANCH" = "main" ]; then echo main; fi
+    - docker push "$CI_REGISTRY_IMAGE:latest"
+`, 1},
+		{"if on an unprotected condition", fallback + `  script:
+    - if [ "$PUSH" = "yes" ]; then docker push "$CI_REGISTRY_IMAGE:latest"; fi
+`, 1},
+		{"if on a branch pattern", fallback + `  script:
+    - if [[ "$CI_COMMIT_BRANCH" == release* ]]; then docker push "$CI_REGISTRY_IMAGE:latest"; fi
+`, 1},
+		{"else branch of a positive test", fallback + `  script:
+    - if [ "$CI_COMMIT_BRANCH" = "main" ]; then echo main; else docker push "$CI_REGISTRY_IMAGE:latest"; fi
+`, 1},
+		{"exit only in after_script", fallback + `  script:
+    - docker push "$CI_REGISTRY_IMAGE:latest"
+  after_script:
+    - if [ "$CI_COMMIT_BRANCH" != main ]; then exit 0; fi
+`, 1},
+		{"push before the exit guard on the same line", fallback + `  script:
+    - |
+      docker push "$CI_REGISTRY_IMAGE:latest"
+      if [ "$CI_COMMIT_BRANCH" != "main" ]; then exit 0; fi
+`, 1},
+		{"elif branch", fallback + `  script:
+    - if [ -n "$CI_COMMIT_TAG" ]; then echo tag; elif [ -f x ]; then docker push "$CI_REGISTRY_IMAGE:latest"; fi
+`, 1},
+		{"nested if in the else branch", fallback + `  script:
+    - if [ "$CI_COMMIT_BRANCH" != main ]; then if [ -f x ]; then echo; else docker push "$CI_REGISTRY_IMAGE:latest"; fi; fi
+`, 1},
+		{"unquoted -n", fallback + `  script:
+    - if [ -n $CI_COMMIT_TAG ]; then docker push "$CI_REGISTRY_IMAGE:latest"; fi
+`, 1},
+		{"commented exit guard", fallback + `  script:
+    - '# if [ "$CI_COMMIT_BRANCH" != "main" ]; then exit 0; fi'
+    - docker push "$CI_REGISTRY_IMAGE:latest"
+`, 1},
+		{"default value assigned first", fallback + `  script:
+    - TAG=latest
+    - if [ -f sha ]; then TAG=$CI_COMMIT_SHA; fi
+    - docker push "$CI_REGISTRY_IMAGE:$TAG"
+`, 1},
+		{"podman push to a fixed destination", fallback + `  script:
+    - podman push $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA $CI_REGISTRY_IMAGE:latest
+`, 1},
+		{"podman push between per-run refs", fallback + `  script:
+    - podman push localhost/app:$CI_COMMIT_SHA $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
+`, 0},
+		{"exit guard inside after_script", fallback + `  script:
+    - echo build
+  after_script:
+    - if [ "$CI_COMMIT_BRANCH" != main ]; then exit 0; fi
+    - docker push "$CI_REGISTRY_IMAGE:latest"
+`, 1},
+		{"exit guard that keeps main out", fallback + `  script:
+    - if [ "$CI_COMMIT_BRANCH" = main ]; then exit 0; fi
+    - docker push "$CI_REGISTRY_IMAGE:latest"
+`, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			y := "ship:\n  stage: build\n" + tc.job
+			if f := findings080(t, y); len(f) != tc.want {
+				t.Errorf("got %d findings, want %d: %v\n%s", len(f), tc.want, f, y)
+			}
+		})
+	}
+}
+
+func TestGL080_RulesVariablesEnvironment(t *testing.T) {
+	review := `
+render:
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      variables: {ENV_NAME: production}
+    - variables: {ENV_NAME: review/$CI_COMMIT_REF_SLUG}
+  environment:
+    name: $ENV_NAME
+  script: [./render.sh]
+`
+	if f := findings080(t, review); len(f) != 0 {
+		t.Errorf("per-branch environment from the fallback's variables: got %v, want none", f)
+	}
+	shared := `
+deploy:
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      variables: {ENV_NAME: live}
+    - when: manual
+      variables: {ENV_NAME: shared}
+  environment:
+    name: $ENV_NAME
+  script: [./ship.sh]
+`
+	if f := findings080(t, shared); len(f) != 1 {
+		t.Errorf("fixed environment from the fallback's variables: got %d findings, want 1", len(f))
+	}
+	jobVar := `
+render:
+  variables:
+    ENV_NAME: review/$CI_COMMIT_REF_SLUG
+  environment:
+    name: $ENV_NAME
+  script: [./render.sh]
+`
+	if f := findings080(t, jobVar); len(f) != 0 {
+		t.Errorf("per-branch environment from job variables: got %v, want none", f)
+	}
+}
+
+func TestGL080_ServiceContainerPublish(t *testing.T) {
+	seed := `
+seed:
+  services:
+    - name: $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG
+      alias: app
+  script:
+    - tool config set remote http://app:9999
+    - tool block publish 'blocks/*'
+`
+	if f := findings080(t, seed); len(f) != 0 {
+		t.Errorf("publish to a service container: got %v, want none", f)
+	}
+	remote := `
+seed:
+  services:
+    - name: postgres:16
+  script:
+    - tool config set remote https://registry.example.com
+    - tool block publish 'blocks/*'
+`
+	if f := findings080(t, remote); len(f) != 1 {
+		t.Errorf("publish to a remote host: got %d findings, want 1", len(f))
+	}
+	localhostHealth := `
+publish:
+  services: [postgres:16]
+  script:
+    - curl http://localhost:8080/health
+    - mvn deploy -s settings.xml
+`
+	if f := findings080(t, localhostHealth); len(f) != 1 {
+		t.Errorf("a health check on localhost next to mvn deploy: got %d findings, want 1", len(f))
+	}
+	push := `
+seed:
+  services: [docker:dind]
+  script:
+    - curl http://docker:2375/_ping
+    - docker push $CI_REGISTRY_IMAGE:latest
+`
+	if f := findings080(t, push); len(f) != 1 {
+		t.Errorf("registry push next to a service: got %d findings, want 1", len(f))
 	}
 }
