@@ -86,6 +86,11 @@ func lineDeploys(raw string) bool {
 			continue
 		}
 		switch commandName(w) {
+		case "rsync", "scp":
+			// A copy between local paths ships nothing (rsync -a ~/.cache home/).
+			if localRsync(w) {
+				lower = strings.Replace(lower, strings.ToLower(cmd.text), "", 1)
+			}
 		case "pixi":
 			// pixi publish uploads only with a target channel; without one it
 			// copies the built package into a local directory.
