@@ -42,7 +42,7 @@ func (r *gl081) SetRestrictedAudiences(auds []string) {
 // if: $CI_PIPELINE_SOURCE == "parent_pipeline" restricts nothing.
 func (r *gl081) CheckDocument(doc *parser.Document, file string) []finding.Finding {
 	ctx := contextOf(doc)
-	if ctx.protected {
+	if ctx.protected || ctx.restricted {
 		return nil
 	}
 	return r.check(doc.Root, file, ctx)

@@ -37,13 +37,17 @@ type docContext struct {
 	protected bool
 	// child: the file is a child pipeline, or a file one includes.
 	child bool
+	// restricted: every include: entry that pulls the file in has rules:
+	// that don't let it run on an arbitrary branch (#1531).
+	restricted bool
 }
 
 func contextOf(doc *parser.Document) docContext {
-	c := docContext{protected: doc.ProtectedByParent, child: doc.Child}
+	c := docContext{protected: doc.ProtectedByParent, child: doc.Child, restricted: doc.RestrictedByInclude}
 	if p := doc.IncludedBy; p != nil {
 		c.protected = c.protected || p.ProtectedByParent
 		c.child = c.child || p.Child
+		c.restricted = c.restricted || p.RestrictedByInclude
 	}
 	return c
 }
@@ -633,6 +637,32 @@ func RunsOnProtectedRefsOnly(doc, job *yaml.Node) bool {
 		return true
 	}
 	return jobProtectedOnly(NewInheritance(doc).Effective(job))
+}
+
+// IncludeRulesRestricted reports whether an include: entry's rules: keep the
+// file off arbitrary branches and merge requests, read as a job's own rules:
+// are (#1531): every entry that includes the file has an if:, and none only
+// tests that a branch is set or admits merge request pipelines. A condition
+// on a pipeline source (schedule, web, trigger) or a project's own variable
+// counts, as it does in a job's rules:. Unreadable rules (!reference) don't.
+func IncludeRulesRestricted(rules *yaml.Node, childOpen bool) bool {
+	if rules == nil || rules.Kind != yaml.SequenceNode || parser.IsReference(rules) {
+		return false
+	}
+	admitting := 0
+	for _, item := range rules.Content {
+		if item.Kind != yaml.MappingNode || parser.IsReference(item) {
+			return false
+		}
+		if !ruleExcludes(item) {
+			admitting++
+		}
+	}
+	if admitting == 0 {
+		return false
+	}
+	entry, _ := unrestrictedRuleEntry(rules, true, false, childOpen)
+	return entry == nil
 }
 
 // IncludeRulesProtectedOnly reports whether an include: entry's rules: admit

@@ -63,6 +63,12 @@ federate:
 		{"GL080 file included by a protected child", GL080, "publish:\n  script:\n    - docker push \"$CI_REGISTRY_IMAGE:latest\"\n", func(d *parser.Document) {
 			d.IncludedBy = &parser.Document{Child: true, ProtectedByParent: true}
 		}, 0},
+		{"GL080 include restricted by rules", GL080, "publish:\n  script:\n    - docker push \"$CI_REGISTRY_IMAGE:latest\"\n", func(d *parser.Document) { d.RestrictedByInclude = true }, 0},
+		{"GL081 include restricted by rules", GL081, unguarded, func(d *parser.Document) { d.RestrictedByInclude = true }, 0},
+		{"GL013 include restricted by rules", GL013, unguarded, func(d *parser.Document) { d.RestrictedByInclude = true }, 1},
+		{"GL080 file a restricted file includes", GL080, "publish:\n  script:\n    - docker push \"$CI_REGISTRY_IMAGE:latest\"\n", func(d *parser.Document) {
+			d.IncludedBy = &parser.Document{RestrictedByInclude: true}
+		}, 0},
 		{"GL080 unprotected include", GL080, "publish:\n  script:\n    - docker push \"$CI_REGISTRY_IMAGE:latest\"\n", func(*parser.Document) {}, 1},
 		{"GL053 child", GL053, "build:\n  script: [make]\n", func(d *parser.Document) { d.Child = true }, 0},
 		{"GL053 file a child includes", GL053, "build:\n  script: [make]\n", func(d *parser.Document) { d.IncludedBy = &parser.Document{Child: true} }, 0},

@@ -57,3 +57,34 @@ func TestIncludeRulesProtectedOnly(t *testing.T) {
 func indent(s string) string {
 	return "  " + strings.ReplaceAll(strings.TrimSuffix(s, "\n"), "\n", "\n  ") + "\n"
 }
+
+// include: rules read as a job's own rules: (#1531).
+func TestIncludeRulesRestricted(t *testing.T) {
+	for _, tc := range []struct {
+		rules       string
+		child, want bool
+	}{
+		{"- if: $CI_PIPELINE_SOURCE == \"schedule\" && $KIND == \"daily\"\n", false, true},
+		{"- if: $CI_PIPELINE_SOURCE == \"web\"\n", false, true},
+		{"- if: $DEPLOY_DOCS == \"true\"\n", false, true},
+		{"- if: $CI_COMMIT_TAG\n", false, true},
+		{"- if: $CI_PIPELINE_SOURCE == \"schedule\"\n- when: always\n", false, false},
+		{"- exists: [Dockerfile]\n", false, false},
+		{"- changes: [docs/**]\n", false, false},
+		{"- if: $CI_COMMIT_BRANCH\n", false, false},
+		{"- if: $CI_PIPELINE_SOURCE == \"merge_request_event\"\n", false, false},
+		{"- if: $CI_PIPELINE_SOURCE == \"parent_pipeline\"\n", false, true},
+		{"- if: $CI_PIPELINE_SOURCE == \"parent_pipeline\"\n", true, false},
+		{"- if: $SKIP\n  when: never\n", false, false},
+		{"- if: $SKIP\n  when: never\n- if: $CI_PIPELINE_SOURCE == \"schedule\"\n", false, true},
+		{"- !reference [.rules, schedule]\n", false, false},
+	} {
+		doc := parseDoc(t, "rules:\n"+indent(tc.rules))
+		if got := IncludeRulesRestricted(parser.FindKey(parser.Unwrap(doc), "rules"), tc.child); got != tc.want {
+			t.Errorf("rules (child %v)\n%s: got %v, want %v", tc.child, tc.rules, got, tc.want)
+		}
+	}
+	if IncludeRulesRestricted(nil, false) {
+		t.Error("no rules: restricts nothing")
+	}
+}

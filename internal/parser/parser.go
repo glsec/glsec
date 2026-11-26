@@ -47,6 +47,12 @@ type Document struct {
 	// rules:, runs on protected refs only, directly or because the file it is
 	// in is protected that way (#1502).
 	ProtectedByParent bool
+	// RestrictedByInclude is set on a file every include: entry pulling it in
+	// has rules: that keep it off arbitrary branches and merge requests
+	// through a condition glsec doesn't read as any branch, such as a
+	// pipeline source or a project's own variable (#1531), directly or
+	// because the including file is restricted or protected that way.
+	RestrictedByInclude bool
 	// contextFiles are the other files WithContext took nodes from.
 	contextFiles []contextFile
 	// Includes lists the files this file pulls in with `include: local`, in

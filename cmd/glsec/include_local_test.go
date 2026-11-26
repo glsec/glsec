@@ -204,3 +204,32 @@ func TestRun_IncludedFileReportedWithSlashes(t *testing.T) {
 		}
 	}
 }
+
+// An include: entry whose rules: keep the file to scheduled pipelines guards
+// its jobs as the same rules: on each job would (#1531).
+func TestIncludeLocal_RestrictedByIncludeRules(t *testing.T) {
+	daily := "apt_repo:\n  image: google/cloud-sdk:470.0.0\n  id_tokens:\n    GCP_TOKEN:\n      aud: https://iam.googleapis.com/x\n  script: [gcloud storage cp x gs://b/]\n"
+	for _, tc := range []struct {
+		name, root string
+		want       bool
+	}{
+		{"schedule only", "include:\n  - local: ci/daily.yml\n    rules:\n      - if: $CI_PIPELINE_SOURCE == \"schedule\" && $KIND == \"daily\"\n", false},
+		{"also any branch", "include:\n  - local: ci/daily.yml\n    rules:\n      - if: $CI_PIPELINE_SOURCE == \"schedule\"\n  - local: ci/daily.yml\n", true},
+		{"through a restricted file", "include:\n  - local: ci/all.yml\n    rules:\n      - if: $CI_PIPELINE_SOURCE == \"schedule\"\n", false},
+		{"changes only", "include:\n  - local: ci/daily.yml\n    rules:\n      - changes: [ci/**]\n", true},
+		{"no rules", "include:\n  - local: ci/daily.yml\n", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, _ := scanIncludes(t, map[string]string{
+				".gitlab-ci.yml": tc.root + "build:\n  image: alpine:3.20\n  script: [make]\n",
+				"ci/all.yml":     "include: ci/daily.yml\n",
+				"ci/daily.yml":   daily,
+			})
+			for _, rule := range []string{"GL080", "GL081"} {
+				if has := hasFinding(got, "ci/daily.yml "+rule); has != tc.want {
+					t.Errorf("%s in ci/daily.yml: got %v, want %v: %v", rule, has, tc.want, got)
+				}
+			}
+		})
+	}
+}
