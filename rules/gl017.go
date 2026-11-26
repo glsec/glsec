@@ -473,10 +473,15 @@ func (in *Inheritance) jobEnvTier(job, env *yaml.Node) (tier string, explicit bo
 		vars[k] = v
 	}
 	if expanded := expandVars(name, vars, "", 0); expanded != name {
+		// A variable the file doesn't set is unknown here: its name
+		// ($NAMESPACE_dev) is not part of the environment's name.
+		expanded = anyVarRefRe.ReplaceAllStringFunc(expanded, func(string) string { return "" })
 		tier, _ = envTier(&yaml.Node{Kind: yaml.ScalarNode, Value: expanded})
 	}
 	return tier, false
 }
+
+var anyVarRefRe = mustCompilePrefiltered(`\$\{?[A-Za-z_][A-Za-z0-9_]*\}?`)
 
 // jobEnvDevTier reports an environment that declares itself a review or test
 // target: per-branch previews, links to job artifacts.
