@@ -1441,3 +1441,75 @@ func TestGL080ScriptHelpers(t *testing.T) {
 		}
 	}
 }
+
+func TestGL080_Issue1552(t *testing.T) {
+	noMR := "workflow:\n  rules:\n    - if: $CI_COMMIT_BRANCH\n"
+	remote := "include:\n  - project: g/templates\n    file: docker.yml\n"
+	for _, tc := range []struct {
+		name, yaml string
+		want       finding.Severity
+		msg        string
+	}{
+		{"build-label environment", "build:\n  environment: build\n  script: [tox -e build]\n", finding.Info, ""},
+		{"build-label environment with a push", "build:\n  environment: build\n  script: [docker push reg.example.com/app:latest]\n", finding.Warn, ""},
+		{"deploy environment", "d:\n  environment: eu-central\n  script: [tox -e build]\n", finding.Warn, ""},
+		{"unread target with an unread include", remote + "b:\n  script: [docker push $TMP_IMAGE]\n", finding.Info, ""},
+		{"unread tag with an unread include", remote + "b:\n  script: [docker push reg.example.com/app:$VERSION]\n", finding.Info, ""},
+		{"fixed tag under an unread namespace", remote + "b:\n  script: ['docker push \"$REGISTRY_USER\"/app:stable']\n", finding.Warn, ""},
+		{"unread package version", remote + "b:\n  script:\n    - 'curl --header \"JOB-TOKEN: $CI_JOB_TOKEN\" --upload-file f \"$CI_API_V4_URL/projects/1/packages/generic/p/$GitVersion/f\"'\n", finding.Info, ""},
+		{"tag from the job's variables", remote + "b:\n  variables:\n    TAG: stable\n  script: [docker push reg.example.com/app:$TAG]\n", finding.Warn, ""},
+		{"tag from the script", remote + "b:\n  script:\n    - TAG=stable\n    - docker push reg.example.com/app:$TAG\n", finding.Warn, ""},
+		{"tag from a CI variable", remote + "b:\n  script: [docker push reg.example.com/app:$CI_DEFAULT_BRANCH]\n", finding.Warn, ""},
+		{"fallback entry with MR pipelines", "d:\n  rules:\n    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH\n    - when: manual\n  script: [docker push reg.example.com/app:latest]\n", finding.Warn, "fork's merge request"},
+		{"fallback entry without MR pipelines", noMR + "d:\n  rules:\n    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH\n    - when: manual\n  script: [docker push reg.example.com/app:latest]\n", finding.Warn, "any branch can run it;"},
+		{"unread target without include", "b:\n  script: [docker push $TMP_IMAGE]\n", finding.Warn, ""},
+		{"known target with an unread include", remote + "variables:\n  IMG: reg.example.com/app:latest\nb:\n  script: [docker push $IMG]\n", finding.Warn, ""},
+		{"matrix target with an unread include", remote + "b:\n  parallel:\n    matrix:\n      - IMG: [a, b]\n  script: [docker push reg.example.com/$IMG:latest]\n", finding.Warn, ""},
+		{"API delete with own token", "publish_package:\n  script:\n    - 'curl --request DELETE --header \"PRIVATE-TOKEN: $GITLAB_RELEASE_TOKEN\" \"$CI_API_V4_URL/projects/$CI_PROJECT_ID/repository/tags/v1\"'\n", finding.Info, ""},
+		{"API post with bearer", "t:\n  script:\n    - 'curl -X POST -H \"Authorization: Bearer ${API_TOKEN}\" https://gitlab.example.com/api/v4/projects/1/releases'\n", finding.Info, ""},
+		{"fork wording with MR pipelines", "d:\n  script: [docker push reg.example.com/app:latest]\n", finding.Warn, "fork merge requests"},
+		{"branch wording without MR pipelines", noMR + "d:\n  script: [docker push reg.example.com/app:latest]\n", finding.Warn, "runs on every branch"},
+		{"manual wording without MR pipelines", noMR + "d:\n  when: manual\n  script: [docker push reg.example.com/app:latest]\n", finding.Warn, "anyone who can push a branch"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := findings080(t, tc.yaml)
+			if len(f) != 1 || f[0].Severity != tc.want || !strings.Contains(f[0].Message, tc.msg) {
+				t.Fatalf("want one %s finding with %q, got %+v", tc.want, tc.msg, f)
+			}
+		})
+	}
+	for name, y := range map[string]string{ //nolint:gosec // G101: test fixtures name variables, no secrets
+		"API read with own token":   "t:\n  script:\n    - 'curl --header \"PRIVATE-TOKEN: $TOKEN\" \"$CI_API_V4_URL/projects/1/releases\"'\n",
+		"API write with job token":  "t:\n  script:\n    - 'curl --request POST --header \"JOB-TOKEN: $CI_JOB_TOKEN\" \"$CI_API_V4_URL/projects/1/releases\"'\n",
+		"API write with CI_ header": "t:\n  script:\n    - 'curl -X PUT --header \"PRIVATE-TOKEN: $CI_JOB_TOKEN\" \"$CI_API_V4_URL/projects/1\"'\n",
+		"write to another API":      "t:\n  script:\n    - 'curl -X POST -H \"Authorization: Bearer $T\" https://api.example.com/v1/x'\n",
+	} {
+		if f := findings080(t, y); len(f) != 0 {
+			t.Errorf("%s: want no finding, got %+v", name, f)
+		}
+	}
+	for _, src := range []string{"parallel: 3\n", "parallel:\n  matrix: x\n", "parallel:\n  matrix: [x]\n"} {
+		var mr yaml.Node
+		if err := yaml.Unmarshal([]byte(src), &mr); err != nil {
+			t.Fatal(err)
+		}
+		if matrixVariable(parser.Unwrap(&mr), "X") {
+			t.Errorf("matrixVariable(%q)", src)
+		}
+	}
+	for src, want := range map[string]bool{
+		"include: https://example.com/ci.yml\n": true,
+		"include:\n  - local: a.yml\n":          false,
+		"include:\n  - template: Jobs/x.yml\n":  true,
+		"include: a.yml\n":                      false,
+		"x: 1\n":                                false,
+	} {
+		var n yaml.Node
+		if err := yaml.Unmarshal([]byte(src), &n); err != nil {
+			t.Fatal(err)
+		}
+		if got := hasUnreadInclude(parser.Unwrap(&n)); got != want {
+			t.Errorf("hasUnreadInclude(%q) = %v, want %v", src, got, want)
+		}
+	}
+}

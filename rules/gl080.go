@@ -82,7 +82,7 @@ func (r *gl080) check(doc *yaml.Node, file string, ctx docContext) []finding.Fin
 			if !strong {
 				severity = finding.Info
 			}
-			msg = gl080Message(name.Value, state, jobManualOnly(job))
+			msg = gl080Message(name.Value, state, jobManualOnly(job), scope.mrPipelines)
 		case state == guardEffective && scope.mrPipelines && gl080MROnlyProduction(in, name.Value, own, job):
 			msg = fmt.Sprintf(
 				"sensitive job %q runs only in merge request pipelines — it deploys or publishes the MR's source commit before anyone merged it, and to work there its credentials can't be protected variables, so every branch can read them; restrict the job to the protected branch ($CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH) or to tags",
@@ -104,8 +104,8 @@ func (r *gl080) check(doc *yaml.Node, file string, ctx docContext) []finding.Fin
 				severity = finding.Info
 			}
 			msg = fmt.Sprintf(
-				"sensitive job %q has a rules: entry %s that matches on every branch — GitLab runs the job by the first entry that matches, so any branch can run it, also a fork's merge request a maintainer runs here; restrict that entry to protected refs or drop it",
-				name.Value, gl080EntryLabel(entry),
+				"sensitive job %q has a rules: entry %s that matches on every branch — GitLab runs the job by the first entry that matches, so any branch can run it%s; restrict that entry to protected refs or drop it",
+				name.Value, gl080EntryLabel(entry), forkMRClause(scope.mrPipelines, ", also a fork's merge request a maintainer runs here"),
 			)
 		default:
 			return
@@ -188,6 +188,12 @@ func publishesToTestRegistry(vars *yaml.Node) bool {
 // jobs in real pipelines, so they are intentionally excluded here.
 var gl080DeployKeywords = []string{"deploy", "rollout", "release", "publish", "provision"}
 
+// buildLabelEnvironments are environment names that label a build or check
+// step rather than a deployment target (#1552).
+var buildLabelEnvironments = map[string]bool{
+	"build": true, "builds": true, "ci": true, "compile": true, "package": true, "lint": true, "check": true,
+}
+
 // gl080NotDeployKeywords mark jobs that only build, test, or package artifacts —
 // e.g. a "release build" or "docdist" is not a deployment. They veto a keyword
 // match so "windows-release-build" or "coverage-review" is not flagged.
@@ -215,6 +221,12 @@ var gl080NotDeployKeywords = []string{
 //     `release-notes` job with no credential does not.
 func gl080Sensitive(in *Inheritance, name string, own, job, globalVars *yaml.Node) (sensitive, strong bool) {
 	if env := parser.FindKey(job, "environment"); env != nil && !envActionStop(env) && extractEnvName(env) != "" && !ephemeralEnvironmentIn(env, parser.FindKey(job, "variables"), globalVars) {
+		// An environment named like a build step labels the job; without a
+		// strong command it is a weak signal (#1552).
+		if buildLabelEnvironments[strings.ToLower(strings.TrimSpace(extractEnvName(env)))] {
+			_, strong, _ := gl080ScriptDeploys(in, job, globalVars)
+			return true, strong
+		}
 		return true, true
 	}
 	// A GitLab Pages job publishes a site — a deployment. The main-site case is
@@ -290,7 +302,21 @@ func envActionStop(env *yaml.Node) bool {
 	return false
 }
 
-func gl080Message(job string, state guardState, manual bool) string {
+func gl080Message(job string, state guardState, manual, mrPipelines bool) string {
+	// A workflow that keeps merge request pipelines out leaves every branch
+	// of the project, not a fork (#1552).
+	if !mrPipelines {
+		if manual {
+			return fmt.Sprintf(
+				"sensitive job %q is gated only by when: manual, which is not a ref restriction — anyone who can push a branch can start it there, with this job's credentials; restrict it to protected refs in rules:",
+				job,
+			)
+		}
+		return fmt.Sprintf(
+			"sensitive job %q has no rules: condition that restricts it — it runs on every branch, so anyone who can push one runs it with this job's credentials; restrict it to protected refs in rules:",
+			job,
+		)
+	}
 	// when: manual is the job's only gate. It is not a pipeline-source
 	// restriction: the job is still created on every source, and a maintainer
 	// can start it on a fork merge request, where it runs the fork's code with
@@ -313,6 +339,14 @@ func gl080Message(job string, state guardState, manual bool) string {
 		"sensitive job %q has no rules:/only:/except: guard — it runs on every pipeline source including fork merge requests; add a rules:if that checks $CI_PIPELINE_SOURCE",
 		job,
 	)
+}
+
+// forkMRClause returns clause when merge request pipelines can run, else "".
+func forkMRClause(mrPipelines bool, clause string) string {
+	if mrPipelines {
+		return clause
+	}
+	return ""
 }
 
 // jobManualOnly reports whether the job's trigger gate is when: manual — a
@@ -392,6 +426,22 @@ func gl080ScriptDeploys(in *Inheritance, job, globalVars *yaml.Node) (deploys, s
 	// starting with the values rules:variables give it on unprotected refs.
 	shellVars := unprotectedRuleValues(in, job, globalVars)
 	exited, weak := false, false
+	unread := hasUnreadInclude(in.mapping)
+	known := func(name string) bool {
+		if strings.HasPrefix(name, "CI_") || strings.HasPrefix(name, "GITLAB_") || name == "__subst" {
+			return true
+		}
+		if _, ok := shellVars[name]; ok {
+			return true
+		}
+		if _, ok := literalVariables(jobVars)[name]; ok {
+			return true
+		}
+		if _, ok := literalVariables(globalVars)[name]; ok {
+			return true
+		}
+		return matrixVariable(job, name)
+	}
 	for _, line := range lines {
 		if lineDeploys(line.Value) {
 			discounted = true
@@ -453,7 +503,9 @@ func gl080ScriptDeploys(in *Inheritance, job, globalVars *yaml.Node) (deploys, s
 			}
 		}
 		if lineDeploys(rest) && (strongDeploy(rest) || !publishesToService(job, rest, lines, hosts)) {
-			if strongSignal(rest) {
+			// A push whose target only an include glsec didn't read can
+			// define may well be per run: a weak signal (#1552).
+			if strongSignal(rest) && (!unread || !pushTargetUnknown(rest, known)) {
 				return true, true, false
 			}
 			weak = true
@@ -462,7 +514,135 @@ func gl080ScriptDeploys(in *Inheritance, job, globalVars *yaml.Node) (deploys, s
 	if weak {
 		return true, false, false
 	}
+	// A GitLab API write with a token of the project's own (#1552).
+	for _, line := range lines {
+		if apiWrite(strings.ReplaceAll(line.Value, "\\\n", "  ")) {
+			return true, false, false
+		}
+	}
 	return false, false, discounted
+}
+
+// GitLab API writes with a token of the project's own (#1552): curl with
+// --request/-X POST/PUT/PATCH/DELETE, a PRIVATE-TOKEN or Authorization header
+// that takes a variable, and a $CI_API_V4_URL or /api/v4/ URL.
+var (
+	apiWriteMethodRe = mustCompilePrefiltered(`(?i)(?:--request|-X)\s*['"]?(?:POST|PUT|PATCH|DELETE)\b`)
+	apiTokenHeaderRe = mustCompilePrefiltered(`(?i)(?:PRIVATE-TOKEN|Authorization)\s*:\s*(?:Bearer\s+)?\$\{?([A-Za-z_][A-Za-z0-9_]*)`)
+)
+
+func apiWrite(text string) bool {
+	for _, cmd := range shellCommands(blankShellComments(text)) {
+		if commandName(stripExecWrapper(commandWords(cmd.text))) != "curl" || !apiWriteMethodRe.MatchString(cmd.text) {
+			continue
+		}
+		lower := strings.ToLower(cmd.text)
+		if !strings.Contains(lower, "ci_api_v4_url") && !strings.Contains(lower, "/api/v4/") {
+			continue
+		}
+		for _, m := range apiTokenHeaderRe.FindAllStringSubmatch(cmd.text, -1) {
+			if !strings.HasPrefix(m[1], "CI_") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// matrixVariable reports a variable that the job's parallel:matrix sets.
+func matrixVariable(job *yaml.Node, name string) bool {
+	p := parser.FindKey(job, "parallel")
+	if p == nil || p.Kind != yaml.MappingNode {
+		return false
+	}
+	m := parser.FindKey(p, "matrix")
+	if m == nil || m.Kind != yaml.SequenceNode {
+		return false
+	}
+	for _, entry := range m.Content {
+		if entry.Kind == yaml.MappingNode && parser.FindKey(entry, name) != nil {
+			return true
+		}
+	}
+	return false
+}
+
+// hasUnreadInclude reports an include: glsec doesn't read: a remote, project,
+// template or component include, or a URL.
+func hasUnreadInclude(mapping *yaml.Node) bool {
+	inc := parser.FindKey(mapping, "include")
+	if inc == nil {
+		return false
+	}
+	items := []*yaml.Node{inc}
+	if inc.Kind == yaml.SequenceNode {
+		items = inc.Content
+	}
+	for _, it := range items {
+		switch it.Kind {
+		case yaml.ScalarNode:
+			if strings.HasPrefix(it.Value, "http://") || strings.HasPrefix(it.Value, "https://") {
+				return true
+			}
+		case yaml.MappingNode:
+			for _, k := range []string{"remote", "project", "template", "component"} {
+				if parser.FindKey(it, k) != nil {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// pushTargetUnknown reports a registry push or package upload on the line
+// whose run-specific part uses a variable known reports as undefined: the
+// image's tag, or the whole image when it is one variable; the path after
+// /packages/ of an upload. A fixed tag under an unknown namespace
+// ("$USER"/app:stable) is a shared target all the same.
+func pushTargetUnknown(text string, known func(string) bool) bool {
+	unknownIn := func(s string) bool {
+		for _, m := range anyVarRefRe.FindAllStringSubmatch(s, -1) {
+			if !known(strings.Trim(m[0], "${}")) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, cmd := range shellCommands(blankShellComments(text)) {
+		words := stripExecWrapper(commandWords(cmd.text))
+		if len(words) < 3 {
+			continue
+		}
+		switch commandName(words) {
+		case "docker", "podman", "buildah", "nerdctl", "crane", "helm":
+			if words[1] != "push" {
+				continue
+			}
+			for _, w := range words[2:] {
+				if strings.HasPrefix(w, "-") {
+					continue
+				}
+				w = strings.Trim(w, `"'`)
+				if anyVarRefRe.FindString(w) == w {
+					if unknownIn(w) {
+						return true
+					}
+					continue
+				}
+				if i := strings.LastIndex(w, ":"); i > strings.LastIndex(w, "/") && unknownIn(w[i+1:]) {
+					return true
+				}
+			}
+		case "curl":
+			for _, w := range words[1:] {
+				if _, path, ok := strings.Cut(w, "/packages/"); ok && unknownIn(path) {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 var forInRe = mustCompilePrefiltered(`^for\s+([A-Za-z_][A-Za-z0-9_]*)\s+in\s+(.+?)\s*$`)
