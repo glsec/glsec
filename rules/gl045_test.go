@@ -261,3 +261,18 @@ p:
 		})
 	}
 }
+
+func TestGL045_LongAndBuildPushForms(t *testing.T) {
+	for _, cmd := range []string{
+		"docker image push registry.example.com/app:1.0",
+		"docker buildx build --push -t registry.example.com/app:1.0 .",
+		"docker build --output type=registry -t registry.example.com/app:1.0 .",
+	} {
+		if f := findings045(t, "release:\n  stage: release\n  script:\n    - "+cmd+"\n"); len(f) != 1 {
+			t.Errorf("%s: want 1 finding, got %d", cmd, len(f))
+		}
+	}
+	if f := findings045(t, "release:\n  stage: release\n  script:\n    - docker buildx build --load -t app:1.0 .\n"); len(f) != 0 {
+		t.Errorf("build without push: want no finding, got %d", len(f))
+	}
+}

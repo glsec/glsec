@@ -614,24 +614,17 @@ func pushTargetUnknown(text string, known func(string) bool) bool {
 		if len(words) < 3 {
 			continue
 		}
+		var targets []string
 		switch commandName(words) {
-		case "docker", "podman", "buildah", "nerdctl", "crane", "helm":
+		case "docker", "podman", "buildah", "nerdctl":
+			targets, _, _ = pushedImages(words)
+		case "crane", "helm":
 			if words[1] != "push" {
 				continue
 			}
 			for _, w := range words[2:] {
-				if strings.HasPrefix(w, "-") {
-					continue
-				}
-				w = strings.Trim(w, `"'`)
-				if anyVarRefRe.FindString(w) == w {
-					if unknownIn(w) {
-						return true
-					}
-					continue
-				}
-				if i := strings.LastIndex(w, ":"); i > strings.LastIndex(w, "/") && unknownIn(w[i+1:]) {
-					return true
+				if !strings.HasPrefix(w, "-") {
+					targets = append(targets, w)
 				}
 			}
 		case "curl":
@@ -639,6 +632,18 @@ func pushTargetUnknown(text string, known func(string) bool) bool {
 				if _, path, ok := strings.Cut(w, "/packages/"); ok && unknownIn(path) {
 					return true
 				}
+			}
+		}
+		for _, w := range targets {
+			w = strings.Trim(w, `"'`)
+			if anyVarRefRe.FindString(w) == w {
+				if unknownIn(w) {
+					return true
+				}
+				continue
+			}
+			if i := strings.LastIndex(w, ":"); i > strings.LastIndex(w, "/") && unknownIn(w[i+1:]) {
+				return true
 			}
 		}
 	}
@@ -1009,25 +1014,8 @@ func ephemeralImagePush(words []string, jobVars, globalVars *yaml.Node, shellVar
 	default:
 		return false
 	}
-	i := 1
-	if i < len(words) && words[i] == "image" {
-		i++
-	}
-	if i >= len(words) || words[i] != "push" {
-		return false
-	}
-	// podman and buildah push SOURCE [DESTINATION]: every operand must be per
-	// run, or the push writes a shared one.
-	var images []string
-	for _, w := range words[i+1:] {
-		if w == "--all-tags" || w == "-a" {
-			return false
-		}
-		if !strings.HasPrefix(w, "-") {
-			images = append(images, w)
-		}
-	}
-	if len(images) == 0 {
+	images, exact, push := pushedImages(words)
+	if !push || !exact || len(images) == 0 {
 		return false
 	}
 	for _, image := range images {
@@ -1036,6 +1024,73 @@ func ephemeralImagePush(words []string, jobVars, globalVars *yaml.Node, shellVar
 		}
 	}
 	return true
+}
+
+// pushedImages returns the images a docker, podman, buildah or nerdctl
+// command pushes: the operands of push or image push (podman and buildah
+// push SOURCE [DESTINATION]), the -t tags of a docker build that pushes its
+// result (#1554). push reports a push at all; exact is false when the words
+// don't name every image it writes (--all-tags, buildx bake).
+func pushedImages(words []string) (images []string, exact, push bool) {
+	switch commandName(words) {
+	case "docker", "podman", "buildah", "nerdctl":
+	default:
+		return nil, false, false
+	}
+	args := words[1:]
+	if len(args) > 0 && (args[0] == "image" || args[0] == "buildx") {
+		args = args[1:]
+	}
+	if len(args) == 0 {
+		return nil, false, false
+	}
+	switch args[0] {
+	case "push":
+		exact = true
+		for _, w := range args[1:] {
+			if w == "--all-tags" || w == "-a" {
+				exact = false
+			}
+			if !strings.HasPrefix(w, "-") {
+				images = append(images, w)
+			}
+		}
+		return images, exact, true
+	case "build", "bake":
+		if commandName(words) != "docker" || !buildPushes(args[1:]) {
+			return nil, false, false
+		}
+		if args[0] == "bake" {
+			return nil, false, true
+		}
+		return writtenImageRefs(words), true, true
+	}
+	return nil, false, false
+}
+
+// buildPushes reports a docker build flag that pushes the result: --push or
+// a registry --output.
+func buildPushes(args []string) bool {
+	for i, a := range args {
+		switch {
+		case a == "--push" || a == "--push=true":
+			return true
+		case a == "--output" || a == "-o":
+			if i+1 < len(args) && registryOutput(args[i+1]) {
+				return true
+			}
+		case strings.HasPrefix(a, "--output=") || strings.HasPrefix(a, "-o="):
+			if _, v, _ := strings.Cut(a, "="); registryOutput(v) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func registryOutput(v string) bool {
+	v = strings.ToLower(strings.Trim(v, `"'`))
+	return strings.Contains(v, "type=registry") || strings.Contains(v, "push=true")
 }
 
 // ephemeralPackageUpload reports a curl upload to the GitLab package
