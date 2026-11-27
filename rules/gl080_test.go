@@ -1584,3 +1584,38 @@ func TestGL080_Issue1554(t *testing.T) {
 		}
 	}
 }
+
+func TestGL080_Issue1556(t *testing.T) {
+	for in, want := range map[string]bool{
+		"skopeo copy oci:out docker://reg.example.com/app:latest":            true,
+		"skopeo --insecure-policy copy oci:out docker://reg.example.com/app": true,
+		"skopeo sync --src docker --dest docker reg/a docker://reg/b":        true,
+		"skopeo copy docker://reg.example.com/app:latest oci:out":            false,
+		"skopeo inspect docker://reg.example.com/app:latest":                 false,
+		"skopeo push reg.example.com/app:latest":                             false,
+	} {
+		if got := lineDeploys(in); got != want {
+			t.Errorf("lineDeploys(%q) = %v, want %v", in, got, want)
+		}
+	}
+	for in, want := range map[string]bool{
+		"skopeo copy oci:out docker://reg/x:$CI_COMMIT_SHA":                   true,
+		"skopeo copy oci:out \"docker://reg/x:$CI_COMMIT_SHA\"":               true,
+		"skopeo --override-arch amd64 copy oci:out docker://reg/x:$CI_JOB_ID": true,
+		"skopeo copy oci:out docker://reg/x:latest":                           false,
+		"skopeo copy docker://reg/x:$CI_COMMIT_SHA oci:out":                   false,
+		"skopeo sync --dest docker reg/a docker://reg/b-$CI_COMMIT_SHA":       false,
+		"skopeo copy": false,
+	} {
+		if got := ephemeralImagePush(strings.Fields(in), nil, nil, nil); got != want {
+			t.Errorf("ephemeralImagePush(%q) = %v, want %v", in, got, want)
+		}
+	}
+	remote := "include:\n  - project: g/templates\n    file: docker.yml\n"
+	if f := findings080(t, remote+"b:\n  script: [skopeo copy oci:out docker://reg.example.com/app:$VERSION]\n"); len(f) != 1 || f[0].Severity != finding.Info {
+		t.Errorf("unread skopeo tag: want one info finding, got %+v", f)
+	}
+	if f := findings080(t, "b:\n  script: [skopeo copy oci:out docker://reg.example.com/app:latest]\n"); len(f) != 1 || f[0].Severity != finding.Warn {
+		t.Errorf("skopeo copy to a shared tag: want one warn finding, got %+v", f)
+	}
+}
