@@ -28,7 +28,7 @@ var deployStageKeywords = []string{"deploy", "release", "publish", "ship"}
 // position, so `# build for deploy`, `deploy/compose.yml` or
 // `--no-check-publish` no longer read as a deployment (#1096, release FP scan).
 var deployCmdRe = mustCompilePrefiltered(
-	`(?:docker|podman|buildah|crane|skopeo|nerdctl|ko)\s+push\b` +
+	`(?:docker|podman|buildah|crane|skopeo|nerdctl|ko)\s+push\b|(?:docker|podman|nerdctl)\s+image\s+push\b|` + buildPushPattern +
 		`|helm\s+(?:push|cm-push|upgrade|install)\b` +
 		`|twine\s+upload\b|cargo\s+publish\b|(?:npm|yarn|pnpm)\s+publish\b|gem\s+push\b|dotnet\s+nuget\s+push\b|(?:uv|flit|poetry|maturin)\s+(?:publish|upload)\b` +
 		`|kubectl\s+(?:apply|rollout|set|create|patch|replace)\b|(?:^|[^0-9a-z_.-])(?:kustomize|argocd)\b|skaffold\s+(?:run|deploy)\b` +
@@ -41,6 +41,11 @@ var deployCmdRe = mustCompilePrefiltered(
 		`|\bcurl\b[^|;&]*?(?:--upload-file|\s-[a-z]{0,5}t)\s[^|;&]*?` + gitlabPackagesURL +
 		`|\bcurl\b[^|;&]*?` + gitlabPackagesURL + `[^|;&]*?(?:--upload-file|\s-[a-z]{0,5}t)\s`,
 )
+
+// buildPushPattern matches a lowercased docker build that pushes its result
+// to the registry (#1554): build, buildx build or buildx bake with --push or
+// a registry --output, on the same command or its continued lines.
+const buildPushPattern = `docker\s+(?:buildx\s+)?(?:build|bake)\b(?:[^|;&\n]|\\\n)*?\s(?:--push(?:=true)?(?:\s|$)|(?:--output|-o)[= ]\S*?(?:type=registry|push=true))`
 
 // gitlabPackagesURL matches a lowercased GitLab package registry API path of
 // a project.

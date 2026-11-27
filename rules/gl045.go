@@ -19,7 +19,7 @@ func (r *gl045) ID() string { return "GL045" }
 
 // releasePushRe matches script lines that push artifacts to a registry or package index.
 var releasePushRe = mustCompilePrefiltered(
-	`\bdocker\s+push\b` +
+	`\bdocker\s+(?:image\s+)?push\b|\b` + buildPushPattern +
 		`|\bcrane\s+push\b` +
 		`|\bhelm\s+push\b` +
 		`|\btwine\s+upload\b` +

@@ -1513,3 +1513,74 @@ func TestGL080_Issue1552(t *testing.T) {
 		}
 	}
 }
+
+func TestGL080_Issue1554(t *testing.T) {
+	for in, want := range map[string]bool{
+		"docker image push reg.example.com/app:latest":                                 true,
+		"podman image push reg.example.com/app:latest":                                 true,
+		"docker buildx build --push -t reg.example.com/app:latest .":                   true,
+		"docker build --push -t reg.example.com/app:latest .":                          true,
+		"docker buildx build --push=true -t a .":                                       true,
+		"docker buildx build --output type=registry -t a .":                            true,
+		"docker buildx build -o type=image,name=a,push=true .":                         true,
+		"docker buildx bake --push":                                                    true,
+		"docker buildx build \\\n  --platform linux/amd64 \\\n  --push -t a .":         true,
+		"docker buildx build --load -t app:latest .":                                   false,
+		"docker buildx build --push=false -t app:latest .":                             false,
+		"docker buildx build --output type=docker -t app .":                            false,
+		"docker build -t app . && echo --push":                                         false,
+		"docker image ls":                                                              false,
+		"docker buildx build -t app .\n- run --push":                                   false,
+		"docker buildx build --output=type=local,dest=out .":                           false,
+		"docker buildx build --tag reg.example.com/app:latest --push-option x .":       false,
+		"docker buildx build --cache-to type=registry,ref=reg.example.com/app:cache .": false,
+	} {
+		if got := lineDeploys(in); got != want {
+			t.Errorf("lineDeploys(%q) = %v, want %v", in, got, want)
+		}
+	}
+	for in, want := range map[string]bool{
+		"docker image push reg/x:$CI_COMMIT_SHA":                               true,
+		"docker image push reg/x:latest":                                       false,
+		"docker buildx build --push -t reg/x:$CI_COMMIT_SHA .":                 true,
+		"docker buildx build --push -t reg/x:$CI_COMMIT_SHA -t reg/x:latest .": false,
+		"docker buildx build --output=type=registry --tag=reg/x:$CI_JOB_ID .":  true,
+		"docker build --push .":                                                false,
+		"docker buildx bake --push":                                            false,
+		"docker buildx build -t reg/x:$CI_COMMIT_SHA .":                        false,
+		"docker buildx build -o \"type=registry\" -t reg/x:$CI_COMMIT_SHA .":   true,
+		"buildah build --push -t reg/x:$CI_COMMIT_SHA .":                       false,
+		"docker image":                       false,
+		"docker image push --all-tags reg/x": false,
+	} {
+		if got := ephemeralImagePush(strings.Fields(in), nil, nil, nil); got != want {
+			t.Errorf("ephemeralImagePush(%q) = %v, want %v", in, got, want)
+		}
+	}
+	remote := "include:\n  - project: g/templates\n    file: docker.yml\n"
+	for _, tc := range []struct {
+		name, yaml string
+		want       finding.Severity
+	}{
+		{"image push", "b:\n  script: [docker image push reg.example.com/app:latest]\n", finding.Warn},
+		{"build push", "b:\n  script: [docker buildx build --push -t reg.example.com/app:latest .]\n", finding.Warn},
+		{"build push with an unread tag", remote + "b:\n  script: [docker buildx build --push -t reg.example.com/app:$VERSION .]\n", finding.Info},
+		{"image push with an unread tag", remote + "b:\n  script: [docker image push reg.example.com/app:$VERSION]\n", finding.Info},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := findings080(t, tc.yaml)
+			if len(f) != 1 || f[0].Severity != tc.want {
+				t.Fatalf("want one %s finding, got %+v", tc.want, f)
+			}
+		})
+	}
+	for name, y := range map[string]string{
+		"per-run build push": "b:\n  script: [docker buildx build --push -t reg.example.com/app:$CI_COMMIT_SHA .]\n",
+		"per-run image push": "b:\n  script: [docker image push reg.example.com/app:$CI_PIPELINE_ID]\n",
+		"build without push": "b:\n  script: [docker buildx build --load -t app:latest .]\n",
+	} {
+		if f := findings080(t, y); len(f) != 0 {
+			t.Errorf("%s: want no finding, got %+v", name, f)
+		}
+	}
+}

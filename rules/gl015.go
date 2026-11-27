@@ -19,8 +19,9 @@ var GL015 = &gl015{}
 func (r *gl015) ID() string { return "GL015" }
 
 var (
-	// dockerCmdRe matches docker or podman build/push/tag/buildx commands.
-	dockerCmdRe = mustCompilePrefiltered(`\b(?:docker|podman)\s+(?:build|push|tag|buildx)\b`)
+	// dockerCmdRe matches docker or podman build/push/tag/buildx commands,
+	// also in the image management form (docker image push, #1554).
+	dockerCmdRe = mustCompilePrefiltered(`\b(?:docker|podman)\s+(?:image\s+)?(?:build|push|tag|buildx)\b`)
 
 	// userControlledTagRe matches an image tag that uses a user-controlled variable,
 	// i.e. a colon (tag separator) followed by a user-controlled predefined variable.

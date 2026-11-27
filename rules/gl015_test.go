@@ -223,3 +223,18 @@ func TestGL015_Issue1526(t *testing.T) {
 		})
 	}
 }
+
+func TestGL015_ImageManagementForm(t *testing.T) {
+	for _, cmd := range []string{
+		"docker image build -t $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG .",
+		"docker image tag app $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG",
+		"podman image push $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_NAME",
+	} {
+		if f := findings015(t, "b:\n  script:\n    - "+cmd+"\n"); len(f) != 1 {
+			t.Errorf("%s: want 1 finding, got %d", cmd, len(f))
+		}
+	}
+	if f := findings015(t, "b:\n  script:\n    - docker image tag $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG app:local\n"); len(f) != 0 {
+		t.Errorf("tag source only: want no finding, got %d", len(f))
+	}
+}
