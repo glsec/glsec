@@ -83,6 +83,16 @@ func TestGL080_SignalSeverity(t *testing.T) {
 		{"semantic-release", "d:\n  script: [npx semantic-release]\n", finding.Warn},
 		{"environment", "d:\n  environment: eu-central\n  script: [./deploy.sh]\n", finding.Warn},
 		{"weak and strong", "d:\n  script:\n    - rsync -a public/ web@host:/srv/www/\n    - docker push registry.example.com/app:latest\n", finding.Warn},
+		{"push in compound if", "d:\n  script:\n    - |\n      if [[ $CI_COMMIT_BRANCH == \"master\" && $NS == \"org\" ]]; then\n        docker push img:tag\n      fi\n", finding.Info},
+		{"push in case", "d:\n  script:\n    - 'case $CREATE in true) twine upload dist/*;; esac'\n", finding.Info},
+		{"push after test and", "d:\n  script:\n    - '[ \"$PUSH\" = 1 ] && docker push img:tag'\n", finding.Info},
+		{"push after test or", "d:\n  script:\n    - 'test -z \"$SKIP\" || docker push img:tag'\n", finding.Info},
+		{"push in PowerShell if", "d:\n  script:\n    - 'if ($env:CI_COMMIT_BRANCH -eq \"main\" -and $env:X) { docker push img:tag }'\n", finding.Info},
+		{"push after fi", "d:\n  script:\n    - 'if [ -n \"$X\" ]; then echo x; fi; docker push img:tag'\n", finding.Warn},
+		{"push in for loop", "d:\n  script:\n    - 'for t in a b; do docker push img:$t; done'\n", finding.Warn},
+		{"push after build and", "d:\n  script:\n    - 'docker build -t img:tag . && docker push img:tag'\n", finding.Warn},
+		{"if word in a string", "d:\n  script:\n    - echo \"if this fails\"\n    - docker push img:tag\n", finding.Warn},
+		{"conditional and unconditional", "d:\n  script:\n    - 'if [ -n \"$X\" ]; then docker push img:a; fi'\n    - docker push img:b\n", finding.Warn},
 		{"strong only in echo", "d:\n  script:\n    - echo docker push registry.example.com/app:latest\n    - rsync -a public/ web@host:/srv/www/\n", finding.Info},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

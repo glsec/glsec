@@ -442,22 +442,82 @@ func gl080ScriptDeploys(in *Inheritance, job, globalVars *yaml.Node) (deploys, s
 // deployCmdRe and releaseCmdRe other than the copy and push tools (rsync, scp,
 // rclone, git push), which often ship nothing shared, such as a local path, a
 // per-run directory or a results repository (#1548).
+//
+// A strong command that only runs under a shell condition glsec didn't read
+// as a guard (inside if … fi or case … esac, or after a test and && or ||)
+// counts as weak too: such a condition often restricts the publish in a way
+// glsec can't evaluate, such as a compound test or a variable another job or
+// workflow:rules sets.
 func strongSignal(text string) bool {
-	for _, cmd := range shellCommands(blankShellComments(text)) {
+	code := blankShellComments(text)
+	cursor := 0
+	for _, cmd := range shellCommands(code) {
+		start := cursor
+		if i := strings.Index(code[cursor:], cmd.text); i >= 0 {
+			start = cursor + i
+			cursor = start + len(cmd.text)
+		}
 		if !lineDeploys(cmd.text) {
 			continue
 		}
 		lower := strings.ToLower(cmd.text)
-		if releaseCmdRe.MatchString(lower) {
+		if m := releaseCmdRe.FindStringIndex(lower); m != nil && !inConditional(code, start+m[0]) {
 			return true
 		}
 		for _, m := range deployCmdRe.FindAllStringIndex(lower, -1) {
-			if !copyOrPushRe.MatchString(lower[m[0]:m[1]]) {
+			if !copyOrPushRe.MatchString(lower[m[0]:m[1]]) && !inConditional(code, start+m[0]) {
 				return true
 			}
 		}
 	}
 	return false
+}
+
+// testThenRe matches a shell test right before a command, joined by && or
+// ||: [ … ] &&, [[ … ]] ||, test … &&.
+var testThenRe = mustCompilePrefiltered(`(?:\]\]?|\btest\b[^;&|\n]*)\s*(?:&&|\|\|)\s*$`)
+
+// inConditional reports whether position pos of a shell script lies inside
+// an if … fi or case … esac block, outside quotes, or right after a test
+// joined by && or ||. PowerShell's if (…) { … } has no fi, so a command after
+// it counts as inside too.
+func inConditional(s string, pos int) bool {
+	lineStart := strings.LastIndexAny(s[:pos], "\n;") + 1
+	if testThenRe.MatchString(s[lineStart:pos]) {
+		return true
+	}
+	depth := 0
+	var quote byte
+	for i := 0; i < pos; i++ {
+		c := s[i]
+		switch {
+		case quote != 0:
+			if c == '\\' && quote == '"' {
+				i++
+			} else if c == quote {
+				quote = 0
+			}
+		case c == '\\':
+			i++
+		case c == '\'' || c == '"':
+			quote = c
+		case (c == 'i' || c == 'f' || c == 'c' || c == 'e') && (i == 0 || !isWordByte(s[i-1])):
+			j := i
+			for j < len(s) && isWordByte(s[j]) {
+				j++
+			}
+			switch s[i:j] {
+			case "if", "case":
+				depth++
+			case "fi", "esac":
+				if depth > 0 {
+					depth--
+				}
+			}
+			i = j - 1
+		}
+	}
+	return depth > 0
 }
 
 var copyOrPushRe = mustCompilePrefiltered(`^(?:[^0-9a-z_.-])?(?:rsync|scp)(?:\s|$)|^rclone\b|^git\s+push\b`)
