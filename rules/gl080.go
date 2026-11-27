@@ -1260,12 +1260,46 @@ func perRunImage(image string) bool {
 				break
 			}
 			rest = rest[i+2+len(v):]
-			if rest != "" && strings.ContainsRune(":/#%^,", rune(rest[0])) {
+			if perRunExpansion(rest) {
 				return true
 			}
 		}
 	}
 	return commitDerived(image)
+}
+
+// perRunExpansion reports whether the operator that follows a per-run
+// variable inside ${…} keeps the value per run: a substring, replacement,
+// trim or case change does. A default (:-, -, :=, =) takes over when the
+// variable is empty, as CI_COMMIT_BRANCH is in a tag or merge request
+// pipeline, and an alternative (:+, +) replaces it, so both count only when
+// that word is per run itself: ${CI_COMMIT_BRANCH:-latest} pushes latest.
+func perRunExpansion(rest string) bool {
+	if rest == "" {
+		return false
+	}
+	op := rest
+	if op[0] == ':' && len(op) > 1 {
+		op = op[1:]
+	}
+	switch op[0] {
+	case '-', '=', '+':
+		depth := 1
+		for j := 1; j < len(op); j++ {
+			switch op[j] {
+			case '{':
+				depth++
+			case '}':
+				depth--
+				if depth == 0 {
+					word := strings.Trim(op[1:j], `"'`)
+					return word != "" && perRunImage(word)
+				}
+			}
+		}
+		return false
+	}
+	return strings.ContainsRune(":/#%^,?", rune(rest[0]))
 }
 
 // commitDerivedRe matches a command substitution that prints the commit:
