@@ -1246,11 +1246,23 @@ func perRunValue(value string, jobVars, globalVars *yaml.Node, shellVars map[str
 }
 
 // perRunImage reports an image whose repository or tag names the run
-// ($CI_REGISTRY_IMAGE/build-$CI_COMMIT_REF_SLUG, :$CI_COMMIT_SHA).
+// ($CI_REGISTRY_IMAGE/build-$CI_COMMIT_REF_SLUG, :$CI_COMMIT_SHA), also
+// through a parameter expansion that keeps it per run
+// (${CI_COMMIT_REF_NAME////__}, ${CI_COMMIT_SHA:0:8}).
 func perRunImage(image string) bool {
 	for _, v := range perRunTagVars {
 		if strings.Contains(image, "$"+v) || strings.Contains(image, "${"+v+"}") {
 			return true
+		}
+		for rest := image; ; {
+			i := strings.Index(rest, "${"+v)
+			if i < 0 {
+				break
+			}
+			rest = rest[i+2+len(v):]
+			if rest != "" && strings.ContainsRune(":/#%^,", rune(rest[0])) {
+				return true
+			}
 		}
 	}
 	return commitDerived(image)

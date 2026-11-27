@@ -1619,3 +1619,23 @@ func TestGL080_Issue1556(t *testing.T) {
 		t.Errorf("skopeo copy to a shared tag: want one warn finding, got %+v", f)
 	}
 }
+
+func TestPerRunImageParameterExpansion(t *testing.T) {
+	for in, want := range map[string]bool{
+		"reg/x:${CI_COMMIT_REF_NAME////__}": true,
+		"reg/x:${CI_COMMIT_SHA:0:8}":        true,
+		"reg/x:${CI_COMMIT_REF_SLUG,,}":     true,
+		"reg/x:${CI_COMMIT_SHAX}":           false,
+		"reg/x:${CI_COMMIT_SHA_OTHER:-a}":   false,
+		"reg/x:latest":                      false,
+		"reg/x:${CI_COMMIT_SHORT_SHA%%-*}":  true,
+	} {
+		if got := perRunImage(in); got != want {
+			t.Errorf("perRunImage(%q) = %v, want %v", in, got, want)
+		}
+	}
+	y := "b:\n  script:\n    - skopeo login -u u -p \"$P\" reg.example.com\n    - export IMAGE_NAME=${CI_COMMIT_REF_NAME////__}\n    - skopeo copy docker://reg.example.com/a:c \"docker://reg.example.com/a:${IMAGE_NAME}\"\n"
+	if f := findings080(t, y); len(f) != 0 {
+		t.Errorf("per-branch tag through a parameter expansion: want no finding, got %+v", f)
+	}
+}
