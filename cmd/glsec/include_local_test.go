@@ -233,3 +233,47 @@ func TestIncludeLocal_RestrictedByIncludeRules(t *testing.T) {
 		})
 	}
 }
+
+// A child pipeline whose trigger job runs on protected refs only, in forms
+// the trigger check didn't read: only: variables:, an if: taken by
+// !reference from a template in an included file, a quoted tag regex (#1550).
+func TestChildPipeline_TriggerGuardForms(t *testing.T) {
+	child := "deploy:\n  script: [docker push registry.example.com/app:latest]\n"
+	for _, tc := range []struct {
+		name, trigger string
+		want          bool
+	}{
+		{"only variables default branch", "  only:\n    variables:\n      - $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH\n", false},
+		{"only refs main", "  only:\n    refs: [main]\n", false},
+		{"only variables any", "  only:\n    variables:\n      - $DEPLOY\n", true},
+		{"reference into include", "  rules:\n    - if: !reference [.is_main, if]\n    - when: never\n", false},
+		{"reference to an open template", "  rules:\n    - if: !reference [.any_branch, if]\n", true},
+		{"unresolved reference", "  rules:\n    - if: !reference [.missing, if]\n", true},
+		{"quoted tag regex", "  rules:\n    - if: $CI_COMMIT_TAG =~ \"/^v.*$/\"\n      when: manual\n", false},
+		{"changes only", "  rules:\n    - changes: [deploy/**]\n", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, _ := scanIncludes(t, map[string]string{
+				".gitlab-ci.yml":   "include: ci/templates.yml\nworkflow:\n  rules:\n    - if: $CI_COMMIT_BRANCH\nstart:\n  trigger:\n    include: ci/child.yml\n" + tc.trigger,
+				"ci/templates.yml": ".is_main:\n  if: $CI_COMMIT_BRANCH == \"main\" && $CI_COMMIT_TAG == null\n.any_branch:\n  if: $CI_COMMIT_BRANCH\n",
+				"ci/child.yml":     child,
+			})
+			if has := hasFinding(got, "ci/child.yml GL080"); has != tc.want {
+				t.Errorf("GL080 in ci/child.yml: got %v, want %v: %v", has, tc.want, got)
+			}
+		})
+	}
+}
+
+// An include glsec can't read stays a nil member of the pipeline; reading a
+// trigger job's references again must skip it (#1550).
+func TestChildPipeline_TriggerReferenceWithMissingInclude(t *testing.T) {
+	got, _ := scanIncludes(t, map[string]string{
+		".gitlab-ci.yml":   "include:\n  - local: ci/missing.yml\n  - local: ci/templates.yml\nstart:\n  trigger:\n    include: ci/child.yml\n  rules:\n    - if: !reference [.is_main, if]\n",
+		"ci/templates.yml": ".is_main:\n  if: $CI_COMMIT_BRANCH == \"main\"\n",
+		"ci/child.yml":     "deploy:\n  script: [docker push registry.example.com/app:latest]\n",
+	})
+	if hasFinding(got, "ci/child.yml GL080") {
+		t.Errorf("GL080 in a child pipeline started on main only: %v", got)
+	}
+}

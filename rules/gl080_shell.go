@@ -26,9 +26,11 @@ var (
 	shellAndRe = mustCompilePrefiltered(`((?:\[\[?|\btest\b)[^;\n&|]*?(?:\]\]?|$|\s))\s*&&\s*([^;\n|&]+)`)
 	// shellExitGuardRe matches a test that ends the script: [ … ] || exit, or
 	// [ … ] && exit, alone in its command.
-	shellExitGuardRe = mustCompilePrefiltered(`((?:\[\[?|\btest\b)[^;\n&|]*?(?:\]\]?|\s))\s*(\|\||&&)\s*exit\b`)
+	// The exit may sit in a brace group after other commands:
+	// [ -n "$X" ] || { echo skip; exit 0; }.
+	shellExitGuardRe = mustCompilePrefiltered(`((?:\[\[?|\btest\b)[^;\n&|]*?(?:\]\]?|\s))\s*(\|\||&&)\s*(?:\{\s*(?:[^{}\n;]*;\s*)*)?exit\b`)
 	// shellGrepExitRe matches echo "$VAR" | grep … || exit, or the && form.
-	shellGrepExitRe = mustCompilePrefiltered(`(\becho\s[^;\n|&]*\|\s*grep\s[^;\n|&]*?)\s*(\|\||&&)\s*exit\b`)
+	shellGrepExitRe = mustCompilePrefiltered(`(\becho\s[^;\n|&]*\|\s*grep\s[^;\n|&]*?)\s*(\|\||&&)\s*(?:\{\s*(?:[^{}\n;]*;\s*)*)?exit\b`)
 	// grepTestRe splits echo "$VAR" | grep [-flags] 'pattern'.
 	grepTestRe = mustCompilePrefiltered(`^echo\s+("?)\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?("?)\s*\|\s*grep\s+((?:-[A-Za-z]+\s+)*)(?:-e\s+)?(?:'([^']*)'|"([^"]*)")\s*$`)
 	// shellIfExitRe matches if <test>; then exit …; fi.

@@ -167,3 +167,35 @@ func deepCopyNode(n *yaml.Node) *yaml.Node {
 	}
 	return &cp
 }
+
+// ResolveReferenceIn returns a copy of what a !reference that ResolveReferences
+// left untouched points to in another document's top mapping, or nil. It lets
+// a caller that holds every file of a pipeline resolve a reference to a
+// template defined in an included file (#1550).
+func ResolveReferenceIn(ref *yaml.Node, doc *yaml.Node) *yaml.Node {
+	if !isReference(ref) || doc == nil {
+		return nil
+	}
+	top := doc
+	if top.Kind == yaml.DocumentNode && len(top.Content) > 0 {
+		top = top.Content[0]
+	}
+	if top.Kind != yaml.MappingNode {
+		return nil
+	}
+	segs := make([]string, 0, len(ref.Content))
+	for _, c := range ref.Content {
+		if c.Kind != yaml.ScalarNode {
+			return nil
+		}
+		segs = append(segs, c.Value)
+	}
+	if len(segs) == 0 {
+		return nil
+	}
+	target := lookupPath(top, segs)
+	if target == nil || countNodes(target, maxExpandedNodes) > maxExpandedNodes {
+		return nil
+	}
+	return deepCopyNode(target)
+}
