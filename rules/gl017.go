@@ -348,6 +348,10 @@ func stripRunPrefix(w []string) []string {
 		case "timeout", "nice":
 			i := 1
 			for i < len(w) && strings.HasPrefix(w[i], "-") {
+				// nice -n 5, timeout -s KILL / -k 5s take a value.
+				if w[i] == "-n" || w[i] == "-s" || w[i] == "-k" {
+					i++
+				}
 				i++
 			}
 			if strings.EqualFold(w[0], "timeout") && i < len(w) {

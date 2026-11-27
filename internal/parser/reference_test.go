@@ -286,3 +286,38 @@ func TestResolveReferences_TopLevelNotAMapping(t *testing.T) {
 		}
 	}
 }
+
+func TestResolveReferenceIn(t *testing.T) {
+	parse := func(src string) *yaml.Node {
+		var n yaml.Node
+		if err := yaml.Unmarshal([]byte(src), &n); err != nil {
+			t.Fatal(err)
+		}
+		return &n
+	}
+	ref := func(src string) *yaml.Node {
+		return parse("x: " + src).Content[0].Content[1]
+	}
+	other := parse(".is_main:\n  if: $CI_COMMIT_BRANCH == \"main\"\n.rules:\n  - if: $CI_COMMIT_TAG\n")
+	if got := ResolveReferenceIn(ref("!reference [.is_main, if]"), other); got == nil || got.Value != `$CI_COMMIT_BRANCH == "main"` {
+		t.Errorf("if reference: got %+v", got)
+	}
+	if got := ResolveReferenceIn(ref("!reference [.rules]"), other.Content[0]); got == nil || got.Kind != yaml.SequenceNode {
+		t.Errorf("mapping top: got %+v", got)
+	}
+	for name, tc := range map[string]struct {
+		ref, doc *yaml.Node
+	}{
+		"not a reference": {ref("[.is_main, if]"), other},
+		"no document":     {ref("!reference [.is_main, if]"), nil},
+		"missing path":    {ref("!reference [.missing, if]"), other},
+		"non-scalar path": {ref("!reference [[.is_main], if]"), other},
+		"empty path":      {ref("!reference []"), other},
+		"sequence at top": {ref("!reference [.is_main, if]"), parse("- a\n")},
+		"empty document":  {ref("!reference [.is_main, if]"), &yaml.Node{Kind: yaml.DocumentNode}},
+	} {
+		if got := ResolveReferenceIn(tc.ref, tc.doc); got != nil {
+			t.Errorf("%s: got %+v, want nil", name, got)
+		}
+	}
+}

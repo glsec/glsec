@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/glsec/glsec/internal/parser"
+	"gopkg.in/yaml.v3"
 )
 
 func TestNewRefScope(t *testing.T) {
@@ -161,5 +162,37 @@ func TestIfAdmitsMR(t *testing.T) {
 		if got := ifAdmitsMR(expr); got != want {
 			t.Errorf("ifAdmitsMR(%q) = %v, want %v", expr, got, want)
 		}
+	}
+}
+
+func TestRunsOnProtectedRefsOnlyAcross(t *testing.T) {
+	parse := func(src string) *yaml.Node {
+		var n yaml.Node
+		if err := yaml.Unmarshal([]byte(src), &n); err != nil {
+			t.Fatal(err)
+		}
+		return &n
+	}
+	templates := parse(".is_main:\n  if: $CI_COMMIT_BRANCH == \"main\"\n.any:\n  if: $CI_COMMIT_BRANCH\n.main_rules:\n  - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH\n  - when: never\n.one_rule:\n  if: $CI_COMMIT_TAG\n")
+	for _, tc := range []struct {
+		name, job string
+		want      bool
+	}{
+		{"if from another file", "rules:\n  - if: !reference [.is_main, if]\n  - when: never\n", true},
+		{"open if from another file", "rules:\n  - if: !reference [.any, if]\n", false},
+		{"whole rules entry list", "rules:\n  - !reference [.main_rules]\n", true},
+		{"whole rules entry mapping", "rules:\n  - !reference [.one_rule]\n", true},
+		{"unresolved entry", "rules:\n  - !reference [.missing]\n", false},
+		{"unresolved if", "rules:\n  - if: !reference [.missing, if]\n", false},
+		{"no reference", "rules:\n  - if: $CI_COMMIT_BRANCH == \"main\"\n", false},
+		{"no rules", "script: [x]\n", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			doc := parse("start:\n" + indent(tc.job) + "  trigger: {include: c.yml}\n")
+			job := parser.FindKey(parser.Unwrap(doc), "start")
+			if got := RunsOnProtectedRefsOnlyAcross(doc, job, []*yaml.Node{doc, templates}); got != tc.want {
+				t.Errorf("got %v, want %v", got, tc.want)
+			}
+		})
 	}
 }

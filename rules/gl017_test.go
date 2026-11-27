@@ -6,6 +6,7 @@ package rules
 import (
 	"fmt"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/glsec/glsec/internal/finding"
@@ -366,5 +367,27 @@ func TestLineDeploys(t *testing.T) {
 				t.Errorf("lineDeploys(%q) = %v, want %v", tc.line, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestStripRunPrefix(t *testing.T) {
+	for in, want := range map[string]string{
+		"time curl -T f u":            "curl -T f u",
+		"nohup ./deploy.sh":           "./deploy.sh",
+		"command docker push x":       "docker push x",
+		"exec docker push x":          "docker push x",
+		"sudo -E -u ci docker push x": "docker push x",
+		"env A=1 B=2 docker push x":   "docker push x",
+		"env -i docker push x":        "docker push x",
+		"timeout 600 docker push x":   "docker push x",
+		"timeout -s KILL 5m helm x":   "helm x",
+		"nice -n 5 make deploy":       "make deploy",
+		"time":                        "time",
+		"sudo":                        "sudo",
+		"docker push x":               "docker push x",
+	} {
+		if got := strings.Join(stripRunPrefix(strings.Fields(in)), " "); got != want {
+			t.Errorf("stripRunPrefix(%q) = %q, want %q", in, got, want)
+		}
 	}
 }

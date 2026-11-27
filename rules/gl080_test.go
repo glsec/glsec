@@ -10,6 +10,7 @@ import (
 
 	"github.com/glsec/glsec/internal/finding"
 	"github.com/glsec/glsec/internal/parser"
+	"gopkg.in/yaml.v3"
 )
 
 func findings080(t *testing.T, yaml string) []finding.Finding {
@@ -1374,5 +1375,69 @@ func TestGL080_Issue1550(t *testing.T) {
 				t.Fatalf("expected %d findings, got %+v", tc.want, f)
 			}
 		})
+	}
+}
+
+func TestJobProtectedOnlyOnlyMapping(t *testing.T) {
+	for src, want := range map[string]bool{
+		"only:\n  refs: [main, tags]\n":                                   true,
+		"only:\n  refs: [main, feature]\n":                                false,
+		"only:\n  variables: [$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH]\n": true,
+		"only:\n  variables: [$CI_COMMIT_BRANCH == \"main\", $DEPLOY]\n":  false,
+		"only:\n  variables: [{x: y}]\n":                                  false,
+		"only:\n  refs: [feature]\n  variables: [$CI_COMMIT_TAG]\n":       true,
+		"only:\n  changes: [a/**]\n":                                      false,
+		"only:\n  refs: []\n":                                             false,
+	} {
+		var n yaml.Node
+		if err := yaml.Unmarshal([]byte(src), &n); err != nil {
+			t.Fatal(err)
+		}
+		if got := jobProtectedOnly(parser.Unwrap(&n)); got != want {
+			t.Errorf("jobProtectedOnly(%q) = %v, want %v", src, got, want)
+		}
+	}
+}
+
+func TestGL080ScriptHelpers(t *testing.T) {
+	var vars yaml.Node
+	if err := yaml.Unmarshal([]byte("A: from-job\n"), &vars); err != nil {
+		t.Fatal(err)
+	}
+	var global yaml.Node
+	if err := yaml.Unmarshal([]byte("B: from-file\nL: \"x y\"\n"), &global); err != nil {
+		t.Fatal(err)
+	}
+	jv, gv := parser.Unwrap(&vars), parser.Unwrap(&global)
+	sv := map[string][]string{"C": {"one", "two"}, "E": {""}, "F": nil}
+	for name, want := range map[string]string{"A": "from-job", "B": "from-file", "C": "two", "D": "", "F": ""} {
+		if got := previousValue(name, sv, jv, gv); got != want {
+			t.Errorf("previousValue(%s) = %q, want %q", name, got, want)
+		}
+	}
+	if got := strings.Join(loopWords(`$L "$C" $E`, sv, jv, gv), ","); got != "x,y,two" {
+		t.Errorf("loopWords = %q", got)
+	}
+	for in, want := range map[string]string{
+		"docker push --platform=linux/\"$(uname -m | tr a b)\" img": "docker push --platform=linux/\"$__subst\" img",
+		"docker push `cat name`":                                    "docker push $__subst",
+		"echo $(docker push img:latest)":                            "echo $(docker push img:latest)",
+		"echo $((1+2)) and `unclosed":                               "echo $((1+2)) and `unclosed",
+		"x $(unclosed":                                              "x $(unclosed",
+		"plain":                                                     "plain",
+	} {
+		if got := collapseSubstitutions(in); got != want {
+			t.Errorf("collapseSubstitutions(%q) = %q, want %q", in, got, want)
+		}
+	}
+	for in, want := range map[string]bool{
+		"crane push img.tar reg/x:$CI_COMMIT_SHA": true,
+		"crane push img.tar reg/x:latest":         false,
+		"crane copy a b":                          false,
+		"crane push":                              false,
+	} {
+		if got := ephemeralImagePush(strings.Fields(in), nil, nil, nil); got != want {
+			t.Errorf("ephemeralImagePush(%q) = %v, want %v", in, got, want)
+		}
 	}
 }
