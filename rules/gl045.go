@@ -19,7 +19,7 @@ func (r *gl045) ID() string { return "GL045" }
 
 // releasePushRe matches script lines that push artifacts to a registry or package index.
 var releasePushRe = mustCompilePrefiltered(
-	`\bdocker\s+(?:image\s+)?push\b|\b` + buildPushPattern +
+	`\b(?:docker|podman|nerdctl)\s+(?:image\s+)?push\b|\bbuildah\s+push\b|\b` + buildPushPattern + `|\b` + skopeoPushPattern +
 		`|\bcrane\s+push\b` +
 		`|\bhelm\s+push\b` +
 		`|\btwine\s+upload\b` +
@@ -92,7 +92,11 @@ var releaseSigningRe = mustCompilePrefiltered(
 		// --trusted-publishing with attestations, and GitLab's attest step.
 		`|\bnpm\b[^|;&]*\bpublish\b[^|;&]*--provenance\b` +
 		`|\b(?:twine\s+upload|uv\s+publish)\b[^|;&]*--attestations\b` +
-		`|\bgh\s+attestation\b|\bcosign\s+attest\b`,
+		`|\bgh\s+attestation\b|\bcosign\s+attest\b` +
+		// podman, buildah and skopeo sign while they push (#1556): a GPG
+		// simple signature or a sigstore signature that a consumer's
+		// policy.json verifies.
+		`|\b(?:podman|buildah|skopeo)\b[^|;&]*\s--sign-by(?:-sigstore(?:-private-key)?)?\b`,
 )
 
 func (r *gl045) Check(doc *yaml.Node, file string) []finding.Finding {

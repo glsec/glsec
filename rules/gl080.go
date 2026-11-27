@@ -616,7 +616,7 @@ func pushTargetUnknown(text string, known func(string) bool) bool {
 		}
 		var targets []string
 		switch commandName(words) {
-		case "docker", "podman", "buildah", "nerdctl":
+		case "docker", "podman", "buildah", "nerdctl", "skopeo":
 			targets, _, _ = pushedImages(words)
 		case "crane", "helm":
 			if words[1] != "push" {
@@ -998,7 +998,7 @@ var perRunTagVars = []string{
 // IMG ending in :$CI_PIPELINE_ID counts.
 func ephemeralImagePush(words []string, jobVars, globalVars *yaml.Node, shellVars map[string][]string) bool {
 	switch commandName(words) {
-	case "docker", "podman", "buildah", "nerdctl":
+	case "docker", "podman", "buildah", "nerdctl", "skopeo":
 	case "crane":
 		// crane push TARBALL IMAGE writes the last operand.
 		if len(words) < 3 || words[1] != "push" {
@@ -1026,14 +1026,31 @@ func ephemeralImagePush(words []string, jobVars, globalVars *yaml.Node, shellVar
 	return true
 }
 
-// pushedImages returns the images a docker, podman, buildah or nerdctl
-// command pushes: the operands of push or image push (podman and buildah
-// push SOURCE [DESTINATION]), the -t tags of a docker build that pushes its
-// result (#1554). push reports a push at all; exact is false when the words
+// pushedImages returns the images a docker, podman, buildah, nerdctl or
+// skopeo command pushes: the operands of push or image push (podman and
+// buildah push SOURCE [DESTINATION]), the -t tags of a docker build that
+// pushes its result (#1554), the registry destination of skopeo copy (#1556). push reports a push at all; exact is false when the words
 // don't name every image it writes (--all-tags, buildx bake).
 func pushedImages(words []string) (images []string, exact, push bool) {
 	switch commandName(words) {
 	case "docker", "podman", "buildah", "nerdctl":
+	case "skopeo":
+		// skopeo copy SOURCE DESTINATION pushes when the destination is a
+		// registry; global flags may come before copy.
+		i := 1
+		for i < len(words) && words[i] != "copy" && words[i] != "sync" {
+			i++
+		}
+		if len(words) < i+3 {
+			return nil, false, false
+		}
+		dest := strings.Trim(words[len(words)-1], `"'`)
+		image, ok := strings.CutPrefix(dest, "docker://")
+		if !ok {
+			return nil, false, false
+		}
+		// sync copies every tag of the source: the words don't name them.
+		return []string{image}, words[i] == "copy", true
 	default:
 		return nil, false, false
 	}
@@ -1229,14 +1246,60 @@ func perRunValue(value string, jobVars, globalVars *yaml.Node, shellVars map[str
 }
 
 // perRunImage reports an image whose repository or tag names the run
-// ($CI_REGISTRY_IMAGE/build-$CI_COMMIT_REF_SLUG, :$CI_COMMIT_SHA).
+// ($CI_REGISTRY_IMAGE/build-$CI_COMMIT_REF_SLUG, :$CI_COMMIT_SHA), also
+// through a parameter expansion that keeps it per run
+// (${CI_COMMIT_REF_NAME////__}, ${CI_COMMIT_SHA:0:8}).
 func perRunImage(image string) bool {
 	for _, v := range perRunTagVars {
 		if strings.Contains(image, "$"+v) || strings.Contains(image, "${"+v+"}") {
 			return true
 		}
+		for rest := image; ; {
+			i := strings.Index(rest, "${"+v)
+			if i < 0 {
+				break
+			}
+			rest = rest[i+2+len(v):]
+			if perRunExpansion(rest) {
+				return true
+			}
+		}
 	}
 	return commitDerived(image)
+}
+
+// perRunExpansion reports whether the operator that follows a per-run
+// variable inside ${…} keeps the value per run: a substring, replacement,
+// trim or case change does. A default (:-, -, :=, =) takes over when the
+// variable is empty, as CI_COMMIT_BRANCH is in a tag or merge request
+// pipeline, and an alternative (:+, +) replaces it, so both count only when
+// that word is per run itself: ${CI_COMMIT_BRANCH:-latest} pushes latest.
+func perRunExpansion(rest string) bool {
+	if rest == "" {
+		return false
+	}
+	op := rest
+	if op[0] == ':' && len(op) > 1 {
+		op = op[1:]
+	}
+	switch op[0] {
+	case '-', '=', '+':
+		depth := 1
+		for j := 1; j < len(op); j++ {
+			switch op[j] {
+			case '{':
+				depth++
+			case '}':
+				depth--
+				if depth == 0 {
+					word := strings.Trim(op[1:j], `"'`)
+					return word != "" && perRunImage(word)
+				}
+			}
+		}
+		return false
+	}
+	return strings.ContainsRune(":/#%^,?", rune(rest[0]))
 }
 
 // commitDerivedRe matches a command substitution that prints the commit:

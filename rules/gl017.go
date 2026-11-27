@@ -28,7 +28,7 @@ var deployStageKeywords = []string{"deploy", "release", "publish", "ship"}
 // position, so `# build for deploy`, `deploy/compose.yml` or
 // `--no-check-publish` no longer read as a deployment (#1096, release FP scan).
 var deployCmdRe = mustCompilePrefiltered(
-	`(?:docker|podman|buildah|crane|skopeo|nerdctl|ko)\s+push\b|(?:docker|podman|nerdctl)\s+image\s+push\b|` + buildPushPattern +
+	`(?:docker|podman|buildah|crane|nerdctl|ko)\s+push\b|(?:docker|podman|nerdctl)\s+image\s+push\b|` + buildPushPattern + `|` + skopeoPushPattern +
 		`|helm\s+(?:push|cm-push|upgrade|install)\b` +
 		`|twine\s+upload\b|cargo\s+publish\b|(?:npm|yarn|pnpm)\s+publish\b|gem\s+push\b|dotnet\s+nuget\s+push\b|(?:uv|flit|poetry|maturin)\s+(?:publish|upload)\b` +
 		`|kubectl\s+(?:apply|rollout|set|create|patch|replace)\b|(?:^|[^0-9a-z_.-])(?:kustomize|argocd)\b|skaffold\s+(?:run|deploy)\b` +
@@ -46,6 +46,11 @@ var deployCmdRe = mustCompilePrefiltered(
 // to the registry (#1554): build, buildx build or buildx bake with --push or
 // a registry --output, on the same command or its continued lines.
 const buildPushPattern = `docker\s+(?:buildx\s+)?(?:build|bake)\b(?:[^|;&\n]|\\\n)*?\s(?:--push(?:=true)?(?:\s|$)|(?:--output|-o)[= ]\S*?(?:type=registry|push=true))`
+
+// skopeoPushPattern matches a skopeo copy (or sync) whose destination, the
+// last operand, is a registry: docker://… (#1556). A copy into a local
+// directory, archive or containers-storage pushes nothing.
+const skopeoPushPattern = `skopeo\s+(?:--?\S+\s+)*?(?:copy|sync)\b[^|;&\n]*\s["']?docker://[^\s|;&"']+["']?\s*(?:$|[|;&\n])`
 
 // gitlabPackagesURL matches a lowercased GitLab package registry API path of
 // a project.

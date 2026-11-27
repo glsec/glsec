@@ -1584,3 +1584,67 @@ func TestGL080_Issue1554(t *testing.T) {
 		}
 	}
 }
+
+func TestGL080_Issue1556(t *testing.T) {
+	for in, want := range map[string]bool{
+		"skopeo copy oci:out docker://reg.example.com/app:latest":            true,
+		"skopeo --insecure-policy copy oci:out docker://reg.example.com/app": true,
+		"skopeo sync --src docker --dest docker reg/a docker://reg/b":        true,
+		"skopeo copy docker://reg.example.com/app:latest oci:out":            false,
+		"skopeo inspect docker://reg.example.com/app:latest":                 false,
+		"skopeo push reg.example.com/app:latest":                             false,
+	} {
+		if got := lineDeploys(in); got != want {
+			t.Errorf("lineDeploys(%q) = %v, want %v", in, got, want)
+		}
+	}
+	for in, want := range map[string]bool{
+		"skopeo copy oci:out docker://reg/x:$CI_COMMIT_SHA":                   true,
+		"skopeo copy oci:out \"docker://reg/x:$CI_COMMIT_SHA\"":               true,
+		"skopeo --override-arch amd64 copy oci:out docker://reg/x:$CI_JOB_ID": true,
+		"skopeo copy oci:out docker://reg/x:latest":                           false,
+		"skopeo copy docker://reg/x:$CI_COMMIT_SHA oci:out":                   false,
+		"skopeo sync --dest docker reg/a docker://reg/b-$CI_COMMIT_SHA":       false,
+		"skopeo copy": false,
+	} {
+		if got := ephemeralImagePush(strings.Fields(in), nil, nil, nil); got != want {
+			t.Errorf("ephemeralImagePush(%q) = %v, want %v", in, got, want)
+		}
+	}
+	remote := "include:\n  - project: g/templates\n    file: docker.yml\n"
+	if f := findings080(t, remote+"b:\n  script: [skopeo copy oci:out docker://reg.example.com/app:$VERSION]\n"); len(f) != 1 || f[0].Severity != finding.Info {
+		t.Errorf("unread skopeo tag: want one info finding, got %+v", f)
+	}
+	if f := findings080(t, "b:\n  script: [skopeo copy oci:out docker://reg.example.com/app:latest]\n"); len(f) != 1 || f[0].Severity != finding.Warn {
+		t.Errorf("skopeo copy to a shared tag: want one warn finding, got %+v", f)
+	}
+}
+
+func TestPerRunImageParameterExpansion(t *testing.T) {
+	for in, want := range map[string]bool{
+		"reg/x:${CI_COMMIT_REF_NAME////__}":               true,
+		"reg/x:${CI_COMMIT_SHA:0:8}":                      true,
+		"reg/x:${CI_COMMIT_REF_SLUG,,}":                   true,
+		"reg/x:${CI_COMMIT_SHAX}":                         false,
+		"reg/x:${CI_COMMIT_SHA_OTHER:-a}":                 false,
+		"reg/x:latest":                                    false,
+		"reg/x:${CI_COMMIT_SHORT_SHA%%-*}":                true,
+		"reg/x:${CI_COMMIT_BRANCH:-latest}":               false,
+		"reg/x:${CI_COMMIT_BRANCH:-$CI_COMMIT_TAG}-amd64": false,
+		"reg/x:${CI_COMMIT_BRANCH:-$CI_COMMIT_SHA}":       true,
+		"reg/x:${CI_COMMIT_BRANCH-${CI_COMMIT_SHA}}":      true,
+		"reg/x:${CI_COMMIT_BRANCH:+stable}":               false,
+		"reg/x:${CI_COMMIT_BRANCH:-}":                     false,
+		"reg/x:${CI_COMMIT_BRANCH:?unset}":                true,
+		"reg/x:${CI_COMMIT_BRANCH:-x":                     false,
+		"reg/x:${CI_COMMIT_BRANCH":                        false,
+	} {
+		if got := perRunImage(in); got != want {
+			t.Errorf("perRunImage(%q) = %v, want %v", in, got, want)
+		}
+	}
+	y := "b:\n  script:\n    - skopeo login -u u -p \"$P\" reg.example.com\n    - export IMAGE_NAME=${CI_COMMIT_REF_NAME////__}\n    - skopeo copy docker://reg.example.com/a:c \"docker://reg.example.com/a:${IMAGE_NAME}\"\n"
+	if f := findings080(t, y); len(f) != 0 {
+		t.Errorf("per-branch tag through a parameter expansion: want no finding, got %+v", f)
+	}
+}

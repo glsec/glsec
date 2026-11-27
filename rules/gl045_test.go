@@ -276,3 +276,32 @@ func TestGL045_LongAndBuildPushForms(t *testing.T) {
 		t.Errorf("build without push: want no finding, got %d", len(f))
 	}
 }
+
+func TestGL045_OCIPushTools(t *testing.T) {
+	for _, cmd := range []string{
+		"podman push registry.example.com/app:1.0",
+		"podman image push registry.example.com/app:1.0",
+		"buildah push app registry.example.com/app:1.0",
+		"nerdctl push registry.example.com/app:1.0",
+		"skopeo copy docker-archive:app.tar docker://registry.example.com/app:1.0",
+		"skopeo --insecure-policy copy oci:out docker://registry.example.com/app:1.0",
+		"skopeo copy docker://src.example.com/app:1.0 \"docker://registry.example.com/app:1.0\"",
+	} {
+		if f := findings045(t, "release:\n  stage: release\n  script:\n    - "+cmd+"\n"); len(f) != 1 {
+			t.Errorf("%s: want 1 finding, got %d", cmd, len(f))
+		}
+	}
+	for _, cmd := range []string{
+		"skopeo copy docker://registry.example.com/app:1.0 oci:out",
+		"skopeo copy docker://registry.example.com/app:1.0 docker-archive:app.tar",
+		"skopeo inspect docker://registry.example.com/app:1.0",
+		"podman push --sign-by release@example.com registry.example.com/app:1.0",
+		"podman push --sign-by-sigstore=sigstore.yaml registry.example.com/app:1.0",
+		"buildah push --sign-by release@example.com app registry.example.com/app:1.0",
+		"skopeo copy --sign-by-sigstore-private-key key.pem oci:out docker://registry.example.com/app:1.0",
+	} {
+		if f := findings045(t, "release:\n  stage: release\n  script:\n    - "+cmd+"\n"); len(f) != 0 {
+			t.Errorf("%s: want no finding, got %d", cmd, len(f))
+		}
+	}
+}
