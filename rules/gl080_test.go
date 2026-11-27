@@ -1328,3 +1328,22 @@ func TestGL080_Issue1546(t *testing.T) {
 		})
 	}
 }
+
+// A job whose rules: are all when: never never runs (#1548), as when a root
+// file switches off an included job.
+func TestGL080_RulesOnlyWhenNever(t *testing.T) {
+	for _, tc := range []struct {
+		name, yaml string
+		want       int
+	}{
+		{"never only", "d:\n  environment: production-eu\n  script: [docker push img:latest]\n  rules:\n    - when: never\n", 0},
+		{"anchor override", "x: &never\n  rules:\n    - when: never\nd:\n  <<: *never\n  script: [docker push img:latest]\n", 0},
+		{"manual only", "d:\n  script: [docker push img:latest]\n  rules:\n    - when: manual\n", 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if f := findings080(t, tc.yaml); len(f) != tc.want {
+				t.Fatalf("expected %d findings, got %+v", tc.want, f)
+			}
+		})
+	}
+}
