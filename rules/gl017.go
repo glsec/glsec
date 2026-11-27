@@ -31,9 +31,9 @@ var deployCmdRe = mustCompilePrefiltered(
 	`(?:docker|podman|buildah|crane|skopeo|nerdctl|ko)\s+push\b` +
 		`|helm\s+(?:push|cm-push|upgrade|install)\b` +
 		`|twine\s+upload\b|cargo\s+publish\b|(?:npm|yarn|pnpm)\s+publish\b|gem\s+push\b|dotnet\s+nuget\s+push\b|(?:uv|flit|poetry|maturin)\s+(?:publish|upload)\b` +
-		`|kubectl\s+(?:apply|rollout|set|create|patch|replace)\b|kustomize\b|argocd\b|skaffold\s+(?:run|deploy)\b` +
-		`|aws\s+(?:s3|deploy|ecs|lambda|cloudformation|elasticbeanstalk|amplify|cloudfront)\b|gcloud\s+(?:app|run|functions|compute|container|storage)\b|az\s+(?:webapp|functionapp|aks|acr|storage)\b|flyctl?\s+deploy\b|netlify[^|;&]*deploy\b|vercel\b|railway\s+up\b` +
-		`|serverless\s+deploy\b|sls\s+deploy\b|terraform\s+apply\b|pulumi\s+up\b|ansible-playbook\b|cap\s+\S+\s+deploy\b|mina\s+deploy\b|fastlane\b` +
+		`|kubectl\s+(?:apply|rollout|set|create|patch|replace)\b|(?:^|[^0-9a-z_.-])(?:kustomize|argocd)\b|skaffold\s+(?:run|deploy)\b` +
+		`|aws\s+(?:s3|deploy|ecs|lambda|cloudformation|elasticbeanstalk|amplify|cloudfront)\b|gcloud\s+(?:app|run|functions|compute|container|storage)\b|az\s+(?:webapp|functionapp|aks|acr|storage)\b|flyctl?\s+deploy\b|netlify[^|;&]*deploy\b|(?:^|[^0-9a-z_.-])vercel\b|railway\s+up\b` +
+		`|serverless\s+deploy\b|sls\s+deploy\b|terraform\s+apply\b|pulumi\s+up\b|ansible-playbook\b|cap\s+\S+\s+deploy\b|mina\s+deploy\b|(?:^|[^0-9a-z_.-])fastlane\b` +
 		`|(?:^|[^0-9a-z_.-])(?:rsync|scp)(?:\s|$)|rclone\b|git\s+push\b` +
 		// curl --upload-file/-T to a project's GitLab package registry
 		// (#1538), in either order of flag and URL. Other upload targets

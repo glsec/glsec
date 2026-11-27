@@ -55,13 +55,52 @@ func TestGL080_DeployNoGuard(t *testing.T) {
 deploy-prod:
   stage: deploy
   script:
-    - ./deploy.sh
+    - docker push registry.example.com/app:latest
 `)
 	if len(f) != 1 {
 		t.Fatalf("expected 1 finding, got %d", len(f))
 	}
 	if f[0].Severity != finding.Warn {
 		t.Errorf("expected Warn severity, got %s", f[0].Severity)
+	}
+}
+
+// A weak deploy signal is reported as info, a strong one as warn (#1548).
+func TestGL080_SignalSeverity(t *testing.T) {
+	for _, tc := range []struct {
+		name, yaml string
+		want       finding.Severity
+	}{
+		{"deploy-named script", "deploy-prod:\n  stage: deploy\n  script: [./deploy.sh]\n", finding.Info},
+		{"keyword and credential", "release:\n  variables:\n    PROD_DEPLOY_KEY: x\n  script: [./ship]\n", finding.Info},
+		{"bare verb", "d:\n  script: [make deploy]\n", finding.Info},
+		{"rsync", "d:\n  script: [rsync -a public/ web@host:/srv/www/]\n", finding.Info},
+		{"scp", "d:\n  script: [scp app.tgz web@host:/srv/]\n", finding.Info},
+		{"git push", "d:\n  script: [git push origin HEAD:release]\n", finding.Info},
+		{"docker push", "d:\n  script: [docker push registry.example.com/app:latest]\n", finding.Warn},
+		{"twine", "d:\n  script: [twine upload dist/*]\n", finding.Warn},
+		{"kubectl", "d:\n  script: [kubectl apply -f k8s/]\n", finding.Warn},
+		{"semantic-release", "d:\n  script: [npx semantic-release]\n", finding.Warn},
+		{"environment", "d:\n  environment: eu-central\n  script: [./deploy.sh]\n", finding.Warn},
+		{"weak and strong", "d:\n  script:\n    - rsync -a public/ web@host:/srv/www/\n    - docker push registry.example.com/app:latest\n", finding.Warn},
+		{"push in compound if", "d:\n  script:\n    - |\n      if [[ $CI_COMMIT_BRANCH == \"master\" && $NS == \"org\" ]]; then\n        docker push img:tag\n      fi\n", finding.Info},
+		{"push in case", "d:\n  script:\n    - 'case $CREATE in true) twine upload dist/*;; esac'\n", finding.Info},
+		{"push after test and", "d:\n  script:\n    - '[ \"$PUSH\" = 1 ] && docker push img:tag'\n", finding.Info},
+		{"push after test or", "d:\n  script:\n    - 'test -z \"$SKIP\" || docker push img:tag'\n", finding.Info},
+		{"push in PowerShell if", "d:\n  script:\n    - 'if ($env:CI_COMMIT_BRANCH -eq \"main\" -and $env:X) { docker push img:tag }'\n", finding.Info},
+		{"push after fi", "d:\n  script:\n    - 'if [ -n \"$X\" ]; then echo x; fi; docker push img:tag'\n", finding.Warn},
+		{"push in for loop", "d:\n  script:\n    - 'for t in a b; do docker push img:$t; done'\n", finding.Warn},
+		{"push after build and", "d:\n  script:\n    - 'docker build -t img:tag . && docker push img:tag'\n", finding.Warn},
+		{"if word in a string", "d:\n  script:\n    - echo \"if this fails\"\n    - docker push img:tag\n", finding.Warn},
+		{"conditional and unconditional", "d:\n  script:\n    - 'if [ -n \"$X\" ]; then docker push img:a; fi'\n    - docker push img:b\n", finding.Warn},
+		{"strong only in echo", "d:\n  script:\n    - echo docker push registry.example.com/app:latest\n    - rsync -a public/ web@host:/srv/www/\n", finding.Info},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := findings080(t, tc.yaml)
+			if len(f) != 1 || f[0].Severity != tc.want {
+				t.Fatalf("want one %s finding, got %+v", tc.want, f)
+			}
+		})
 	}
 }
 
@@ -87,7 +126,7 @@ deploy-dev-manual:
     name: dev
   when: manual
   script:
-    - ./deploy.sh
+    - helm upgrade --install app ./chart
 `)
 	if len(f) != 1 {
 		t.Fatalf("expected 1 finding for a when: manual deploy job, got %d", len(f))
@@ -1281,6 +1320,25 @@ func TestGL080_Issue1546(t *testing.T) {
 		{"rsync to variable dest stays", wf + "pub:\n  script:\n    - rsync -a repo/ $DEST/\n", 1},
 		{"fdroid publish", wf + "p:\n" + cred + "  script:\n    - fdroid publish --verbose\n", 0},
 		{"fdroid deploy stays", wf + "p:\n" + cred + "  script:\n    - fdroid deploy\n", 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if f := findings080(t, tc.yaml); len(f) != tc.want {
+				t.Fatalf("expected %d findings, got %+v", tc.want, f)
+			}
+		})
+	}
+}
+
+// A job whose rules: are all when: never never runs (#1548), as when a root
+// file switches off an included job.
+func TestGL080_RulesOnlyWhenNever(t *testing.T) {
+	for _, tc := range []struct {
+		name, yaml string
+		want       int
+	}{
+		{"never only", "d:\n  environment: production-eu\n  script: [docker push img:latest]\n  rules:\n    - when: never\n", 0},
+		{"anchor override", "x: &never\n  rules:\n    - when: never\nd:\n  <<: *never\n  script: [docker push img:latest]\n", 0},
+		{"manual only", "d:\n  script: [docker push img:latest]\n  rules:\n    - when: manual\n", 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if f := findings080(t, tc.yaml); len(f) != tc.want {

@@ -678,6 +678,17 @@ func jobGuardState(job *yaml.Node) guardState {
 	if rules.Kind != yaml.SequenceNode || parser.IsReference(rules) {
 		return guardEffective
 	}
+	// Entries that are all when: never keep the job out of every pipeline,
+	// as a root file does to switch off an included job (#1548).
+	never := len(rules.Content) > 0
+	for _, item := range rules.Content {
+		if item.Kind != yaml.MappingNode || !ruleExcludes(item) {
+			never = false
+		}
+	}
+	if never {
+		return guardEffective
+	}
 	for _, item := range rules.Content {
 		if parser.IsReference(item) {
 			return guardEffective
