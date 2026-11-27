@@ -1622,13 +1622,22 @@ func TestGL080_Issue1556(t *testing.T) {
 
 func TestPerRunImageParameterExpansion(t *testing.T) {
 	for in, want := range map[string]bool{
-		"reg/x:${CI_COMMIT_REF_NAME////__}": true,
-		"reg/x:${CI_COMMIT_SHA:0:8}":        true,
-		"reg/x:${CI_COMMIT_REF_SLUG,,}":     true,
-		"reg/x:${CI_COMMIT_SHAX}":           false,
-		"reg/x:${CI_COMMIT_SHA_OTHER:-a}":   false,
-		"reg/x:latest":                      false,
-		"reg/x:${CI_COMMIT_SHORT_SHA%%-*}":  true,
+		"reg/x:${CI_COMMIT_REF_NAME////__}":               true,
+		"reg/x:${CI_COMMIT_SHA:0:8}":                      true,
+		"reg/x:${CI_COMMIT_REF_SLUG,,}":                   true,
+		"reg/x:${CI_COMMIT_SHAX}":                         false,
+		"reg/x:${CI_COMMIT_SHA_OTHER:-a}":                 false,
+		"reg/x:latest":                                    false,
+		"reg/x:${CI_COMMIT_SHORT_SHA%%-*}":                true,
+		"reg/x:${CI_COMMIT_BRANCH:-latest}":               false,
+		"reg/x:${CI_COMMIT_BRANCH:-$CI_COMMIT_TAG}-amd64": false,
+		"reg/x:${CI_COMMIT_BRANCH:-$CI_COMMIT_SHA}":       true,
+		"reg/x:${CI_COMMIT_BRANCH-${CI_COMMIT_SHA}}":      true,
+		"reg/x:${CI_COMMIT_BRANCH:+stable}":               false,
+		"reg/x:${CI_COMMIT_BRANCH:-}":                     false,
+		"reg/x:${CI_COMMIT_BRANCH:?unset}":                true,
+		"reg/x:${CI_COMMIT_BRANCH:-x":                     false,
+		"reg/x:${CI_COMMIT_BRANCH":                        false,
 	} {
 		if got := perRunImage(in); got != want {
 			t.Errorf("perRunImage(%q) = %v, want %v", in, got, want)
