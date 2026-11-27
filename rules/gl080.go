@@ -68,14 +68,19 @@ func (r *gl080) check(doc *yaml.Node, file string, ctx docContext) []finding.Fin
 		}
 		state := jobGuardState(job)
 		msg := ""
+		severity := finding.Warn
 		switch {
 		case state != guardEffective:
 			// An unguarded job is reported only when it really deploys: an
 			// environment, a deploy/publish/infra-apply command, or a
 			// deploy-named job that uses a credential (#1371). A deploy-sounding
 			// name alone is not enough.
-			if !gl080Sensitive(in, name.Value, own, job, vars) {
+			sensitive, strong := gl080Sensitive(in, name.Value, own, job, vars)
+			if !sensitive {
 				return
+			}
+			if !strong {
+				severity = finding.Info
 			}
 			msg = gl080Message(name.Value, state, jobManualOnly(job))
 		case state == guardEffective && scope.mrPipelines && gl080MROnlyProduction(in, name.Value, own, job):
@@ -88,8 +93,15 @@ func (r *gl080) check(doc *yaml.Node, file string, ctx docContext) []finding.Fin
 			// - when: manual fallback or changes: alone, restricts nothing:
 			// GitLab runs the job by the first entry that matches (#1498).
 			entry, _ := scope.fallbackEntry(parser.FindKey(job, "rules"))
-			if entry == nil || gl013OwnsOpen(job) || !gl080Sensitive(in, name.Value, own, withEntryVariables(job, entry), vars) {
+			if entry == nil || gl013OwnsOpen(job) {
 				return
+			}
+			sensitive, strong := gl080Sensitive(in, name.Value, own, withEntryVariables(job, entry), vars)
+			if !sensitive {
+				return
+			}
+			if !strong {
+				severity = finding.Info
 			}
 			msg = fmt.Sprintf(
 				"sensitive job %q has a rules: entry %s that matches on every branch — GitLab runs the job by the first entry that matches, so any branch can run it, also a fork's merge request a maintainer runs here; restrict that entry to protected refs or drop it",
@@ -100,7 +112,7 @@ func (r *gl080) check(doc *yaml.Node, file string, ctx docContext) []finding.Fin
 		}
 		findings = append(findings, finding.Finding{
 			RuleID:   "GL080",
-			Severity: finding.Warn,
+			Severity: severity,
 			Job:      name.Value,
 			Message:  msg,
 			File:     file,
@@ -201,24 +213,24 @@ var gl080NotDeployKeywords = []string{
 //     (a secret-named variable), so a custom deploy (`./deploy.sh "$TOKEN"`)
 //     glsec can't read as a command still counts, while a `publish-docs` or
 //     `release-notes` job with no credential does not.
-func gl080Sensitive(in *Inheritance, name string, own, job, globalVars *yaml.Node) bool {
+func gl080Sensitive(in *Inheritance, name string, own, job, globalVars *yaml.Node) (sensitive, strong bool) {
 	if env := parser.FindKey(job, "environment"); env != nil && !envActionStop(env) && extractEnvName(env) != "" && !ephemeralEnvironmentIn(env, parser.FindKey(job, "variables"), globalVars) {
-		return true
+		return true, true
 	}
 	// A GitLab Pages job publishes a site — a deployment. The main-site case is
 	// GL013's and has already returned via gl013Owns, so a Pages job reaching
 	// gl080Sensitive is a path-prefixed (non-main) deploy.
 	if name == "pages" || parser.FindKey(job, "pages") != nil {
-		return true
+		return true, true
 	}
-	deploys, discounted := gl080ScriptDeploys(in, job, globalVars)
+	deploys, strong, discounted := gl080ScriptDeploys(in, job, globalVars)
 	if deploys {
-		return true
+		return true, strong
 	}
 	hay := strings.ToLower(name) + " " + jobStageName(job)
 	for _, neg := range gl080NotDeployKeywords {
 		if strings.Contains(hay, neg) {
-			return false
+			return false, false
 		}
 	}
 	for _, kw := range gl080DeployKeywords {
@@ -226,10 +238,10 @@ func gl080Sensitive(in *Inheritance, name string, own, job, globalVars *yaml.Nod
 			// A job whose every publish glsec reads ships nothing shared, and
 			// the job's own CI_ token is no secret to steal: a fork's merge
 			// request gets the fork's (#1524).
-			return jobUsesCredential(job, discounted)
+			return jobUsesCredential(job, discounted), false
 		}
 	}
-	return false
+	return false, false
 }
 
 // jobUsesCredential reports whether a job's effective definition carries a
@@ -359,8 +371,9 @@ func gl013Owns(name string, job *yaml.Node) bool {
 // publish or apply in dry-run mode. A push of latest, a fixed tag or a
 // version still counts, since any branch can overwrite what others pull.
 // discounted reports a deploy command that one of these exceptions or a
-// guard in the script took out.
-func gl080ScriptDeploys(in *Inheritance, job, globalVars *yaml.Node) (deploys, discounted bool) {
+// guard in the script took out. strong reports that a deploy is a registry,
+// package, infra or release command, not only a weak signal (#1548).
+func gl080ScriptDeploys(in *Inheritance, job, globalVars *yaml.Node) (deploys, strong, discounted bool) {
 	jobVars := parser.FindKey(job, "variables")
 	flags := protectedFlags(in, job, globalVars)
 	lines := CollectJobScriptLines(job)
@@ -378,7 +391,7 @@ func gl080ScriptDeploys(in *Inheritance, job, globalVars *yaml.Node) (deploys, d
 	// Each value a script variable is assigned outside a guarded step,
 	// starting with the values rules:variables give it on unprotected refs.
 	shellVars := unprotectedRuleValues(in, job, globalVars)
-	exited := false
+	exited, weak := false, false
 	for _, line := range lines {
 		if lineDeploys(line.Value) {
 			discounted = true
@@ -412,11 +425,42 @@ func gl080ScriptDeploys(in *Inheritance, job, globalVars *yaml.Node) (deploys, d
 			}
 		}
 		if lineDeploys(rest) && (strongDeploy(rest) || !publishesToService(job, rest, lines, hosts)) {
-			return true, false
+			if strongSignal(rest) {
+				return true, true, false
+			}
+			weak = true
 		}
 	}
-	return false, discounted
+	if weak {
+		return true, false, false
+	}
+	return false, false, discounted
 }
+
+// strongSignal reports a command on the line that ships to a registry, a
+// package index or infrastructure, or cuts a release: the commands of
+// deployCmdRe and releaseCmdRe other than the copy and push tools (rsync, scp,
+// rclone, git push), which often ship nothing shared, such as a local path, a
+// per-run directory or a results repository (#1548).
+func strongSignal(text string) bool {
+	for _, cmd := range shellCommands(blankShellComments(text)) {
+		if !lineDeploys(cmd.text) {
+			continue
+		}
+		lower := strings.ToLower(cmd.text)
+		if releaseCmdRe.MatchString(lower) {
+			return true
+		}
+		for _, m := range deployCmdRe.FindAllStringIndex(lower, -1) {
+			if !copyOrPushRe.MatchString(lower[m[0]:m[1]]) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+var copyOrPushRe = mustCompilePrefiltered(`^(?:[^0-9a-z_.-])?(?:rsync|scp)(?:\s|$)|^rclone\b|^git\s+push\b`)
 
 // unprotectedRuleValues returns, for each variable that a workflow:rules or job
 // rules: entry sets, the values it can hold on an unprotected ref: those of

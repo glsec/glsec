@@ -465,6 +465,7 @@ var prefilterTable = map[string]prefilterLits{
 	"\\|\\|\\s*(?:(?:true|exit\\s+0)\\b|:(?:[\\s;)]|$)|echo\\b[^;&|\\n]*)": {anyOf: []string{"||"}},
 	"^(?:6|\\*)>>?\\s*[^&\\s]": {anyOf: []string{"*>", "6>"}},
 	"^(?:FlyV1 )?fm2_[A-Za-z0-9+/]{100,}={0,3}(?:,fm2_[A-Za-z0-9+/]+={0,3})*$": {anyOf: []string{"fm2_"}},
+	"^(?:[^0-9a-z_.-])?(?:rsync|scp)(?:\\s|$)|^rclone\\b|^git\\s+push\\b":      {anyOf: []string{"rsync", "scp", "rclone", "push"}},
 	"^(?:[rs]k_(?:test|live|prod)|sk_org)_[A-Za-z0-9]{24,}$":                   {anyOf: []string{"rk_test_", "rk_live_", "rk_prod_", "sk_test_", "sk_live_", "sk_prod_", "sk_org_"}},
 	"^(?:\\$\\{?CI_COMMIT_REF_PROTECTED\\}?\\s*(?:!=\\s*[\"']true[\"']|==\\s*[\"']false[\"'])|\\$\\{?CI_COMMIT_(?:BRANCH|REF_NAME)\\}?\\s*!=\\s*(?:\\$\\{?CI_DEFAULT_BRANCH\\}?|[\"'][^\"']+[\"'])|\\$\\{?CI_DEFAULT_BRANCH\\}?\\s*!=\\s*\\$\\{?CI_COMMIT_(?:BRANCH|REF_NAME)\\}?|\\$\\{?CI_COMMIT_TAG\\}?\\s*==\\s*(?:null|\"\"|'')|\\$\\{?CI_COMMIT_(?:BRANCH|REF_NAME|TAG)\\}?\\s*!~\\s*/.*/[a-z]*)$": {anyOf: []string{"CI_COMMIT_REF_PROTECTED", "CI_COMMIT_BRANCH", "CI_COMMIT_REF_NAME", "CI_DEFAULT_BRANCH", "CI_COMMIT_TAG"}},
 	"^(?:\\$\\{?CI_MERGE_REQUEST_\\w+\\}?(?:\\s*(?:==|=~)\\s*(.+))?|([\"'][^\"']*[\"'])\\s*==\\s*\\$\\{?CI_MERGE_REQUEST_\\w+\\}?)$":                                                            {anyOf: []string{"$CI_MERGE_REQUEST_", "${CI_MERGE_REQUEST_"}},
