@@ -201,6 +201,19 @@ func registryCacheRef(spec string) string {
 // to the registry with the job token.
 var slugEqualityRe = mustCompilePrefiltered(`^\$\{?CI_COMMIT_REF_SLUG\}?\s*==\s*["'][a-z0-9-]+["']$`)
 
+// protectedRefsList reports an only:/refs: list of nothing but main, master
+// or tags.
+func protectedRefsList(list *yaml.Node) bool {
+	for _, item := range list.Content {
+		switch item.Value {
+		case "main", "master", "tags":
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 // jobProtectedOnly reports a job that runs on protected refs only,
 // evaluated as GL013 and GL081 do (#1494): only: lists nothing but main,
 // master or tags, or every rules entry that can run the job has an if: that
@@ -210,14 +223,23 @@ func jobProtectedOnly(job *yaml.Node) bool {
 		return true
 	}
 	if only := parser.FindKey(job, "only"); only != nil && only.Kind == yaml.SequenceNode && len(only.Content) > 0 {
-		for _, item := range only.Content {
-			switch item.Value {
-			case "main", "master", "tags":
-			default:
-				return false
-			}
+		return protectedRefsList(only)
+	}
+	// only: {refs: […], variables: […]} runs the job when a ref matches and
+	// any variables: expression holds, so either part can restrict (#1550).
+	if only := parser.FindKey(job, "only"); only != nil && only.Kind == yaml.MappingNode {
+		if refs := parser.FindKey(only, "refs"); refs != nil && refs.Kind == yaml.SequenceNode && len(refs.Content) > 0 && protectedRefsList(refs) {
+			return true
 		}
-		return true
+		if vars := parser.FindKey(only, "variables"); vars != nil && vars.Kind == yaml.SequenceNode && len(vars.Content) > 0 {
+			for _, item := range vars.Content {
+				if item.Kind != yaml.ScalarNode || !ifRestrictsToProtected(item.Value) {
+					return false
+				}
+			}
+			return true
+		}
+		return false
 	}
 	rules := parser.FindKey(job, "rules")
 	if rules == nil || rules.Kind != yaml.SequenceNode || parser.IsReference(rules) {

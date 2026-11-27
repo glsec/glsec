@@ -330,6 +330,8 @@ func TestLineDeploys(t *testing.T) {
 		{`fdroid deploy`, true},
 		{`semantic-release-cargo --version`, false},
 		{`npx semantic-release`, true},
+		{`cat semantic-release.log`, false},
+		{`time curl -H "JOB-TOKEN: $CI_JOB_TOKEN" --upload-file f "$CI_API_V4_URL/projects/1/packages/generic/p/1.0/f"`, true},
 		{`npm run build-and-deploy`, true},
 		// Not deployments (the release FP scan classes):
 		{`# build for deploy`, false},

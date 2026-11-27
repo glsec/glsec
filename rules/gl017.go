@@ -50,7 +50,7 @@ const gitlabPackagesURL = `(?:/api/v4|ci_api_v4_url\}?)/projects/\S*?/packages/`
 // snapshot or skip-publish mode; a match counts only when the line does not opt
 // out of publishing (goreleaser release --snapshot ships nothing).
 var releaseCmdRe = mustCompilePrefiltered(
-	`goreleaser\s+release\b|gh\s+release\s+(?:create|upload)\b|glab\s+release\b|release-cli\s+create\b|semantic-release(?:[^\w-]|$)`,
+	`goreleaser\s+release\b|gh\s+release\s+(?:create|upload)\b|glab\s+release\b|release-cli\s+create\b|semantic-release(?:[^\w.-]|$)`,
 )
 
 // deployVerbRe matches a bare deploy/publish verb as its own word: make deploy,
@@ -156,8 +156,11 @@ func lineDeploys(raw string) bool {
 	if deployCmdRe.MatchString(lower) {
 		return true
 	}
+	// The snapshot flag counts wherever the line sets it, also through a
+	// command substitution whose echo was dropped above
+	// (goreleaser release $([ -z "$CI_COMMIT_TAG" ] && echo --snapshot)).
 	if releaseCmdRe.MatchString(lower) &&
-		!strings.Contains(lower, "--snapshot") && !skipsPublish(lower) {
+		!strings.Contains(strings.ToLower(code), "--snapshot") && !skipsPublish(lower) {
 		return true
 	}
 	if deployVerbRe.MatchString(lower) && !skipsPublish(lower) {
@@ -301,6 +304,7 @@ func isPackageInstall(w []string) bool {
 // classified by its own name — `bundle exec fastlane deploy` is a fastlane run,
 // not a `bundle` run. Returns w unchanged when there is no such wrapper.
 func stripExecWrapper(w []string) []string {
+	w = stripRunPrefix(w)
 	if len(w) < 3 {
 		return w
 	}
@@ -314,6 +318,45 @@ func stripExecWrapper(w []string) []string {
 	}
 	if i+1 < len(w) && strings.EqualFold(w[i], "exec") {
 		return w[i+1:]
+	}
+	return w
+}
+
+// stripRunPrefix drops the commands that only run another one: time, nohup,
+// sudo (with its flags), env with its assignments, timeout and nice with
+// their arguments (time curl --upload-file …).
+func stripRunPrefix(w []string) []string {
+	for len(w) > 1 {
+		switch strings.ToLower(w[0]) {
+		case "time", "nohup", "command", "exec":
+			w = w[1:]
+		case "sudo":
+			i := 1
+			for i < len(w) && strings.HasPrefix(w[i], "-") {
+				if w[i] == "-u" || w[i] == "-g" {
+					i++
+				}
+				i++
+			}
+			w = w[min(i, len(w)):]
+		case "env":
+			i := 1
+			for i < len(w) && (strings.HasPrefix(w[i], "-") || strings.Contains(w[i], "=")) {
+				i++
+			}
+			w = w[min(i, len(w)):]
+		case "timeout", "nice":
+			i := 1
+			for i < len(w) && strings.HasPrefix(w[i], "-") {
+				i++
+			}
+			if strings.EqualFold(w[0], "timeout") && i < len(w) {
+				i++ // the duration
+			}
+			w = w[min(i, len(w)):]
+		default:
+			return w
+		}
 	}
 	return w
 }

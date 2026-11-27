@@ -1347,3 +1347,32 @@ func TestGL080_RulesOnlyWhenNever(t *testing.T) {
 		})
 	}
 }
+
+// Script shapes the per-run and dry-run exceptions didn't read (#1550).
+func TestGL080_Issue1550(t *testing.T) {
+	api := "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/app"
+	for _, tc := range []struct {
+		name, yaml string
+		want       int
+	}{
+		{"time before a per-ref upload", "b:\n  script:\n    - 'time curl --header \"JOB-TOKEN: $CI_JOB_TOKEN\" --upload-file a.iso \"" + api + "/${CI_COMMIT_TAG:-$CI_COMMIT_BRANCH}/a.iso\"'\n", 0},
+		{"sudo before a fixed upload stays", "b:\n  script:\n    - 'sudo -E curl --header \"JOB-TOKEN: $CI_JOB_TOKEN\" --upload-file a.iso \"" + api + "/1.0/a.iso\"'\n", 1},
+		{"continued dry run", "r:\n  script:\n    - |\n      npx \\\n        -p semantic-release@21 \\\n        semantic-release --no-ci --dry-run 2>&1 | tee semantic-release.log || true\n      cat semantic-release.log\n", 0},
+		{"snapshot through substitution", "release:\n  script:\n    - goreleaser release --clean $([ -z ${CI_COMMIT_TAG} ] && echo \"--snapshot\")\n", 0},
+		{"goreleaser without snapshot stays", "release:\n  script:\n    - goreleaser release --clean\n", 1},
+		{"push with a substitution flag", "b:\n  script:\n    - export IMAGE=\"reg.example.com/app:${CI_COMMIT_TAG:-\"$CI_COMMIT_SHORT_SHA\"}-jvm\"\n    - 'docker push --platform=linux/\"$(uname -m | grep -qxF aarch64 && printf arm64 || printf amd64)\" \"$IMAGE\"'\n", 0},
+		{"fixed push with a substitution flag stays", "b:\n  script:\n    - 'docker push --platform=linux/\"$(uname -m | grep -qxF aarch64 && printf arm64 || printf amd64)\" reg.example.com/app:latest'\n", 1},
+		{"variable rewritten from itself", "variables:\n  IMG: \"${CI_COMMIT_BRANCH}${CI_MERGE_REQUEST_SOURCE_BRANCH_NAME}\"\nb:\n  script:\n    - IMG=$(echo \"$IMG\" | tr A-Z a-z)\n    - docker push reg.example.com/app/$IMG:svc\n", 0},
+		{"fixed variable rewritten from itself stays", "variables:\n  IMG: app\nb:\n  script:\n    - IMG=$(echo \"$IMG\" | tr A-Z a-z)\n    - docker push reg.example.com/$IMG:latest\n", 1},
+		{"loop over per-run tags", "b:\n  rules:\n    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH\n      variables: {EXTRA_TAGS: latest}\n    - when: on_success\n  script:\n    - ALL_TAGS=\"$CI_COMMIT_SHA $EXTRA_TAGS\"\n    - 'for tag in $ALL_TAGS; do crane push img.tar \"$CI_REGISTRY_IMAGE:$tag\"; done'\n", 0},
+		{"loop with a fixed tag stays", "b:\n  script:\n    - 'for tag in $CI_COMMIT_SHA latest; do crane push img.tar \"$CI_REGISTRY_IMAGE:$tag\"; done'\n", 1},
+		{"exit in a brace group", "b:\n  rules:\n    - if: $CI_COMMIT_BRANCH == \"master\"\n      variables: {PUSH_TAGS: latest}\n    - when: on_success\n  script:\n    - '[ -n \"$PUSH_TAGS\" ] || { echo skip; exit 0; }'\n    - docker push $CI_REGISTRY_IMAGE:$PUSH_TAGS\n", 0},
+		{"brace group without exit stays", "b:\n  rules:\n    - if: $CI_COMMIT_BRANCH == \"master\"\n      variables: {PUSH_TAGS: latest}\n    - when: on_success\n  script:\n    - '[ -n \"$PUSH_TAGS\" ] || { echo skip; }'\n    - docker push $CI_REGISTRY_IMAGE:latest\n", 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if f := findings080(t, tc.yaml); len(f) != tc.want {
+				t.Fatalf("expected %d findings, got %+v", tc.want, f)
+			}
+		})
+	}
+}

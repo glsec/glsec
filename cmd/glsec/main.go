@@ -971,6 +971,10 @@ type triggerEdge struct {
 	// restricted: the include: entry's rules: keep the file off arbitrary
 	// branches by a condition such as a pipeline source (#1531).
 	restricted bool
+	// job is the trigger job of a child pipeline edge, read again once every
+	// file of the pipeline is known, for a !reference into another file
+	// (#1550).
+	job *yaml.Node
 }
 
 // readFailure records a file glsec could not read and the strongest obligation
@@ -1129,7 +1133,7 @@ func (p *pipelineFiles) collect(doc *parser.Document, optional bool) []*parser.D
 	}
 	for _, child := range parser.ChildPipelines(doc.Root) {
 		protected := rules.RunsOnProtectedRefsOnly(doc.Root, child.Job) || rules.RunsOnProtectedRefsOnly(pipeline.Root, child.Job)
-		follow("child pipeline", child.Path, false, optional, triggerEdge{pipeline, child.Waits, child.Locked, doc, protected, false})
+		follow("child pipeline", child.Path, false, optional, triggerEdge{pipeline, child.Waits, child.Locked, doc, protected, false, child.Job})
 	}
 	// Files pulled in with include: local are part of this pipeline (#810).
 	// In a child pipeline, if: $CI_PIPELINE_SOURCE == "parent_pipeline" holds
@@ -1159,6 +1163,26 @@ func (p *pipelineFiles) collect(doc *parser.Document, optional bool) []*parser.D
 // that, included files whose include: entries all restrict them through
 // rules: are marked restricted (#1531).
 func (p *pipelineFiles) resolveParentProtection() {
+	// A trigger job's rules: may take an if: from a template in another file
+	// of the pipeline, which only now has been read.
+	for abs, edges := range p.triggers {
+		for i, t := range edges {
+			if t.protected || t.job == nil || t.from == nil || t.from.Root == nil {
+				continue
+			}
+			var roots []*yaml.Node
+			for _, m := range p.members[t.parent] {
+				// A member that couldn't be read is kept as nil.
+				if m != nil && m.Root != nil {
+					roots = append(roots, m.Root)
+				}
+			}
+			roots = append(roots, t.from.Root)
+			if rules.RunsOnProtectedRefsOnlyAcross(t.from.Root, t.job, roots) {
+				p.triggers[abs][i].protected = true
+			}
+		}
+	}
 	edgeProtected := func(t triggerEdge) bool {
 		return t.protected || t.from != nil && (t.from.ProtectedByParent || t.from.IncludedBy != nil && t.from.IncludedBy.ProtectedByParent)
 	}

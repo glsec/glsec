@@ -407,18 +407,46 @@ func gl080ScriptDeploys(in *Inheritance, job, globalVars *yaml.Node) (deploys, s
 			}
 		}
 		for _, cmd := range shellCommands(text) {
-			if m := shellAssignRe.FindStringSubmatch(stripShellKeywords(cmd.text)); m != nil {
+			c := stripShellKeywords(cmd.text)
+			if m := shellAssignRe.FindStringSubmatch(c); m != nil {
 				if shellVars == nil {
 					shellVars = map[string][]string{}
 				}
-				shellVars[m[1]] = append(shellVars[m[1]], strings.Trim(strings.TrimSpace(m[2]), `"'`))
+				v := strings.Trim(strings.TrimSpace(m[2]), `"'`)
+				// A value made from the variable itself keeps what it held
+				// (IMG=$(echo "$IMG" | tr A-Z a-z)).
+				if mentionsVar(v, m[1]) {
+					if prev := previousValue(m[1], shellVars, jobVars, globalVars); prev != "" {
+						v = replaceRefs(v, func(ref string) string {
+							if strings.Trim(ref, "${}") == m[1] {
+								return prev
+							}
+							return ref
+						})
+					}
+				}
+				shellVars[m[1]] = append(shellVars[m[1]], v)
+			}
+			// for tag in $TAGS: the loop variable takes each word.
+			if m := forInRe.FindStringSubmatch(c); m != nil {
+				if shellVars == nil {
+					shellVars = map[string][]string{}
+				}
+				if words := loopWords(m[2], shellVars, jobVars, globalVars); len(words) > 0 {
+					shellVars[m[1]] = append(shellVars[m[1]], words...)
+				}
 			}
 		}
 		if !lineDeploys(text) {
 			continue
 		}
-		rest := text
-		for _, cmd := range shellCommands(blankShellComments(text)) {
+		// shellCommands joins a continued line with spaces; do the same, and
+		// stand in a placeholder for each command substitution that deploys
+		// nothing, so a command keeps its words whole (docker push
+		// --platform=linux/"$(uname -m | …)" "$IMAGE") and can be taken out
+		// of the line below.
+		rest := collapseSubstitutions(strings.ReplaceAll(text, "\\\n", "  "))
+		for _, cmd := range shellCommands(blankShellComments(rest)) {
 			words := stripExecWrapper(commandWords(cmd.text))
 			if dryRun(words) || ephemeralImagePush(words, jobVars, globalVars, shellVars) || ephemeralPackageUpload(words, jobVars, globalVars, shellVars) || ephemeralCopy(words, jobVars, globalVars, shellVars) || ephemeralChartPush(words, lines, jobVars, globalVars, shellVars) || local && (clusterCommand(words) || deployVerbRunners[commandName(words)]) {
 				rest = strings.Replace(rest, cmd.text, "", 1)
@@ -435,6 +463,78 @@ func gl080ScriptDeploys(in *Inheritance, job, globalVars *yaml.Node) (deploys, s
 		return true, false, false
 	}
 	return false, false, discounted
+}
+
+var forInRe = mustCompilePrefiltered(`^for\s+([A-Za-z_][A-Za-z0-9_]*)\s+in\s+(.+?)\s*$`)
+
+// previousValue returns the last value a script or variables: gave name, or "".
+func previousValue(name string, shellVars map[string][]string, jobVars, globalVars *yaml.Node) string {
+	if vs := shellVars[name]; len(vs) > 0 {
+		return vs[len(vs)-1]
+	}
+	if v, ok := literalVariables(jobVars)[name]; ok {
+		return v
+	}
+	return literalVariables(globalVars)[name]
+}
+
+// loopWords returns the words a for loop runs over, its variables expanded
+// first so a list in a variable splits too; a word that is empty on an
+// unprotected ref drops out, as the shell drops it.
+func loopWords(list string, shellVars map[string][]string, jobVars, globalVars *yaml.Node) []string {
+	vars := literalVariables(globalVars)
+	for k, v := range literalVariables(jobVars) {
+		vars[k] = v
+	}
+	for k, vs := range shellVars {
+		if len(vs) > 0 {
+			vars[k] = vs[len(vs)-1]
+		}
+	}
+	var words []string
+	for _, w := range strings.Fields(list) {
+		w = strings.Trim(w, `"'`)
+		words = append(words, strings.Fields(strings.Trim(expandVars(w, vars, "", 0), `"'`))...)
+	}
+	return words
+}
+
+// collapseSubstitutions replaces each $(…) and `…` command substitution
+// that runs no deploy with $__subst, keeping the rest of the line.
+func collapseSubstitutions(s string) string {
+	if !strings.Contains(s, "$(") && !strings.Contains(s, "`") {
+		return s
+	}
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		end := -1
+		switch {
+		case strings.HasPrefix(s[i:], "$(") && !strings.HasPrefix(s[i:], "$(("):
+			depth := 0
+			for j := i + 1; j < len(s); j++ {
+				if s[j] == '(' {
+					depth++
+				} else if s[j] == ')' {
+					depth--
+					if depth == 0 {
+						end = j
+						break
+					}
+				}
+			}
+		case s[i] == '`':
+			if j := strings.IndexByte(s[i+1:], '`'); j >= 0 {
+				end = i + 1 + j
+			}
+		}
+		if end > i && !lineDeploys(s[i:end+1]) {
+			b.WriteString("$__subst")
+			i = end
+			continue
+		}
+		b.WriteByte(s[i])
+	}
+	return b.String()
 }
 
 // strongSignal reports a command on the line that ships to a registry, a
@@ -714,6 +814,18 @@ var perRunTagVars = []string{
 func ephemeralImagePush(words []string, jobVars, globalVars *yaml.Node, shellVars map[string][]string) bool {
 	switch commandName(words) {
 	case "docker", "podman", "buildah", "nerdctl":
+	case "crane":
+		// crane push TARBALL IMAGE writes the last operand.
+		if len(words) < 3 || words[1] != "push" {
+			return false
+		}
+		last := ""
+		for _, w := range words[2:] {
+			if !strings.HasPrefix(w, "-") {
+				last = w
+			}
+		}
+		return last != "" && perRunValue(last, jobVars, globalVars, shellVars)
 	default:
 		return false
 	}

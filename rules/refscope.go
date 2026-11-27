@@ -443,7 +443,9 @@ var (
 	protDefaultBranchPat = mustCompilePrefiltered(`^\$CI_COMMIT_(BRANCH|REF_NAME)\s*==\s*\$CI_DEFAULT_BRANCH$|^\$CI_DEFAULT_BRANCH\s*==\s*\$CI_COMMIT_(BRANCH|REF_NAME)$`)
 	protNamedBranchPat   = mustCompilePrefiltered(`^\$CI_COMMIT_(BRANCH|REF_NAME)\s*==\s*['"][^'"]+['"]$`)
 	// A tag pipeline: the variable alone, a regex match on it, or != null.
-	protTagPat       = mustCompilePrefiltered(`^\$CI_COMMIT_TAG(\s*=~\s*/.*/[a-z]*|\s*!=\s*null)?$`)
+	// A quoted operand ($CI_COMMIT_TAG =~ "/^v.*$/") is only true in a tag
+	// pipeline too, however GitLab reads it (#1550).
+	protTagPat       = mustCompilePrefiltered(`^\$CI_COMMIT_TAG(\s*=~\s*(?:/.*/[a-z]*|"[^"]*"|'[^']*')|\s*!=\s*null)?$`)
 	protProtectedPat = mustCompilePrefiltered(`^\$CI_COMMIT_REF_PROTECTED\s*==\s*['"]true['"]$`)
 )
 
@@ -946,4 +948,63 @@ func operandMatches(op, operand, value string) bool {
 	}
 	re, err := regexp.Compile(pat)
 	return err != nil || re.MatchString(value)
+}
+
+// RunsOnProtectedRefsOnlyAcross is RunsOnProtectedRefsOnly for a trigger job
+// whose rules: point with !reference into another file of the pipeline
+// (if: !reference [.is_main_branch, if] with the template in an included
+// file, #1550): each such reference is resolved in docs first.
+func RunsOnProtectedRefsOnlyAcross(doc, job *yaml.Node, docs []*yaml.Node) bool {
+	eff := NewInheritance(doc).Effective(job)
+	rules := parser.FindKey(eff, "rules")
+	if rules == nil || rules.Kind != yaml.SequenceNode {
+		return false
+	}
+	resolve := func(ref *yaml.Node) *yaml.Node {
+		for _, d := range docs {
+			if r := parser.ResolveReferenceIn(ref, d); r != nil {
+				return r
+			}
+		}
+		return nil
+	}
+	changed := false
+	items := make([]*yaml.Node, 0, len(rules.Content))
+	for _, item := range rules.Content {
+		if parser.IsReference(item) {
+			r := resolve(item)
+			if r == nil {
+				return false
+			}
+			changed = true
+			if r.Kind == yaml.SequenceNode {
+				items = append(items, r.Content...)
+			} else {
+				items = append(items, r)
+			}
+			continue
+		}
+		if item.Kind == yaml.MappingNode {
+			cp := *item
+			cp.Content = append([]*yaml.Node(nil), item.Content...)
+			for i := 1; i < len(cp.Content); i += 2 {
+				if parser.IsReference(cp.Content[i]) {
+					r := resolve(cp.Content[i])
+					if r == nil {
+						return false
+					}
+					cp.Content[i] = r
+					changed = true
+				}
+			}
+			item = &cp
+		}
+		items = append(items, item)
+	}
+	if !changed {
+		return false
+	}
+	newRules := &yaml.Node{Kind: yaml.SequenceNode, Content: items}
+	job2 := &yaml.Node{Kind: yaml.MappingNode, Content: []*yaml.Node{{Kind: yaml.ScalarNode, Value: "rules"}, newRules}}
+	return jobProtectedOnly(job2)
 }
