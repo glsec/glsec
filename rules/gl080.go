@@ -183,6 +183,8 @@ var gl080NotDeployKeywords = []string{
 	"build", "compile", "test", "lint", "cache", "coverage",
 	"check", "package", "bundle", "prepare", "validate", "audit",
 	"scan", "review", "dist",
+	// A stage before the deploy prepares it (#1546).
+	"pre-deploy", "predeploy", "pre_deploy", "pre-publish", "prepublish", "pre_publish",
 }
 
 // gl080Sensitive reports whether a job deploys or publishes to an external
@@ -373,8 +375,9 @@ func gl080ScriptDeploys(in *Inheritance, job, globalVars *yaml.Node) (deploys, d
 			after[l] = true
 		}
 	}
-	// Each value a script variable is assigned outside a guarded step.
-	var shellVars map[string][]string
+	// Each value a script variable is assigned outside a guarded step,
+	// starting with the values rules:variables give it on unprotected refs.
+	shellVars := unprotectedRuleValues(in, job, globalVars)
 	exited := false
 	for _, line := range lines {
 		if lineDeploys(line.Value) {
@@ -404,7 +407,7 @@ func gl080ScriptDeploys(in *Inheritance, job, globalVars *yaml.Node) (deploys, d
 		rest := text
 		for _, cmd := range shellCommands(blankShellComments(text)) {
 			words := stripExecWrapper(commandWords(cmd.text))
-			if dryRun(words) || ephemeralImagePush(words, jobVars, globalVars, shellVars) || ephemeralPackageUpload(words, jobVars, globalVars, shellVars) || ephemeralChartPush(words, lines, jobVars, globalVars, shellVars) || local && clusterCommand(words) {
+			if dryRun(words) || ephemeralImagePush(words, jobVars, globalVars, shellVars) || ephemeralPackageUpload(words, jobVars, globalVars, shellVars) || ephemeralCopy(words, jobVars, globalVars, shellVars) || ephemeralChartPush(words, lines, jobVars, globalVars, shellVars) || local && (clusterCommand(words) || deployVerbRunners[commandName(words)]) {
 				rest = strings.Replace(rest, cmd.text, "", 1)
 			}
 		}
@@ -413,6 +416,68 @@ func gl080ScriptDeploys(in *Inheritance, job, globalVars *yaml.Node) (deploys, d
 		}
 	}
 	return false, discounted
+}
+
+// unprotectedRuleValues returns, for each variable that a workflow:rules or job
+// rules: entry sets, the values it can hold on an unprotected ref: those of
+// the entries that don't restrict to protected refs, and its variables:
+// default, which applies when no entry sets it. A per-branch tag set only for
+// other branches (TAG: $CI_COMMIT_REF_SLUG next to TAG: latest for the
+// default branch) then reads as per run.
+func unprotectedRuleValues(in *Inheritance, job, globalVars *yaml.Node) map[string][]string {
+	var vals map[string][]string
+	var sources []*yaml.Node
+	if wf := parser.FindKey(in.mapping, "workflow"); wf != nil {
+		sources = append(sources, parser.FindKey(wf, "rules"))
+	}
+	sources = append(sources, parser.FindKey(job, "rules"))
+	for _, rules := range sources {
+		if rules == nil || rules.Kind != yaml.SequenceNode {
+			continue
+		}
+		for _, item := range rules.Content {
+			v := parser.FindKey(item, "variables")
+			if v == nil || v.Kind != yaml.MappingNode || ruleExcludes(item) {
+				continue
+			}
+			cond := parser.FindKey(item, "if")
+			if cond != nil && cond.Kind == yaml.ScalarNode && ifRestrictsToProtected(cond.Value) {
+				if vals == nil {
+					vals = map[string][]string{}
+				}
+				for i := 0; i+1 < len(v.Content); i += 2 {
+					if _, ok := vals[v.Content[i].Value]; !ok {
+						vals[v.Content[i].Value] = nil
+					}
+				}
+				continue
+			}
+			for i := 0; i+1 < len(v.Content); i += 2 {
+				if vals == nil {
+					vals = map[string][]string{}
+				}
+				vals[v.Content[i].Value] = append(vals[v.Content[i].Value], v.Content[i+1].Value)
+			}
+		}
+	}
+	if vals == nil {
+		return nil
+	}
+	defaults := literalVariables(globalVars)
+	for k, d := range literalVariables(parser.FindKey(job, "variables")) {
+		defaults[k] = d
+	}
+	for name, vs := range vals {
+		if d, ok := defaults[name]; ok {
+			vs = append(vs, d)
+		}
+		if len(vs) == 0 {
+			// Set only on protected refs: elsewhere it is empty.
+			vs = []string{""}
+		}
+		vals[name] = vs
+	}
+	return vals
 }
 
 // stripShellKeywords drops the then/else/do keywords in front of a command.
@@ -593,6 +658,37 @@ func ephemeralPackageUpload(words []string, jobVars, globalVars *yaml.Node, shel
 	return false
 }
 
+// ephemeralCopy reports an scp or rsync to a remote directory that names the
+// run (scp out.tar ci@host:/srv/cache/$CI_PIPELINE_ID), as ephemeralImagePush
+// does for an image: no other branch reads or writes it.
+func ephemeralCopy(words []string, jobVars, globalVars *yaml.Node, shellVars map[string][]string) bool {
+	switch commandName(words) {
+	case "scp", "rsync":
+	default:
+		return false
+	}
+	// The flags that take a separate value (scp -P 2222, rsync -e ssh).
+	valued := map[string]bool{"-c": true, "-F": true, "-i": true, "-J": true, "-l": true, "-o": true, "-P": true, "-S": true}
+	if commandName(words) == "rsync" {
+		valued = map[string]bool{"-e": true}
+	}
+	dest := ""
+	for i := 1; i < len(words); i++ {
+		switch w := words[i]; {
+		case valued[w]:
+			i++
+		case strings.HasPrefix(w, "-"):
+		default:
+			dest = w
+		}
+	}
+	host, path, ok := strings.Cut(strings.Trim(dest, `"'`), ":")
+	if !ok || host == "" || strings.Contains(host, "/") || path == "" {
+		return false
+	}
+	return perRunValue(path, jobVars, globalVars, shellVars)
+}
+
 // ephemeralChartPush reports a helm push or cm-push of a chart whose version
 // names the run (#1524), as ephemeralImagePush does for an image: the push
 // sets a per-run --version, or it pushes a packaged .tgz and every helm
@@ -686,6 +782,20 @@ func perRunValue(value string, jobVars, globalVars *yaml.Node, shellVars map[str
 func perRunImage(image string) bool {
 	for _, v := range perRunTagVars {
 		if strings.Contains(image, "$"+v) || strings.Contains(image, "${"+v+"}") {
+			return true
+		}
+	}
+	return commitDerived(image)
+}
+
+// commitDerivedRe matches a command substitution that prints the commit:
+// git rev-parse HEAD, git describe (tag-count-gSHA, unless --abbrev=0 cuts
+// it to the last tag every later commit shares).
+var commitDerivedRe = mustCompilePrefiltered("(?:\\$\\(|`)\\s*git\\s+(?:rev-parse\\b[^)`]*\\bHEAD\\b|describe\\b[^)`]*)")
+
+func commitDerived(s string) bool {
+	for _, m := range commitDerivedRe.FindAllStringSubmatch(s, -1) {
+		if !strings.Contains(m[0], "--abbrev=0") {
 			return true
 		}
 	}

@@ -50,7 +50,7 @@ const gitlabPackagesURL = `(?:/api/v4|ci_api_v4_url\}?)/projects/\S*?/packages/`
 // snapshot or skip-publish mode; a match counts only when the line does not opt
 // out of publishing (goreleaser release --snapshot ships nothing).
 var releaseCmdRe = mustCompilePrefiltered(
-	`goreleaser\s+release\b|gh\s+release\s+(?:create|upload)\b|glab\s+release\b|release-cli\s+create\b|semantic-release\b`,
+	`goreleaser\s+release\b|gh\s+release\s+(?:create|upload)\b|glab\s+release\b|release-cli\s+create\b|semantic-release(?:[^\w-]|$)`,
 )
 
 // deployVerbRe matches a bare deploy/publish verb as its own word: make deploy,
@@ -98,6 +98,12 @@ func lineDeploys(raw string) bool {
 		case "rsync", "scp":
 			// A copy between local paths ships nothing (rsync -a ~/.cache home/).
 			if localRsync(w) {
+				lower = strings.Replace(lower, strings.ToLower(cmd.text), "", 1)
+			}
+		case "fdroid":
+			// fdroid publish signs the built APKs into the local repo/
+			// directory; fdroid deploy is what uploads it.
+			if len(w) >= 2 && w[1] == "publish" {
 				lower = strings.Replace(lower, strings.ToLower(cmd.text), "", 1)
 			}
 		case "pixi":
@@ -361,6 +367,10 @@ func runsDeployScript(cmd shellCommand) bool {
 	}
 	if deployVerbRunners[name] {
 		for _, a := range w[1:] {
+			if name == "bun" && (a == "-e" || a == "--eval" || a == "--print") {
+				// The next word is code to run, not a target.
+				return false
+			}
 			if strings.HasPrefix(a, "-") {
 				continue
 			}
@@ -368,10 +378,30 @@ func runsDeployScript(cmd shellCommand) bool {
 			if la == "run" || la == "run-s" || la == "run-p" {
 				continue
 			}
-			return strings.Contains(la, "deploy") || strings.Contains(la, "publish")
+			return runnerTargetDeploys(la)
 		}
 	}
 	return false
+}
+
+// runnerTargetDeploys reports a task-runner target that names a deploy or
+// publish: a word of it starts with deploy or publish (container-publish,
+// build-and-deploy, deploy:prod, deployer:upload), and no word says it only
+// reports, tests or inspects (deployment-info prints, xray-publish uploads
+// test results, deploy-status checks one) (#1546).
+func runnerTargetDeploys(target string) bool {
+	parts := strings.FieldsFunc(target, func(r rune) bool { return (r < 'a' || r > 'z') && (r < '0' || r > '9') })
+	deploys := false
+	for _, p := range parts {
+		if strings.HasPrefix(p, "deploy") || strings.HasPrefix(p, "publish") {
+			deploys = true
+		}
+		switch p {
+		case "test", "tests", "check", "verify", "lint", "info", "status", "help", "list", "show", "get", "diff", "plan", "xray", "report", "reports", "results", "coverage":
+			return false
+		}
+	}
+	return deploys
 }
 
 // isDeployStem reports whether a program or script name is a deploy/publish
